@@ -86,7 +86,7 @@ if __name__ == '__main__':
         cursor.close()
     db_con.execute("update articles set top_id = ? where id = ?", (top_id, article_id))
 
-    recipients = mail.get('To') + ',' + (mail.get('Cc') or '')
+    recipients = (mail.get('To') or '') + ',' + (mail.get('Cc') or '')
     for i in recipients.split(','):
         mail_id = get_mail_id(db_con, i)
         if mail_id:
