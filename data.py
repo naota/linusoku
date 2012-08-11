@@ -95,13 +95,14 @@ if __name__ == '__main__':
     body = mail.get_payload()
     begin = body.find('\n---\n')
     if begin:
+        file_ids = []
         diff = body[begin+5:]
         regex = re.compile(r'^diff --git a/\S* b/(\S*)')
         for i in diff.split('\n'):
             match = regex.match(i)
             if match:
-                file_ids = get_file_ids(db_con, match.group(1))
-                for file_id in file_ids:
-                    db_con.execute("insert into file_assoc (article_id, file_id) values (?, ?)" , (article_id, file_id))
+                file_ids += get_file_ids(db_con, match.group(1))
+        for file_id in set(file_ids):
+            db_con.execute("insert into file_assoc (article_id, file_id) values (?, ?)" , (article_id, file_id))
 
     db_con.close()
