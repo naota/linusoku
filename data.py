@@ -26,9 +26,22 @@ def get_mail_id(db_con, address):
     return id
 
 def get_file_ids(db_con, path):
+    cursor = db_con.cursor()
+    file_ids = []
+
     directory = path.split('/')
-    for i in range(1, len(directory)):
-        print '/'.join(directory[:i])
+    for i in range(1, len(directory) + 1):
+        path = '/'.join(directory[:i])
+        cursor.execute("select id from files where path = ?", (path,))
+        result = cursor.fetchone()
+        if not result:
+            cursor.execute("insert into files (path) values (?)", (path,))
+            file_ids.append(cursor.lastrowid)
+        else:
+            file_ids.append(result[0])
+
+    cursor.close()
+    return file_ids
 
 if __name__ == '__main__':
     
