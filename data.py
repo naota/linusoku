@@ -25,6 +25,11 @@ def get_mail_id(db_con, address):
     cursor.close()
     return id
 
+def get_file_ids(db_con, path):
+    directory = path.split('/')
+    for i in range(1, len(directory)):
+        print '/'.join(directory[:i])
+
 if __name__ == '__main__':
     
     if len(sys.argv) < 3:
@@ -73,5 +78,17 @@ if __name__ == '__main__':
         mail_id = get_mail_id(db_con, i)
         if mail_id:
             db_con.execute("insert into to_assoc (article_id, mail_id) values (?, ?)", (article_id, mail_id))
+
+    body = mail.get_payload()
+    begin = body.find('\n---\n')
+    if begin:
+        diff = body[begin+5:]
+        regex = re.compile(r'^diff --git a/\S* b/(\S*)')
+        for i in diff.split('\n'):
+            match = regex.match(i)
+            if match:
+                file_ids = get_file_ids(db_con, match.group(1))
+                for file_id in file_ids:
+                    db_con.execute("insert into file_assoc (article_id, file_id) values (?, ?)" , (article_id, file_id))
 
     db_con.close()
