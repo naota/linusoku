@@ -15,10 +15,10 @@ def get_mail_id(db_con, address):
         return
 
     cursor = db_con.cursor()
-    cursor.execute("select id from mails where address = ?", [address])
+    cursor.execute("select id from mails where address = ?", (address,))
     result = cursor.fetchone()
     if not result:
-        cursor.execute("insert into mails (address) values (?)", [address])
+        cursor.execute("insert into mails (address) values (?)", (address,))
         id = cursor.lastrowid
     else:
         id = result[0]
@@ -51,7 +51,7 @@ if __name__ == '__main__':
     message_id = mail.get('Message-ID')
 
     cursor = db_con.cursor()
-    cursor.execute("insert into articles (from_id, subject, date, message_id) values (?, ?, ?, ?)", [from_id, subject, date, message_id])
+    cursor.execute("insert into articles (from_id, subject, date, message_id) values (?, ?, ?, ?)", (from_id, subject, date, message_id))
     article_id = cursor.lastrowid
     cursor.close()
 
@@ -59,19 +59,19 @@ if __name__ == '__main__':
         top_id = article_id
     else:
         cursor = db_con.cursor()
-        cursor.execute("select id from articles where message_id = ?", [mail.get('In-Reply-To')])
+        cursor.execute("select id from articles where message_id = ?", (mail.get('In-Reply-To'),))
         result = cursor.fetchone()
         if not result:
             top_id = article_id
         else:
             top_id = result[0]
         cursor.close()
-    db_con.execute("update articles set top_id = ? where id = ?", [top_id, article_id])
+    db_con.execute("update articles set top_id = ? where id = ?", (top_id, article_id))
 
     recipients = mail.get('To') + ',' + mail.get('Cc')
     for i in recipients.split(','):
         mail_id = get_mail_id(db_con, i)
         if mail_id:
-            db_con.execute("insert into to_assoc (article_id, mail_id) values (?, ?)", [article_id, mail_id])
+            db_con.execute("insert into to_assoc (article_id, mail_id) values (?, ?)", (article_id, mail_id))
 
     db_con.close()
