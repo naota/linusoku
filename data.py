@@ -49,7 +49,7 @@ if __name__ == '__main__':
         usage()
 
     try:
-        db_con = sqlite3.connect(sys.argv[1], isolation_level=None)
+        db_con = sqlite3.connect(sys.argv[1])
     except IOError:
         sys.stderr.write('Failed to open db file: %s\n' % (sys.argv[1]))
         usage()
@@ -93,6 +93,8 @@ if __name__ == '__main__':
             db_con.execute("insert into to_assoc (article_id, mail_id) values (?, ?)", (article_id, mail_id))
 
     body = mail.get_payload()
+    if isinstance(body, list):
+        body = ''.join(body)
     begin = body.find('\n---\n')
     if begin:
         file_ids = []
