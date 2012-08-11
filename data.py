@@ -107,4 +107,5 @@ if __name__ == '__main__':
         for file_id in set(file_ids):
             db_con.execute("insert into file_assoc (article_id, file_id) values (?, ?)" , (article_id, file_id))
 
+    db_con.commit()
     db_con.close()
