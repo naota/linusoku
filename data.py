@@ -86,15 +86,15 @@ if __name__ == '__main__':
         cursor.close()
     db_con.execute("update articles set top_id = ? where id = ?", (top_id, article_id))
 
-    recipients = mail.get('To') + ',' + mail.get('Cc')
+    recipients = mail.get('To') + ',' + (mail.get('Cc') or '')
     for i in recipients.split(','):
         mail_id = get_mail_id(db_con, i)
         if mail_id:
             db_con.execute("insert into to_assoc (article_id, mail_id) values (?, ?)", (article_id, mail_id))
 
     body = mail.get_payload()
-    if isinstance(body, list):
-        body = ''.join(body)
+    while isinstance(body, list):
+          body = body[0].get_payload()
     begin = body.find('\n---\n')
     if begin:
         file_ids = []
