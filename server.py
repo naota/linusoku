@@ -76,7 +76,7 @@ class MyHandler(BaseHTTPRequestHandler):
         t = datetime.now()+timedelta(days=-7)
         date = t.strftime("%Y-%m-%d %H:%M:%S")
         c = self.conn.cursor()
-        for (msgid, subject) in c.execute("SELECT articles.message_id, articles.subject FROM articles,(SELECT top_id,count(*) AS cnt FROM articles WHERE date > ? GROUP BY top_id ORDER BY cnt DESC LIMIT 10) AS a WHERE articles.id = a.top_id", (date,)):
+        for (msgid, subject) in c.execute("SELECT articles.message_id, articles.subject FROM articles, (SELECT top_id,COUNT(*) AS cnt FROM (SELECT DISTINCT top_id,to_assoc.mail_id FROM articles,to_assoc WHERE date > ? AND to_assoc.article_id = articles.id) GROUP BY top_id ORDER BY cnt DESC LIMIT 10) AS b WHERE articles.id = b.top_id", (date,)):
             self.wfile.write("<li><a href=\"http://thread.gmane.org/%s\">%s</a></li>" % (msgid[1:][:-1], subject))
         self.wfile.write("</ul>")
         self.wfile.write("</div>")
