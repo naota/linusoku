@@ -1,0 +1,166 @@
+Path: news.gmane.org!not-for-mail
+From: Kent Overstreet <koverstreet@google.com>
+Newsgroups: gmane.linux.kernel.device-mapper.devel,gmane.linux.kernel.bcache.devel,gmane.linux.kernel,gmane.linux.kernel.drbd.devel
+Subject: [PATCH v4 06/12] block: Add an explicit bio flag for
+	bios that own their bvec
+Date: Tue, 24 Jul 2012 13:11:23 -0700
+Lines: 63
+Approved: news@gmane.org
+Message-ID: <1343160689-12378-7-git-send-email-koverstreet@google.com>
+References: <1343160689-12378-1-git-send-email-koverstreet@google.com>
+Reply-To: device-mapper development <dm-devel@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343160860 7862 80.91.229.3 (24 Jul 2012 20:14:20 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 20:14:20 +0000 (UTC)
+Cc: axboe@kernel.dk, yehuda@hq.newdream.net,
+        Kent Overstreet <koverstreet@google.com>, mpatocka@redhat.com,
+        vgoyal@redhat.com, bharrosh@panasas.com, tj@kernel.org,
+        sage@newdream.net, agk@redhat.com, drbd-dev@lists.linbit.com
+To: linux-bcache@vger.kernel.org, linux-kernel@vger.kernel.org,
+        dm-devel@redhat.com
+Original-X-From: dm-devel-bounces@redhat.com Tue Jul 24 22:14:17 2012
+Return-path: <dm-devel-bounces@redhat.com>
+Envelope-to: glkdd-dm-devel@gmane.org
+Original-Received: from mx3-phx2.redhat.com ([209.132.183.24])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <dm-devel-bounces@redhat.com>)
+	id 1StlUm-0004LB-9n
+	for glkdd-dm-devel@gmane.org; Tue, 24 Jul 2012 22:14:16 +0200
+Original-Received: from lists01.pubmisc.prod.ext.phx2.redhat.com (lists01.pubmisc.prod.ext.phx2.redhat.com [10.5.19.33])
+	by mx3-phx2.redhat.com (8.13.8/8.13.8) with ESMTP id q6OKD10a027671;
+	Tue, 24 Jul 2012 16:13:01 -0400
+Original-Received: from int-mx10.intmail.prod.int.phx2.redhat.com
+	(int-mx10.intmail.prod.int.phx2.redhat.com [10.5.11.23])
+	by lists01.pubmisc.prod.ext.phx2.redhat.com (8.13.8/8.13.8) with ESMTP
+	id q6OKC9vb028259 for <dm-devel@listman.util.phx.redhat.com>;
+	Tue, 24 Jul 2012 16:12:09 -0400
+Original-Received: from mx1.redhat.com (ext-mx14.extmail.prod.ext.phx2.redhat.com
+	[10.5.110.19])
+	by int-mx10.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP
+	id q6OKC30Z008534
+	for <dm-devel@redhat.com>; Tue, 24 Jul 2012 16:12:03 -0400
+Original-Received: from mail-pb0-f46.google.com (mail-pb0-f46.google.com
+	[209.85.160.46])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6OKC0ZB006925
+	for <dm-devel@redhat.com>; Tue, 24 Jul 2012 16:12:00 -0400
+Original-Received: by pbbrp8 with SMTP id rp8so125236pbb.33
+	for <dm-devel@redhat.com>; Tue, 24 Jul 2012 13:12:00 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=20120113;
+	h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+	bh=ra20isMJr6Q2GDUiEjmmXSUNV9X5pNL7pRC2beCsflA=;
+	b=jORJ/hv8QZu54k2Vfd0fIsOTDhMgS2N5zI2/cM4i9Xfx1kwfGLAXA/kwsW0h2nPoOe
+	H4/0Hb7ACLcriXufzU03JOqbkKRdWbz5NgNxft17W6id8vCba6RP7rPKHgTs30ZwTp6i
+	g6cHgsNO5T1FD60DZV63gq3NV23ehd4MmQrV8oS+KvBVOnv+ApTzi1AL1ePoPqoF/zOa
+	wKtxHk8dz/ViIz368hroVdfY8Brc5NDHpmwIXDU5FlCMVCRUsMmY/Y2j5yW33IO98ctR
+	mPX6wwhAi5BKkl9u1kqsATbNJAjkWZfaSY5D1U4flB73w3YhkeuGmkdKYFuXxl8LXcVo
+	tqtw==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+	d=google.com; s=20120113;
+	h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+	:x-gm-message-state;
+	bh=ra20isMJr6Q2GDUiEjmmXSUNV9X5pNL7pRC2beCsflA=;
+	b=fgB7mZGYYkuKWp9hWey25OlfiPhCL6KOrWSMSy1lcftOpXKO9nbS6apH+rOd5yFRyw
+	CJ7IGysHV4XOuHHDMpzteXvcWUkhKnST2Jbo5aNX4Eb379dBuk6tIUQ68ciYVv+a7qTN
+	j1IcUjs4iPqgopBziTmUcbM+R2gNE1ZoM6BUlX30HtaeM+r4ft7bmgmr/b6lh12hl3tj
+	xGpzvDLEn90bgW42W9el48PekXiEd8xzx+3GkKkbjObuv6QM7HUI0mW9J//WAraGfiVw
+	FoACi3fcuC9EHh5oSmX+iDdVs2wNeK260p17b4/GaJCyf+Y/3+wGZKce7mlr4O/eegui
+	f4LA==
+Original-Received: by 10.68.194.201 with SMTP id hy9mr47179821pbc.69.1343160720275;
+	Tue, 24 Jul 2012 13:12:00 -0700 (PDT)
+Original-Received: by 10.68.194.201 with SMTP id hy9mr47179794pbc.69.1343160720190;
+	Tue, 24 Jul 2012 13:12:00 -0700 (PDT)
+Original-Received: from formenos.mtv.corp.google.com (formenos.mtv.corp.google.com
+	[172.18.110.66])
+	by mx.google.com with ESMTPS id jv6sm12774301pbc.40.2012.07.24.13.11.58
+	(version=TLSv1/SSLv3 cipher=OTHER);
+	Tue, 24 Jul 2012 13:11:59 -0700 (PDT)
+In-Reply-To: <1343160689-12378-1-git-send-email-koverstreet@google.com>
+X-Gm-Message-State: ALoCoQlPlCoJ2D2BW6GW693Ecu7SAd+BexBQ3s8mYc+6+/Z8d7HGIDD8k79nZY0BqN4qptY1KXOwZ7DFdB9RTDQC6d1Itzwliq2HbUimmcOit/2qbv5admb/bmBlM2BEVQJnMol6gyroHmRSn3TGecsDbn050IX7GDDfDGLzIuaAjCk7Y9gVSEDhxns0X1+EJORkaYEWGOu3
+X-RedHat-Spam-Score: -2.711  (BAYES_00, DKIM_SIGNED, DKIM_VALID, DKIM_VALID_AU,
+	RCVD_IN_DNSWL_LOW, SPF_PASS, T_RP_MATCHES_RCVD)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.23
+X-Scanned-By: MIMEDefang 2.68 on 10.5.110.19
+X-loop: dm-devel@redhat.com
+X-BeenThere: dm-devel@redhat.com
+X-Mailman-Version: 2.1.12
+Precedence: junk
+List-Id: device-mapper development <dm-devel.redhat.com>
+List-Unsubscribe: <https://www.redhat.com/mailman/options/dm-devel>,
+	<mailto:dm-devel-request@redhat.com?subject=unsubscribe>
+List-Archive: <https://www.redhat.com/archives/dm-devel>
+List-Post: <mailto:dm-devel@redhat.com>
+List-Help: <mailto:dm-devel-request@redhat.com?subject=help>
+List-Subscribe: <https://www.redhat.com/mailman/listinfo/dm-devel>,
+	<mailto:dm-devel-request@redhat.com?subject=subscribe>
+Original-Sender: dm-devel-bounces@redhat.com
+Errors-To: dm-devel-bounces@redhat.com
+Xref: news.gmane.org gmane.linux.kernel.device-mapper.devel:16412 gmane.linux.kernel.bcache.devel:631 gmane.linux.kernel:1332562 gmane.linux.kernel.drbd.devel:2036
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332562>
+
+This is for the new bio splitting code. When we split a bio, if the
+split occured on a bvec boundry we reuse the bvec for the new bio. But
+that means bio_free() can't free it, hence the explicit flag.
+
+Signed-off-by: Kent Overstreet <koverstreet@google.com>
+---
+ fs/bio.c                  |    3 ++-
+ include/linux/bio.h       |    5 -----
+ include/linux/blk_types.h |    1 +
+ 3 files changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/fs/bio.c b/fs/bio.c
+index a301071..2631d0b 100644
+--- a/fs/bio.c
++++ b/fs/bio.c
+@@ -250,7 +250,7 @@ void bio_free(struct bio *bio)
+ 		return;
+ 	}
+ 
+-	if (bio_has_allocated_vec(bio))
++	if (bio_flagged(bio, BIO_OWNS_VEC))
+ 		bvec_free_bs(bs, bio->bi_io_vec, BIO_POOL_IDX(bio));
+ 
+ 	if (bio_integrity(bio))
+@@ -323,6 +323,7 @@ struct bio *bio_alloc_bioset(gfp_t gfp_mask, int nr_iovecs, struct bio_set *bs)
+ 			goto err_free;
+ 
+ 		nr_iovecs = bvec_nr_vecs(idx);
++		bio->bi_flags |= 1 << BIO_OWNS_VEC;
+ 	}
+ out_set:
+ 	bio->bi_flags |= idx << BIO_POOL_OFFSET;
+diff --git a/include/linux/bio.h b/include/linux/bio.h
+index 393c87e..484b96e 100644
+--- a/include/linux/bio.h
++++ b/include/linux/bio.h
+@@ -84,11 +84,6 @@ static inline void *bio_data(struct bio *bio)
+ 	return NULL;
+ }
+ 
+-static inline int bio_has_allocated_vec(struct bio *bio)
+-{
+-	return bio->bi_io_vec && bio->bi_io_vec != bio->bi_inline_vecs;
+-}
+-
+ /*
+  * will die
+  */
+diff --git a/include/linux/blk_types.h b/include/linux/blk_types.h
+index fa45a12..44245af 100644
+--- a/include/linux/blk_types.h
++++ b/include/linux/blk_types.h
+@@ -111,6 +111,7 @@ struct bio {
+ #define BIO_FS_INTEGRITY 9	/* fs owns integrity data, not block layer */
+ #define BIO_QUIET	10	/* Make BIO Quiet */
+ #define BIO_MAPPED_INTEGRITY 11/* integrity metadata has been remapped */
++#define BIO_OWNS_VEC	12	/* bio_free() should free bvec */
+ #define bio_flagged(bio, flag)	((bio)->bi_flags & (1 << (flag)))
+ 
+ /*
+-- 
+1.7.7.3
+

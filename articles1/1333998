@@ -1,0 +1,96 @@
+Path: news.gmane.org!not-for-mail
+From: Stephen Warren <swarren@wwwdotorg.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.drivers.devicetree
+Subject: Re: [PATCH] mfd: add MAX8907 core driver
+Date: Thu, 26 Jul 2012 16:07:12 -0600
+Lines: 35
+Approved: news@gmane.org
+Message-ID: <5011BF90.5030708@wwwdotorg.org>
+References: <1343331630-27126-1-git-send-email-swarren@wwwdotorg.org> <20120726203526.GD4560@opensource.wolfsonmicro.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343340453 32310 80.91.229.3 (26 Jul 2012 22:07:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 22:07:33 +0000 (UTC)
+Cc: Samuel Ortiz <sameo@linux.intel.com>,
+	Laxman Dewangan <ldewangan@nvidia.com>,
+	Liam Girdwood <lrg@ti.com>, linux-kernel@vger.kernel.org,
+	devicetree-discuss@lists.ozlabs.org,
+	Gyungoh Yoo <jack.yoo@maxim-ic.com>,
+	Stephen Warren <swarren@nvidia.com>
+To: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 00:07:28 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuWDO-00084c-Lc
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 00:07:27 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753204Ab2GZWHS (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 18:07:18 -0400
+Original-Received: from avon.wwwdotorg.org ([70.85.31.133]:57809 "EHLO
+	avon.wwwdotorg.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752686Ab2GZWHQ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 18:07:16 -0400
+Original-Received: from severn.wwwdotorg.org (unknown [192.168.65.5])
+	(using TLSv1 with cipher ADH-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by avon.wwwdotorg.org (Postfix) with ESMTPS id E982C6255;
+	Thu, 26 Jul 2012 16:12:54 -0600 (MDT)
+Original-Received: from [10.20.204.51] (searspoint.nvidia.com [216.228.112.21])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by severn.wwwdotorg.org (Postfix) with ESMTPSA id A1F51E40FA;
+	Thu, 26 Jul 2012 16:07:13 -0600 (MDT)
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120615 Thunderbird/13.0.1
+In-Reply-To: <20120726203526.GD4560@opensource.wolfsonmicro.com>
+X-Enigmail-Version: 1.4.2
+X-Virus-Scanned: clamav-milter 0.96.5 at avon.wwwdotorg.org
+X-Virus-Status: Clean
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333998 gmane.linux.drivers.devicetree:18678
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333998>
+
+On 07/26/2012 02:35 PM, Mark Brown wrote:
+> On Thu, Jul 26, 2012 at 01:40:30PM -0600, Stephen Warren wrote:
+
+>> +		if (irqd_is_wakeup_set(d)) {
+>> +			/* 1 -- disable, 0 -- enable */
+>> +			switch (irq_data->mask_reg) {
+> 
+> This loop we should just port over into the regmap code.
+
+I assume the best way of doing this is to add new functions
+regmap_irq_suspend()/regmap_irq_resume() (which would mask any enabled
+interrupts that were not wake enabled); that way, the regmap_irq code
+can loop over each register and just write it once. An alternative might
+be to implement struct irq_chip's .irq_suspend/.irq_resume ops, but that
+might worst-case end up with an I2C write per interrupt.
+
+I see that the MAX8907 IRQ code does this in suspend:
+
+	if (device_may_wakeup(chip->dev))
+		enable_irq_wake(i2c->irq);
+	else
+		disable_irq(i2c->irq);
+
+and this in resume:
+
+	if (device_may_wakeup(chip->dev))
+		disable_irq_wake(i2c->irq);
+	else
+		enable_irq(i2c->irq);
+
+neither of which are done in regmap_irq, since it doesn't explicitly do
+anything for suspend/resume at the moment. Are those code blocks
+necessary? I see that regmap_irq_sync_unlock() is already calling
+irq_set_irq_wake(), which implies that suspend/resume may have already
+been completely taken care of?

@@ -1,0 +1,168 @@
+Path: news.gmane.org!not-for-mail
+From: Michel Lespinasse <walken@google.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH v2 4/9] rbtree: place easiest case first in rb_erase()
+Date: Thu,  2 Aug 2012 15:34:13 -0700
+Lines: 76
+Approved: news@gmane.org
+Message-ID: <1343946858-8170-5-git-send-email-walken@google.com>
+References: <1343946858-8170-1-git-send-email-walken@google.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343946886 32657 80.91.229.3 (2 Aug 2012 22:34:46 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 2 Aug 2012 22:34:46 +0000 (UTC)
+Cc: linux-mm@kvack.org,
+	linux-kernel@vger.kernel.org,
+	torvalds@linux-foundation.org
+To: riel@redhat.com,
+	peterz@infradead.org,
+	daniel.santos@pobox.com,
+	aarcange@redhat.com,
+	dwmw2@infradead.org,
+	akpm@linux-foundation.org
+Original-X-From: owner-linux-mm@kvack.org Fri Aug 03 00:34:43 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Sx3yd-0005KK-3A
+	for glkm-linux-mm-2@m.gmane.org; Fri, 03 Aug 2012 00:34:43 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 5E7786B0062; Thu,  2 Aug 2012 18:34:40 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 3ECCC6B0069; Thu,  2 Aug 2012 18:34:40 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id D09986B0070; Thu,  2 Aug 2012 18:34:39 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx185.postini.com [74.125.245.185])
+	by kanga.kvack.org (Postfix) with SMTP id 477C56B0062
+	for <linux-mm@kvack.org>; Thu,  2 Aug 2012 18:34:38 -0400 (EDT)
+Original-Received: from mail-yw0-f41.google.com ([209.85.213.41]) (using TLSv1) by na3sys010amx185.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 02 Aug 2012 22:34:38 GMT
+Original-Received: by yhr47 with SMTP id 47so71191yhr.14
+        for <linux-mm@kvack.org>; Thu, 02 Aug 2012 15:34:37 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=ljx5RluDg9dRr0PWNFDQdu4LO/hTyojHqsNflgB7qUY=;
+        b=aHpP6m4sPTbC8a/76aquAGcRJ2mP+FCQUSoLr3udDJSzObDdh6MnmsaI8HOj1MM/hi
+         m01sg4471QXyArsS8QXAMA6hqlAOUH7VFv44KUDe91SODUxnICLnP0ekBvCzT1Gs59nt
+         rSh8DCdKreWWYF6Uj8beClzH3gFrcC16ZnStNoS9vd3cwrZf49n19T7smdj3zVMQzsqV
+         3Rb8SAkZ4zdzpXgolPOPYCU5FGA2E/IkKW58tSvJMlUfZkS4NK/JTc2An0aH9rpXT2xD
+         vn/5KFJGz3TPXLqKfPZBKzqOzagqg3O904+YbOhl4wFDGtTi1mH8VjtNheA58wkuhWzE
+         3lqA==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :x-gm-message-state;
+        bh=ljx5RluDg9dRr0PWNFDQdu4LO/hTyojHqsNflgB7qUY=;
+        b=Bu0RVUecb2ASvsUvMvzbCbCgjKGmMixGgQhdy3f/tdHRhL56NRsp2eNWFrAvaZfWb/
+         qG8swXpYMTiRzHjG2VtKhjbjWIp+LgIArVRN65QDBX7P7TSYrNQv/v3D2qwxOR6UDHYO
+         3zbMHZkesnA8GJrY+8+YfOsnae7+WGS3GvGc717ncAwgLWnn7dIuGW+ROfrjh4UfboeA
+         9XATirkj3RA7SS/ww9SZpyDsT1HqroxuySTWZvjyOnFtf74BZtVLEVKEYd2jrp9fUnmA
+         DLuEpnEWp1qI5vmf1XL5NWcijhZ2cjQlvGh8c5nbkNj3kcWNuwkM4AVI6JdLfYmc+Mny
+         rwDQ==
+Original-Received: by 10.42.162.195 with SMTP id z3mr5720147icx.4.1343946877228;
+        Thu, 02 Aug 2012 15:34:37 -0700 (PDT)
+Original-Received: by 10.42.162.195 with SMTP id z3mr5720124icx.4.1343946877133;
+        Thu, 02 Aug 2012 15:34:37 -0700 (PDT)
+Original-Received: from studio.mtv.corp.google.com (studio.mtv.corp.google.com [172.18.96.163])
+        by mx.google.com with ESMTPS id pp4sm16344211igb.5.2012.08.02.15.34.35
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 02 Aug 2012 15:34:36 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7.3
+In-Reply-To: <1343946858-8170-1-git-send-email-walken@google.com>
+X-Gm-Message-State: ALoCoQnhS7I4Xfqg1XwzJaaBvT8vPa0MlgjJjUrMy+ybkGRO8xbTU3TxMyOUHzT/56utz78XgB6brRlUQ3WisTjeMB3UmOcZfVg2EPW3NlymZbxMQm7FTE4RYWdHqKW3bmhjqMQXlsRwVy5KF1f9Ro7YAtLpCbPXB9pyyTN50Y5bz/RAa5IIjp+spZ85amjyo4DqOcoY1DQG
+X-pstn-levels: (S:92.64415/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 1 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0100) s cv GT3 gt2 gt1 r p m c 
+X-pstn-addresses: from <walken@google.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83507 gmane.linux.kernel:1337019
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337019>
+
+In rb_erase, move the easy case (node to erase has no more than
+1 child) first. I feel the code reads easier that way.
+
+Signed-off-by: Michel Lespinasse <walken@google.com>
+---
+ lib/rbtree.c |   35 ++++++++++++++++++-----------------
+ 1 files changed, 18 insertions(+), 17 deletions(-)
+
+diff --git a/lib/rbtree.c b/lib/rbtree.c
+index de89a61..bde1b5c 100644
+--- a/lib/rbtree.c
++++ b/lib/rbtree.c
+@@ -368,17 +368,28 @@ static void __rb_erase_color(struct rb_node *node, struct rb_node *parent,
+ 
+ void rb_erase(struct rb_node *node, struct rb_root *root)
+ {
+-	struct rb_node *child, *parent;
++	struct rb_node *child = node->rb_right, *tmp = node->rb_left;
++	struct rb_node *parent;
+ 	int color;
+ 
+-	if (!node->rb_left)
+-		child = node->rb_right;
+-	else if (!node->rb_right)
+-		child = node->rb_left;
+-	else {
++	if (!tmp) {
++	case1:
++		/* Case 1: node to erase has no more than 1 child (easy!) */
++
++		parent = rb_parent(node);
++		color = rb_color(node);
++
++		if (child)
++			rb_set_parent(child, parent);
++		__rb_change_child(node, child, parent, root);
++	} else if (!child) {
++		/* Still case 1, but this time the child is node->rb_left */
++		child = tmp;
++		goto case1;
++	} else {
+ 		struct rb_node *old = node, *left;
+ 
+-		node = node->rb_right;
++		node = child;
+ 		while ((left = node->rb_left) != NULL)
+ 			node = left;
+ 
+@@ -402,18 +413,8 @@ void rb_erase(struct rb_node *node, struct rb_root *root)
+ 		node->__rb_parent_color = old->__rb_parent_color;
+ 		node->rb_left = old->rb_left;
+ 		rb_set_parent(old->rb_left, node);
+-
+-		goto color;
+ 	}
+ 
+-	parent = rb_parent(node);
+-	color = rb_color(node);
+-
+-	if (child)
+-		rb_set_parent(child, parent);
+-	__rb_change_child(node, child, parent, root);
+-
+-color:
+ 	if (color == RB_BLACK)
+ 		__rb_erase_color(child, parent, root);
+ }
+-- 
+1.7.7.3
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

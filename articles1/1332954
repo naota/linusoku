@@ -1,0 +1,121 @@
+Path: news.gmane.org!not-for-mail
+From: Stanislav Kinsbursky <skinsbursky-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+Newsgroups: gmane.linux.nfs,gmane.linux.kernel,gmane.linux.openvz.devel
+Subject: [PATCH v2 00/15] Lockd: grace period containerization
+Date: Wed, 25 Jul 2012 16:55:45 +0400
+Lines: 77
+Approved: news@gmane.org
+Message-ID: <20120725125258.24376.82525.stgit@localhost.localdomain>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343221038 20487 80.91.229.3 (25 Jul 2012 12:57:18 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 12:57:18 +0000 (UTC)
+Cc: linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, Trond.Myklebust-HgOvQuBEEgTQT0dZR+AlfA@public.gmane.org,
+	linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, devel-GEFAQzZX7r8dnm+yROfE0A@public.gmane.org
+To: bfields-uC3wQj2KruNg9hUCZPvPmw@public.gmane.org
+Original-X-From: linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org Wed Jul 25 14:57:17 2012
+Return-path: <linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Envelope-to: glN-linux-nfs-wOFGN7rlS/M9smdsby/KFg@public.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>)
+	id 1Su19Q-0002eo-SH
+	for glN-linux-nfs-wOFGN7rlS/M9smdsby/KFg@public.gmane.org; Wed, 25 Jul 2012 14:57:17 +0200
+Original-Received: (majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org) by vger.kernel.org via listexpand
+	id S1754227Ab2GYM5O (ORCPT <rfc822;glN-linux-nfs@m.gmane.org>);
+	Wed, 25 Jul 2012 08:57:14 -0400
+Original-Received: from mailhub.sw.ru ([195.214.232.25]:41502 "EHLO relay.sw.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751801Ab2GYM5O (ORCPT <rfc822;linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>);
+	Wed, 25 Jul 2012 08:57:14 -0400
+Original-Received: from localhost.localdomain ([10.30.21.131])
+	by relay.sw.ru (8.13.4/8.13.4) with ESMTP id q6PCuwvU012431;
+	Wed, 25 Jul 2012 16:56:59 +0400 (MSK)
+User-Agent: StGit/0.16
+Original-Sender: linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Precedence: bulk
+List-ID: <linux-nfs.vger.kernel.org>
+X-Mailing-List: linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Xref: news.gmane.org gmane.linux.nfs:51101 gmane.linux.kernel:1332954 gmane.linux.openvz.devel:1885
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332954>
+
+Bruce, I feel this patch set is ready for inclusion.
+
+v2:
+1) Rebase on Bruce's "for-3.6" branch.
+
+This patch set makes grace period and hosts reclaiming network namespace
+aware.
+
+Main ideas:
+1)  moving of 
+
+	unsigned long next_gc;
+	unsigned long nrhosts;
+
+	struct delayed_work grace_period_end;
+	struct lock_manager lockd_manager;
+	struct list_head grace_list;
+
+to per-net Lockd data.
+
+2) moving of 
+
+	struct lock_manager nfsd4_manager;
+
+to per-net NFSd data.
+
+3) shutdown + gc of NLM hosts done now network namespace aware.
+
+4) restart_grace() now works only for init_net.
+
+The following series implements...
+
+---
+
+Stanislav Kinsbursky (15):
+      LockD: mark host per network namespace on garbage collect
+      LockD: make garbage collector network namespace aware.
+      LockD: manage garbage collection timeout per networks namespace
+      LockD: manage used host count per networks namespace
+      Lockd: host complaining function introduced
+      Lockd: add more debug to host shutdown functions
+      LockD: manage grace period per network namespace
+      LockD: make lockd manager allocated per network namespace
+      NFSd: make nfsd4_manager allocated per network namespace context.
+      SUNRPC: service request network namespace helper introduced
+      LockD: manage grace list per network namespace
+      LockD: pass actual network namespace to grace period management functions
+      Lockd: move grace period management from lockd() to per-net functions
+      NFSd: make grace end flag per network namespace
+      NFSd: make boot_time variable per network namespace
+
+
+ fs/lockd/grace.c            |   16 +++++--
+ fs/lockd/host.c             |   92 ++++++++++++++++++++++++++------------
+ fs/lockd/netns.h            |    7 +++
+ fs/lockd/svc.c              |   43 ++++++++++--------
+ fs/lockd/svc4proc.c         |   13 +++--
+ fs/lockd/svclock.c          |   16 +++----
+ fs/lockd/svcproc.c          |   15 ++++--
+ fs/lockd/svcsubs.c          |   19 +++++---
+ fs/nfs/callback_xdr.c       |    4 +-
+ fs/nfsd/export.c            |    4 +-
+ fs/nfsd/netns.h             |    4 ++
+ fs/nfsd/nfs4idmap.c         |    4 +-
+ fs/nfsd/nfs4proc.c          |   18 ++++---
+ fs/nfsd/nfs4state.c         |  104 ++++++++++++++++++++++++-------------------
+ fs/nfsd/state.h             |    4 +-
+ include/linux/fs.h          |    5 +-
+ include/linux/lockd/lockd.h |    6 +-
+ include/linux/sunrpc/svc.h  |    2 +
+ 18 files changed, 231 insertions(+), 145 deletions(-)
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-nfs" in
+the body of a message to majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

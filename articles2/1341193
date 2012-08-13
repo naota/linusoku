@@ -1,0 +1,107 @@
+Path: news.gmane.org!not-for-mail
+From: Minchan Kim <minchan@kernel.org>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [PATCH 2/5] mm: vmscan: Scale number of pages reclaimed by
+ reclaim/compaction based on failures
+Date: Fri, 10 Aug 2012 17:49:34 +0900
+Lines: 42
+Approved: news@gmane.org
+Message-ID: <20120810084934.GG21033@bbox>
+References: <1344520165-24419-1-git-send-email-mgorman@suse.de>
+ <1344520165-24419-3-git-send-email-mgorman@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344588483 14198 80.91.229.3 (10 Aug 2012 08:48:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 08:48:03 +0000 (UTC)
+Cc: Linux-MM <linux-mm@kvack.org>, Rik van Riel <riel@redhat.com>,
+	Jim Schutt <jaschut@sandia.gov>,
+	LKML <linux-kernel@vger.kernel.org>
+To: Mel Gorman <mgorman@suse.de>
+Original-X-From: owner-linux-mm@kvack.org Fri Aug 10 10:48:03 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Szksy-0005kg-EC
+	for glkm-linux-mm-2@m.gmane.org; Fri, 10 Aug 2012 10:48:00 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 35DDE6B0044; Fri, 10 Aug 2012 04:47:59 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 233346B0062; Fri, 10 Aug 2012 04:47:59 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id E1A8F6B0068; Fri, 10 Aug 2012 04:47:58 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx182.postini.com [74.125.245.182])
+	by kanga.kvack.org (Postfix) with SMTP id ED16C6B0044
+	for <linux-mm@kvack.org>; Fri, 10 Aug 2012 04:47:57 -0400 (EDT)
+Original-Received: from LGEMRELSE7Q.lge.com ([156.147.1.151]) by na3sys010amx182.postini.com ([74.125.244.10]) with SMTP;
+	Fri, 10 Aug 2012 08:47:58 GMT
+X-AuditID: 9c930197-b7bb2ae0000011d9-52-5024cabc3654
+Original-Received: from localhost ( [10.177.220.67])
+	by LGEMRELSE7Q.lge.com (Symantec Brightmail Gateway) with SMTP id FC.13.04569.CBAC4205; Fri, 10 Aug 2012 17:47:56 +0900 (KST)
+Content-Disposition: inline
+In-Reply-To: <1344520165-24419-3-git-send-email-mgorman@suse.de>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Brightmail-Tracker: AAAAAA==
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <minchan@kernel.org> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83986 gmane.linux.kernel:1341193
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341193>
+
+On Thu, Aug 09, 2012 at 02:49:22PM +0100, Mel Gorman wrote:
+> If allocation fails after compaction then compaction may be deferred for
+> a number of allocation attempts. If there are subsequent failures,
+> compact_defer_shift is increased to defer for longer periods. This patch
+> uses that information to scale the number of pages reclaimed with
+> compact_defer_shift until allocations succeed again. The rationale is
+> that reclaiming the normal number of pages still allowed compaction to
+> fail and its success depends on the number of pages. If it's failing,
+> reclaim more pages until it succeeds again.
+> 
+> Note that this is not implying that VM reclaim is not reclaiming enough
+> pages or that its logic is broken. try_to_free_pages() always asks for
+> SWAP_CLUSTER_MAX pages to be reclaimed regardless of order and that is
+> what it does. Direct reclaim stops normally with this check.
+> 
+> 	if (sc->nr_reclaimed >= sc->nr_to_reclaim)
+> 		goto out;
+> 
+> should_continue_reclaim delays when that check is made until a minimum number
+> of pages for reclaim/compaction are reclaimed. It is possible that this patch
+> could instead set nr_to_reclaim in try_to_free_pages() and drive it from
+> there but that's behaves differently and not necessarily for the better. If
+> driven from do_try_to_free_pages(), it is also possible that priorities
+> will rise. When they reach DEF_PRIORITY-2, it will also start stalling
+> and setting pages for immediate reclaim which is more disruptive than not
+> desirable in this case. That is a more wide-reaching change that could
+> cause another regression related to THP requests causing interactive jitter.
+> 
+> Signed-off-by: Mel Gorman <mgorman@suse.de>
+> Acked-by: Rik van Riel <riel@redhat.com>
+Reviewed-by: Minchan Kim <minchan@kernel.org>
+
+-- 
+Kind regards,
+Minchan Kim
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

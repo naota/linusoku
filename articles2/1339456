@@ -1,0 +1,107 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 115/122] ALSA: hda - Fix mute-LED GPIO initialization for IDT codecs
+Date: Tue,  7 Aug 2012 15:26:43 -0700
+Lines: 44
+Approved: news@gmane.org
+Message-ID: <20120807222000.448660945@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344378819 15386 80.91.229.3 (7 Aug 2012 22:33:39 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:33:39 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Takashi Iwai <tiwai@suse.de>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:33:35 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysLF-0004aE-1E
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:33:33 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030464Ab2HGWdH (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:33:07 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:54583 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030438Ab2HGWdB (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:33:01 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so346924pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:33:01 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=GL3wWQaLwWI2bI4/jmq3FeyfuUXAyoHWvp2N3wCzRYo=;
+        b=RKZjkzWqh3Unn0DRTid9dzAJjZJCpimUp5sRz6EjQKE//AF7d6TYdxwQnKCT8XSkC3
+         tvpYRSkjYQpHy8TmIDGDHyHxyYPspmzm6o6LpdsQ6nJAk6RRTgjnmV5+SwHRUg3s5sNp
+         uAvBfK3QDAGZUL0kWevbUvNkoMna4GJyJ309c73p038mSGsE2u7Ye1apvaLHaU16DgeH
+         0nF/QOMsOlF3VPF8J8VQNmg2WWcZniw8SgUXN4J6+n/8VWqqhUWsBV/DADIBhEK3H5rC
+         P2F0GqFNuOA9IJWT5QECJwIfLykTjvau9b3tGMSB+m6/uCV8xNvUrmtHQOtyoseA1bId
+         SnXw==
+Original-Received: by 10.68.191.226 with SMTP id hb2mr10544110pbc.129.1344378781185;
+        Tue, 07 Aug 2012 15:33:01 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id iq1sm8388519pbc.37.2012.08.07.15.32.59
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:33:00 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQkVPxtrzNT9gbzKRc+EkEWDFzmzOAyQotUDE1X+hcxWq1/VKMQwgYUuH0CMD96hQnRYDAr6
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339456 gmane.linux.kernel.stable:29295
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339456>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Takashi Iwai <tiwai@suse.de>
+
+commit 1f43f6c1bc8d740e75b4177eb29110858bb5fea2 upstream.
+
+The IDT codecs initializes the GPIO setup for mute LEDs via
+snd_hda_sync_vmaster_hook().  This works in most cases except for the
+very first call, which is called before PCM and control creations.
+Thus before Master switch is set manually via alsactl, the mute LED
+may show the wrong state, depending on the polarity.
+
+Now it's fixed by calling the LED-status update function manually when
+no vmaster is set yet.
+
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ sound/pci/hda/patch_sigmatel.c |    7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+--- a/sound/pci/hda/patch_sigmatel.c
++++ b/sound/pci/hda/patch_sigmatel.c
+@@ -4420,7 +4420,12 @@ static int stac92xx_init(struct hda_code
+ 	snd_hda_jack_report_sync(codec);
+ 
+ 	/* sync mute LED */
+-	snd_hda_sync_vmaster_hook(&spec->vmaster_mute);
++	if (spec->gpio_led) {
++		if (spec->vmaster_mute.hook)
++			snd_hda_sync_vmaster_hook(&spec->vmaster_mute);
++		else /* the very first init call doesn't have vmaster yet */
++			stac92xx_update_led_status(codec, false);
++	}
+ 
+ 	/* sync the power-map */
+ 	if (spec->num_pwrs)
+
+

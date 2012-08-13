@@ -1,0 +1,121 @@
+Path: news.gmane.org!not-for-mail
+From: Mel Gorman <mgorman@suse.de>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel.stable,gmane.linux.kernel
+Subject: [PATCH 24/34] mm: vmscan: Do not OOM if aborting reclaim to start compaction
+Date: Thu, 19 Jul 2012 15:36:34 +0100
+Lines: 61
+Approved: news@gmane.org
+Message-ID: <1342708604-26540-25-git-send-email-mgorman@suse.de>
+References: <1342708604-26540-1-git-send-email-mgorman@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342708691 12666 80.91.229.3 (19 Jul 2012 14:38:11 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 14:38:11 +0000 (UTC)
+Cc: "Linux-MM <linux-mm"@kvack.org,
+	LKML <linux-kernel@vger.kernel.org>, Mel Gorman <mgorman@suse.de>
+To: Stable <stable@vger.kernel.org>
+Original-X-From: owner-linux-mm@kvack.org Thu Jul 19 16:38:10 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Srrrl-0006do-RZ
+	for glkm-linux-mm-2@m.gmane.org; Thu, 19 Jul 2012 16:38:10 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 2441D6B0070; Thu, 19 Jul 2012 10:37:17 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 382306B0071; Thu, 19 Jul 2012 10:37:14 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id E4D2F6B0071; Thu, 19 Jul 2012 10:37:09 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx164.postini.com [74.125.245.164])
+	by kanga.kvack.org (Postfix) with SMTP id C62706B008A
+	for <linux-mm@kvack.org>; Thu, 19 Jul 2012 10:37:02 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx164.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 19 Jul 2012 14:37:02 GMT
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 2A6E7A329D;
+	Thu, 19 Jul 2012 16:37:01 +0200 (CEST)
+X-Mailer: git-send-email 1.7.9.2
+In-Reply-To: <1342708604-26540-1-git-send-email-mgorman@suse.de>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:53.81354/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mgorman@suse.de> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82715 gmane.linux.kernel.stable:28555 gmane.linux.kernel:1330388
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330388>
+
+commit 7335084d446b83cbcb15da80497d03f0c1dc9e21 upstream.
+
+Stable note: Not tracked in Bugzilla. This patch makes later patches
+	easier to apply but otherwise has little to justify it. The
+	problem it fixes was never observed but the source of the
+	theoretical problem did not exist for very long.
+
+When direct reclaim is entered is is possible that reclaim will be
+aborted so that compaction can be attempted to satisfy a high-order
+allocation.  If this decision is made before any pages are reclaimed,
+it is possible for 0 to be returned to the page allocator potentially
+triggering an OOM. This has not been observed but it is a possibility
+so this patch addresses it.
+
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+---
+ mm/vmscan.c |    8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/mm/vmscan.c b/mm/vmscan.c
+index e85abfd..f109f2d 100644
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -2240,6 +2240,7 @@ static unsigned long do_try_to_free_pages(struct zonelist *zonelist,
+ 	struct zoneref *z;
+ 	struct zone *zone;
+ 	unsigned long writeback_threshold;
++	bool should_abort_reclaim;
+ 
+ 	get_mems_allowed();
+ 	delayacct_freepages_start();
+@@ -2251,7 +2252,8 @@ static unsigned long do_try_to_free_pages(struct zonelist *zonelist,
+ 		sc->nr_scanned = 0;
+ 		if (!priority)
+ 			disable_swap_token(sc->mem_cgroup);
+-		if (shrink_zones(priority, zonelist, sc))
++		should_abort_reclaim = shrink_zones(priority, zonelist, sc);
++		if (should_abort_reclaim)
+ 			break;
+ 
+ 		/*
+@@ -2318,6 +2320,10 @@ out:
+ 	if (oom_killer_disabled)
+ 		return 0;
+ 
++	/* Aborting reclaim to try compaction? don't OOM, then */
++	if (should_abort_reclaim)
++		return 1;
++
+ 	/* top priority shrink_zones still had more to do? don't OOM, then */
+ 	if (scanning_global_lru(sc) && !all_unreclaimable(zonelist, sc))
+ 		return 1;
+-- 
+1.7.9.2
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

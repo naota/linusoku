@@ -1,0 +1,95 @@
+Path: news.gmane.org!not-for-mail
+From: Cong Wang <amwang@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.network
+Subject: [PATCH 1/7] netpoll: use GFP_ATOMIC in slave_enable_netpoll() and __netpoll_setup()
+Date: Fri, 27 Jul 2012 23:37:58 +0800
+Lines: 41
+Approved: news@gmane.org
+Message-ID: <1343403484-29347-2-git-send-email-amwang@redhat.com>
+References: <1343403484-29347-1-git-send-email-amwang@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343403573 18895 80.91.229.3 (27 Jul 2012 15:39:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 15:39:33 +0000 (UTC)
+Cc: Cong Wang <amwang@redhat.com>,
+	"David S. Miller" <davem@davemloft.net>,
+	Jay Vosburgh <fubar@us.ibm.com>,
+	Andy Gospodarek <andy@greyhouse.net>,
+	Eric Dumazet <edumazet@google.com>,
+	Cong Wang <xiyou.wangcong@gmail.com>,
+	Joe Perches <joe@perches.com>,
+	Neil Horman <nhorman@tuxdriver.com>,
+	linux-kernel@vger.kernel.org
+To: netdev@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 17:39:30 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SumdT-00065W-7t
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 17:39:27 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752701Ab2G0PjX (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 11:39:23 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:41460 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752627Ab2G0PjR (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 11:39:17 -0400
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6RFcaGJ025119
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Fri, 27 Jul 2012 11:38:36 -0400
+Original-Received: from cr0.redhat.com (vpn-244-37.nrt.redhat.com [10.64.244.37])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6RFcJQi024275;
+	Fri, 27 Jul 2012 11:38:30 -0400
+In-Reply-To: <1343403484-29347-1-git-send-email-amwang@redhat.com>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334367 gmane.linux.network:238562
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334367>
+
+slave_enable_netpoll() and __netpoll_setup() may be called
+with read_lock() held, so should use GFP_ATOMIC to allocate
+memory.
+
+Cc: "David S. Miller" <davem@davemloft.net>
+Reported-by: Dan Carpenter <dan.carpenter@oracle.com>
+Signed-off-by: Cong Wang <amwang@redhat.com>
+---
+ drivers/net/bonding/bond_main.c |    2 +-
+ net/core/netpoll.c              |    2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/bonding/bond_main.c b/drivers/net/bonding/bond_main.c
+index 6fae5f3..ab773d4 100644
+--- a/drivers/net/bonding/bond_main.c
++++ b/drivers/net/bonding/bond_main.c
+@@ -1235,7 +1235,7 @@ static inline int slave_enable_netpoll(struct slave *slave)
+ 	struct netpoll *np;
+ 	int err = 0;
+ 
+-	np = kzalloc(sizeof(*np), GFP_KERNEL);
++	np = kzalloc(sizeof(*np), GFP_ATOMIC);
+ 	err = -ENOMEM;
+ 	if (!np)
+ 		goto out;
+diff --git a/net/core/netpoll.c b/net/core/netpoll.c
+index b4c90e4..c78a966 100644
+--- a/net/core/netpoll.c
++++ b/net/core/netpoll.c
+@@ -734,7 +734,7 @@ int __netpoll_setup(struct netpoll *np, struct net_device *ndev)
+ 	}
+ 
+ 	if (!ndev->npinfo) {
+-		npinfo = kmalloc(sizeof(*npinfo), GFP_KERNEL);
++		npinfo = kmalloc(sizeof(*npinfo), GFP_ATOMIC);
+ 		if (!npinfo) {
+ 			err = -ENOMEM;
+ 			goto out;
+-- 
+1.7.7.6
+

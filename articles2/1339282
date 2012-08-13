@@ -1,0 +1,81 @@
+Path: news.gmane.org!not-for-mail
+From: Maarten Lankhorst <maarten.lankhorst@canonical.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.drivers.video-input-infrastructure,gmane.comp.video.dri.devel
+Subject: Re: [PATCH 1/3] dma-fence: dma-buf synchronization (v7)
+Date: Tue, 07 Aug 2012 20:47:51 +0200
+Lines: 31
+Approved: news@gmane.org
+Message-ID: <502162D7.9090809@canonical.com>
+References: <20120807175330.18745.81293.stgit@patser.local>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344365288 23093 80.91.229.3 (7 Aug 2012 18:48:08 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 18:48:08 +0000 (UTC)
+Cc: linaro-mm-sig@lists.linaro.org, linux-media@vger.kernel.org,
+	linux-kernel@vger.kernel.org, dri-devel@lists.freedesktop.org,
+	patches@linaro.org
+To: Sumit Semwal <sumit.semwal@linaro.org>, rob.clark@linaro.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 20:48:07 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Syop1-0001Rt-M1
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 20:48:04 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756169Ab2HGSr4 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 14:47:56 -0400
+Original-Received: from youngberry.canonical.com ([91.189.89.112]:57677 "EHLO
+	youngberry.canonical.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751779Ab2HGSrz (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 14:47:55 -0400
+Original-Received: from 5ed48cef.cm-7-5c.dynamic.ziggo.nl ([94.212.140.239] helo=[192.168.1.128])
+	by youngberry.canonical.com with esmtpsa (TLS1.0:DHE_RSA_AES_256_CBC_SHA1:32)
+	(Exim 4.71)
+	(envelope-from <maarten.lankhorst@canonical.com>)
+	id 1Syoor-0005gI-65; Tue, 07 Aug 2012 18:47:53 +0000
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:14.0) Gecko/20120714 Thunderbird/14.0
+In-Reply-To: <20120807175330.18745.81293.stgit@patser.local>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339282 gmane.linux.drivers.video-input-infrastructure:51988 gmane.comp.video.dri.devel:72239
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339282>
+
+Op 07-08-12 19:53, Maarten Lankhorst schreef:
+> A dma-fence can be attached to a buffer which is being filled or consumed
+> by hw, to allow userspace to pass the buffer without waiting to another
+> device.  For example, userspace can call page_flip ioctl to display the
+> next frame of graphics after kicking the GPU but while the GPU is still
+> rendering.  The display device sharing the buffer with the GPU would
+> attach a callback to get notified when the GPU's rendering-complete IRQ
+> fires, to update the scan-out address of the display, without having to
+> wake up userspace.
+
+I implemented this for intel and debugged it with intel <-> nouveau
+interaction. Unfortunately the nouveau patches aren't ready at this point,
+but the git repo I'm using is available at:
+
+http://cgit.freedesktop.org/~mlankhorst/linux/
+
+It has the patch series and a sample implementation for intel, based on
+drm-intel-next tree.
+
+I tried to keep it deadlock and race condition free as much as possible,
+but locking gets complicated enough that if I'm unlucky something might
+have slipped through regardless.
+
+Especially the locking in i915_gem_reset_requests, is screwed up.
+This shows what a real PITA it is to abort callbacks prematurely while
+keeping everything stable. As such, aborting requests should only be done
+in exceptional circumstances, in this case hardware died and things are
+already locked up anyhow..
+
+~Maarten
+

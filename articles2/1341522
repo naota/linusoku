@@ -1,0 +1,137 @@
+Path: news.gmane.org!not-for-mail
+From: Hanjun Guo <guohanjun@huawei.com>
+Newsgroups: gmane.linux.scsi,gmane.linux.kernel
+Subject: [RFC PATCH][RESEND] Fusion MPT: disable pci device when mpt map resoures failed
+Date: Sat, 11 Aug 2012 10:58:36 +0800
+Lines: 82
+Approved: news@gmane.org
+Message-ID: <1344653916-7832-1-git-send-email-guohanjun@huawei.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1344654269 29979 80.91.229.3 (11 Aug 2012 03:04:29 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 11 Aug 2012 03:04:29 +0000 (UTC)
+Cc: Yinghai Lu <yinghai@kernel.org>,
+	Yijing Wang <wangyijing@huawei.com>,
+	<linux-scsi@vger.kernel.org>, <DL-MPTFusionLinux@lsi.com>,
+	<linux-kernel@vger.kernel.org>, Hanjun Guo <guohanjun@huawei.com>,
+	Jiang Liu <jiang.liu@huawei.com>
+To: Eric Moore <Eric.Moore@lsi.com>
+Original-X-From: linux-scsi-owner@vger.kernel.org Sat Aug 11 05:04:28 2012
+Return-path: <linux-scsi-owner@vger.kernel.org>
+Envelope-to: lnx-linux-scsi@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-scsi-owner@vger.kernel.org>)
+	id 1T0203-00050f-6d
+	for lnx-linux-scsi@plane.gmane.org; Sat, 11 Aug 2012 05:04:27 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751255Ab2HKDDg (ORCPT <rfc822;lnx-linux-scsi@m.gmane.org>);
+	Fri, 10 Aug 2012 23:03:36 -0400
+Original-Received: from szxga01-in.huawei.com ([119.145.14.64]:48105 "EHLO
+	szxga01-in.huawei.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750926Ab2HKDDf (ORCPT
+	<rfc822;linux-scsi@vger.kernel.org>); Fri, 10 Aug 2012 23:03:35 -0400
+Original-Received: from 172.24.2.119 (EHLO szxeml212-edg.china.huawei.com) ([172.24.2.119])
+	by szxrg01-dlp.huawei.com (MOS 4.3.4-GA FastPath queued)
+	with ESMTP id ANA31529;
+	Sat, 11 Aug 2012 11:03:30 +0800 (CST)
+Original-Received: from SZXEML410-HUB.china.huawei.com (10.82.67.137) by
+ szxeml212-edg.china.huawei.com (172.24.2.181) with Microsoft SMTP Server
+ (TLS) id 14.1.323.3; Sat, 11 Aug 2012 11:00:21 +0800
+Original-Received: from localhost (10.135.69.25) by szxeml410-hub.china.huawei.com
+ (10.82.67.137) with Microsoft SMTP Server id 14.1.323.3; Sat, 11 Aug 2012
+ 11:00:10 +0800
+X-Mailer: git-send-email 1.7.10.msysgit.1
+X-Originating-IP: [10.135.69.25]
+X-CFilter-Loop: Reflected
+Original-Sender: linux-scsi-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-scsi.vger.kernel.org>
+X-Mailing-List: linux-scsi@vger.kernel.org
+Xref: news.gmane.org gmane.linux.scsi:76832 gmane.linux.kernel:1341522
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341522>
+
+
+when probe a pci device, first we enable it, and disable it when
+some error happened in the following process, because the power
+state of the device is set to D0, and if MSI is disabled,
+we will allocate irq and register gsi for this device in the enable process.
+
+In function mpt_mapresources(MPT_ADAPTER *ioc), it forgot disable the
+pci device when error happened, the irq and gsi will never be released.
+this patch will fix it.
+
+Signed-off-by: Hanjun Guo <guohanjun@huawei.com>
+Signed-off-by: Jiang Liu <jiang.liu@huawei.com>
+---
+ drivers/message/fusion/mptbase.c |   18 +++++++++++-------
+ 1 files changed, 11 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/message/fusion/mptbase.c b/drivers/message/fusion/mptbase.c
+index d99db56..fb69baa 100644
+--- a/drivers/message/fusion/mptbase.c
++++ b/drivers/message/fusion/mptbase.c
+@@ -1666,7 +1666,7 @@ mpt_mapresources(MPT_ADAPTER *ioc)
+ 	if (pci_request_selected_regions(pdev, ioc->bars, "mpt")) {
+ 		printk(MYIOC_s_ERR_FMT "pci_request_selected_regions() with "
+ 		    "MEM failed\n", ioc->name);
+-		return r;
++		goto out_pci_disable_device;
+ 	}
+ 
+ 	if (sizeof(dma_addr_t) > 4) {
+@@ -1690,8 +1690,7 @@ mpt_mapresources(MPT_ADAPTER *ioc)
+ 		} else {
+ 			printk(MYIOC_s_WARN_FMT "no suitable DMA mask for %s\n",
+ 			    ioc->name, pci_name(pdev));
+-			pci_release_selected_regions(pdev, ioc->bars);
+-			return r;
++			goto out_pci_release_region;
+ 		}
+ 	} else {
+ 		if (!pci_set_dma_mask(pdev, DMA_BIT_MASK(32))
+@@ -1704,8 +1703,7 @@ mpt_mapresources(MPT_ADAPTER *ioc)
+ 		} else {
+ 			printk(MYIOC_s_WARN_FMT "no suitable DMA mask for %s\n",
+ 			    ioc->name, pci_name(pdev));
+-			pci_release_selected_regions(pdev, ioc->bars);
+-			return r;
++			goto out_pci_release_region;
+ 		}
+ 	}
+ 
+@@ -1735,8 +1733,8 @@ mpt_mapresources(MPT_ADAPTER *ioc)
+ 	if (mem == NULL) {
+ 		printk(MYIOC_s_ERR_FMT ": ERROR - Unable to map adapter"
+ 			" memory!\n", ioc->name);
+-		pci_release_selected_regions(pdev, ioc->bars);
+-		return -EINVAL;
++		r = -EINVAL;
++		goto out_pci_release_region;
+ 	}
+ 	ioc->memmap = mem;
+ 	dinitprintk(ioc, printk(MYIOC_s_INFO_FMT "mem = %p, mem_phys = %llx\n",
+@@ -1750,6 +1748,12 @@ mpt_mapresources(MPT_ADAPTER *ioc)
+ 	ioc->pio_chip = (SYSIF_REGS __iomem *)port;
+ 
+ 	return 0;
++
++out_pci_release_region:
++	pci_release_selected_regions(pdev, ioc->bars);
++out_pci_disable_device:
++	pci_disable_device(pdev);
++	return r;
+ }
+ 
+ /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+-- 
+1.7.6.1
+
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-scsi" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

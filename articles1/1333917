@@ -1,0 +1,106 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 06/23] target: Fix range calculation in WRITE SAME emulation when num blocks == 0
+Date: Thu, 26 Jul 2012 14:19:45 -0700
+Lines: 41
+Approved: news@gmane.org
+Message-ID: <20120726211406.406061223@linuxfoundation.org>
+References: <20120726211420.GA7678@kroah.com>
+ <20120726211405.959857593@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343337935 7006 80.91.229.3 (26 Jul 2012 21:25:35 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 21:25:35 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Roland Dreier <roland@purestorage.com>,
+	Nicholas Bellinger <nab@linux-iscsi.org>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 23:25:34 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuVYr-0001ZZ-ID
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 23:25:33 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753009Ab2GZVZZ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 17:25:25 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:55834 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752571Ab2GZVUu (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 17:20:50 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so3808655pbb.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 14:20:49 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=zIHr+58dqhLO3ntDsLhrtMDUAWAjgj+ylD4QUPaJrwg=;
+        b=FJhIC+wXJ4eCe/bOyuO2CvX8YcDQPeJIIxFXvdH0zKIpR5L7m65VTq0Kr1RGg+g4WQ
+         n1l7ZyoDKzFngLdWxblqpK102qljRCdBeMMlS75Zqkpfdgzt92V4ZvBTqPdMgDuW+MFF
+         0Ggj0x6LUIBXUMrt1LcIdysq/DqQfuFiBALN0bx8Df5qhj5MXWU4zbyO70O3c5WWLq2v
+         RFVdnOq5aNfwG6bAKUavAKkAJQr3RSD38MZQDWspK1bQlg5ieMQWouz8Ft3jAU6it8VT
+         saDMgzB653mCkXOQpMGDZW21AxDEf/2d3oSwmQuc/S0MXsgIF5Wd6yLuqRd5P0E/SXJj
+         M4Sg==
+Original-Received: by 10.68.231.130 with SMTP id tg2mr5471379pbc.70.1343337649809;
+        Thu, 26 Jul 2012 14:20:49 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id kh1sm423313pbc.23.2012.07.26.14.20.47
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 14:20:48 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120726211405.959857593@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQmxQxyzyGwScLbu5bAh04SgF2JTKcAcERFz6us0V36o+9CobkFYF7QiMAW4SvZ1DS6432ko
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333917 gmane.linux.kernel.stable:28859
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333917>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.4-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Roland Dreier <roland@purestorage.com>
+
+commit 1765fe5edcb83f53fc67edeb559fcf4bc82c6460 upstream.
+
+When NUMBER OF LOGICAL BLOCKS is 0, WRITE SAME is supposed to write
+all the blocks from the specified LBA through the end of the device.
+However, dev->transport->get_blocks(dev) (perhaps confusingly) returns
+the last valid LBA rather than the number of blocks, so the correct
+number of blocks to write starting with lba is
+
+dev->transport->get_blocks(dev) - lba + 1
+
+(nab: Backport roland's for-3.6 patch to for-3.5)
+
+Signed-off-by: Roland Dreier <roland@purestorage.com>
+Signed-off-by: Nicholas Bellinger <nab@linux-iscsi.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ drivers/target/target_core_cdb.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/target/target_core_cdb.c
++++ b/drivers/target/target_core_cdb.c
+@@ -1107,7 +1107,7 @@ int target_emulate_write_same(struct se_
+ 	if (num_blocks != 0)
+ 		range = num_blocks;
+ 	else
+-		range = (dev->transport->get_blocks(dev) - lba);
++		range = (dev->transport->get_blocks(dev) - lba) + 1;
+ 
+ 	pr_debug("WRITE_SAME UNMAP: LBA: %llu Range: %llu\n",
+ 		 (unsigned long long)lba, (unsigned long long)range);
+
+

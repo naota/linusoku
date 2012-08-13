@@ -1,0 +1,99 @@
+Path: news.gmane.org!not-for-mail
+From: Nicolas Pitre <nico@fluxnic.net>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: Re: RFC: mutex: hung tasks on SMP platforms with
+ asm-generic/mutex-xchg.h
+Date: Tue, 07 Aug 2012 14:28:31 -0400 (EDT)
+Lines: 42
+Approved: news@gmane.org
+Message-ID: <alpine.LFD.2.02.1208071405590.5231@xanadu.home>
+References: <20120807115647.GA12828@mudshark.cambridge.arm.com>
+ <alpine.LFD.2.02.1208071259270.5231@xanadu.home>
+ <20120807173344.GD16877@mudshark.cambridge.arm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: TEXT/PLAIN; CHARSET=US-ASCII
+Content-Transfer-Encoding: 7BIT
+X-Trace: dough.gmane.org 1344364135 13296 80.91.229.3 (7 Aug 2012 18:28:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 18:28:55 +0000 (UTC)
+Cc: "linux-kernel@vger.kernel.org" <linux-kernel@vger.kernel.org>,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Ingo Molnar <mingo@elte.hu>,
+	Thomas Gleixner <tglx@linutronix.de>,
+	Chris Mason <chris.mason@fusionio.com>,
+	Arnd Bergmann <arnd@arndb.de>,
+	"linux-arm-kernel@lists.infradead.org" 
+	<linux-arm-kernel@lists.infradead.org>
+To: Will Deacon <will.deacon@arm.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 20:28:52 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyoWL-0004VA-Hh
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 20:28:45 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756130Ab2HGS2e (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 14:28:34 -0400
+Original-Received: from relais.videotron.ca ([24.201.245.36]:48781 "EHLO
+	relais.videotron.ca" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756087Ab2HGS2c (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 14:28:32 -0400
+Original-Received: from xanadu.home ([24.201.196.149]) by VL-VM-MR003.ip.videotron.ca
+ (Oracle Communications Messaging Exchange Server 7u4-22.01 64bit (built Apr 21
+ 2011)) with ESMTP id <0M8E007NCDZJO1D0@VL-VM-MR003.ip.videotron.ca> for
+ linux-kernel@vger.kernel.org; Tue, 07 Aug 2012 14:28:31 -0400 (EDT)
+In-reply-to: <20120807173344.GD16877@mudshark.cambridge.arm.com>
+User-Agent: Alpine 2.02 (LFD 1266 2009-07-14)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339256 gmane.linux.ports.arm.kernel:180733
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339256>
+
+On Tue, 7 Aug 2012, Will Deacon wrote:
+
+> On Tue, Aug 07, 2012 at 06:14:36PM +0100, Nicolas Pitre wrote:
+> > On Tue, 7 Aug 2012, Will Deacon wrote:
+> > > The symptoms are that a bunch of hackbench tasks are left waiting on an
+> > > unlocked mutex and therefore never get woken up to claim it. I think this
+> > > boils down to the following sequence:
+> > > 
+> > > 
+> > >         Task A        Task B        Task C        Lock value
+> > > 0                                                     1
+> > > 1       lock()                                        0
+> > > 2                     lock()                          0
+> > > 3                     spin(A)                         0
+> > > 4       unlock()                                      1
+> > > 5                                   lock()            0
+> > > 6                     cmpxchg(1,0)                    0
+> > > 7                     contended()                    -1
+> > > 8       lock()                                        0
+> > > 9       spin(C)                                       0
+> > > 10                                  unlock()          1
+> > > 11      cmpxchg(1,0)                                  0
+> > > 12      unlock()                                      1
+> > > 
+> > > 
+> > > At this point, the lock is unlocked, but Task B is in an uninterruptible
+> > > sleep with nobody to wake it up.
+> > 
+> > I fail to see how the lock value would go from -1 to 0 on line 8.  How 
+> > does that happen?
+> 
+> [...]
+
+Forget that.  I assumed cmpxchg when it is just xchg.
+
+(And, for that matter, I'm even the original author for some of that 
+ code.: http://lkml.org/lkml/2005/12/26/83).
+
+Back to thinking.
+
+
+Nicolas

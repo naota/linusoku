@@ -1,0 +1,145 @@
+Path: news.gmane.org!not-for-mail
+From: "Rafael J. Wysocki" <rjw@sisk.pl>
+Newsgroups: gmane.linux.ports.sh.devel,gmane.linux.kernel
+Subject: [PATCH 1/15] PM / Domains: Introduce simplified power on routine for system resume
+Date: Mon, 6 Aug 2012 01:39:16 +0200
+Lines: 86
+Approved: news@gmane.org
+Message-ID: <201208060139.17136.rjw@sisk.pl>
+References: <201207291612.43138.rjw@sisk.pl> <201208060138.03950.rjw@sisk.pl>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain;
+  charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344210565 29240 80.91.229.3 (5 Aug 2012 23:49:25 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 5 Aug 2012 23:49:25 +0000 (UTC)
+Cc: LKML <linux-kernel@vger.kernel.org>,
+	"Linux-sh list" <linux-sh@vger.kernel.org>,
+	Magnus Damm <magnus.damm@gmail.com>,
+	Paul Mundt <lethal@linux-sh.org>,
+	Thomas Gleixner <tglx@linutronix.de>
+To: Linux PM list <linux-pm@vger.kernel.org>
+Original-X-From: linux-sh-owner@vger.kernel.org Mon Aug 06 01:49:25 2012
+Return-path: <linux-sh-owner@vger.kernel.org>
+Envelope-to: glps-linuxsh-dev@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-sh-owner@vger.kernel.org>)
+	id 1SyAZY-0007Uv-PW
+	for glps-linuxsh-dev@plane.gmane.org; Mon, 06 Aug 2012 01:49:25 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755312Ab2HEXs3 (ORCPT <rfc822;glps-linuxsh-dev@m.gmane.org>);
+	Sun, 5 Aug 2012 19:48:29 -0400
+Original-Received: from ogre.sisk.pl ([193.178.161.156]:42944 "EHLO ogre.sisk.pl"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755304Ab2HEXs2 (ORCPT <rfc822;linux-sh@vger.kernel.org>);
+	Sun, 5 Aug 2012 19:48:28 -0400
+Original-Received: from localhost (localhost.localdomain [127.0.0.1])
+	by ogre.sisk.pl (Postfix) with ESMTP id 5C9901DB5F5;
+	Mon,  6 Aug 2012 01:38:50 +0200 (CEST)
+Original-Received: from ogre.sisk.pl ([127.0.0.1])
+ by localhost (ogre.sisk.pl [127.0.0.1]) (amavisd-new, port 10024) with ESMTP
+ id 30180-10; Mon,  6 Aug 2012 01:38:29 +0200 (CEST)
+Original-Received: from ferrari.rjw.lan (62-121-64-87.home.aster.pl [62.121.64.87])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by ogre.sisk.pl (Postfix) with ESMTP id 924AA1DB8BC;
+	Mon,  6 Aug 2012 01:38:29 +0200 (CEST)
+User-Agent: KMail/1.13.6 (Linux/3.5.0+; KDE/4.6.0; x86_64; ; )
+In-Reply-To: <201208060138.03950.rjw@sisk.pl>
+X-Virus-Scanned: amavisd-new at ogre.sisk.pl using MkS_Vir for Linux
+Original-Sender: linux-sh-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-sh.vger.kernel.org>
+X-Mailing-List: linux-sh@vger.kernel.org
+Xref: news.gmane.org gmane.linux.ports.sh.devel:16127 gmane.linux.kernel:1337944
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337944>
+
+
+Introduce function pm_genpd_sync_poweron() for restoring domain power
+during resume from system suspend and hibernation.  It can be much
+simpler than pm_genpd_poweron(), because it doesn't have to care
+about locking and it can skip many checks done by the latter.
+
+Modify pm_genpd_resume_noirq() and pm_genpd_restore_noirq() to use
+the new function.
+
+Signed-off-by: Rafael J. Wysocki <rjw@sisk.pl>
+---
+ drivers/base/power/domain.c |   34 ++++++++++++++++++++++++++++++----
+ 1 file changed, 30 insertions(+), 4 deletions(-)
+
+Index: linux/drivers/base/power/domain.c
+===================================================================
+--- linux.orig/drivers/base/power/domain.c
++++ linux/drivers/base/power/domain.c
+@@ -777,6 +777,32 @@ static void pm_genpd_sync_poweroff(struc
+ }
+ 
+ /**
++ * pm_genpd_sync_poweron - Synchronously power on a PM domain and its masters.
++ * @genpd: PM domain to power on.
++ *
++ * This function is only called in "noirq" stage of system power transitions, so
++ * it need not acquire locks (all of the "noirq" callbacks are executed
++ * sequentially, so it is guaranteed that it will never run twice in parallel).
++ */
++static void pm_genpd_sync_poweron(struct generic_pm_domain *genpd)
++{
++	struct gpd_link *link;
++
++	if (genpd->status != GPD_STATE_POWER_OFF)
++		return;
++
++	list_for_each_entry(link, &genpd->slave_links, slave_node) {
++		pm_genpd_sync_poweron(link->master);
++		genpd_sd_counter_inc(link->master);
++	}
++
++	if (genpd->power_on)
++		genpd->power_on(genpd);
++
++	genpd->status = GPD_STATE_ACTIVE;
++}
++
++/**
+  * resume_needed - Check whether to resume a device before system suspend.
+  * @dev: Device to check.
+  * @genpd: PM domain the device belongs to.
+@@ -979,7 +1005,7 @@ static int pm_genpd_resume_noirq(struct
+ 	 * guaranteed that this function will never run twice in parallel for
+ 	 * the same PM domain, so it is not necessary to use locking here.
+ 	 */
+-	pm_genpd_poweron(genpd);
++	pm_genpd_sync_poweron(genpd);
+ 	genpd->suspended_count--;
+ 
+ 	return genpd_start_dev(genpd, dev);
+@@ -1186,8 +1212,8 @@ static int pm_genpd_restore_noirq(struct
+ 	if (genpd->suspended_count++ == 0) {
+ 		/*
+ 		 * The boot kernel might put the domain into arbitrary state,
+-		 * so make it appear as powered off to pm_genpd_poweron(), so
+-		 * that it tries to power it on in case it was really off.
++		 * so make it appear as powered off to pm_genpd_sync_poweron(),
++		 * so that it tries to power it on in case it was really off.
+ 		 */
+ 		genpd->status = GPD_STATE_POWER_OFF;
+ 		if (genpd->suspend_power_off) {
+@@ -1205,7 +1231,7 @@ static int pm_genpd_restore_noirq(struct
+ 	if (genpd->suspend_power_off)
+ 		return 0;
+ 
+-	pm_genpd_poweron(genpd);
++	pm_genpd_sync_poweron(genpd);
+ 
+ 	return dev_gpd_data(dev)->always_on ? 0 : genpd_start_dev(genpd, dev);
+ }
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-sh" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

@@ -1,0 +1,106 @@
+Path: news.gmane.org!not-for-mail
+From: "devendra.aaru" <devendra.aaru@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] staging/sbe-2t3e3: error path cleanup in t3e3_init_channel
+Date: Thu, 19 Jul 2012 18:33:56 +0530
+Lines: 47
+Approved: news@gmane.org
+Message-ID: <CAHdPZaPJKrm2MUjfk7Eo+fXfF6JJT7w++DAkMOPirz9bzZHD6w@mail.gmail.com>
+References: <1342701001-5424-1-git-send-email-devendra.aaru@gmail.com>
+	<20120719125038.GC16291@mwanda>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1342703049 24413 80.91.229.3 (19 Jul 2012 13:04:09 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 13:04:09 +0000 (UTC)
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	devel@driverdev.osuosl.org, linux-kernel@vger.kernel.org
+To: Dan Carpenter <dan.carpenter@oracle.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 15:04:09 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SrqOm-00010M-1c
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 15:04:08 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751618Ab2GSND7 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 09:03:59 -0400
+Original-Received: from mail-yw0-f46.google.com ([209.85.213.46]:39585 "EHLO
+	mail-yw0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750964Ab2GSND5 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 09:03:57 -0400
+Original-Received: by yhmm54 with SMTP id m54so2704185yhm.19
+        for <linux-kernel@vger.kernel.org>; Thu, 19 Jul 2012 06:03:56 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=mime-version:in-reply-to:references:date:message-id:subject:from:to
+         :cc:content-type;
+        bh=m1+DVO5aRzLnCfmlnoMc3LAGsU0toJyMq7UjkqQ1GNE=;
+        b=TasLpSJm+OBvn9uUqGmPsUPzR+FiBoTnZGGEakBXxeSU4CibbZWy6bw7gBJ5rTi7pv
+         MWe3NN33E4zPR2AXYqwCsI1KHWvCGLrH91+EljoTer387IrJW9RAcXNCAoxnd6PIPv2X
+         FPlN1gs+zEzm61Pf75K246NxtdAS4IEC0JiG2g+RxdeI7/9ZcDmtljqcdRvmE7eXNw/h
+         YuMSKlm2858jj1R+coeWOLUx/hRVQ9MpPdY3KzNOdvL0qVaBfi0P8wHU7optG86mn4y3
+         p1Uq2OHZNkoqrcsQRTtnx0daQR1MASr/rPSZ6tN4kRNyeoov5hqddD9AEOg9Sz3HOL3E
+         yn0w==
+Original-Received: by 10.66.80.34 with SMTP id o2mr3677837pax.36.1342703036083; Thu, 19
+ Jul 2012 06:03:56 -0700 (PDT)
+Original-Received: by 10.68.136.162 with HTTP; Thu, 19 Jul 2012 06:03:56 -0700 (PDT)
+In-Reply-To: <20120719125038.GC16291@mwanda>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330340
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330340>
+
+Hi Dan,
+
+On Thu, Jul 19, 2012 at 6:20 PM, Dan Carpenter <dan.carpenter@oracle.com> wrote:
+> Cleanup means there are no behavior changes.  This is a bug fix.
+>
+Thanks Dan, i will put a proper subject line in commit.
+> On Thu, Jul 19, 2012 at 06:00:01PM +0530, Devendra Naga wrote:
+>>     a) if alloc_hdlcdev fails, we are going into the free_regions,
+>> and returning out the err (which is 0 by the prev call),
+>>        return -ENOMEM if this function fail.
+>>
+>>     b) setup_device also can fail, as it calls around the register_hdlc_dev which
+>> is again a macro of the register_netdev.
+>>
+>>        take the error from the setup_device and return it out in error condition
+>>
+>>     c) request_irq when fails, we are freeing requested mem regions and disabling
+>> the pci device(?) and returning err which is agian 0 here.
+>>
+>>       take the error from request_irq and err path will take care of returning it.
+>>
+>> as if we return 0 , at the init function, t3e3_init_card, we have a success case
+>> and if there are two channels we call this function again, having the result of
+>> it completely unknown.
+>>
+>> This result in having the probe return 0, unloading the driver may (not) cause
+>> ambigous result.
+>
+> These bugs were there before your patch, but we should also be doing
+> an unregister_hdlc_device() and a free_netdev().
+>
+t3e3_remove_channel is called when channel init of channel2 fails, and
+i think this cause the double
+call to pci_release_region and pci_disable_device,
+
+so i think its better to follow your approach and remove the call to
+t3e3_remove_channel and clean all
+the things we allocated at the init path itself, rather cleaning them
+up when call and a subsequent call to the
+t3e3_init_channel fails?
+
+> regards,
+> dan carpenter
+>
+
+Thanks,
+Devendra

@@ -1,0 +1,98 @@
+Path: news.gmane.org!not-for-mail
+From: Axel Lin <axel.lin@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 5/7] regulator: tps6524x: set_current_limit should select
+ the maximum current in specific range
+Date: Wed, 08 Aug 2012 20:21:30 +0800
+Lines: 34
+Approved: news@gmane.org
+Message-ID: <1344428490.3199.5.camel@phoenix>
+References: <1344428238.3199.1.camel@phoenix>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344428506 31369 80.91.229.3 (8 Aug 2012 12:21:46 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 12:21:46 +0000 (UTC)
+Cc: Cyril Chemparathy <cyril@ti.com>, Liam Girdwood <lrg@ti.com>,
+	linux-kernel@vger.kernel.org
+To: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 14:21:45 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sz5Gh-0004Ii-Vx
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 14:21:44 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1758058Ab2HHMVh (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 08:21:37 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:46021 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1758008Ab2HHMVg (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 08:21:36 -0400
+Original-Received: by pbbrr13 with SMTP id rr13so1393083pbb.19
+        for <linux-kernel@vger.kernel.org>; Wed, 08 Aug 2012 05:21:35 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=message-id:subject:from:to:cc:date:in-reply-to:references
+         :content-type:x-mailer:content-transfer-encoding:mime-version;
+        bh=JsdT75DlbspP9La3Hl+P7L2gYsj/nwGAPxb/a+uNPF8=;
+        b=rxMvlaykYxdOSHOQv6qw8pTVPStgvbsjTt5yqyKR41YnbxQkcUhmBo3WHzNCCZh91b
+         B94tBZJJokSkFIL/XMeb9jZSgRDlnXh9UvFnke3FxHCuD7WB/Gb0sipgZ5J0N0xCwP1m
+         zlG4p794enb6Ft54VSUZa8rrxHwyXZ+AA4xAmMpxWZHL4a91GDL5KK1LgLEfjxtIkHl6
+         6oIAhb5PS+2JDo3eOsAdJItn/qocTlTUDZ6mGWBRaSmj69djN9MvwGhaR9oQUijHXkzv
+         Y61t5g/eD+biIa0pXOQqGOiNzogrACZ4RTBKLizG88T/MQu2Dtim8H3UnA+kmchaavdM
+         ivUQ==
+Original-Received: by 10.68.222.136 with SMTP id qm8mr14374500pbc.116.1344428495595;
+        Wed, 08 Aug 2012 05:21:35 -0700 (PDT)
+Original-Received: from [114.39.107.47] (114-39-107-47.dynamic.hinet.net. [114.39.107.47])
+        by mx.google.com with ESMTPS id ro7sm8220922pbc.8.2012.08.08.05.21.33
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Wed, 08 Aug 2012 05:21:35 -0700 (PDT)
+In-Reply-To: <1344428238.3199.1.camel@phoenix>
+X-Mailer: Evolution 3.2.3-0ubuntu6 
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339984
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339984>
+
+Signed-off-by: Axel Lin <axel.lin@gmail.com>
+---
+ drivers/regulator/tps6524x-regulator.c |   10 ++++------
+ 1 file changed, 4 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/regulator/tps6524x-regulator.c b/drivers/regulator/tps6524x-regulator.c
+index 947ece9..058d2f2 100644
+--- a/drivers/regulator/tps6524x-regulator.c
++++ b/drivers/regulator/tps6524x-regulator.c
+@@ -502,15 +502,13 @@ static int set_current_limit(struct regulator_dev *rdev, int min_uA,
+ 	if (info->n_ilimsels == 1)
+ 		return -EINVAL;
+ 
+-	for (i = 0; i < info->n_ilimsels; i++)
++	for (i = info->n_ilimsels - 1; i >= 0; i--) {
+ 		if (min_uA <= info->ilimsels[i] &&
+ 		    max_uA >= info->ilimsels[i])
+-			break;
+-
+-	if (i >= info->n_ilimsels)
+-		return -EINVAL;
++			return write_field(hw, &info->ilimsel, i);
++	}
+ 
+-	return write_field(hw, &info->ilimsel, i);
++	return -EINVAL;
+ }
+ 
+ static int get_current_limit(struct regulator_dev *rdev)
+-- 
+1.7.9.5
+
+
+

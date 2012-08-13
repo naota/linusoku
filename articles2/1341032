@@ -1,0 +1,98 @@
+Path: news.gmane.org!not-for-mail
+From: Cody P Schafer <cody@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 09/16] perf symbol: avoid segfault in elf_strptr
+Date: Thu,  9 Aug 2012 15:18:34 -0700
+Lines: 32
+Approved: news@gmane.org
+Message-ID: <1344550721-21024-10-git-send-email-cody@linux.vnet.ibm.com>
+References: <1344550721-21024-1-git-send-email-cody@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344551089 25580 80.91.229.3 (9 Aug 2012 22:24:49 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 22:24:49 +0000 (UTC)
+Cc: LKML <linux-kernel@vger.kernel.org>,
+	Ingo Molnar <mingo@redhat.com>,
+	Paul Mackerras <paulus@samba.org>,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Sukadev Bhattiprolu <sukadev@linux.vnet.ibm.com>,
+	Matt Hellsley <matthltc@us.ibm.com>,
+	David Hansen <dave@linux.vnet.ibm.com>
+To: Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 10 00:24:48 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Szb9r-0002w9-Gk
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 10 Aug 2012 00:24:47 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1759912Ab2HIWWY (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 18:22:24 -0400
+Original-Received: from e9.ny.us.ibm.com ([32.97.182.139]:47306 "EHLO e9.ny.us.ibm.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1759859Ab2HIWWJ (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 18:22:09 -0400
+Original-Received: from /spool/local
+	by e9.ny.us.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <cody@linux.vnet.ibm.com>;
+	Thu, 9 Aug 2012 18:22:08 -0400
+Original-Received: from d01dlp01.pok.ibm.com (9.56.250.166)
+	by e9.ny.us.ibm.com (192.168.1.109) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Thu, 9 Aug 2012 18:22:06 -0400
+Original-Received: from d01relay06.pok.ibm.com (d01relay06.pok.ibm.com [9.56.227.116])
+	by d01dlp01.pok.ibm.com (Postfix) with ESMTP id 5B57438C8045
+	for <linux-kernel@vger.kernel.org>; Thu,  9 Aug 2012 18:22:06 -0400 (EDT)
+Original-Received: from d01av04.pok.ibm.com (d01av04.pok.ibm.com [9.56.224.64])
+	by d01relay06.pok.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q79MM61D27197642
+	for <linux-kernel@vger.kernel.org>; Thu, 9 Aug 2012 18:22:06 -0400
+Original-Received: from d01av04.pok.ibm.com (loopback [127.0.0.1])
+	by d01av04.pok.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q79MM4u1008061
+	for <linux-kernel@vger.kernel.org>; Thu, 9 Aug 2012 18:22:05 -0400
+Original-Received: from localhost ([9.47.24.219])
+	by d01av04.pok.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q79MM405008037;
+	Thu, 9 Aug 2012 18:22:04 -0400
+X-Mailer: git-send-email 1.7.11.3
+In-Reply-To: <1344550721-21024-1-git-send-email-cody@linux.vnet.ibm.com>
+X-Content-Scanned: Fidelis XPS MAILER
+x-cbid: 12080922-7182-0000-0000-0000023E0488
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341032
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341032>
+
+If we call elf_section_by_name() with a truncated elf image (ie: the file
+header indicates that the section headers are placed past the end of the
+file), elf_strptr() causes a segfault within libelf.
+
+Avoid this by checking that we can access the section string table
+properly.
+
+Should really be fixed in libelf/elfutils.
+
+Signed-off-by: Cody P Schafer <cody@linux.vnet.ibm.com>
+---
+ tools/perf/util/symbol.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/tools/perf/util/symbol.c b/tools/perf/util/symbol.c
+index 9e31cbb..6afc92d 100644
+--- a/tools/perf/util/symbol.c
++++ b/tools/perf/util/symbol.c
+@@ -973,6 +973,10 @@ static Elf_Scn *elf_section_by_name(Elf *elf, GElf_Ehdr *ep,
+ 	Elf_Scn *sec = NULL;
+ 	size_t cnt = 1;
+ 
++	/* Elf is corrupted/truncated, avoid calling elf_strptr. */
++	if (!elf_rawdata(elf_getscn(elf, ep->e_shstrndx), NULL))
++		return NULL;
++
+ 	while ((sec = elf_nextscn(elf, sec)) != NULL) {
+ 		char *str;
+ 
+-- 
+1.7.11.3
+

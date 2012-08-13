@@ -1,0 +1,97 @@
+Path: news.gmane.org!not-for-mail
+From: Josh Boyer <jwboyer@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] posix_types.h: make __NFDBITS match glibc definition
+Date: Tue, 24 Jul 2012 14:12:10 -0400
+Lines: 47
+Approved: news@gmane.org
+Message-ID: <20120724181209.GA10534@zod.bos.redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343153607 12914 80.91.229.3 (24 Jul 2012 18:13:27 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 18:13:27 +0000 (UTC)
+Cc: law@redhat.com, linux-kernel@vger.kernel.org
+To: Linus Torvalds <torvalds@linux-foundation.org>,
+	Andrew Morton <akpm@linux-foundation.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 20:13:24 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StjbI-0001Co-DQ
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 20:12:52 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S933559Ab2GXSMW (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 14:12:22 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:60836 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S933293Ab2GXSMR (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 14:12:17 -0400
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6OICG6C027617
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Tue, 24 Jul 2012 14:12:16 -0400
+Original-Received: from zod.bos.redhat.com (ovpn-112-32.phx2.redhat.com [10.3.112.32])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6OICAER029597
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES128-SHA bits=128 verify=NO);
+	Tue, 24 Jul 2012 14:12:14 -0400
+Content-Disposition: inline
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332500
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332500>
+
+Recent glibc made a change to suppress sign-conversion warnings from FD_SET
+(glibc commit ceb9e56b3d1).  That patch solved the particular error it was
+aiming to, however applications that #include <linux/types.h> after
+including <sys/select.h> can now hit a build failure if -Werror=sign-compare
+and -D_FORTIFY_SOURCE=2 is passed to gcc.  This can be seen when building
+this trivial application against a recent enough glibc:
+
+| #include <sys/select.h>
+| #include <linux/types.h>
+|
+| int main(int argc, char **argv)
+| {
+|   fd_set fds;
+|   FD_ZERO(&fds);
+|   FD_SET(0, &fds);
+|   return FD_ISSET(0, &fds);
+| }
+
+It was suggested the kernel should either match the glibc definition of
+__NFDBITS in linux/posix_types.h or remove it entirely.  Given that we
+don't know what applications may be relying on the header having a
+definition, we opt for the former.
+
+This resolves https://bugzilla.redhat.com/show_bug.cgi?id=837641
+
+Reported-by: Jeff Law <law@redhat.com>
+Signed-off-by: Josh Boyer <jwboyer@redhat.com>
+---
+ include/linux/posix_types.h |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/linux/posix_types.h b/include/linux/posix_types.h
+index f04c98c..cc8530e 100644
+--- a/include/linux/posix_types.h
++++ b/include/linux/posix_types.h
+@@ -19,7 +19,7 @@
+  * use the ones here. 
+  */
+ #undef __NFDBITS
+-#define __NFDBITS	(8 * sizeof(unsigned long))
++#define __NFDBITS	(8 * (int) sizeof(long int))
+ 
+ #undef __FD_SETSIZE
+ #define __FD_SETSIZE	1024
+-- 
+1.7.10.4
+

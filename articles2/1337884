@@ -1,0 +1,109 @@
+Path: news.gmane.org!not-for-mail
+From: Aaro Koskinen <aaro.koskinen@iki.fi>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.ports.arm.kernel,gmane.linux.kernel
+Subject: [PATCH] ARM: dma-mapping: fix atomic allocation alignment
+Date: Sun,  5 Aug 2012 20:32:06 +0300
+Lines: 45
+Approved: news@gmane.org
+Message-ID: <1344187926-22404-1-git-send-email-aaro.koskinen@iki.fi>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344187941 10565 80.91.229.3 (5 Aug 2012 17:32:21 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 5 Aug 2012 17:32:21 +0000 (UTC)
+To: m.szyprowski@samsung.com,
+	linux-arm-kernel@lists.infradead.org,
+	linux-mm@kvack.org,
+	linux-kernel@vger.kernel.org
+Original-X-From: owner-linux-mm@kvack.org Sun Aug 05 19:32:21 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Sy4gc-0005wi-5r
+	for glkm-linux-mm-2@m.gmane.org; Sun, 05 Aug 2012 19:32:18 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id D31486B0044; Sun,  5 Aug 2012 13:32:15 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id C074D6B005A; Sun,  5 Aug 2012 13:32:15 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 8F6C26B005D; Sun,  5 Aug 2012 13:32:15 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx199.postini.com [74.125.245.199])
+	by kanga.kvack.org (Postfix) with SMTP id 9AF9F6B0044
+	for <linux-mm@kvack.org>; Sun,  5 Aug 2012 13:32:14 -0400 (EDT)
+Original-Received: from filtteri1.pp.htv.fi ([213.243.153.184]) by na3sys010amx199.postini.com ([74.125.244.10]) with SMTP;
+	Sun, 05 Aug 2012 17:32:14 GMT
+Original-Received: from localhost (localhost [127.0.0.1])
+	by filtteri1.pp.htv.fi (Postfix) with ESMTP id 2B54021B22F;
+	Sun,  5 Aug 2012 20:32:13 +0300 (EEST)
+X-Virus-Scanned: Debian amavisd-new at pp.htv.fi
+Original-Received: from smtp5.welho.com ([213.243.153.39])
+	by localhost (filtteri1.pp.htv.fi [213.243.153.184]) (amavisd-new, port 10024)
+	with ESMTP id vaJJc0Erz44I; Sun,  5 Aug 2012 20:32:12 +0300 (EEST)
+Original-Received: from blackmetal.bb.dnainternet.fi (212-149-209-232.bb.dnainternet.fi [212.149.209.232])
+	by smtp5.welho.com (Postfix) with ESMTP id C39925BC003;
+	Sun,  5 Aug 2012 20:32:12 +0300 (EEST)
+X-Mailer: git-send-email 1.7.2.5
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:74.96255/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <aaro.koskinen@iki.fi> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83638 gmane.linux.ports.arm.kernel:180278 gmane.linux.kernel:1337884
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337884>
+
+The alignment mask is calculated incorrectly. Fixing the calculation
+makes strange hangs/lockups disappear during the boot with Amstrad E3
+and 3.6-rc1 kernel.
+
+Signed-off-by: Aaro Koskinen <aaro.koskinen@iki.fi>
+---
+ arch/arm/mm/dma-mapping.c |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/mm/dma-mapping.c b/arch/arm/mm/dma-mapping.c
+index 2cc77b7..0e0466d 100644
+--- a/arch/arm/mm/dma-mapping.c
++++ b/arch/arm/mm/dma-mapping.c
+@@ -423,7 +423,7 @@ static void *__alloc_from_pool(size_t size, struct page **ret_page)
+ 	unsigned int pageno;
+ 	unsigned long flags;
+ 	void *ptr = NULL;
+-	size_t align;
++	unsigned long align_mask;
+ 
+ 	if (!pool->vaddr) {
+ 		WARN(1, "coherent pool not initialised!\n");
+@@ -435,11 +435,11 @@ static void *__alloc_from_pool(size_t size, struct page **ret_page)
+ 	 * small, so align them to their order in pages, minimum is a page
+ 	 * size. This helps reduce fragmentation of the DMA space.
+ 	 */
+-	align = PAGE_SIZE << get_order(size);
++	align_mask = (1 << get_order(size)) - 1;
+ 
+ 	spin_lock_irqsave(&pool->lock, flags);
+ 	pageno = bitmap_find_next_zero_area(pool->bitmap, pool->nr_pages,
+-					    0, count, (1 << align) - 1);
++					    0, count, align_mask);
+ 	if (pageno < pool->nr_pages) {
+ 		bitmap_set(pool->bitmap, pageno, count);
+ 		ptr = pool->vaddr + PAGE_SIZE * pageno;
+-- 
+1.7.2.5
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

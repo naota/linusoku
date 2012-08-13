@@ -1,0 +1,108 @@
+Path: news.gmane.org!not-for-mail
+From: Rik van Riel <riel@redhat.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [PATCH -alternative] mm: hugetlbfs: Close race during teardown
+ of hugetlbfs shared page tables V2 (resend)
+Date: Thu, 26 Jul 2012 14:31:50 -0400
+Lines: 38
+Approved: news@gmane.org
+Message-ID: <50118D16.4050603@redhat.com>
+References: <20120720134937.GG9222@suse.de> <20120720141108.GH9222@suse.de> <20120720143635.GE12434@tiehlicka.suse.cz>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1; format=flowed
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343327610 5067 80.91.229.3 (26 Jul 2012 18:33:30 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 18:33:30 +0000 (UTC)
+Cc: Mel Gorman <mgorman@suse.de>, Linux-MM <linux-mm@kvack.org>,
+        Hugh Dickins <hughd@google.com>,
+        David Gibson <david@gibson.dropbear.id.au>,
+        Ken Chen <kenchen@google.com>, Cong Wang <xiyou.wangcong@gmail.com>,
+        LKML <linux-kernel@vger.kernel.org>
+To: Michal Hocko <mhocko@suse.cz>
+Original-X-From: owner-linux-mm@kvack.org Thu Jul 26 20:33:29 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SuSsK-00051g-AJ
+	for glkm-linux-mm-2@m.gmane.org; Thu, 26 Jul 2012 20:33:28 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id B8DD36B0044; Thu, 26 Jul 2012 14:33:26 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id A168E6B005A; Thu, 26 Jul 2012 14:33:26 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 718136B0068; Thu, 26 Jul 2012 14:33:26 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx145.postini.com [74.125.245.145])
+	by kanga.kvack.org (Postfix) with SMTP id ADC986B0044
+	for <linux-mm@kvack.org>; Thu, 26 Jul 2012 14:33:25 -0400 (EDT)
+Original-Received: from mx1.redhat.com ([209.132.183.28]) (using TLSv1) by na3sys010amx145.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 26 Jul 2012 18:33:25 GMT
+Original-Received: from int-mx11.intmail.prod.int.phx2.redhat.com (int-mx11.intmail.prod.int.phx2.redhat.com [10.5.11.24])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6QIXLwB027446
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Thu, 26 Jul 2012 14:33:21 -0400
+Original-Received: from cuia.bos.redhat.com (cuia.bos.redhat.com [10.16.184.35])
+	by int-mx11.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6QIXKCF031346;
+	Thu, 26 Jul 2012 14:33:20 -0400
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120605 Thunderbird/13.0
+In-Reply-To: <20120720143635.GE12434@tiehlicka.suse.cz>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.24
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <riel@redhat.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83033 gmane.linux.kernel:1333830
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333830>
+
+On 07/20/2012 10:36 AM, Michal Hocko wrote:
+
+> --- a/arch/x86/mm/hugetlbpage.c
+> +++ b/arch/x86/mm/hugetlbpage.c
+> @@ -81,7 +81,12 @@ static void huge_pmd_share(struct mm_struct *mm, unsigned long addr, pud_t *pud)
+>   		if (saddr) {
+>   			spte = huge_pte_offset(svma->vm_mm, saddr);
+>   			if (spte) {
+> -				get_page(virt_to_page(spte));
+> +				struct page *spte_page = virt_to_page(spte);
+> +				if (!is_hugetlb_pmd_page_valid(spte_page)) {
+
+What prevents somebody else from marking the hugetlb
+pmd invalid, between here...
+
+> +					spte = NULL;
+> +					continue;
+> +				}
+
+... and here?
+
+> +				get_page(spte_page);
+>   				break;
+>   			}
+
+I think need to take the refcount before checking whether
+the hugetlb pmd is still valid.
+
+Also, disregard my previous email in this thread, I just
+read Mel's detailed explanation and wrapped my brain
+around the bug :)
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

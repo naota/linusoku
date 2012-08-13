@@ -1,0 +1,102 @@
+Path: news.gmane.org!not-for-mail
+From: =?ISO-8859-1?Q?Arve_Hj=F8nnev=E5g?= <arve@android.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] alarmtimer: implement minimum alarm interval for allowing suspend
+Date: Thu, 9 Aug 2012 16:41:26 -0700
+Lines: 40
+Approved: news@gmane.org
+Message-ID: <CAMP5XgeDWnUkmSwyXTLgsnyfh4SYQ72C1Ws-Ls85SG_cMQt2dA@mail.gmail.com>
+References: <1344497847-7161-1-git-send-email-toddpoynor@google.com>
+	<50242B4B.4090607@linaro.org>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: QUOTED-PRINTABLE
+X-Trace: dough.gmane.org 1344555698 24965 80.91.229.3 (9 Aug 2012 23:41:38 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 23:41:38 +0000 (UTC)
+Cc: Todd Poynor <toddpoynor@google.com>, linux-kernel@vger.kernel.org,
+	linux-pm@vger.kernel.org
+To: John Stultz <john.stultz@linaro.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 10 01:41:37 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzcMD-0008Jx-9p
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 10 Aug 2012 01:41:37 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1760054Ab2HIXla convert rfc822-to-quoted-printable (ORCPT
+	<rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 19:41:30 -0400
+Original-Received: from mail-we0-f174.google.com ([74.125.82.174]:43317 "EHLO
+	mail-we0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1760042Ab2HIXl2 convert rfc822-to-8bit (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 19:41:28 -0400
+Original-Received: by weyx8 with SMTP id x8so641010wey.19
+        for <linux-kernel@vger.kernel.org>; Thu, 09 Aug 2012 16:41:26 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=mime-version:in-reply-to:references:date:message-id:subject:from:to
+         :cc:content-type:content-transfer-encoding:x-gm-message-state;
+        bh=1y8YdFGqV8Ch8K/5bZNpPxkAADWtigbCnfJ++CC0U6Y=;
+        b=QxJXRIfMgj7F86wZ1xz/Sg8W02xpFfaFbyl19PvZPj4iac4bJR2F1n9OVZeVWs+exu
+         blBSpicogFwvGxgmIB91GLw0clNUpG0sJvOWRXOhpgDzwNa/hLo2pSd9dNEXzdsLWbZM
+         c76DscDFH1flXqCisL4NKzEbimCbJhemGZYBGwaVIbdNIOCfItT2ibXJDqu6cz2FF4Qr
+         36Qw3Ch5jYNZMhYT1PVZViDk0a8acjlqfBmhSrtQrPCU+ODMPVUFn7QkaCvfv3EtefjS
+         +DAz2mhBDLalMpxz39M5LuFlydWsV2ZTADRGxZ7km2uc/53ar3wlw6ddc4k2MQ9cLyxo
+         3Kyw==
+Original-Received: by 10.180.107.2 with SMTP id gy2mr783218wib.2.1344555686710; Thu, 09
+ Aug 2012 16:41:26 -0700 (PDT)
+Original-Received: by 10.216.172.74 with HTTP; Thu, 9 Aug 2012 16:41:26 -0700 (PDT)
+In-Reply-To: <50242B4B.4090607@linaro.org>
+X-Gm-Message-State: ALoCoQkXPQPVk306aIIfnNwgpneYUa4gWwCfpV24J80LAZP5mNjo/vdv6NVS6onIsj6yVRT6aITx
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341059
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341059>
+
+On Thu, Aug 9, 2012 at 2:27 PM, John Stultz <john.stultz@linaro.org> wr=
+ote:
+> On 08/09/2012 12:37 AM, Todd Poynor wrote:
+>>
+>> alarmtimer suspend return -EBUSY if the next alarm will fire in less
+>> than 2 seconds.  This allows one RTC seconds tick to occur subsequen=
+t
+>> to this check before the alarm wakeup time is set, ensuring the wake=
+up
+>> time is still in the future (assuming the RTC does not tick one more
+>> second prior to setting the alarm).
+>>
+>> If suspend is rejected due to an imminent alarm, hold a wakeup sourc=
+e
+>> for 2 seconds to process the alarm prior to reattempting suspend.
+>>
+>> If setting the alarm incurs an -ETIME for an alarm set in the past,
+>> or any other problem setting the alarm, abort suspend and hold a
+>> wakelock for 1 second while the alarm is allowed to be serviced or
+>> other hopefully transient conditions preventing the alarm clear up.
+>>
+>> Signed-off-by: Todd Poynor <toddpoynor@google.com>
+>> ---
+>>   kernel/time/alarmtimer.c |   18 +++++++++++++-----
+>>   1 files changed, 13 insertions(+), 5 deletions(-)
+>
+>
+> Thanks for sending this in!
+> I've gone ahead and queued it for 3.7 (with the minor tweak Rafael
+> suggested). I'll try to do some further testing of the edge case this
+> handles as well.
+>
+
+You may want to add a wakeupsource to the rtc_timer interface as well.
+In the version of the code I have it does not look like
+rtc_timer_start will ever return -ETIME. rtc_timer_enqueue swallows
+that error code and schedules work instead.
+
+--=20
+Arve Hj=F8nnev=E5g

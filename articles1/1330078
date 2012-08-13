@@ -1,0 +1,153 @@
+Path: news.gmane.org!not-for-mail
+From: H Hartley Sweeten <hartleys@visionengravers.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 42/90] staging: comedi: cb_pcidda: factor out the "find pci device" code
+Date: Wed, 18 Jul 2012 18:44:03 -0700
+Lines: 99
+Approved: news@gmane.org
+Message-ID: <201207181844.03628.hartleys@visionengravers.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342662272 23470 80.91.229.3 (19 Jul 2012 01:44:32 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 01:44:32 +0000 (UTC)
+Cc: <devel@driverdev.osuosl.org>, <abbotti@mev.co.uk>,
+	<gregkh@linuxfoundation.org>
+To: Linux Kernel <linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 03:44:31 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Srfn1-0000NB-KX
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 03:44:27 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755812Ab2GSBoR (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 18 Jul 2012 21:44:17 -0400
+Original-Received: from mail131.messagelabs.com ([216.82.242.99]:49358 "EHLO
+	mail131.messagelabs.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755514Ab2GSBoP (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 18 Jul 2012 21:44:15 -0400
+X-Env-Sender: hartleys@visionengravers.com
+X-Msg-Ref: server-15.tower-131.messagelabs.com!1342662251!25530773!2
+X-Originating-IP: [216.166.12.69]
+X-StarScan-Version: 6.5.10; banners=-,-,-
+X-VirusChecked: Checked
+Original-Received: (qmail 1301 invoked from network); 19 Jul 2012 01:44:14 -0000
+Original-Received: from out001.collaborationhost.net (HELO out001.collaborationhost.net) (216.166.12.69)
+  by server-15.tower-131.messagelabs.com with RC4-SHA encrypted SMTP; 19 Jul 2012 01:44:14 -0000
+Original-Received: from etch.local (10.2.3.210) by smtp.collaborationhost.net
+ (10.2.0.118) with Microsoft SMTP Server (TLS) id 8.3.213.0; Wed, 18 Jul 2012
+ 20:44:11 -0500
+User-Agent: KMail/1.9.9
+Content-Disposition: inline
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330078
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330078>
+
+Factor the "find pci device" code out of the attach function.
+
+Signed-off-by: H Hartley Sweeten <hsweeten@visionengravers.com>
+Cc: Ian Abbott <abbotti@mev.co.uk>
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/staging/comedi/drivers/cb_pcidda.c | 60 ++++++++++++++++--------------
+ 1 file changed, 32 insertions(+), 28 deletions(-)
+
+diff --git a/drivers/staging/comedi/drivers/cb_pcidda.c b/drivers/staging/comedi/drivers/cb_pcidda.c
+index f5a7957..d3d8326 100644
+--- a/drivers/staging/comedi/drivers/cb_pcidda.c
++++ b/drivers/staging/comedi/drivers/cb_pcidda.c
+@@ -255,27 +255,11 @@ static unsigned int cb_pcidda_read_eeprom(struct comedi_device *dev,
+ static void cb_pcidda_calibrate(struct comedi_device *dev, unsigned int channel,
+ 				unsigned int range);
+ 
+-/*
+- * Attach is called by the Comedi core to configure the driver
+- * for a particular board.
+- */
+-static int cb_pcidda_attach(struct comedi_device *dev,
+-			    struct comedi_devconfig *it)
++static struct pci_dev *cb_pcidda_find_pci_dev(struct comedi_device *dev,
++					      struct comedi_devconfig *it)
+ {
+-	struct comedi_subdevice *s;
+ 	struct pci_dev *pcidev = NULL;
+ 	int index;
+-	int ret;
+-
+-/*
+- * Allocate the private structure area.
+- */
+-	if (alloc_private(dev, sizeof(struct cb_pcidda_private)) < 0)
+-		return -ENOMEM;
+-
+-/*
+- * Probe the device to determine what device in the series it is.
+- */
+ 
+ 	for_each_pci_dev(pcidev) {
+ 		if (pcidev->vendor == PCI_VENDOR_ID_CB) {
+@@ -288,22 +272,42 @@ static int cb_pcidda_attach(struct comedi_device *dev,
+ 			for (index = 0; index < ARRAY_SIZE(cb_pcidda_boards); index++) {
+ 				if (cb_pcidda_boards[index].device_id ==
+ 				    pcidev->device) {
+-					goto found;
++					dev->board_ptr = cb_pcidda_boards + index;
++					dev_dbg(dev->class_dev,
++						"Found %s at requested position\n",
++						thisboard->name);
++					return pcidev;
+ 				}
+ 			}
+ 		}
+ 	}
+-	if (!pcidev) {
+-		dev_err(dev->class_dev,
+-			"Not a ComputerBoards/MeasurementComputing card on requested position\n");
++	dev_err(dev->class_dev,
++		"Not a ComputerBoards/MeasurementComputing card on requested position\n");
++	return NULL;
++}
++
++/*
++ * Attach is called by the Comedi core to configure the driver
++ * for a particular board.
++ */
++static int cb_pcidda_attach(struct comedi_device *dev,
++			    struct comedi_devconfig *it)
++{
++	struct pci_dev *pcidev;
++	struct comedi_subdevice *s;
++	int index;
++	int ret;
++
++/*
++ * Allocate the private structure area.
++ */
++	if (alloc_private(dev, sizeof(struct cb_pcidda_private)) < 0)
++		return -ENOMEM;
++
++	pcidev = cb_pcidda_find_pci_dev(dev, it);
++	if (!pcidev)
+ 		return -EIO;
+-	}
+-found:
+ 	devpriv->pci_dev = pcidev;
+-	dev->board_ptr = cb_pcidda_boards + index;
+-	/*  "thisboard" macro can be used from here. */
+-	dev_dbg(dev->class_dev, "Found %s at requested position\n",
+-		thisboard->name);
+ 
+ 	/*
+ 	 * Enable PCI device and request regions.
+-- 
+1.7.11
+

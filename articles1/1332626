@@ -1,0 +1,330 @@
+Path: news.gmane.org!not-for-mail
+From: Suresh Siddha <suresh.b.siddha@intel.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 2/3] x86, fpu: consolidate inline asm routines for saving/restoring fpu state
+Date: Tue, 24 Jul 2012 16:05:28 -0700
+Lines: 279
+Approved: news@gmane.org
+Message-ID: <1343171129-2747-3-git-send-email-suresh.b.siddha@intel.com>
+References: <1343171129-2747-1-git-send-email-suresh.b.siddha@intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343171028 21417 80.91.229.3 (24 Jul 2012 23:03:48 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 23:03:48 +0000 (UTC)
+Cc: Suresh Siddha <suresh.b.siddha@intel.com>,
+	linux-kernel@vger.kernel.org, robert.richter@amd.com,
+	andreas.herrmann3@amd.com
+To: "H. Peter Anvin" <hpa@zytor.com>,
+	Hans Rosenfeld <hans.rosenfeld@amd.com>,
+	Ingo Molnar <mingo@kernel.org>,
+	Linus Torvalds <torvalds@linux-foundation.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 01:03:46 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sto8m-00046Y-1S
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 01:03:44 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932097Ab2GXXD3 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 19:03:29 -0400
+Original-Received: from mga03.intel.com ([143.182.124.21]:32042 "EHLO mga03.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755000Ab2GXXDR (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 19:03:17 -0400
+Original-Received: from azsmga001.ch.intel.com ([10.2.17.19])
+  by azsmga101.ch.intel.com with ESMTP; 24 Jul 2012 16:03:16 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="172744050"
+Original-Received: from sbsiddha-desk.sc.intel.com ([10.3.79.149])
+  by azsmga001.ch.intel.com with ESMTP; 24 Jul 2012 16:03:16 -0700
+X-Mailer: git-send-email 1.7.6.5
+In-Reply-To: <1343171129-2747-1-git-send-email-suresh.b.siddha@intel.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332626
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332626>
+
+Consolidate x86, x86_64 inline asm routines saving/restoring fpu state
+using config_enabled().
+
+Signed-off-by: Suresh Siddha <suresh.b.siddha@intel.com>
+---
+ arch/x86/include/asm/fpu-internal.h |  182 +++++++++++++++--------------------
+ arch/x86/include/asm/xsave.h        |    6 +-
+ arch/x86/kernel/xsave.c             |    4 +-
+ 3 files changed, 80 insertions(+), 112 deletions(-)
+
+diff --git a/arch/x86/include/asm/fpu-internal.h b/arch/x86/include/asm/fpu-internal.h
+index 74dab61..f4ee0b5 100644
+--- a/arch/x86/include/asm/fpu-internal.h
++++ b/arch/x86/include/asm/fpu-internal.h
+@@ -102,34 +102,24 @@ static inline void sanitize_i387_state(struct task_struct *tsk)
+ 	__sanitize_i387_state(tsk);
+ }
+ 
+-#ifdef CONFIG_X86_64
+-static inline int fxrstor_checking(struct i387_fxsave_struct *fx)
+-{
+-	int err;
+-
+-	/* See comment in fxsave() below. */
+-#ifdef CONFIG_AS_FXSAVEQ
+-	asm volatile("1:  fxrstorq %[fx]\n\t"
+-		     "2:\n"
+-		     ".section .fixup,\"ax\"\n"
+-		     "3:  movl $-1,%[err]\n"
+-		     "    jmp  2b\n"
+-		     ".previous\n"
+-		     _ASM_EXTABLE(1b, 3b)
+-		     : [err] "=r" (err)
+-		     : [fx] "m" (*fx), "0" (0));
+-#else
+-	asm volatile("1:  rex64/fxrstor (%[fx])\n\t"
+-		     "2:\n"
+-		     ".section .fixup,\"ax\"\n"
+-		     "3:  movl $-1,%[err]\n"
+-		     "    jmp  2b\n"
+-		     ".previous\n"
+-		     _ASM_EXTABLE(1b, 3b)
+-		     : [err] "=r" (err)
+-		     : [fx] "R" (fx), "m" (*fx), "0" (0));
+-#endif
+-	return err;
++#define check_insn(insn, output, input...)				\
++({									\
++	int err;							\
++	asm volatile("1:" #insn "\n\t"					\
++		     "2:\n"						\
++		     ".section .fixup,\"ax\"\n"				\
++		     "3:  movl $-1,%[err]\n"				\
++		     "    jmp  2b\n"					\
++		     ".previous\n"					\
++		     _ASM_EXTABLE(1b, 3b)				\
++		     : [err] "=r" (err), output				\
++		     : "0"(0), input);					\
++	err;								\
++})
++
++static inline int fsave_user(struct i387_fsave_struct __user *fx)
++{
++	return check_insn(fnsave %[fx]; fwait,  [fx] "=m" (*fx), "m" (*fx));
+ }
+ 
+ static inline int fxsave_user(struct i387_fxsave_struct __user *fx)
+@@ -145,90 +135,73 @@ static inline int fxsave_user(struct i387_fxsave_struct __user *fx)
+ 	if (unlikely(err))
+ 		return -EFAULT;
+ 
+-	/* See comment in fxsave() below. */
+-#ifdef CONFIG_AS_FXSAVEQ
+-	asm volatile("1:  fxsaveq %[fx]\n\t"
+-		     "2:\n"
+-		     ".section .fixup,\"ax\"\n"
+-		     "3:  movl $-1,%[err]\n"
+-		     "    jmp  2b\n"
+-		     ".previous\n"
+-		     _ASM_EXTABLE(1b, 3b)
+-		     : [err] "=r" (err), [fx] "=m" (*fx)
+-		     : "0" (0));
+-#else
+-	asm volatile("1:  rex64/fxsave (%[fx])\n\t"
+-		     "2:\n"
+-		     ".section .fixup,\"ax\"\n"
+-		     "3:  movl $-1,%[err]\n"
+-		     "    jmp  2b\n"
+-		     ".previous\n"
+-		     _ASM_EXTABLE(1b, 3b)
+-		     : [err] "=r" (err), "=m" (*fx)
+-		     : [fx] "R" (fx), "0" (0));
+-#endif
+-	if (unlikely(err) &&
+-	    __clear_user(fx, sizeof(struct i387_fxsave_struct)))
+-		err = -EFAULT;
+-	/* No need to clear here because the caller clears USED_MATH */
+-	return err;
++	if (config_enabled(CONFIG_X86_32))
++		return check_insn(fxsave %[fx], [fx] "=m" (*fx), "m" (*fx));
++	else if (config_enabled(CONFIG_AS_FXSAVEQ))
++		return check_insn(fxsaveq %[fx], [fx] "=m" (*fx), "m" (*fx));
++
++	/* See comment in fpu_fxsave() below. */
++	return check_insn(rex64/fxsave (%[fx]), "=m" (*fx), [fx] "R" (fx));
+ }
+ 
+-static inline void fpu_fxsave(struct fpu *fpu)
++static inline int fxrstor_checking(struct i387_fxsave_struct *fx)
+ {
+-	/* Using "rex64; fxsave %0" is broken because, if the memory operand
+-	   uses any extended registers for addressing, a second REX prefix
+-	   will be generated (to the assembler, rex64 followed by semicolon
+-	   is a separate instruction), and hence the 64-bitness is lost. */
++	if (config_enabled(CONFIG_X86_32))
++		return check_insn(fxrstor %[fx], "=m" (*fx), [fx] "m" (*fx));
++	else if (config_enabled(CONFIG_AS_FXSAVEQ))
++		return check_insn(fxrstorq %[fx], "=m" (*fx), [fx] "m" (*fx));
+ 
+-#ifdef CONFIG_AS_FXSAVEQ
+-	/* Using "fxsaveq %0" would be the ideal choice, but is only supported
+-	   starting with gas 2.16. */
+-	__asm__ __volatile__("fxsaveq %0"
+-			     : "=m" (fpu->state->fxsave));
+-#else
+-	/* Using, as a workaround, the properly prefixed form below isn't
+-	   accepted by any binutils version so far released, complaining that
+-	   the same type of prefix is used twice if an extended register is
+-	   needed for addressing (fix submitted to mainline 2005-11-21).
+-	asm volatile("rex64/fxsave %0"
+-		     : "=m" (fpu->state->fxsave));
+-	   This, however, we can work around by forcing the compiler to select
+-	   an addressing mode that doesn't require extended registers. */
+-	asm volatile("rex64/fxsave (%[fx])"
+-		     : "=m" (fpu->state->fxsave)
+-		     : [fx] "R" (&fpu->state->fxsave));
+-#endif
++	/* See comment in fpu_fxsave() below. */
++	return check_insn(rex64/fxrstor (%[fx]), "=m" (*fx), [fx] "R" (fx),
++			  "m" (*fx));
+ }
+ 
+-int ia32_setup_rt_frame(int sig, struct k_sigaction *ka, siginfo_t *info,
+-			compat_sigset_t *set, struct pt_regs *regs);
+-int ia32_setup_frame(int sig, struct k_sigaction *ka,
+-		     compat_sigset_t *set, struct pt_regs *regs);
+-
+-#else  /* CONFIG_X86_32 */
+-
+-/* perform fxrstor iff the processor has extended states, otherwise frstor */
+-static inline int fxrstor_checking(struct i387_fxsave_struct *fx)
++static inline int frstor_checking(struct i387_fsave_struct *fx)
+ {
+-	/*
+-	 * The "nop" is needed to make the instructions the same
+-	 * length.
+-	 */
+-	alternative_input(
+-		"nop ; frstor %1",
+-		"fxrstor %1",
+-		X86_FEATURE_FXSR,
+-		"m" (*fx));
+-
+-	return 0;
++	return check_insn(frstor %[fx], "=m" (*fx), [fx] "m" (*fx));
+ }
+ 
+ static inline void fpu_fxsave(struct fpu *fpu)
+ {
+-	asm volatile("fxsave %[fx]"
+-		     : [fx] "=m" (fpu->state->fxsave));
++	if (config_enabled(CONFIG_X86_32))
++		asm volatile( "fxsave %[fx]" : [fx] "=m" (fpu->state->fxsave));
++	else if (config_enabled(CONFIG_AS_FXSAVEQ))
++		asm volatile("fxsaveq %0" : "=m" (fpu->state->fxsave));
++	else {
++		/* Using "rex64; fxsave %0" is broken because, if the memory
++		 * operand uses any extended registers for addressing, a second
++		 * REX prefix will be generated (to the assembler, rex64
++		 * followed by semicolon is a separate instruction), and hence
++		 * the 64-bitness is lost.
++		 *
++		 * Using "fxsaveq %0" would be the ideal choice, but is only
++		 * supported starting with gas 2.16.
++		 *
++		 * Using, as a workaround, the properly prefixed form below
++		 * isn't accepted by any binutils version so far released,
++		 * complaining that the same type of prefix is used twice if
++		 * an extended register is needed for addressing (fix submitted
++		 * to mainline 2005-11-21).
++		 *
++		 *  asm volatile("rex64/fxsave %0" : "=m" (fpu->state->fxsave));
++		 *
++		 * This, however, we can work around by forcing the compiler to
++		 * select an addressing mode that doesn't require extended
++		 * registers.
++		 */
++		asm volatile( "rex64/fxsave (%[fx])"
++			     : "=m" (fpu->state->fxsave)
++			     : [fx] "R" (&fpu->state->fxsave));
++	}
+ }
++#ifdef CONFIG_X86_64
++
++int ia32_setup_rt_frame(int sig, struct k_sigaction *ka, siginfo_t *info,
++			compat_sigset_t *set, struct pt_regs *regs);
++int ia32_setup_frame(int sig, struct k_sigaction *ka,
++		     compat_sigset_t *set, struct pt_regs *regs);
++
++#else  /* CONFIG_X86_32 */
+ 
+ #define ia32_setup_frame	__setup_frame
+ #define ia32_setup_rt_frame	__setup_rt_frame
+@@ -277,17 +250,14 @@ static inline int __save_init_fpu(struct task_struct *tsk)
+ 	return fpu_save_init(&tsk->thread.fpu);
+ }
+ 
+-static inline int fpu_fxrstor_checking(struct fpu *fpu)
+-{
+-	return fxrstor_checking(&fpu->state->fxsave);
+-}
+-
+ static inline int fpu_restore_checking(struct fpu *fpu)
+ {
+ 	if (use_xsave())
+-		return fpu_xrstor_checking(fpu);
++		return fpu_xrstor_checking(&fpu->state->xsave);
++	else if (use_fxsr())
++		return fxrstor_checking(&fpu->state->fxsave);
+ 	else
+-		return fpu_fxrstor_checking(fpu);
++		return frstor_checking(&fpu->state->fsave);
+ }
+ 
+ static inline int restore_fpu_checking(struct task_struct *tsk)
+diff --git a/arch/x86/include/asm/xsave.h b/arch/x86/include/asm/xsave.h
+index 8a1b6f9..aaac810 100644
+--- a/arch/x86/include/asm/xsave.h
++++ b/arch/x86/include/asm/xsave.h
+@@ -42,9 +42,8 @@ extern int check_for_xstate(struct i387_fxsave_struct __user *buf,
+ 			    void __user *fpstate,
+ 			    struct _fpx_sw_bytes *sw);
+ 
+-static inline int fpu_xrstor_checking(struct fpu *fpu)
++static inline int fpu_xrstor_checking(struct xsave_struct *fx)
+ {
+-	struct xsave_struct *fx = &fpu->state->xsave;
+ 	int err;
+ 
+ 	asm volatile("1: .byte " REX_PREFIX "0x0f,0xae,0x2f\n\t"
+@@ -84,9 +83,6 @@ static inline int xsave_user(struct xsave_struct __user *buf)
+ 			     : [err] "=r" (err)
+ 			     : "D" (buf), "a" (-1), "d" (-1), "0" (0)
+ 			     : "memory");
+-	if (unlikely(err) && __clear_user(buf, xstate_size))
+-		err = -EFAULT;
+-	/* No need to clear here because the caller clears USED_MATH */
+ 	return err;
+ }
+ 
+diff --git a/arch/x86/kernel/xsave.c b/arch/x86/kernel/xsave.c
+index 3d3e207..9c03591 100644
+--- a/arch/x86/kernel/xsave.c
++++ b/arch/x86/kernel/xsave.c
+@@ -176,8 +176,10 @@ int save_i387_xstate(void __user *buf)
+ 		else
+ 			err = fxsave_user(buf);
+ 
+-		if (err)
++		if (unlikely(err)) {
++			__clear_user(buf, xstate_size);
+ 			return err;
++		}
+ 		user_fpu_end();
+ 	} else {
+ 		sanitize_i387_state(tsk);
+-- 
+1.7.6.5
+

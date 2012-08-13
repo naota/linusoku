@@ -1,0 +1,142 @@
+Path: news.gmane.org!not-for-mail
+From: Cyril Chemparathy <cyril@ti.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: Re: [PATCH 04/22] ARM: LPAE: support 64-bit virt/phys patching
+Date: Sun, 5 Aug 2012 10:21:17 -0400
+Lines: 85
+Approved: news@gmane.org
+Message-ID: <501E815D.1050707@ti.com>
+References: <1343775898-28345-1-git-send-email-cyril@ti.com> <1343775898-28345-5-git-send-email-cyril@ti.com> <alpine.LFD.2.02.1208040226060.5231@xanadu.home>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="ISO-8859-1"; format=flowed
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344176513 27276 80.91.229.3 (5 Aug 2012 14:21:53 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 5 Aug 2012 14:21:53 +0000 (UTC)
+Cc: <linux-arm-kernel@lists.infradead.org>,
+	<linux-kernel@vger.kernel.org>, <arnd@arndb.de>,
+	<catalin.marinas@arm.com>, <linux@arm.linux.org.uk>,
+	<will.deacon@arm.com>
+To: Nicolas Pitre <nicolas.pitre@linaro.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Aug 05 16:21:52 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sy1iJ-0003jM-Hk
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 05 Aug 2012 16:21:51 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754548Ab2HEOVd (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 5 Aug 2012 10:21:33 -0400
+Original-Received: from comal.ext.ti.com ([198.47.26.152]:47397 "EHLO comal.ext.ti.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754427Ab2HEOVc (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 5 Aug 2012 10:21:32 -0400
+Original-Received: from dlelxv30.itg.ti.com ([172.17.2.17])
+	by comal.ext.ti.com (8.13.7/8.13.7) with ESMTP id q75ELI94014957;
+	Sun, 5 Aug 2012 09:21:18 -0500
+Original-Received: from DLEE74.ent.ti.com (dlee74.ent.ti.com [157.170.170.8])
+	by dlelxv30.itg.ti.com (8.13.8/8.13.8) with ESMTP id q75ELIYq029593;
+	Sun, 5 Aug 2012 09:21:18 -0500
+Original-Received: from dlelxv22.itg.ti.com (172.17.1.197) by DLEE74.ent.ti.com
+ (157.170.170.8) with Microsoft SMTP Server id 14.1.323.3; Sun, 5 Aug 2012
+ 09:21:18 -0500
+Original-Received: from [172.24.113.45] (h113-45.vpn.ti.com [172.24.113.45])	by
+ dlelxv22.itg.ti.com (8.13.8/8.13.8) with ESMTP id q75ELHSH021748;	Sun, 5 Aug
+ 2012 09:21:17 -0500
+User-Agent: Mozilla/5.0 (Windows NT 5.1; rv:14.0) Gecko/20120713 Thunderbird/14.0
+In-Reply-To: <alpine.LFD.2.02.1208040226060.5231@xanadu.home>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337830 gmane.linux.ports.arm.kernel:180260
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337830>
+
+Hi Nicolas,
+
+On 8/4/2012 2:49 AM, Nicolas Pitre wrote:
+> On Tue, 31 Jul 2012, Cyril Chemparathy wrote:
+>
+>> This patch adds support for 64-bit physical addresses in virt_to_phys
+>> patching.  This does not do real 64-bit add/sub, but instead patches in the
+>> upper 32-bits of the phys_offset directly into the output of virt_to_phys.
+>
+> You should explain _why_ you do not a real aadd/sub.  I did deduce it
+> but that might not be obvious to everyone.  Also this subtlety should be
+> commented in the code as well.
+>
+
+We could not do an ADDS + ADC here because the carry is not guaranteed 
+to be retained and passed into the ADC.  This is because the compiler is 
+free to insert all kinds of stuff between the two non-volatile asm blocks.
+
+Is there another subtlety here that I have missed out on entirely?
+
+>> In addition to adding 64-bit support, this patch also adds a set_phys_offset()
+>> helper that is needed on architectures that need to modify PHYS_OFFSET during
+>> initialization.
+>>
+>> Signed-off-by: Cyril Chemparathy <cyril@ti.com>
+>> ---
+>>   arch/arm/include/asm/memory.h |   22 +++++++++++++++-------
+>>   arch/arm/kernel/head.S        |    6 ++++++
+>>   arch/arm/kernel/setup.c       |   14 ++++++++++++++
+>>   3 files changed, 35 insertions(+), 7 deletions(-)
+>>
+>> diff --git a/arch/arm/include/asm/memory.h b/arch/arm/include/asm/memory.h
+>> index 4a0108f..110495c 100644
+>> --- a/arch/arm/include/asm/memory.h
+>> +++ b/arch/arm/include/asm/memory.h
+>> @@ -153,23 +153,31 @@
+>>   #ifdef CONFIG_ARM_PATCH_PHYS_VIRT
+>>
+>>   extern unsigned long __pv_phys_offset;
+>> -#define PHYS_OFFSET __pv_phys_offset
+>> -
+>> +extern unsigned long __pv_phys_offset_high;
+>
+> As mentioned previously, this is just too ugly.  Please make
+> __pv_phys_offset into a phys_addr_t instead and mask the low/high parts
+> as needed in __virt_to_phys().
+>
+
+Maybe u64 instead of phys_addr_t to keep the sizing non-variable?
+
+>>   extern unsigned long __pv_offset;
+>>
+>> +extern void set_phys_offset(phys_addr_t po);
+>> +
+>> +#define PHYS_OFFSET	__virt_to_phys(PAGE_OFFSET)
+>> +
+>>   static inline phys_addr_t __virt_to_phys(unsigned long x)
+>>   {
+>> -	unsigned long t;
+>> -	early_patch_imm8(x, t, "add", __pv_offset);
+>> -	return t;
+>> +	unsigned long tlo, thi = 0;
+>> +
+>> +	early_patch_imm8(x, tlo, "add", __pv_offset);
+>> +	if (sizeof(phys_addr_t) > 4)
+>> +		early_patch_imm8(0, thi, "add", __pv_phys_offset_high);
+>
+> Given the high part is always the same, isn't there a better way than an
+> add with 0 that could be done here?  The add will force a load of 0 in a
+> register needlessly just to add a constant value to it.  Your new
+> patching framework ought to be able to patch a mov (or a mvn)
+> instruction directly.
+>
+
+True.  I'll try and figure out a better way of doing this.
+
+>
+> Nicolas
+>
+
+Once again, thanks for the excellent feedback.
+
+-- 
+Thanks
+- Cyril

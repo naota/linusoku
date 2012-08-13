@@ -1,0 +1,153 @@
+Path: news.gmane.org!not-for-mail
+From: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.kvm.devel
+Subject: [PATCH v5 11/12] KVM: x86: introduce set_mmio_exit_info
+Date: Tue, 07 Aug 2012 17:54:42 +0800
+Lines: 92
+Approved: news@gmane.org
+Message-ID: <5020E5E2.4080603@linux.vnet.ibm.com>
+References: <5020E423.9080004@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344333300 12935 80.91.229.3 (7 Aug 2012 09:55:00 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 09:55:00 +0000 (UTC)
+Cc: Avi Kivity <avi@redhat.com>, Marcelo Tosatti <mtosatti@redhat.com>,
+	LKML <linux-kernel@vger.kernel.org>, KVM <kvm@vger.kernel.org>
+To: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 11:55:00 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SygV8-0004ek-SH
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 11:54:59 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754105Ab2HGJyw (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 05:54:52 -0400
+Original-Received: from e28smtp04.in.ibm.com ([122.248.162.4]:36272 "EHLO
+	e28smtp04.in.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753817Ab2HGJyu (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 05:54:50 -0400
+Original-Received: from /spool/local
+	by e28smtp04.in.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <xiaoguangrong@linux.vnet.ibm.com>;
+	Tue, 7 Aug 2012 15:24:48 +0530
+Original-Received: from d28relay02.in.ibm.com (9.184.220.59)
+	by e28smtp04.in.ibm.com (192.168.1.134) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Tue, 7 Aug 2012 15:24:46 +0530
+Original-Received: from d28av01.in.ibm.com (d28av01.in.ibm.com [9.184.220.63])
+	by d28relay02.in.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q779sjwY21037114;
+	Tue, 7 Aug 2012 15:24:45 +0530
+Original-Received: from d28av01.in.ibm.com (loopback [127.0.0.1])
+	by d28av01.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q77FOKgC002006;
+	Tue, 7 Aug 2012 20:54:20 +0530
+Original-Received: from localhost.localdomain ([9.123.236.99])
+	by d28av01.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q77FOHBB001910;
+	Tue, 7 Aug 2012 20:54:18 +0530
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:14.0) Gecko/20120717 Thunderbird/14.0
+In-Reply-To: <5020E423.9080004@linux.vnet.ibm.com>
+x-cbid: 12080709-5564-0000-0000-000003EA2E75
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338918 gmane.comp.emulators.kvm.devel:95669
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338918>
+
+Introduce set_mmio_exit_info to cleanup the common code
+
+Signed-off-by: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+---
+ arch/x86/kvm/x86.c |   33 +++++++++++++++++----------------
+ 1 files changed, 17 insertions(+), 16 deletions(-)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 4c86239..8cde327 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -3761,9 +3761,6 @@ static int read_exit_mmio(struct kvm_vcpu *vcpu, gpa_t gpa,
+ static int write_exit_mmio(struct kvm_vcpu *vcpu, gpa_t gpa,
+ 			   void *val, int bytes)
+ {
+-	struct kvm_mmio_fragment *frag = &vcpu->mmio_fragments[0];
+-
+-	memcpy(vcpu->run->mmio.data, frag->data, frag->len);
+ 	return X86EMUL_CONTINUE;
+ }
+
+@@ -3831,6 +3828,20 @@ mmio:
+ 	return X86EMUL_CONTINUE;
+ }
+
++static void set_mmio_exit_info(struct kvm_vcpu *vcpu,
++			       struct kvm_mmio_fragment *frag, bool write)
++{
++	struct kvm_run *run = vcpu->run;
++
++	run->exit_reason = KVM_EXIT_MMIO;
++	run->mmio.phys_addr = frag->gpa;
++	run->mmio.len = frag->len;
++	run->mmio.is_write = vcpu->mmio_is_write = write;
++
++	if (write)
++		memcpy(run->mmio.data, frag->data, frag->len);
++}
++
+ int emulator_read_write(struct x86_emulate_ctxt *ctxt, unsigned long addr,
+ 			void *val, unsigned int bytes,
+ 			struct x86_exception *exception,
+@@ -3870,14 +3881,10 @@ int emulator_read_write(struct x86_emulate_ctxt *ctxt, unsigned long addr,
+ 		return rc;
+
+ 	gpa = vcpu->mmio_fragments[0].gpa;
+-
+ 	vcpu->mmio_needed = 1;
+ 	vcpu->mmio_cur_fragment = 0;
+
+-	vcpu->run->mmio.len = vcpu->mmio_fragments[0].len;
+-	vcpu->run->mmio.is_write = vcpu->mmio_is_write = ops->write;
+-	vcpu->run->exit_reason = KVM_EXIT_MMIO;
+-	vcpu->run->mmio.phys_addr = gpa;
++	set_mmio_exit_info(vcpu, &vcpu->mmio_fragments[0], ops->write);
+
+ 	return ops->read_write_exit_mmio(vcpu, gpa, val, bytes);
+ }
+@@ -5486,7 +5493,6 @@ static int __vcpu_run(struct kvm_vcpu *vcpu)
+  */
+ static int complete_mmio(struct kvm_vcpu *vcpu)
+ {
+-	struct kvm_run *run = vcpu->run;
+ 	struct kvm_mmio_fragment *frag;
+ 	int r;
+
+@@ -5497,7 +5503,7 @@ static int complete_mmio(struct kvm_vcpu *vcpu)
+ 		/* Complete previous fragment */
+ 		frag = &vcpu->mmio_fragments[vcpu->mmio_cur_fragment++];
+ 		if (!vcpu->mmio_is_write)
+-			memcpy(frag->data, run->mmio.data, frag->len);
++			memcpy(frag->data, vcpu->run->mmio.data, frag->len);
+ 		if (vcpu->mmio_cur_fragment == vcpu->mmio_nr_fragments) {
+ 			vcpu->mmio_needed = 0;
+ 			if (vcpu->mmio_is_write)
+@@ -5507,12 +5513,7 @@ static int complete_mmio(struct kvm_vcpu *vcpu)
+ 		}
+ 		/* Initiate next fragment */
+ 		++frag;
+-		run->exit_reason = KVM_EXIT_MMIO;
+-		run->mmio.phys_addr = frag->gpa;
+-		if (vcpu->mmio_is_write)
+-			memcpy(run->mmio.data, frag->data, frag->len);
+-		run->mmio.len = frag->len;
+-		run->mmio.is_write = vcpu->mmio_is_write;
++		set_mmio_exit_info(vcpu, frag, vcpu->mmio_is_write);
+ 		return 0;
+
+ 	}
+-- 
+1.7.7.6
+

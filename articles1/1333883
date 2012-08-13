@@ -1,0 +1,130 @@
+Path: news.gmane.org!not-for-mail
+From: Rik van Riel <riel@redhat.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [PATCH] mm: hugetlbfs: Close race during teardown of hugetlbfs
+ shared page tables v2
+Date: Thu, 26 Jul 2012 17:00:28 -0400
+Lines: 59
+Approved: news@gmane.org
+Message-ID: <5011AFEC.2040609@redhat.com>
+References: <20120720134937.GG9222@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-15; format=flowed
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343336535 25829 80.91.229.3 (26 Jul 2012 21:02:15 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 21:02:15 +0000 (UTC)
+Cc: Linux-MM <linux-mm@kvack.org>, Michal Hocko <mhocko@suse.cz>,
+        Hugh Dickins <hughd@google.com>,
+        David Gibson <david@gibson.dropbear.id.au>,
+        Ken Chen <kenchen@google.com>, Cong Wang <xiyou.wangcong@gmail.com>,
+        LKML <linux-kernel@vger.kernel.org>,
+        Larry Woodman <lwoodman@redhat.com>
+To: Mel Gorman <mgorman@suse.de>
+Original-X-From: owner-linux-mm@kvack.org Thu Jul 26 23:02:10 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SuVCD-0000IU-RB
+	for glkm-linux-mm-2@m.gmane.org; Thu, 26 Jul 2012 23:02:10 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id DDF5E6B0044; Thu, 26 Jul 2012 17:02:06 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id CB5C96B005A; Thu, 26 Jul 2012 17:02:06 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 9FE296B005D; Thu, 26 Jul 2012 17:02:06 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx153.postini.com [74.125.245.153])
+	by kanga.kvack.org (Postfix) with SMTP id DE75F6B0044
+	for <linux-mm@kvack.org>; Thu, 26 Jul 2012 17:02:05 -0400 (EDT)
+Original-Received: from mx1.redhat.com ([209.132.183.28]) (using TLSv1) by na3sys010amx153.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 26 Jul 2012 21:02:06 GMT
+Original-Received: from int-mx10.intmail.prod.int.phx2.redhat.com (int-mx10.intmail.prod.int.phx2.redhat.com [10.5.11.23])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6QL20Rm003610
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Thu, 26 Jul 2012 17:02:00 -0400
+Original-Received: from cuia.bos.redhat.com (cuia.bos.redhat.com [10.16.184.35])
+	by int-mx10.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6QL1wws016770;
+	Thu, 26 Jul 2012 17:01:58 -0400
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120605 Thunderbird/13.0
+In-Reply-To: <20120720134937.GG9222@suse.de>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.23
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <riel@redhat.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83037 gmane.linux.kernel:1333883
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333883>
+
+On 07/20/2012 09:49 AM, Mel Gorman wrote:
+> This V2 is still the mmap_sem approach that fixes a potential deadlock
+> problem pointed out by Michal.
+
+Larry and I were looking around the hugetlb code some
+more, and found what looks like yet another race.
+
+In hugetlb_no_page, we have the following code:
+
+
+         spin_lock(&mm->page_table_lock);
+         size = i_size_read(mapping->host) >> huge_page_shift(h);
+         if (idx >= size)
+                 goto backout;
+
+         ret = 0;
+         if (!huge_pte_none(huge_ptep_get(ptep)))
+                 goto backout;
+
+         if (anon_rmap)
+                 hugepage_add_new_anon_rmap(page, vma, address);
+         else
+                 page_dup_rmap(page);
+         new_pte = make_huge_pte(vma, page, ((vma->vm_flags & VM_WRITE)
+                                 && (vma->vm_flags & VM_SHARED)));
+         set_huge_pte_at(mm, address, ptep, new_pte);
+	...
+	spin_unlock(&mm->page_table_lock);
+
+Notice how we check !huge_pte_none with our own
+mm->page_table_lock held.
+
+This offers no protection at all against other
+processes, that also hold their own page_table_lock.
+
+In short, it looks like it is possible for multiple
+processes to go through the above code simultaneously,
+potentially resulting in:
+
+1) one process overwriting the pte just created by
+    another process
+
+2) data corruption, as one partially written page
+    gets superceded by an newly zeroed page, but no
+    TLB invalidates get sent to other CPUs
+
+3) a memory leak of a huge page
+
+Is there anything that would make this race impossible,
+or is this a real bug?
+
+If so, are there more like it in the hugetlbfs code?
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

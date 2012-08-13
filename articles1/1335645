@@ -1,0 +1,155 @@
+Path: news.gmane.org!not-for-mail
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 2/2] x86/uprobes: implement x86 specific arch_uprobe_*_step
+Date: Tue, 31 Jul 2012 13:52:28 +0200
+Lines: 105
+Approved: news@gmane.org
+Message-ID: <1343735548-18101-2-git-send-email-bigeasy@linutronix.de>
+References: <20120730141638.GA5306@redhat.com>
+ <1343735548-18101-1-git-send-email-bigeasy@linutronix.de>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343735576 13767 80.91.229.3 (31 Jul 2012 11:52:56 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 11:52:56 +0000 (UTC)
+Cc: oleg@redhat.com, ananth@in.ibm.com, a.p.zijlstra@chello.nl,
+	mingo@redhat.com, srikar@linux.vnet.ibm.com, roland@hack.frob.com,
+	Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 13:52:54 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwB0P-0001Qd-JQ
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 13:52:53 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756104Ab2GaLwr (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 07:52:47 -0400
+Original-Received: from www.linutronix.de ([62.245.132.108]:42477 "EHLO
+	Galois.linutronix.de" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756021Ab2GaLwp (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 07:52:45 -0400
+Original-Received: from localhost ([127.0.0.1] helo=bazinga.HH.breakpoint.cc)
+	by Galois.linutronix.de with esmtp (Exim 4.72)
+	(envelope-from <bigeasy@linutronix.de>)
+	id 1SwB0E-0000zN-18; Tue, 31 Jul 2012 13:52:42 +0200
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1343735548-18101-1-git-send-email-bigeasy@linutronix.de>
+X-Linutronix-Spam-Score: -1.0
+X-Linutronix-Spam-Level: -
+X-Linutronix-Spam-Status: No , -1.0 points, 5.0 required,  ALL_TRUSTED=-1,SHORTCIRCUIT=-0.0001
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335645
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335645>
+
+The arch specific implementation enables single stepping directly by
+setting the trap flag. "Single-Step on branches" is always disabled
+since only one opcode has to be executed.
+
+The disable call removes the trap flag unless it was there before. It
+does not touch the flags register if the executed instruction was
+"popf". It does not take into account various prefixes like "lock popf"
+or "repz popf".
+SIGTRAP is sent to the process in case it was traced so the debugger
+knows once we advanced by one opcode. This isn't done in case we have to
+restore the BTF flag. In case the BTF flag is set, we should look at the
+opcode and send SIGTRAP depending on the jump/flag status. For now we
+wait for the next exception/jump to be taken.
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ arch/x86/include/asm/uprobes.h |    3 ++
+ arch/x86/kernel/uprobes.c      |   60 ++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 63 insertions(+)
+
+diff --git a/arch/x86/include/asm/uprobes.h b/arch/x86/include/asm/uprobes.h
+index f3971bb..47f4cf1 100644
+--- a/arch/x86/include/asm/uprobes.h
++++ b/arch/x86/include/asm/uprobes.h
+@@ -46,6 +46,9 @@ struct arch_uprobe_task {
+ #ifdef CONFIG_X86_64
+ 	unsigned long			saved_scratch_register;
+ #endif
++#define UPROBE_CLEAR_TF			(1 << 0)
++#define UPROBE_SET_BTF			(1 << 1)
++	unsigned int			restore_flags;
+ };
+ 
+ extern int  arch_uprobe_analyze_insn(struct arch_uprobe *aup, struct mm_struct *mm, unsigned long addr);
+diff --git a/arch/x86/kernel/uprobes.c b/arch/x86/kernel/uprobes.c
+index 36fd420..6eec3e4 100644
+--- a/arch/x86/kernel/uprobes.c
++++ b/arch/x86/kernel/uprobes.c
+@@ -673,3 +673,63 @@ bool arch_uprobe_skip_sstep(struct arch_uprobe *auprobe, struct pt_regs *regs)
+ 	}
+ 	return false;
+ }
++
++static int insn_is_popf(const u8 *insn)
++{
++	/* popf */
++	if (insn[0] == 0x9d)
++		return 1;
++	return 0;
++}
++
++void arch_uprobe_enable_step(struct task_struct *child,
++		struct arch_uprobe *auprobe)
++{
++	struct uprobe_task	*utask		= child->utask;
++	struct arch_uprobe_task	*autask		= &utask->autask;
++	struct pt_regs		*regs		= task_pt_regs(child);
++	unsigned long		debugctl;
++
++	autask->restore_flags = 0;
++	if (!(regs->flags & X86_EFLAGS_TF) &&
++			!insn_is_popf(auprobe->insn)) {
++		autask->restore_flags |= UPROBE_CLEAR_TF;
++
++		debugctl = get_debugctlmsr();
++		if (debugctl & DEBUGCTLMSR_BTF) {
++			autask->restore_flags |= UPROBE_SET_BTF;
++			debugctl &= ~DEBUGCTLMSR_BTF;
++			update_debugctlmsr(debugctl);
++		}
++	}
++	regs->flags |= X86_EFLAGS_TF;
++}
++
++void arch_uprobe_disable_step(struct task_struct *child,
++		struct arch_uprobe *auprobe)
++{
++	struct uprobe_task *utask	= child->utask;
++	struct arch_uprobe_task	*autask		= &utask->autask;
++	struct pt_regs *regs		= task_pt_regs(child);
++
++	/*
++	 * Disable the single step flag if it was set by us. Notify the debugger
++	 * via SIGTRAP in case it was already there so it learns that we
++	 * advanced by an opcode unless the debugger is waiting for the next
++	 * jump to be taken. This logic gets it wrong if the uprobe was set
++	 * on jump instruction that would raise an exception.
++	 */
++	if (autask->restore_flags & UPROBE_CLEAR_TF) {
++		regs->flags &= ~X86_EFLAGS_TF;
++	} else {
++		if (autask->restore_flags & UPROBE_SET_BTF) {
++			unsigned long	debugctl;
++
++			debugctl = get_debugctlmsr();
++			debugctl |= DEBUGCTLMSR_BTF;
++			update_debugctlmsr(debugctl);
++		} else {
++			send_sig(SIGTRAP, current, 0);
++		}
++	}
++}
+-- 
+1.7.10.4
+

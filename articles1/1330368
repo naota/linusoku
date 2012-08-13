@@ -1,0 +1,144 @@
+Path: news.gmane.org!not-for-mail
+From: Mel Gorman <mgorman@suse.de>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel.stable,gmane.linux.kernel
+Subject: [PATCH 03/34] mm: Reduce the amount of work done when updating min_free_kbytes
+Date: Thu, 19 Jul 2012 15:36:13 +0100
+Lines: 84
+Approved: news@gmane.org
+Message-ID: <1342708604-26540-4-git-send-email-mgorman@suse.de>
+References: <1342708604-26540-1-git-send-email-mgorman@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342708624 12043 80.91.229.3 (19 Jul 2012 14:37:04 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 14:37:04 +0000 (UTC)
+Cc: "Linux-MM <linux-mm"@kvack.org,
+	LKML <linux-kernel@vger.kernel.org>, Mel Gorman <mgorman@suse.de>
+To: Stable <stable@vger.kernel.org>
+Original-X-From: owner-linux-mm@kvack.org Thu Jul 19 16:37:01 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Srrqe-00050i-H7
+	for glkm-linux-mm-2@m.gmane.org; Thu, 19 Jul 2012 16:37:00 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 260D56B0080; Thu, 19 Jul 2012 10:36:54 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id D02BD6B0068; Thu, 19 Jul 2012 10:36:52 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id BD0066B006E; Thu, 19 Jul 2012 10:36:51 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx181.postini.com [74.125.245.181])
+	by kanga.kvack.org (Postfix) with SMTP id BCBA56B0069
+	for <linux-mm@kvack.org>; Thu, 19 Jul 2012 10:36:49 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx181.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 19 Jul 2012 14:36:49 GMT
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 10E3CA329D;
+	Thu, 19 Jul 2012 16:36:48 +0200 (CEST)
+X-Mailer: git-send-email 1.7.9.2
+In-Reply-To: <1342708604-26540-1-git-send-email-mgorman@suse.de>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mgorman@suse.de> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82695 gmane.linux.kernel.stable:28535 gmane.linux.kernel:1330368
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330368>
+
+commit 938929f14cb595f43cd1a4e63e22d36cab1e4a1f upstream.
+
+Stable note: Fixes https://bugzilla.novell.com/show_bug.cgi?id=726210 .
+	Large machines with 1TB or more of RAM take a long time to boot
+	without this patch and may spew out soft lockup warnings.
+
+When min_free_kbytes is updated blocks marked MIGRATE_RESERVE are
+updated. Ordinarily, this work is unnoticable as it happens early
+in boot. However, on large machines with 1TB of memory, this can take
+a considerable time when NUMA distances are taken into account. The bulk
+of the work is done by pageblock_is_reserved() which examines the
+metadata for almost every page in the system. Currently, we are doing
+this far more than necessary as it is only required while there are
+still blocks to be marked MIGRATE_RESERVE. This patch significantly
+reduces the amount of work done by setup_zone_migrate_reserve()
+improving boot times on 1TB machines.
+
+[akpm@linux-foundation.org: coding-style fixes]
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+---
+ mm/page_alloc.c |   35 +++++++++++++++++++----------------
+ 1 file changed, 19 insertions(+), 16 deletions(-)
+
+diff --git a/mm/page_alloc.c b/mm/page_alloc.c
+index 947a7e9..e568b80 100644
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -3418,25 +3418,28 @@ static void setup_zone_migrate_reserve(struct zone *zone)
+ 		if (page_to_nid(page) != zone_to_nid(zone))
+ 			continue;
+ 
+-		/* Blocks with reserved pages will never free, skip them. */
+-		block_end_pfn = min(pfn + pageblock_nr_pages, end_pfn);
+-		if (pageblock_is_reserved(pfn, block_end_pfn))
+-			continue;
+-
+ 		block_migratetype = get_pageblock_migratetype(page);
+ 
+-		/* If this block is reserved, account for it */
+-		if (reserve > 0 && block_migratetype == MIGRATE_RESERVE) {
+-			reserve--;
+-			continue;
+-		}
++		/* Only test what is necessary when the reserves are not met */
++		if (reserve > 0) {
++			/* Blocks with reserved pages will never free, skip them. */
++			block_end_pfn = min(pfn + pageblock_nr_pages, end_pfn);
++			if (pageblock_is_reserved(pfn, block_end_pfn))
++				continue;
+ 
+-		/* Suitable for reserving if this block is movable */
+-		if (reserve > 0 && block_migratetype == MIGRATE_MOVABLE) {
+-			set_pageblock_migratetype(page, MIGRATE_RESERVE);
+-			move_freepages_block(zone, page, MIGRATE_RESERVE);
+-			reserve--;
+-			continue;
++			/* If this block is reserved, account for it */
++			if (block_migratetype == MIGRATE_RESERVE) {
++				reserve--;
++				continue;
++			}
++
++			/* Suitable for reserving if this block is movable */
++			if (block_migratetype == MIGRATE_MOVABLE) {
++				set_pageblock_migratetype(page, MIGRATE_RESERVE);
++				move_freepages_block(zone, page, MIGRATE_RESERVE);
++				reserve--;
++				continue;
++			}
+ 		}
+ 
+ 		/*
+-- 
+1.7.9.2
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

@@ -1,0 +1,138 @@
+Path: news.gmane.org!not-for-mail
+From: Julia Lawall <Julia.Lawall@lip6.fr>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.janitors,gmane.comp.emulators.kvm.powerpc.devel,gmane.comp.emulators.kvm.devel,gmane.linux.ports.ppc64.devel
+Subject: [PATCH 3/6] arch/powerpc/kvm/e500_tlb.c: fix error return code
+Date: Sun,  5 Aug 2012 11:52:33 +0200
+Lines: 89
+Approved: news@gmane.org
+Message-ID: <1344160356-387-4-git-send-email-Julia.Lawall@lip6.fr>
+References: <1344160356-387-1-git-send-email-Julia.Lawall@lip6.fr>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344160399 20317 80.91.229.3 (5 Aug 2012 09:53:19 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 5 Aug 2012 09:53:19 +0000 (UTC)
+Cc: kernel-janitors@vger.kernel.org, Avi Kivity <avi@redhat.com>,
+	Marcelo Tosatti <mtosatti@redhat.com>,
+	Benjamin Herrenschmidt <benh@kernel.crashing.org>,
+	Paul Mackerras <paulus@samba.org>, kvm-ppc@vger.kernel.org,
+	kvm@vger.kernel.org, linuxppc-dev@lists.ozlabs.org,
+	linux-kernel@vger.kernel.org, Julia Lawall <julia@diku.dk>
+To: Alexander Graf <agraf@suse.de>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Aug 05 11:53:18 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxxWP-0007EQ-As
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 05 Aug 2012 11:53:17 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754406Ab2HEJww (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 5 Aug 2012 05:52:52 -0400
+Original-Received: from mail4-relais-sop.national.inria.fr ([192.134.164.105]:9388 "EHLO
+	mail4-relais-sop.national.inria.fr" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1754253Ab2HEJwq (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 5 Aug 2012 05:52:46 -0400
+X-IronPort-AV: E=Sophos;i="4.77,715,1336341600"; 
+   d="scan'208";a="152465605"
+Original-Received: from palace.lip6.fr (HELO localhost.localdomain) ([132.227.105.202])
+  by mail4-relais-sop.national.inria.fr with ESMTP/TLS/DHE-RSA-AES256-SHA; 05 Aug 2012 11:52:42 +0200
+X-Mailer: git-send-email 1.7.8.6
+In-Reply-To: <1344160356-387-1-git-send-email-Julia.Lawall@lip6.fr>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337802 gmane.linux.kernel.janitors:25342 gmane.comp.emulators.kvm.powerpc.devel:5103 gmane.comp.emulators.kvm.devel:95558 gmane.linux.ports.ppc64.devel:84265
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337802>
+
+From: Julia Lawall <julia@diku.dk>
+
+Convert a 0 error return code to a negative one, as returned elsewhere in the
+function.
+
+A new label is also added to avoid freeing things that are known to not yet
+be allocated.
+
+A simplified version of the semantic match that finds the first problem is as
+follows: (http://coccinelle.lip6.fr/)
+
+// <smpl>
+@@
+identifier ret;
+expression e,e1,e2,e3,e4,x;
+@@
+
+(
+if (\(ret != 0\|ret < 0\) || ...) { ... return ...; }
+|
+ret = 0
+)
+... when != ret = e1
+*x = \(kmalloc\|kzalloc\|kcalloc\|devm_kzalloc\|ioremap\|ioremap_nocache\|devm_ioremap\|devm_ioremap_nocache\)(...);
+... when != x = e2
+    when != ret = e3
+*if (x == NULL || ...)
+{
+  ... when != ret = e4
+*  return ret;
+}
+// </smpl>
+
+Signed-off-by: Julia Lawall <julia@diku.dk>
+
+---
+ arch/powerpc/kvm/e500_tlb.c |   19 +++++++++++++------
+ 1 file changed, 13 insertions(+), 6 deletions(-)
+
+diff --git a/arch/powerpc/kvm/e500_tlb.c b/arch/powerpc/kvm/e500_tlb.c
+index c8f6c58..85fcdf7 100644
+--- a/arch/powerpc/kvm/e500_tlb.c
++++ b/arch/powerpc/kvm/e500_tlb.c
+@@ -1176,21 +1176,27 @@ int kvm_vcpu_ioctl_config_tlb(struct kvm_vcpu *vcpu,
+ 	}
+ 
+ 	virt = vmap(pages, num_pages, VM_MAP, PAGE_KERNEL);
+-	if (!virt)
++	if (!virt) {
++		ret = -ENOMEM;
+ 		goto err_put_page;
++	}
+ 
+ 	privs[0] = kzalloc(sizeof(struct tlbe_priv) * params.tlb_sizes[0],
+ 			   GFP_KERNEL);
+ 	privs[1] = kzalloc(sizeof(struct tlbe_priv) * params.tlb_sizes[1],
+ 			   GFP_KERNEL);
+ 
+-	if (!privs[0] || !privs[1])
+-		goto err_put_page;
++	if (!privs[0] || !privs[1]) {
++		ret = -ENOMEM;
++		goto err_privs;
++	}
+ 
+ 	g2h_bitmap = kzalloc(sizeof(u64) * params.tlb_sizes[1],
+ 	                     GFP_KERNEL);
+-	if (!g2h_bitmap)
+-		goto err_put_page;
++	if (!g2h_bitmap) {
++		ret = -ENOMEM;
++		goto err_privs;
++	}
+ 
+ 	free_gtlb(vcpu_e500);
+ 
+@@ -1230,10 +1236,11 @@ int kvm_vcpu_ioctl_config_tlb(struct kvm_vcpu *vcpu,
+ 	kvmppc_recalc_tlb1map_range(vcpu_e500);
+ 	return 0;
+ 
+-err_put_page:
++err_privs:
+ 	kfree(privs[0]);
+ 	kfree(privs[1]);
+ 
++err_put_page:
+ 	for (i = 0; i < num_pages; i++)
+ 		put_page(pages[i]);
+ 

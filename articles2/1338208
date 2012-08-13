@@ -1,0 +1,73 @@
+Path: news.gmane.org!not-for-mail
+From: Russell King - ARM Linux <linux@arm.linux.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: Re: [PATCH 01/22] ARM: add mechanism for late code patching
+Date: Mon, 6 Aug 2012 12:12:24 +0100
+Lines: 17
+Approved: news@gmane.org
+Message-ID: <20120806111224.GA18957@n2100.arm.linux.org.uk>
+References: <1343775898-28345-1-git-send-email-cyril@ti.com> <1343775898-28345-2-git-send-email-cyril@ti.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344251573 5949 80.91.229.3 (6 Aug 2012 11:12:53 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 11:12:53 +0000 (UTC)
+Cc: linux-arm-kernel@lists.infradead.org, linux-kernel@vger.kernel.org,
+	arnd@arndb.de, catalin.marinas@arm.com, nico@linaro.org,
+	will.deacon@arm.com
+To: Cyril Chemparathy <cyril@ti.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Aug 06 13:12:52 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyLEy-00082A-BB
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 06 Aug 2012 13:12:52 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755977Ab2HFLMm (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 07:12:42 -0400
+Original-Received: from caramon.arm.linux.org.uk ([78.32.30.218]:55177 "EHLO
+	caramon.arm.linux.org.uk" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755801Ab2HFLMl (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 07:12:41 -0400
+DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; c=relaxed/relaxed; d=arm.linux.org.uk; s=caramon;
+	h=Sender:In-Reply-To:Content-Type:MIME-Version:References:Message-ID:Subject:Cc:To:From:Date; bh=fOt9ediVQtUWYCHxeHHDvih7iAOSSmtBhtbUb6X4l3Y=;
+	b=KRvLlnvitM6qTv6iFDJupszhwMDuWmXWlx/vBNvpkvSeOvw7ON6Snluk7OaYmxYV5R5nUfraMJk3CR3TKOgsWdypRpw4o56/JhEeaKow9YjnR5SXIvm680HhW3/qaKFJ1t9RaLkyQHX3qNpeeSrUoU/w7KhZkF6qguSN93QDxOI=;
+Original-Received: from n2100.arm.linux.org.uk ([2002:4e20:1eda:1:214:fdff:fe10:4f86]:56462)
+	by caramon.arm.linux.org.uk with esmtpsa (TLSv1:AES256-SHA:256)
+	(Exim 4.76)
+	(envelope-from <linux@arm.linux.org.uk>)
+	id 1SyLEY-0003IF-Pz; Mon, 06 Aug 2012 12:12:27 +0100
+Original-Received: from linux by n2100.arm.linux.org.uk with local (Exim 4.76)
+	(envelope-from <linux@n2100.arm.linux.org.uk>)
+	id 1SyLEX-0007Bh-Dq; Mon, 06 Aug 2012 12:12:25 +0100
+Content-Disposition: inline
+In-Reply-To: <1343775898-28345-2-git-send-email-cyril@ti.com>
+User-Agent: Mutt/1.5.19 (2009-01-05)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338208 gmane.linux.ports.arm.kernel:180382
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338208>
+
+On Tue, Jul 31, 2012 at 07:04:37PM -0400, Cyril Chemparathy wrote:
+> +static void __init init_patch_kernel(void)
+> +{
+> +	const void *start = &__patch_table_begin;
+> +	const void *end   = &__patch_table_end;
+> +
+> +	BUG_ON(patch_kernel(start, end - start));
+> +	flush_icache_range(init_mm.start_code, init_mm.end_code);
+
+Err.  You are asking the kernel to flush every single cache line
+manually throughout the kernel code.  That's a flush every 32-bytes
+over maybe a few megabytes of address space.
+
+This is one of the reasons we do the patching in assembly code before
+the caches are enabled - so we don't have to worry about the interaction
+with the CPU caches, which for this kind of application would be very
+expensive.

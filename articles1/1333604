@@ -1,0 +1,114 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.file-systems,gmane.linux.nfs
+Subject: [PATCH v4 04/17] vfs: fix readlinkat to retry on ESTALE
+Date: Thu, 26 Jul 2012 07:55:07 -0400
+Lines: 52
+Approved: news@gmane.org
+Message-ID: <1343303720-11199-5-git-send-email-jlayton@redhat.com>
+References: <1343303720-11199-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343304068 28575 80.91.229.3 (26 Jul 2012 12:01:08 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 12:01:08 +0000 (UTC)
+Cc: linux-fsdevel@vger.kernel.org, linux-nfs@vger.kernel.org,
+	linux-kernel@vger.kernel.org, michael.brantley@deshaw.com,
+	hch@infradead.org, miklos@szeredi.hu, pstaubach@exagrid.com
+To: viro@ZenIV.linux.org.uk
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 14:01:07 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuMkc-0003t1-LB
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 14:01:06 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752676Ab2GZMA5 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 08:00:57 -0400
+Original-Received: from mail-gg0-f174.google.com ([209.85.161.174]:46818 "EHLO
+	mail-gg0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752250Ab2GZLzd (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 07:55:33 -0400
+Original-Received: by mail-gg0-f174.google.com with SMTP id u4so1821085ggl.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 04:55:33 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:x-gm-message-state;
+        bh=OEzgfhKr75Q8DXD+6sdNT3n7eplkRZBtcwyuuQ9J+VI=;
+        b=G0NPleNttY7BNc9uwitkljgpf+hSfQM2LG2CAeuiDuGcNz1XIU13SX+khgO0i4sQhU
+         9g3B6bYufpSBMFLW5kTFL0a/Vt3YnVCvZ+aiTP9WPGTfjJRWeDMfMvqTWGgyeA8KVMUz
+         aucgDD/A1co6W/sj/g0ndy5Bk752RPxpRI2CifsaXZpAqCVw8UGZ+buvVJMb/0zHlz5+
+         QUzVU59c43H8gFRe1ywz4ZNuv5gi1WB0DSiNh+xGWN87r74ebum++Q2FsB6EW2F/EPh0
+         CJvw/maIO0+zuyEuFro8UFf9UzTd5LrEmROqRQulAkoRzwHknfLdRFdDhXyAFyG2mEIC
+         OWcg==
+Original-Received: by 10.236.151.110 with SMTP id a74mr26983400yhk.35.1343303733377;
+        Thu, 26 Jul 2012 04:55:33 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-076-182-054-194.nc.res.rr.com. [76.182.54.194])
+        by mx.google.com with ESMTPS id l12sm4436364ank.2.2012.07.26.04.55.31
+        (version=SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 04:55:32 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1343303720-11199-1-git-send-email-jlayton@redhat.com>
+X-Gm-Message-State: ALoCoQl5ejjWVvAuFiXZAFYBcqdUBJM1XpLiMYIgHzGz+5Cp8dfqAwiJYaoUjJr/z//IovoX1YJj
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333604 gmane.linux.file-systems:66256 gmane.linux.nfs:51150
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333604>
+
+Signed-off-by: Jeff Layton <jlayton@redhat.com>
+---
+ fs/stat.c | 21 +++++++++++++++++----
+ 1 file changed, 17 insertions(+), 4 deletions(-)
+
+diff --git a/fs/stat.c b/fs/stat.c
+index 5afeb37..c9d88f7 100644
+--- a/fs/stat.c
++++ b/fs/stat.c
+@@ -307,14 +307,25 @@ SYSCALL_DEFINE4(readlinkat, int, dfd, const char __user *, pathname,
+ 	struct path path;
+ 	int error;
+ 	int empty = 0;
++	char *name;
++	unsigned int try = 0;
++	unsigned int lookup_flags = LOOKUP_EMPTY;
+ 
+ 	if (bufsiz <= 0)
+ 		return -EINVAL;
+ 
+-	error = user_path_at_empty(dfd, pathname, LOOKUP_EMPTY, &path, &empty);
+-	if (!error) {
+-		struct inode *inode = path.dentry->d_inode;
++	name = getname_flags(pathname, lookup_flags, &empty);
++	if (IS_ERR(name))
++		return PTR_ERR(name);
++
++	do {
++		struct inode *inode;
++
++		error = kern_path_at(dfd, name, lookup_flags, &path);
++		if (error)
++			break;
+ 
++		inode = path.dentry->d_inode;
+ 		error = empty ? -ENOENT : -EINVAL;
+ 		if (inode->i_op->readlink) {
+ 			error = security_inode_readlink(path.dentry);
+@@ -325,7 +336,9 @@ SYSCALL_DEFINE4(readlinkat, int, dfd, const char __user *, pathname,
+ 			}
+ 		}
+ 		path_put(&path);
+-	}
++		lookup_flags |= LOOKUP_REVAL;
++	} while (retry_estale(error, try++));
++	putname(name);
+ 	return error;
+ }
+ 
+-- 
+1.7.11.2
+

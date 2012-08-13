@@ -1,0 +1,96 @@
+Path: news.gmane.org!not-for-mail
+From: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.xen.devel
+Subject: [PATCH] Xen-SWIOTLB fixes (v2) for 3.7
+Date: Tue, 31 Jul 2012 10:00:18 -0400
+Lines: 40
+Approved: news@gmane.org
+Message-ID: <1343743223-30092-1-git-send-email-konrad.wilk@oracle.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343743835 21013 80.91.229.3 (31 Jul 2012 14:10:35 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 14:10:35 +0000 (UTC)
+To: fujita.tomonori@lab.ntt.co.jp, xen-devel@lists.xensource.com,
+	linux-kernel@vger.kernel.org, stefano.stabellini@eu.citrix.com,
+	JBeulich@suse.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 16:10:34 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwD9d-0002gW-Lo
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 16:10:34 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754105Ab2GaOJ5 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 10:09:57 -0400
+Original-Received: from acsinet15.oracle.com ([141.146.126.227]:46676 "EHLO
+	acsinet15.oracle.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754048Ab2GaOJv (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 10:09:51 -0400
+Original-Received: from acsinet22.oracle.com (acsinet22.oracle.com [141.146.126.238])
+	by acsinet15.oracle.com (Sentrion-MTA-4.2.2/Sentrion-MTA-4.2.2) with ESMTP id q6VE9UVl025625
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Tue, 31 Jul 2012 14:09:31 GMT
+Original-Received: from acsmt357.oracle.com (acsmt357.oracle.com [141.146.40.157])
+	by acsinet22.oracle.com (8.14.4+Sun/8.14.4) with ESMTP id q6VE9TQI024225
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Tue, 31 Jul 2012 14:09:29 GMT
+Original-Received: from abhmt101.oracle.com (abhmt101.oracle.com [141.146.116.53])
+	by acsmt357.oracle.com (8.12.11.20060308/8.12.11) with ESMTP id q6VE9SCJ014082;
+	Tue, 31 Jul 2012 09:09:29 -0500
+Original-Received: from phenom.dumpdata.com (/209.6.85.33)
+	by default (Oracle Beehive Gateway v4.0)
+	with ESMTP ; Tue, 31 Jul 2012 07:09:28 -0700
+Original-Received: by phenom.dumpdata.com (Postfix, from userid 1000)
+	id 442CD402B2; Tue, 31 Jul 2012 10:00:28 -0400 (EDT)
+X-Mailer: git-send-email 1.7.7.6
+X-Source-IP: acsinet22.oracle.com [141.146.126.238]
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335751 gmane.comp.emulators.xen.devel:135965
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335751>
+
+The original problem I mentioned in the above mentioned URL:
+"if one boots a PV 64-bit guests with more than 4GB, the SWIOTLB [Xen]
+gets turned on - and 64MB of precious low-memory gets used." was totally
+bogus. The SWIOTLB that gets turned on is the *native* one - which does
+not exhaust any low-memory of the host. But it does eat up perfectly
+fine 64MB of the guest and never gets used.
+
+So this patchset has some things I wanted to do for some time:
+ [PATCH 1/5] xen/swiotlb: Simplify the logic.
+
+Just so that next time I am not confused.
+ [PATCH 2/5] xen/swiotlb: With more than 4GB on 64-bit, disable the
+
+and don't turn the *native* SWIOTLB on PV guests and waste those 64MB.
+
+Here are the exciting new patches - basically I want to emulate what
+IA64 does which is to turn on the SWIOTLB late in the bootup cycle.
+This means not using the alloc_bootmem and having a "late" variant
+to initialize SWIOTLB. There is some surgery in the SWIOTLB library:
+ [PATCH 3/5] swiotlb: add the late swiotlb initialization function
+
+to allow it to use an io_tlb passed in. Note: I hadn't tested this
+on IA64 and that is something I need to do.
+
+And then the implementation in the Xen-SWIOTLB to use it:
+ [PATCH 4/5] xen/swiotlb: Use the swiotlb_late_init_with_tbl to init
+along with Xen PCI frontend to utilize it.
+ [PATCH 5/5] xen/pcifront: Use Xen-SWIOTLB when initting if required.
+
+The end result is that a PV guest can now dynamically(*) deal with
+PCI passthrough cards. I say "dynamically" b/c if one boots a PV guest
+with more than 3GB without using 'e820_hole' (or is it called 'e820_host'
+now?) the PCI subsystem won't be able to squeeze the BARs as they
+are RAM occupied. The workaround is to boot with 'e820_hole' or some
+new work where we manipulate at boot time the E820 to leave a nice
+big 1GB hole under 4G - and with all the work on the P2M tree that
+should be fairly easy actually.
+
+Note: If one uses 'iommu=soft' on the Linux command line, the Xen-SWIOTLB
+still gets turned on.

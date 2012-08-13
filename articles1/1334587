@@ -1,0 +1,92 @@
+Path: news.gmane.org!not-for-mail
+From: sheng qiu <herbert1984106@gmail.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.kvm.devel
+Subject: more interrupts (lower performance) in bare-metal compared with
+ running VM
+Date: Fri, 27 Jul 2012 22:09:37 -0500
+Lines: 37
+Approved: news@gmane.org
+Message-ID: <CAB7xdi=DrE356=U1Jr1Z=ROo2X3XNM5uKcgiZJTKY+EdsTu7gw@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1343445054 25079 80.91.229.3 (28 Jul 2012 03:10:54 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 28 Jul 2012 03:10:54 +0000 (UTC)
+To: kvm <kvm@vger.kernel.org>, linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Jul 28 05:10:54 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuxQX-00081w-Ri
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 28 Jul 2012 05:10:50 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752954Ab2G1DJk (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 23:09:40 -0400
+Original-Received: from mail-yw0-f46.google.com ([209.85.213.46]:53608 "EHLO
+	mail-yw0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752846Ab2G1DJi (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 23:09:38 -0400
+Original-Received: by yhmm54 with SMTP id m54so3812915yhm.19
+        for <multiple recipients>; Fri, 27 Jul 2012 20:09:37 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=mime-version:date:message-id:subject:from:to:content-type;
+        bh=/QjbdiGrp6qbenL2p6DMJQUN2yd04NihOYgA1JP/dug=;
+        b=n8J/qCU3PhTNU88Pk91FVttTeQFaT875mF79mo4kYe8mwJ4MD94GZr7g1JnrVcitoy
+         e4xyuPCO/DcOk/kL9clxWzHLWdOh+Vn45GZU+j8tCINbbFITlg0kdLo5RLn+8Vxmz+Ym
+         MR3KsEksetJSS+/zCcBZ8QUxe14HcLuz4DTwHfch/SYS/zTfQyptvSS4lh0MFpLxEcaM
+         xPFzpnlU14KBsqXDN1Jrp9lXuQNiIR4WyjRaxvSMuLQeb5f5oaugwFk87lcZKDQUrloD
+         Ro3SzLNC6WHc78JnWFHSbnewj8k8VnQNP9qQvgQlwYKrL57L7Lj/1x8siNmGsaEYOeu4
+         4u7w==
+Original-Received: by 10.42.129.145 with SMTP id q17mr2941745ics.54.1343444977571; Fri,
+ 27 Jul 2012 20:09:37 -0700 (PDT)
+Original-Received: by 10.50.18.3 with HTTP; Fri, 27 Jul 2012 20:09:37 -0700 (PDT)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334587 gmane.comp.emulators.kvm.devel:95178
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334587>
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334587>
+
+Hi all,
+
+i am comparing network throughput performance under bare-metal case
+with that running VM with assigned-device (assigned NIC). i have two
+physical machines (each has a 10Gbit NIC), one is used as remote
+server (run netserver) and the other is used as the target tested one
+(run netperf with different send message size, TCP_STREAM test). the
+remote NIC is connected directly with the tested NIC, both are 10Gbit.
+fore bare-metal case, i enable 1 cpu core, for VM i also configure 1
+vcpu (the memory is sufficient for both bare-metal and VM case).  i
+run netperf for 120 seconds and got the following results:
+
+                       send message    interrupts   throughput (mbit/s)
+bare-metal             256               10696290            1114.84
+                            512               10106786            1391.92
+                            1024              10071032           1508.09
+                            2048              4560857             3434.65
+                            4096              3292200             4762.26
+                            8192              3169801             4733.89
+                            16384            2780529              4892.6
+
+VM(assigned NIC)   256               3817904              2249.35
+                             512               3599007              4342.81
+                            1024              3005601              4134.69
+                             2048             2952122              4484
+                             4096             2682874              4566.34
+                             8192             2786719              4734.39
+                             16384           2603835              4540.47
+
+as shown, the interrupts for bare-metal case is much more than the VM
+case for some message size. we also see the throughput for those
+situations is lower than VM case. it's strange that the bare-metal has
+lower performance than the VM case. Does anyone have comments on this?
+i am very confused.
+
+Thanks,
+Sheng

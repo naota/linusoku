@@ -1,0 +1,88 @@
+Path: news.gmane.org!not-for-mail
+From: Ian Abbott <abbotti@mev.co.uk>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] udf: fix udf_setsize() for file data in ICB
+Date: Mon, 23 Jul 2012 17:39:29 +0100
+Lines: 36
+Approved: news@gmane.org
+Message-ID: <1343061569-3629-1-git-send-email-abbotti@mev.co.uk>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1343061603 18354 80.91.229.3 (23 Jul 2012 16:40:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 16:40:03 +0000 (UTC)
+Cc: Jan Kara <jack@suze.cz>, Ian Abbott <abbotti@mev.co.uk>
+To: lkml <linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 18:40:02 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StLfr-0000id-OA
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 18:40:00 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754419Ab2GWQju (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 12:39:50 -0400
+Original-Received: from mail.mev.co.uk ([62.49.15.74]:49704 "EHLO mail.mev.co.uk"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754364Ab2GWQjt (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 12:39:49 -0400
+Original-Received: from localhost (localhost [127.0.0.1])
+	by mail.mev.co.uk (Postfix) with ESMTP id A27515C10E;
+	Mon, 23 Jul 2012 17:39:47 +0100 (BST)
+X-Virus-Scanned: Debian amavisd-new at mail.mev.co.uk
+Original-Received: from mail.mev.co.uk ([127.0.0.1])
+	by localhost (mantis.mev.local [127.0.0.1]) (amavisd-new, port 10024)
+	with LMTP id ohmafSyMct-7; Mon, 23 Jul 2012 17:39:45 +0100 (BST)
+Original-Received: from remote.mev.co.uk (mev2008.mev.local [10.0.0.1])
+	by mail.mev.co.uk (Postfix) with ESMTPS id 94C285C025;
+	Mon, 23 Jul 2012 17:39:45 +0100 (BST)
+Original-Received: from gentoo-ija64.mev.local (10.0.0.210) by remote.mev.co.uk
+ (10.0.0.1) with Microsoft SMTP Server (TLS) id 8.1.436.0; Mon, 23 Jul 2012
+ 17:39:44 +0100
+X-Mailer: git-send-email 1.7.8.6
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331855
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331855>
+
+If the new size is larger than the old size and the old file data was
+stored in the ICB (iinfo->i_alloc_type == ICBTAG_FLAG_AD_IN_ICB) and the
+new size still fits in the ICB, skip the call to udf_extend_file() as it
+does not handle this i_alloc_type value (it calls BUG()).
+
+Signed-off-by: Ian Abbott <abbotti@mev.co.uk>
+---
+ fs/udf/inode.c |    5 ++++-
+ 1 files changed, 4 insertions(+), 1 deletions(-)
+
+diff --git a/fs/udf/inode.c b/fs/udf/inode.c
+index fafaad7..15fb17e 100644
+--- a/fs/udf/inode.c
++++ b/fs/udf/inode.c
+@@ -1124,14 +1124,17 @@ int udf_setsize(struct inode *inode, loff_t newsize)
+ 				if (err)
+ 					return err;
+ 				down_write(&iinfo->i_data_sem);
+-			} else
++			} else {
+ 				iinfo->i_lenAlloc = newsize;
++				goto extended_ad_in_icb;
++			}
+ 		}
+ 		err = udf_extend_file(inode, newsize);
+ 		if (err) {
+ 			up_write(&iinfo->i_data_sem);
+ 			return err;
+ 		}
++extended_ad_in_icb:
+ 		truncate_setsize(inode, newsize);
+ 		up_write(&iinfo->i_data_sem);
+ 	} else {
+-- 
+1.7.8.6
+

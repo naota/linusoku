@@ -1,0 +1,178 @@
+Path: news.gmane.org!not-for-mail
+From: Tejun Heo <tj@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: (unknown)
+Date: Fri,  3 Aug 2012 10:43:45 -0700
+Lines: 117
+Approved: news@gmane.org
+Message-ID: <1344015839-21800-1-git-send-email-tj@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344015869 21716 80.91.229.3 (3 Aug 2012 17:44:29 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 17:44:29 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	padovan@profusion.mobi, marcel@holtmann.org, peterz@infradead.org,
+	mingo@redhat.com, davem@davemloft.net, dougthompson@xmission.com,
+	ibm-acpi@hmh.eng.br, cbou@mail.ru, rui.zhang@intel.com,
+	tomi.valkeinen@ti.com
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 19:44:26 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxLv7-0007c3-Ky
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 19:44:18 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753112Ab2HCRoJ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 13:44:09 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:34680 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751527Ab2HCRoG (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 13:44:06 -0400
+Original-Received: by ghrr11 with SMTP id r11so1127356ghr.19
+        for <linux-kernel@vger.kernel.org>; Fri, 03 Aug 2012 10:44:05 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer;
+        bh=LO8faPnkFNdqKAsA3J9Whn3L7qcYIeJJ0VhVK9xTp2k=;
+        b=Z7m4GZxRbbrjB9S2BX8oVW2m3huqqP/v63XZyTYydFk6ks7AQ3u0h8XyZ9TP6jAW7P
+         rHe6fLHIOXwSQ09f1+E04Jp4++LcC5Kg6ElGcxzhdqz7WJYzvI8au7AXdL112XtcKy2D
+         VhJNq8/F82udwmp96zB92acyoSRcEHSfFkxBqL8qJW56Q1AF9guYfTQgt//znz3LI/L+
+         CokRW/0lRF+kO0/E1Oq5+GIwwl5URs4/bk0wWdb9PPIHvVtZoW1f5HjAewre8y/rTJsv
+         yCdGPz4J0STjbw/b1ZvrvbtuqhJoqThNmVd6JTjfmoEf/Tu3chCDQvVSBsV5E+AcQtLh
+         6zcA==
+Original-Received: by 10.50.213.39 with SMTP id np7mr4816746igc.51.1344015845231;
+        Fri, 03 Aug 2012 10:44:05 -0700 (PDT)
+Original-Received: from wtj.mtv.corp.google.com (wtj.mtv.corp.google.com [172.18.110.84])
+        by mx.google.com with ESMTPS id yh10sm4595318igb.0.2012.08.03.10.44.02
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 03 Aug 2012 10:44:04 -0700 (PDT)
+Original-Subject: 
+X-Mailer: git-send-email 1.7.7.3
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337447
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337447>
+
+delayed_work has been annoyingly missing the mechanism to modify timer
+of a pending delayed_work - ie. mod_timer() counterpart.  delayed_work
+users have been working around this using several methods - using an
+explicit timer + work item, messing directly with delayed_work->timer,
+and canceling before re-queueing, all of which are error-prone and/or
+ugly.
+
+Gustavo Padovan posted a RFC implementation[1] of mod_delayed_work() a
+while back but it wasn't complete.  To properly implement
+mod_delayed_work[_on](), it should be able to steal pending work items
+which may be on timer or worklist or anywhere inbetween.  This is
+similar to what __cancel_work_timer() does but it turns out that there
+are a lot of holes around this area and try_to_grab_pending() needs
+considerable amount of work to be used for other purposes too.
+
+This patchset improves canceling and try_to_grab_pending(), use it to
+implement mod_delayed_work[_on](), convert easy ones, and drop
+__cancel_delayed_work_sync() which doesn't have relevant users
+afterwards.
+
+Changes from the first take[L] are,
+
+* All updated patches rolled into the series and Acked-by's added.a
+
+* Tomi Valkeinen pointed out that mod_delayed_work() can't be called
+  from IRQ handlers and thus can't replace __cancel_delayed_work()
+  users.  __cancel_delayed_work() users dropped from conversion.  This
+  will be handled by a future patchset.
+
+* Ensuring preemtion is disabled across PENDING manipulation doesn't
+  make try_to_grab_pending() safe to use from bh context and making it
+  impossible to replace even cancel_delayed_work() users.  Whole patch
+  series updated so that IRQ is disabled across PENDING manipulation
+  instead.  As most operations had to grab gcwq->lock anyway, this
+  doesn't add extra IRQ toggling.
+
+* try_to_grab_pending() and __cancel_work_timer() updated to take bool
+  @is_dwork instead of @timer and disable IRQ on successful return.
+
+This patchset contains the following fourteen patches.
+
+ 0001-workqueue-reorder-queueing-functions-so-that-_on-var.patch
+ 0002-workqueue-make-queueing-functions-return-bool.patch
+ 0003-workqueue-add-missing-smp_wmb-in-process_one_work.patch
+ 0004-workqueue-disable-irq-while-manipulating-PENDING.patch
+ 0005-workqueue-set-delayed_work-timer-function-on-initial.patch
+ 0006-workqueue-unify-local-CPU-queueing-handling.patch
+ 0007-workqueue-fix-zero-delay-handling-of-queue_delayed_w.patch
+ 0008-workqueue-move-try_to_grab_pending-upwards.patch
+ 0009-workqueue-introduce-WORK_OFFQ_FLAG_.patch
+ 0010-workqueue-factor-out-__queue_delayed_work-from-queue.patch
+ 0011-workqueue-reorganize-try_to_grab_pending-and-__cance.patch
+ 0012-workqueue-mark-a-work-item-being-canceled-as-such.patch
+ 0013-workqueue-implement-mod_delayed_work-_on.patch
+ 0014-workqueue-use-mod_delayed_work-instead-of-cancel-que.patch
+
+0001-0003 are preparatory.
+
+0004 removes the possibility of cancel_sync spinning for extended
+period of time while another task holding PENDING is preempted or
+interrupted.
+
+0005-0007 clean up local queueing handling.
+
+0008-0011 prepare for try_to_grab_pending() improvements.
+
+0012 makes try_to_grab_pending() distinguish transient failure which
+can be safely busy-retried and failure because the work item is being
+canceled, which may take arbitrary amount of time.
+
+0013 uses the improved try_to_grab_pending() to implement
+mod_delayed_work[_on]().
+
+0014 converts cancel + queue sequences to mod_delayed_work().
+
+This patchset is also available at the following git branch.
+
+ git://git.kernel.org/pub/scm/linux/kernel/git/tj/wq.git review-wq-mod_delayed
+
+If nobody objects, I'd like to route this series through wq/for-3.7.
+Changes to other subsystems are fairly localized and conflicts, if
+they occur, shouldn't be too painful to handle.
+
+Although this ends up adding ~130 LOC, it contains a lot more
+documentation, converted only the apparent ones, and IMHO is
+worthwhile to have regardless as it removes an annoyance which is
+pretty easy to encounter while using delayed_work.
+
+Thanks.
+
+ block/genhd.c                          |    6 
+ drivers/edac/edac_mc.c                 |   17 
+ drivers/infiniband/core/addr.c         |    4 
+ drivers/infiniband/hw/nes/nes_hw.c     |    6 
+ drivers/infiniband/hw/nes/nes_nic.c    |    5 
+ drivers/net/wireless/ipw2x00/ipw2100.c |    8 
+ drivers/net/wireless/zd1211rw/zd_usb.c |    3 
+ drivers/platform/x86/thinkpad_acpi.c   |   20 
+ drivers/power/charger-manager.c        |    9 
+ drivers/power/ds2760_battery.c         |    9 
+ drivers/power/jz4740-battery.c         |    6 
+ drivers/thermal/thermal_sys.c          |   15 
+ fs/afs/callback.c                      |    4 
+ fs/afs/server.c                        |   10 
+ fs/afs/vlocation.c                     |   14 
+ fs/nfs/nfs4renewd.c                    |    3 
+ include/linux/workqueue.h              |   47 +-
+ kernel/workqueue.c                     |  732 ++++++++++++++++++++-------------
+ net/core/dst.c                         |    4 
+ net/rfkill/input.c                     |    3 
+ 20 files changed, 526 insertions(+), 399 deletions(-)
+
+--
+tejun
+
+[1] http://thread.gmane.org/gmane.linux.kernel/1159922
+[L] http://thread.gmane.org/gmane.linux.kernel/1334546

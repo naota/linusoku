@@ -1,0 +1,92 @@
+Path: news.gmane.org!not-for-mail
+From: Peter Zijlstra <peterz@infradead.org>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [PATCH v2 8/9] rbtree: faster augmented rbtree manipulation
+Date: Mon, 06 Aug 2012 23:36:22 +0200
+Lines: 25
+Approved: news@gmane.org
+Message-ID: <1344288982.27828.116.camel@twins>
+References: <1343946858-8170-1-git-send-email-walken@google.com>
+	 <1343946858-8170-9-git-send-email-walken@google.com>
+	 <1344263140.27828.59.camel@twins>
+	 <CANN689GbB5Rj3FmgP_RWj5EJVxJKBZS1WavZCKg0tuYR4vMZpg@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="ISO-8859-1"
+Content-Transfer-Encoding: quoted-printable
+X-Trace: dough.gmane.org 1344288999 32507 80.91.229.3 (6 Aug 2012 21:36:39 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 21:36:39 +0000 (UTC)
+Cc: riel@redhat.com, daniel.santos@pobox.com, aarcange@redhat.com, 
+	dwmw2@infradead.org, akpm@linux-foundation.org, linux-mm@kvack.org, 
+	linux-kernel@vger.kernel.org, torvalds@linux-foundation.org
+To: Michel Lespinasse <walken@google.com>
+Original-X-From: owner-linux-mm@kvack.org Mon Aug 06 23:36:37 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SyUyY-0002MX-GN
+	for glkm-linux-mm-2@m.gmane.org; Mon, 06 Aug 2012 23:36:34 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 16E6C6B0069; Mon,  6 Aug 2012 17:36:33 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id F19FD6B006E; Mon,  6 Aug 2012 17:36:32 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 967F46B0075; Mon,  6 Aug 2012 17:36:32 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx164.postini.com [74.125.245.164])
+	by kanga.kvack.org (Postfix) with SMTP id 91CA16B0069
+	for <linux-mm@kvack.org>; Mon,  6 Aug 2012 17:36:31 -0400 (EDT)
+Original-Received: from casper.infradead.org ([85.118.1.10]) (using TLSv1) by na3sys010amx164.postini.com ([74.125.244.10]) with SMTP;
+	Mon, 06 Aug 2012 21:36:31 GMT
+Original-Received: from dhcp-089-099-019-018.chello.nl ([89.99.19.18] helo=twins)
+	by casper.infradead.org with esmtpsa (Exim 4.76 #1 (Red Hat Linux))
+	id 1SyUyQ-0004w4-Nl; Mon, 06 Aug 2012 21:36:26 +0000
+Original-Received: by twins (Postfix, from userid 1000)
+	id 1CD0284207FD; Mon,  6 Aug 2012 23:36:23 +0200 (CEST)
+In-Reply-To: <CANN689GbB5Rj3FmgP_RWj5EJVxJKBZS1WavZCKg0tuYR4vMZpg@mail.gmail.com>
+X-Mailer: Evolution 3.2.2- 
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <peterz@infradead.org> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83726 gmane.linux.kernel:1338579
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338579>
+
+On Mon, 2012-08-06 at 14:34 -0700, Michel Lespinasse wrote:
+> On Mon, Aug 6, 2012 at 7:25 AM, Peter Zijlstra <peterz@infradead.org> wro=
+te:
+> > On Thu, 2012-08-02 at 15:34 -0700, Michel Lespinasse wrote:
+> >> +struct rb_augment_callbacks {
+> >> +       void (*propagate)(struct rb_node *node, struct rb_node *stop);
+> >> +       void (*copy)(struct rb_node *old, struct rb_node *new);
+> >> +       void (*rotate)(struct rb_node *old, struct rb_node *new);
+> >> +};
+> >
+> > Should we make that const pointers? Daniel?
+>=20
+> I don't think it would hurt, but note that each function taking this
+> as an argument takes it as a const struct rb_augment_callbacks *, so I
+> doubt the extra consts would help either.
+
+IIRC Daniel found it allowed some older GCC to inline more if the
+function pointer itself was constant.
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

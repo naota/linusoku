@@ -1,0 +1,96 @@
+Path: news.gmane.org!not-for-mail
+From: Stephen Warren <swarren@wwwdotorg.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] regmap: initialize all irqs to wake disabled
+Date: Wed,  1 Aug 2012 11:39:44 -0600
+Lines: 45
+Approved: news@gmane.org
+Message-ID: <1343842784-15912-1-git-send-email-swarren@wwwdotorg.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343842800 7668 80.91.229.3 (1 Aug 2012 17:40:00 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 1 Aug 2012 17:40:00 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, Stephen Warren <swarren@nvidia.com>
+To: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 01 19:40:00 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Swctr-0006Qx-DH
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 01 Aug 2012 19:39:59 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754562Ab2HARjw (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 1 Aug 2012 13:39:52 -0400
+Original-Received: from avon.wwwdotorg.org ([70.85.31.133]:42715 "EHLO
+	avon.wwwdotorg.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754092Ab2HARjv (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 1 Aug 2012 13:39:51 -0400
+Original-Received: from severn.wwwdotorg.org (unknown [192.168.65.5])
+	(using TLSv1 with cipher ADH-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by avon.wwwdotorg.org (Postfix) with ESMTPS id 17D046448;
+	Wed,  1 Aug 2012 11:45:48 -0600 (MDT)
+Original-Received: from localhost.localdomain (searspoint.nvidia.com [216.228.112.21])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by severn.wwwdotorg.org (Postfix) with ESMTPSA id BFEBDE40F5;
+	Wed,  1 Aug 2012 11:39:49 -0600 (MDT)
+X-Mailer: git-send-email 1.7.0.4
+X-NVConfidentiality: public
+X-Virus-Scanned: clamav-milter 0.96.5 at avon.wwwdotorg.org
+X-Virus-Status: Clean
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336466
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336466>
+
+From: Stephen Warren <swarren@nvidia.com>
+
+The kerneldoc for irq_set_irq_wake() says:
+
+    Enable/disable power management wakeup mode, which is
+    disabled by default.
+
+regmap_irq_set_wake() clears bits to enable wake for an interrupt,
+and sets bits to disable wake. Hence, we should set all bits in
+wake_buf initially, to mirror the expected disabled state.
+
+Signed-off-by: Stephen Warren <swarren@nvidia.com>
+---
+ drivers/base/regmap/regmap-irq.c |   15 +++++++++++++++
+ 1 files changed, 15 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/base/regmap/regmap-irq.c b/drivers/base/regmap/regmap-irq.c
+index c7e5b18..75b6939 100644
+--- a/drivers/base/regmap/regmap-irq.c
++++ b/drivers/base/regmap/regmap-irq.c
+@@ -314,6 +314,21 @@ int regmap_add_irq_chip(struct regmap *map, int irq, int irq_flags,
+ 		}
+ 	}
+ 
++	/* Wake is disabled by default */
++	if (d->wake_buf) {
++		for (i = 0; i < chip->num_regs; i++) {
++			d->wake_buf[i] = d->mask_buf_def[i];
++			reg = chip->wake_base +
++				(i * map->reg_stride * d->irq_reg_stride);
++			ret = regmap_write(map, reg, d->wake_buf[i]);
++			if (ret != 0) {
++				dev_err(map->dev, "Failed to set masks in 0x%x: %d\n",
++					reg, ret);
++				goto err_alloc;
++			}
++		}
++	}
++
+ 	if (irq_base)
+ 		d->domain = irq_domain_add_legacy(map->dev->of_node,
+ 						  chip->num_irqs, irq_base, 0,
+-- 
+1.7.0.4
+

@@ -1,0 +1,141 @@
+Path: news.gmane.org!not-for-mail
+From: Al Viro <viro@ZenIV.linux.org.uk>
+Newsgroups: gmane.linux.kernel.cross-arch,gmane.linux.kernel
+Subject: Re: [PATCH] [RFC] syscalls,x86: Add execveat() system call (v2)
+Date: Thu, 2 Aug 2012 11:30:02 +0100
+Lines: 87
+Approved: news@gmane.org
+Message-ID: <20120802103001.GJ6481@ZenIV.linux.org.uk>
+References: <1343859049-3632-1-git-send-email-meredydd@senatehouse.org>
+ <5019B36A.4030604@zytor.com>
+ <CAD=T17Esguer01OsrxMtqEcHKZ-Ovg05+MxSdF7NhXENsUubgg@mail.gmail.com>
+ <5019BC0E.4010109@zytor.com>
+ <20120802065557.GI6481@ZenIV.linux.org.uk>
+ <CAD=T17Gkryua5TQW5h18kCu+yiViuVv6NyxtMw3C9we0RWzmKQ@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343903412 23704 80.91.229.3 (2 Aug 2012 10:30:12 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 2 Aug 2012 10:30:12 +0000 (UTC)
+Cc: "H. Peter Anvin" <hpa@zytor.com>, linux-kernel@vger.kernel.org,
+	Kees Cook <keescook@chromium.org>,
+	Ingo Molnar <mingo@redhat.com>, Jeff Dike <jdike@addtoit.com>,
+	Richard Weinberger <richard@nod.at>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	linux-arch@vger.kernel.org
+To: Meredydd Luff <meredydd@senatehouse.org>
+Original-X-From: linux-arch-owner@vger.kernel.org Thu Aug 02 12:30:11 2012
+Return-path: <linux-arch-owner@vger.kernel.org>
+Envelope-to: glka-linux-arch@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-arch-owner@vger.kernel.org>)
+	id 1SwsfR-0005Yp-UM
+	for glka-linux-arch@plane.gmane.org; Thu, 02 Aug 2012 12:30:10 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754213Ab2HBKaI (ORCPT <rfc822;glka-linux-arch@m.gmane.org>);
+	Thu, 2 Aug 2012 06:30:08 -0400
+Original-Received: from zeniv.linux.org.uk ([195.92.253.2]:60114 "EHLO
+	ZenIV.linux.org.uk" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754069Ab2HBKaH (ORCPT
+	<rfc822;linux-arch@vger.kernel.org>); Thu, 2 Aug 2012 06:30:07 -0400
+Original-Received: from viro by ZenIV.linux.org.uk with local (Exim 4.76 #1 (Red Hat Linux))
+	id 1SwsfK-0004ht-0z; Thu, 02 Aug 2012 10:30:02 +0000
+Content-Disposition: inline
+In-Reply-To: <CAD=T17Gkryua5TQW5h18kCu+yiViuVv6NyxtMw3C9we0RWzmKQ@mail.gmail.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-arch-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-arch.vger.kernel.org>
+X-Mailing-List: linux-arch@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel.cross-arch:14744 gmane.linux.kernel:1336777
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336777>
+
+On Thu, Aug 02, 2012 at 10:14:53AM +0100, Meredydd Luff wrote:
+> On Thu, Aug 2, 2012 at 7:55 AM, Al Viro <viro@zeniv.linux.org.uk> wrote:
+> >> This means you need an x32 version of the function -- execve
+> >> unfortunately is one of the few system calls which require a special x32
+> >> version (although it's a simple wrapper around sys32_execve).  See
+> >> sys_x32_execve.
+> >
+> > I *really* strongly object to doing that thing before we sanitize the
+> > situation with sys_execve().
+> 
+> "That thing" = "creating an x32 entry stub", or "merging execveat() at all"?
+> 
+> (snip)
+> > The thing is, there's essentially no reason to have more than one
+> > implementation.  What they are (badly) doing is "we need to find
+> > pt_regs to pass to do_execve(), the thing we are after has to be near
+> > our stack frame, so let's try to get to it that way".
+> 
+> Hang on...it's not just sys_execve that fits that description, is it?
+> You seem to be describing every call that needs a pt_regs parameter,
+> which at a glance is anything with a stub_ or PTREGSCALL in
+> arch/x86/kernel/entry_{32,64}.S. That's: clone, fork, vfork,
+> sigaltstack, iopl, execve, sigreturn, rt_sigreturn, vm86, vm86old.
+> Most of those are handled by a common PTREGSCALL macro, but there are
+> a few that get special treatment (different set on each arch - on
+> x86-64 it's execve and rt_sigreturn ; on i386 it's just clone).
+> 
+> Is there's something special about execve in particular, or do you
+> want to overhaul all the ptregscalls?
+
+You are looking at that from the wrong side; it's not that this
+set of syscalls on x86 has the same kind of wrapper - it's that
+on different architectures the kludges are seriously different
+and fairly brittle.  sigaltstack(), BTW, doesn't need to be
+arch-specific at all - if you check what its pt_regs argument
+is used for, we just need something like current_user_stack_pointer()
+and that's it.  It's a different patch series, anyway.
+
+There's a difference between "here's the syscall implementation,
+here's its hookup for x86, let other architectures update their
+syscall tables" and "here's the implementation in arch/x86 and its
+hookup for x86; let other architectures port it in whatever way
+they need".  The latter is a recipe for breakage - we'd been
+through that kind of story quite a few times.
+
+Out of that set, vm86/vm86old/iopl are genuine x86-only syscalls.
+sigreturn and rt_sigreturn are weird, subtle and, sadly,
+unmergable - syscall restart prevention logics is different
+enough to make it not feasible at the moment.  It's a serious
+source of PITA, BTW - quite a few of those had the same bugs,
+years after they'd been discovered and fixed on a subset of
+architectures.  Been there, fixed some of those, the latest
+batch this April...  fork/vfork/clone is an interesting
+question - IIRC, there are seriously subtle issues of some
+sort on sparc, but I don't remember details right now.
+
+Really, go and grep for do_execve; most of the callers will
+be in execve(2) implementations.  Look at them carefully -
+while some get pt_regs from some wrapper, there's a bunch
+that does that manually in C.  "Ugly" doesn't even begin
+to describe what's being done...
+
+FWIW, I've just pushed (completely untested) arm and alpha
+parts of what I described into signal.git#execve2; x86 is
+next.  Note that after that sys_execve() is identical on
+converted architectures and can be merged; ditto for
+kernel_execve().  After I do x86 counterpart, I'll
+take those guys to fs/exec.c under ifdef for new __ARCH_HAS_...
+(and define it on already converted ones, obviously).
+Then your patch goes there, except that implementation
+gets put into fs/exec.c, under the same ifdef.  And with
+current_pt_regs() used instead of the extra argument,
+of course.  From that point on it can be used on any converted
+architecture.  And conversion consists of
+	* providing ret_from_kernel_execve() that would
+put pt_regs where they belong and return to userland.
+	* providing current_pt_regs(), with default being
+just task_pt_regs(current).
+	* defining that new __ARCH_HAS_...
+	* removing sys_execve()/kernel_execve() implementations;
+the ones in fs/exec.c will work just fine.
+Can be done at leisure, architecture by architecture.  It's
+obviously the next cycle fodder - we have only a couple of
+days left of this merge window, anyway.
+
+I really think that this pair of primitives is the right
+way to deal with execve mess.

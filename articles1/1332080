@@ -1,0 +1,138 @@
+Path: news.gmane.org!not-for-mail
+From: Cyril Chemparathy <cyril@ti.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: [RFC 12/23] ARM: mm: clean up membank size limit checks
+Date: Mon, 23 Jul 2012 21:09:14 -0400
+Lines: 79
+Approved: news@gmane.org
+Message-ID: <1343092165-9470-13-git-send-email-cyril@ti.com>
+References: <1343092165-9470-1-git-send-email-cyril@ti.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1343092411 6893 80.91.229.3 (24 Jul 2012 01:13:31 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 01:13:31 +0000 (UTC)
+Cc: <linux-kernel@vger.kernel.org>, <nico@linaro.org>,
+	<will.deacon@arm.com>, <catalin.marinas@arm.com>,
+	Cyril Chemparathy <cyril@ti.com>,
+	Vitaly Andrianov <vitalya@ti.com>
+To: <linux-arm-kernel@lists.infradead.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 03:13:30 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StTgo-0007ml-Fo
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 03:13:30 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755577Ab2GXBNW (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 21:13:22 -0400
+Original-Received: from arroyo.ext.ti.com ([192.94.94.40]:49231 "EHLO arroyo.ext.ti.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755444Ab2GXBKQ (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 21:10:16 -0400
+Original-Received: from dlelxv30.itg.ti.com ([172.17.2.17])
+	by arroyo.ext.ti.com (8.13.7/8.13.7) with ESMTP id q6O19dpH011168;
+	Mon, 23 Jul 2012 20:09:39 -0500
+Original-Received: from DFLE73.ent.ti.com (dfle73.ent.ti.com [128.247.5.110])
+	by dlelxv30.itg.ti.com (8.13.8/8.13.8) with ESMTP id q6O19dEr010260;
+	Mon, 23 Jul 2012 20:09:39 -0500
+Original-Received: from dlelxv22.itg.ti.com (172.17.1.197) by dfle73.ent.ti.com
+ (128.247.5.110) with Microsoft SMTP Server id 14.1.323.3; Mon, 23 Jul 2012
+ 20:09:39 -0500
+Original-Received: from ares-ubuntu.am.dhcp.ti.com (ares-ubuntu.am.dhcp.ti.com
+ [158.218.103.17])	by dlelxv22.itg.ti.com (8.13.8/8.13.8) with ESMTP id
+ q6O19d28024587;	Mon, 23 Jul 2012 20:09:39 -0500
+Original-Received: from a0875269 by ares-ubuntu.am.dhcp.ti.com with local (Exim 4.76)
+	(envelope-from <cyril@ti.com>)	id 1StTd5-0002UQ-0u; Mon, 23 Jul 2012 21:09:39
+ -0400
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1343092165-9470-1-git-send-email-cyril@ti.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332080 gmane.linux.ports.arm.kernel:178510
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332080>
+
+This patch cleans up the highmem sanity check code by simplifying the range
+checks with a pre-calculated size_limit.  This patch should otherwise have no
+functional impact on behavior.
+
+This patch also removes a redundant (bank->start < vmalloc_limit) check, since
+this is already covered by the !highmem condition.
+
+Signed-off-by: Cyril Chemparathy <cyril@ti.com>
+Signed-off-by: Vitaly Andrianov <vitalya@ti.com>
+---
+ arch/arm/mm/mmu.c |   19 +++++++++++--------
+ 1 file changed, 11 insertions(+), 8 deletions(-)
+
+diff --git a/arch/arm/mm/mmu.c b/arch/arm/mm/mmu.c
+index 4840efa..6b0baf3 100644
+--- a/arch/arm/mm/mmu.c
++++ b/arch/arm/mm/mmu.c
+@@ -905,10 +905,15 @@ void __init sanity_check_meminfo(void)
+ 
+ 	for (i = 0, j = 0; i < meminfo.nr_banks; i++) {
+ 		struct membank *bank = &meminfo.bank[j];
++		phys_addr_t size_limit;
++
+ 		*bank = meminfo.bank[i];
++		size_limit = bank->size;
+ 
+ 		if (bank->start >= vmalloc_limit)
+ 			highmem = 1;
++		else
++			size_limit = vmalloc_limit - bank->start;
+ 
+ 		bank->highmem = highmem;
+ 
+@@ -917,8 +922,7 @@ void __init sanity_check_meminfo(void)
+ 		 * Split those memory banks which are partially overlapping
+ 		 * the vmalloc area greatly simplifying things later.
+ 		 */
+-		if (!highmem && bank->start < vmalloc_limit &&
+-		    bank->size > vmalloc_limit - bank->start) {
++		if (!highmem && bank->size > size_limit) {
+ 			if (meminfo.nr_banks >= NR_BANKS) {
+ 				printk(KERN_CRIT "NR_BANKS too low, "
+ 						 "ignoring high memory\n");
+@@ -927,12 +931,12 @@ void __init sanity_check_meminfo(void)
+ 					(meminfo.nr_banks - i) * sizeof(*bank));
+ 				meminfo.nr_banks++;
+ 				i++;
+-				bank[1].size -= vmalloc_limit - bank->start;
++				bank[1].size -= size_limit;
+ 				bank[1].start = vmalloc_limit;
+ 				bank[1].highmem = highmem = 1;
+ 				j++;
+ 			}
+-			bank->size = vmalloc_limit - bank->start;
++			bank->size = size_limit;
+ 		}
+ #else
+ 		/*
+@@ -950,14 +954,13 @@ void __init sanity_check_meminfo(void)
+ 		 * Check whether this memory bank would partially overlap
+ 		 * the vmalloc area.
+ 		 */
+-		if (bank->start + bank->size > vmalloc_limit)
+-			unsigned long newsize = vmalloc_limit - bank->start;
++		if (bank->size > size_limit) {
+ 			printk(KERN_NOTICE "Truncating RAM at %.8llx-%.8llx "
+ 			       "to -%.8llx (vmalloc region overlap).\n",
+ 			       (unsigned long long)bank->start,
+ 			       (unsigned long long)bank->start + bank->size - 1,
+-			       (unsigned long long)bank->start + newsize - 1);
+-			bank->size = newsize;
++			       (unsigned long long)bank->start + size_limit - 1);
++			bank->size = size_limit;
+ 		}
+ #endif
+ 		if (!bank->highmem && bank->start + bank->size > arm_lowmem_limit)
+-- 
+1.7.9.5
+

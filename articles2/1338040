@@ -1,0 +1,102 @@
+Path: news.gmane.org!not-for-mail
+From: Alexey Kardashevskiy <aik@ozlabs.ru>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.ppc64.devel
+Subject: how to implement platform specific per process parameter?
+Date: Mon, 06 Aug 2012 15:08:28 +1000
+Lines: 40
+Approved: news@gmane.org
+Message-ID: <501F514C.2090909@ozlabs.ru>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=KOI8-R; format=flowed
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344229723 10313 80.91.229.3 (6 Aug 2012 05:08:43 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 05:08:43 +0000 (UTC)
+Cc: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+To: Linux Kernel Mailing List <linux-kernel@vger.kernel.org>,
+	linuxppc-dev@ozlabs.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Aug 06 07:08:44 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyFYY-0001tE-3N
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 06 Aug 2012 07:08:42 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752227Ab2HFFIe (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 01:08:34 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:44046 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751482Ab2HFFId (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 01:08:33 -0400
+Original-Received: by pbbrr13 with SMTP id rr13so1995722pbb.19
+        for <linux-kernel@vger.kernel.org>; Sun, 05 Aug 2012 22:08:33 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=message-id:date:from:user-agent:mime-version:to:cc:subject
+         :content-type:content-transfer-encoding:x-gm-message-state;
+        bh=4iJ7CzrjVfB9EZ5vwb0OIS/D46QwQRuiA10ah2zWkco=;
+        b=RfdsfrCC0Lh+mFxRu2wQFNQj8xN5LpeHsHocLyGV8rrgAe89S7NHzAaP0ytdUuCqkR
+         z4ItxHvFRrUqY46Z7VSVPfT2xxSYuGEi5qvzCuX9uxA2paUngo8Gq1mHlgsBxnNTW7TX
+         dCookCBtmnD65G8GAzx5kvfjGJFO/w42WkgB1N7jGVcIZI4Kc+WnXkChQoynpyOTK7/O
+         yKJlCaVC7QaAqJIyPOylMVRBaRbWXu8EWPssTAcGxyoZaWN7CNq8RA1jsZlXoMCWxUBz
+         Ouz8+MrGxJfKvzffXXxZKbw9sphILTwLSKK/6A9zzc07xdjOIK4hEjfn4bMuym1Zw58a
+         K0AQ==
+Original-Received: by 10.68.231.132 with SMTP id tg4mr16363439pbc.159.1344229712936;
+        Sun, 05 Aug 2012 22:08:32 -0700 (PDT)
+Original-Received: from [10.61.2.175] (ibmaus65.lnk.telstra.net. [165.228.126.9])
+        by mx.google.com with ESMTPS id se9sm8164752pbc.25.2012.08.05.22.08.30
+        (version=SSLv3 cipher=OTHER);
+        Sun, 05 Aug 2012 22:08:32 -0700 (PDT)
+User-Agent: Mozilla/5.0 (X11; Linux i686; rv:14.0) Gecko/20120713 Thunderbird/14.0
+X-Gm-Message-State: ALoCoQkygdOgAQMvNAX6XKRl6or0VDoO3X97DLLvSXMMCc9ilEXz3UZDSVMVxaB4ZdDECvpJGPhK
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338040 gmane.linux.ports.ppc64.devel:84270
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338040>
+
+Hi!
+
+There is a per core register on modern POWER processors (POWER6+) called 
+"DSCR": The DSCR (aka Data Stream Control Register) is supported on some
+server PowerPC chips and allow some control over the prefetch of data
+streams.
+
+Its "per process" support has been added by
+http://git.kernel.org/?p=linux/kernel/git/torvalds/linux.git;a=commitdiff;h=efcac6589a277c10060e4be44b9455cf43838dc1
+"powerpc: Per process DSCR + some fixes (try#4)"
+
+The patch adds the DSCR value into "struct thread_struct" and 
+saves/restores it when the context is switched. Also, there is some policy 
+to initialize the register when a thread starts. So far so good.
+
+Here is the problem.
+
+Some customer(s) of this feature want an ability to change the DSCR value 
+of the already running process. I.e. we need some kernel interface which 
+would accept pid and the register value and change it.
+
+There are 4 options:
+1. [not a kernel interface] use ptrace to execute the register changing 
+command inside the specified pid. The next context switch saves the new 
+value in the thread_struct. Dirty hack.
+
+2. Add a new syscall which would receive pid + register value and do the 
+job. A bit too much.
+
+3. Add some hook in /proc filesystem but so far there were no platform 
+specific bits, right?
+
+4. Implement a static node "/sys/devices/system/cpu/dscr_control". write() 
+would parse the input stream, call scanf("%d %x", &pid, &dscr) and do the job.
+
+What is the correct approach? Thanks.
+
+
+-- 
+Alexey

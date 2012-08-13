@@ -1,0 +1,110 @@
+Path: news.gmane.org!not-for-mail
+From: David Ahern <dsahern@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] perf kvm: use strtol for walking guestmount directory
+Date: Sun, 29 Jul 2012 20:54:35 -0600
+Lines: 50
+Approved: news@gmane.org
+Message-ID: <1343616875-6455-1-git-send-email-dsahern@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343616903 30527 80.91.229.3 (30 Jul 2012 02:55:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 02:55:03 +0000 (UTC)
+Cc: David Ahern <dsahern@gmail.com>, Ingo Molnar <mingo@kernel.org>,
+	Jiri Olsa <jolsa@redhat.com>,
+	Namhyung Kim <namhyung@kernel.org>,
+	Frederic Weisbecker <fweisbec@gmail.com>,
+	Peter Zijlstra <peterz@infradead.org>
+To: acme@ghostprotocols.net, linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 04:55:01 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Svg8L-0004Ez-Gi
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 04:55:01 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754069Ab2G3Cym (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 29 Jul 2012 22:54:42 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:44321 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753920Ab2G3Cyk (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 29 Jul 2012 22:54:40 -0400
+Original-Received: by pbbrp8 with SMTP id rp8so9032203pbb.19
+        for <linux-kernel@vger.kernel.org>; Sun, 29 Jul 2012 19:54:39 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer;
+        bh=i8cvq2vx5djo6dQLaiR6v5hjkBabu7hia8Gnf5nbBrE=;
+        b=leWhYnwd4dH6hxDUNuS655qyC0VmGab+faZ/jcMSUcgEz8C4lxmFMSBfpA/qTxtWln
+         hvbWlzW6eQmPAdCeBcg/tRMmY1Lfqr6QrQ82dq73fHwbisMNPJMRviNf2H/z+vnkrDJd
+         5opuO8ld2PVgp6r/yjw+kPOKsWhdCX+Q01HNyvkfU/mm+USg7u2tdIOLSk6Qp7OuVCIg
+         EXv/IV4hhsi17c7Jt1+DOTHKAwgOiCxdGYRSQsapEZjjr81GH/OEF7t729NO4qvbbD7s
+         9lyPPL/Bsm3NsUbbfzjV84RcG92L702uAVR0CMYwL10qp5IkzKbyQ8hsdGJcbZl/nWFJ
+         8E/Q==
+Original-Received: by 10.68.194.4 with SMTP id hs4mr31120095pbc.128.1343616879645;
+        Sun, 29 Jul 2012 19:54:39 -0700 (PDT)
+Original-Received: from sjc-daahern-8912.cisco.com (128-107-239-233.cisco.com. [128.107.239.233])
+        by mx.google.com with ESMTPS id pq5sm6926633pbb.30.2012.07.29.19.54.37
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Sun, 29 Jul 2012 19:54:39 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334872
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334872>
+
+Only want to process directories under the guestmnount directory that have a
+pid as a name (ie, all digits). Other entries in the guestmount directory
+should be ignored.  There is already a check that requires the first character
+of each entry to be a digit, but atoi is used to convert the directory name to
+a pid. For example if guestmount contains a directory with the name 1foo, atoi
+converts it to a pid of 1 and a machine is created with a pid of 1. This is
+wrong; this directory really should be ignored. Use strtol to do that.
+
+Signed-off-by: David Ahern <dsahern@gmail.com>
+Cc: Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
+Cc: Ingo Molnar <mingo@kernel.org>
+Cc: Jiri Olsa <jolsa@redhat.com>
+Cc: Namhyung Kim <namhyung@kernel.org>
+Cc: Frederic Weisbecker <fweisbec@gmail.com>
+Cc: Peter Zijlstra <peterz@infradead.org>
+---
+ tools/perf/util/symbol.c |   10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/tools/perf/util/symbol.c b/tools/perf/util/symbol.c
+index fdad4eee..15bc673 100644
+--- a/tools/perf/util/symbol.c
++++ b/tools/perf/util/symbol.c
+@@ -2875,6 +2875,7 @@ int machines__create_guest_kernel_maps(struct rb_root *machines)
+ 	int i, items = 0;
+ 	char path[PATH_MAX];
+ 	pid_t pid;
++	char *endp;
+ 
+ 	if (symbol_conf.default_guest_vmlinux_name ||
+ 	    symbol_conf.default_guest_modules ||
+@@ -2891,7 +2892,14 @@ int machines__create_guest_kernel_maps(struct rb_root *machines)
+ 				/* Filter out . and .. */
+ 				continue;
+ 			}
+-			pid = atoi(namelist[i]->d_name);
++			pid = (pid_t) strtol(namelist[i]->d_name, &endp, 10);
++			if ((*endp != '\0') ||
++			    (endp == namelist[i]->d_name) ||
++			    (errno == ERANGE)) {
++				pr_debug("invalid directory (%s). Skipping.\n",
++					 namelist[i]->d_name);
++				continue;
++			}
+ 			sprintf(path, "%s/%s/proc/kallsyms",
+ 				symbol_conf.guestmount,
+ 				namelist[i]->d_name);
+-- 
+1.7.10.1
+

@@ -1,0 +1,163 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 31/73] ftrace: Disable function tracing during suspend/resume and
+ hibernation, again
+Date: Tue, 31 Jul 2012 05:43:41 +0100
+Lines: 108
+Approved: news@gmane.org
+Message-ID: <20120731044316.272290483@decadent.org.uk>
+References: <20120731044310.013763753@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343710373 22160 80.91.229.3 (31 Jul 2012 04:52:53 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 04:52:53 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	"Srivatsa S. Bhat" <srivatsa.bhat@linux.vnet.ibm.com>,
+	"Rafael J. Wysocki" <rjw@sisk.pl>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 06:52:52 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sw4Ru-0000OK-Ob
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 06:52:51 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755790Ab2GaEvS (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 00:51:18 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:48901 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1755748Ab2GaEvL (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 00:51:11 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Sw4Q9-0003QJ-Gz; Tue, 31 Jul 2012 05:51:01 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Sw4Om-0000AU-02; Tue, 31 Jul 2012 05:49:36 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120731044310.013763753@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335422 gmane.linux.kernel.stable:28992
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335422>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: "Srivatsa S. Bhat" <srivatsa.bhat@linux.vnet.ibm.com>
+
+commit 443772d408a25af62498793f6f805ce3c559309a upstream.
+
+If function tracing is enabled for some of the low-level suspend/resume
+functions, it leads to triple fault during resume from suspend, ultimately
+ending up in a reboot instead of a resume (or a total refusal to come out
+of suspended state, on some machines).
+
+This issue was explained in more detail in commit f42ac38c59e0a03d (ftrace:
+disable tracing for suspend to ram). However, the changes made by that commit
+got reverted by commit cbe2f5a6e84eebb (tracing: allow tracing of
+suspend/resume & hibernation code again). So, unfortunately since things are
+not yet robust enough to allow tracing of low-level suspend/resume functions,
+suspend/resume is still broken when ftrace is enabled.
+
+So fix this by disabling function tracing during suspend/resume & hibernation.
+
+Signed-off-by: Srivatsa S. Bhat <srivatsa.bhat@linux.vnet.ibm.com>
+Signed-off-by: Rafael J. Wysocki <rjw@sisk.pl>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ kernel/power/hibernate.c |    6 ++++++
+ kernel/power/suspend.c   |    3 +++
+ 2 files changed, 9 insertions(+)
+
+--- a/kernel/power/hibernate.c
++++ b/kernel/power/hibernate.c
+@@ -367,6 +367,7 @@ int hibernation_snapshot(int platform_mo
+ 	}
+ 
+ 	suspend_console();
++	ftrace_stop();
+ 	pm_restrict_gfp_mask();
+ 	error = dpm_suspend(PMSG_FREEZE);
+ 	if (error)
+@@ -392,6 +393,7 @@ int hibernation_snapshot(int platform_mo
+ 	if (error || !in_suspend)
+ 		pm_restore_gfp_mask();
+ 
++	ftrace_start();
+ 	resume_console();
+ 	dpm_complete(msg);
+ 
+@@ -496,6 +498,7 @@ int hibernation_restore(int platform_mod
+ 
+ 	pm_prepare_console();
+ 	suspend_console();
++	ftrace_stop();
+ 	pm_restrict_gfp_mask();
+ 	error = dpm_suspend_start(PMSG_QUIESCE);
+ 	if (!error) {
+@@ -503,6 +506,7 @@ int hibernation_restore(int platform_mod
+ 		dpm_resume_end(PMSG_RECOVER);
+ 	}
+ 	pm_restore_gfp_mask();
++	ftrace_start();
+ 	resume_console();
+ 	pm_restore_console();
+ 	return error;
+@@ -529,6 +533,7 @@ int hibernation_platform_enter(void)
+ 
+ 	entering_platform_hibernation = true;
+ 	suspend_console();
++	ftrace_stop();
+ 	error = dpm_suspend_start(PMSG_HIBERNATE);
+ 	if (error) {
+ 		if (hibernation_ops->recover)
+@@ -572,6 +577,7 @@ int hibernation_platform_enter(void)
+  Resume_devices:
+ 	entering_platform_hibernation = false;
+ 	dpm_resume_end(PMSG_RESTORE);
++	ftrace_start();
+ 	resume_console();
+ 
+  Close:
+--- a/kernel/power/suspend.c
++++ b/kernel/power/suspend.c
+@@ -25,6 +25,7 @@
+ #include <linux/export.h>
+ #include <linux/suspend.h>
+ #include <linux/syscore_ops.h>
++#include <linux/ftrace.h>
+ #include <trace/events/power.h>
+ 
+ #include "power.h"
+@@ -220,6 +221,7 @@ int suspend_devices_and_enter(suspend_st
+ 			goto Close;
+ 	}
+ 	suspend_console();
++	ftrace_stop();
+ 	suspend_test_start();
+ 	error = dpm_suspend_start(PMSG_SUSPEND);
+ 	if (error) {
+@@ -239,6 +241,7 @@ int suspend_devices_and_enter(suspend_st
+ 	suspend_test_start();
+ 	dpm_resume_end(PMSG_RESUME);
+ 	suspend_test_finish("resume devices");
++	ftrace_start();
+ 	resume_console();
+  Close:
+ 	if (suspend_ops->end)
+
+

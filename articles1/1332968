@@ -1,0 +1,100 @@
+Path: news.gmane.org!not-for-mail
+From: Stanislav Kinsbursky <skinsbursky@parallels.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.nfs,gmane.linux.openvz.devel
+Subject: [PATCH v2 14/15] NFSd: make grace end flag per network namespace
+Date: Wed, 25 Jul 2012 16:57:37 +0400
+Lines: 54
+Approved: news@gmane.org
+Message-ID: <20120725125737.24376.62359.stgit@localhost.localdomain>
+References: <20120725125258.24376.82525.stgit@localhost.localdomain>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343221182 21764 80.91.229.3 (25 Jul 2012 12:59:42 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 12:59:42 +0000 (UTC)
+Cc: linux-nfs@vger.kernel.org, Trond.Myklebust@netapp.com,
+	linux-kernel@vger.kernel.org, devel@openvz.org
+To: bfields@fieldses.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 14:59:40 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su1Bf-0004c3-H7
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 14:59:35 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S933100Ab2GYM7G (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 08:59:06 -0400
+Original-Received: from mailhub.sw.ru ([195.214.232.25]:17532 "EHLO relay.sw.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S932934Ab2GYM7C (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 08:59:02 -0400
+Original-Received: from localhost.localdomain ([10.30.21.131])
+	by relay.sw.ru (8.13.4/8.13.4) with ESMTP id q6PCwo2g019374;
+	Wed, 25 Jul 2012 16:58:51 +0400 (MSK)
+In-Reply-To: <20120725125258.24376.82525.stgit@localhost.localdomain>
+User-Agent: StGit/0.16
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332968 gmane.linux.nfs:51115 gmane.linux.openvz.devel:1899
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332968>
+
+Signed-off-by: Stanislav Kinsbursky <skinsbursky@parallels.com>
+---
+ fs/nfsd/netns.h     |    1 +
+ fs/nfsd/nfs4state.c |    8 +++-----
+ 2 files changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/fs/nfsd/netns.h b/fs/nfsd/netns.h
+index e99767d..b6deebd 100644
+--- a/fs/nfsd/netns.h
++++ b/fs/nfsd/netns.h
+@@ -36,6 +36,7 @@ struct nfsd_net {
+ 	struct cache_detail *nametoid_cache;
+ 
+ 	struct lock_manager nfsd4_manager;
++	bool grace_ended;
+ };
+ 
+ extern int nfsd_net_id;
+diff --git a/fs/nfsd/nfs4state.c b/fs/nfsd/nfs4state.c
+index b926e00..2c53447 100644
+--- a/fs/nfsd/nfs4state.c
++++ b/fs/nfsd/nfs4state.c
+@@ -3118,19 +3118,17 @@ out:
+ 	return status;
+ }
+ 
+-static bool grace_ended;
+-
+ static void
+ nfsd4_end_grace(struct net *net)
+ {
+ 	struct nfsd_net *nn = net_generic(net, nfsd_net_id);
+ 
+ 	/* do nothing if grace period already ended */
+-	if (grace_ended)
++	if (nn->grace_ended)
+ 		return;
+ 
+ 	dprintk("NFSD: end of grace period\n");
+-	grace_ended = true;
++	nn->grace_ended = true;
+ 	nfsd4_record_grace_done(net, boot_time);
+ 	locks_end_grace(&nn->nfsd4_manager);
+ 	/*
+@@ -4704,7 +4702,7 @@ nfs4_state_start(void)
+ 	nfsd4_client_tracking_init(net);
+ 	boot_time = get_seconds();
+ 	locks_start_grace(net, &nn->nfsd4_manager);
+-	grace_ended = false;
++	nn->grace_ended = false;
+ 	printk(KERN_INFO "NFSD: starting %ld-second grace period\n",
+ 	       nfsd4_grace);
+ 	ret = set_callback_cred();
+

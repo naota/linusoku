@@ -1,0 +1,98 @@
+Path: news.gmane.org!not-for-mail
+From: Jiri Kosina <jkosina@suse.cz>
+Newsgroups: gmane.linux.ports.sparc,gmane.linux.kernel
+Subject: [PATCH] sparc64: do not clobber personality flags in
+ sys_sparc64_personality()
+Date: Wed, 1 Aug 2012 22:05:55 +0200 (CEST)
+Lines: 53
+Approved: news@gmane.org
+Message-ID: <alpine.LNX.2.00.1208012204140.14910@pobox.suse.cz>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: TEXT/PLAIN; charset=US-ASCII
+X-Trace: dough.gmane.org 1343851574 15538 80.91.229.3 (1 Aug 2012 20:06:14 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 1 Aug 2012 20:06:14 +0000 (UTC)
+Cc: sparclinux@vger.kernel.org, linux-kernel@vger.kernel.org
+To: "David S. Miller" <davem@davemloft.net>
+Original-X-From: sparclinux-owner@vger.kernel.org Wed Aug 01 22:06:13 2012
+Return-path: <sparclinux-owner@vger.kernel.org>
+Envelope-to: lnx-sparclinux@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <sparclinux-owner@vger.kernel.org>)
+	id 1SwfBG-0006VQ-4B
+	for lnx-sparclinux@plane.gmane.org; Wed, 01 Aug 2012 22:06:06 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754977Ab2HAUGD (ORCPT <rfc822;lnx-sparclinux@m.gmane.org>);
+	Wed, 1 Aug 2012 16:06:03 -0400
+Original-Received: from cantor2.suse.de ([195.135.220.15]:45940 "EHLO mx2.suse.de"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752452Ab2HAUGC (ORCPT <rfc822;sparclinux@vger.kernel.org>);
+	Wed, 1 Aug 2012 16:06:02 -0400
+Original-Received: from relay1.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 80E66A329E;
+	Wed,  1 Aug 2012 22:06:01 +0200 (CEST)
+User-Agent: Alpine 2.00 (LNX 1167 2008-08-23)
+Original-Sender: sparclinux-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <sparclinux.vger.kernel.org>
+X-Mailing-List: sparclinux@vger.kernel.org
+Xref: news.gmane.org gmane.linux.ports.sparc:16612 gmane.linux.kernel:1336529
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336529>
+
+There are multiple errors in how sys_sparc64_personality() handles 
+personality flags stored in top three bytes.
+
+- directly comparing current->personality against PER_LINUX32 doesn't work
+  in cases when any of the personality flags stored in the top three bytes
+  are used.
+- directly forcefully setting personality to PER_LINUX32 or PER_LINUX
+  discards any flags stored in the top three bytes
+
+Fix the first one by properly using personality() macro to compare only
+PER_MASK bytes.
+Fix the second one by setting only the bits that should be set, instead of
+overwriting the whole value.
+
+Signed-off-by: Jiri Kosina <jkosina@suse.cz>
+---
+
+Found accidentally. Untested, I don't have the hardware.
+
+ arch/sparc/kernel/sys_sparc_64.c |   10 +++++-----
+ 1 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/arch/sparc/kernel/sys_sparc_64.c b/arch/sparc/kernel/sys_sparc_64.c
+index 0dc1f57..d48a364 100644
+--- a/arch/sparc/kernel/sys_sparc_64.c
++++ b/arch/sparc/kernel/sys_sparc_64.c
+@@ -502,12 +502,12 @@ SYSCALL_DEFINE1(sparc64_personality, unsigned long, personality)
+ {
+ 	int ret;
+ 
+-	if (current->personality == PER_LINUX32 &&
+-	    personality == PER_LINUX)
+-		personality = PER_LINUX32;
++	if (personality(current->personality) == PER_LINUX32 &&
++	    personality(personality) == PER_LINUX)
++		personality &= ~PER_LINUX | PER_LINUX32;
+ 	ret = sys_personality(personality);
+-	if (ret == PER_LINUX32)
+-		ret = PER_LINUX;
++	if (personality(ret) == PER_LINUX32)
++		ret &= ~PER_LINUX32 | PER_LINUX;
+ 
+ 	return ret;
+ }
+
+-- 
+Jiri Kosina
+SUSE Labs
+--
+To unsubscribe from this list: send the line "unsubscribe sparclinux" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

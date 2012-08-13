@@ -1,0 +1,390 @@
+Path: news.gmane.org!not-for-mail
+From: Minchan Kim <minchan@kernel.org>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH 4/7] zsmalloc: collapse internal .h into .c
+Date: Wed,  8 Aug 2012 15:12:17 +0900
+Lines: 325
+Approved: news@gmane.org
+Message-ID: <1344406340-14128-5-git-send-email-minchan@kernel.org>
+References: <1344406340-14128-1-git-send-email-minchan@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344406270 24635 80.91.229.3 (8 Aug 2012 06:11:10 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 06:11:10 +0000 (UTC)
+Cc: Andrew Morton <akpm@linux-foundation.org>,
+	linux-mm@kvack.org,
+	linux-kernel@vger.kernel.org,
+	Nitin Gupta <ngupta@vflare.org>,
+	Seth Jennings <sjenning@linux.vnet.ibm.com>,
+	Dan Magenheimer <dan.magenheimer@oracle.com>,
+	Konrad Rzeszutek Wilk <konrad@darnok.org>,
+	Minchan Kim <minchan@kernel.org>
+To: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Original-X-From: owner-linux-mm@kvack.org Wed Aug 08 08:11:07 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SyzU2-0005Jr-1R
+	for glkm-linux-mm-2@m.gmane.org; Wed, 08 Aug 2012 08:11:06 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 7DF536B006E; Wed,  8 Aug 2012 02:10:58 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id ED9536B0062; Wed,  8 Aug 2012 02:10:56 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id B25676B0068; Wed,  8 Aug 2012 02:10:56 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx145.postini.com [74.125.245.145])
+	by kanga.kvack.org (Postfix) with SMTP id 742316B0062
+	for <linux-mm@kvack.org>; Wed,  8 Aug 2012 02:10:54 -0400 (EDT)
+Original-Received: from LGEMRELSE1Q.lge.com ([156.147.1.111]) by na3sys010amx145.postini.com ([74.125.244.10]) with SMTP;
+	Wed, 08 Aug 2012 06:10:54 GMT
+X-AuditID: 9c93016f-b7b08ae00000790d-f9-502202ea487f
+Original-Received: from localhost.localdomain ( [10.177.220.67])
+	by LGEMRELSE1Q.lge.com (Symantec Brightmail Gateway) with SMTP id 43.60.30989.AE202205; Wed,  8 Aug 2012 15:10:50 +0900 (KST)
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1344406340-14128-1-git-send-email-minchan@kernel.org>
+X-Brightmail-Tracker: AAAAAA==
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <minchan@kernel.org> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83798 gmane.linux.kernel:1339825
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339825>
+
+From: Seth Jennings <sjenning@linux.vnet.ibm.com>
+
+The patch collapses in the internal zsmalloc_int.h into
+the zsmalloc-main.c file.
+
+This is done in preparation for the promotion to mm/ where
+separate internal headers are discouraged.
+
+Signed-off-by: Seth Jennings <sjenning@linux.vnet.ibm.com>
+Signed-off-by: Minchan Kim <minchan@kernel.org>
+---
+ drivers/staging/zsmalloc/zsmalloc-main.c |  132 +++++++++++++++++++++++++-
+ drivers/staging/zsmalloc/zsmalloc_int.h  |  149 ------------------------------
+ 2 files changed, 131 insertions(+), 150 deletions(-)
+ delete mode 100644 drivers/staging/zsmalloc/zsmalloc_int.h
+
+diff --git a/drivers/staging/zsmalloc/zsmalloc-main.c b/drivers/staging/zsmalloc/zsmalloc-main.c
+index defe350..09a9d35 100644
+--- a/drivers/staging/zsmalloc/zsmalloc-main.c
++++ b/drivers/staging/zsmalloc/zsmalloc-main.c
+@@ -76,9 +76,139 @@
+ #include <linux/cpu.h>
+ #include <linux/vmalloc.h>
+ #include <linux/hardirq.h>
++#include <linux/spinlock.h>
++#include <linux/types.h>
+ 
+ #include "zsmalloc.h"
+-#include "zsmalloc_int.h"
++
++/*
++ * This must be power of 2 and greater than of equal to sizeof(link_free).
++ * These two conditions ensure that any 'struct link_free' itself doesn't
++ * span more than 1 page which avoids complex case of mapping 2 pages simply
++ * to restore link_free pointer values.
++ */
++#define ZS_ALIGN		8
++
++/*
++ * A single 'zspage' is composed of up to 2^N discontiguous 0-order (single)
++ * pages. ZS_MAX_ZSPAGE_ORDER defines upper limit on N.
++ */
++#define ZS_MAX_ZSPAGE_ORDER 2
++#define ZS_MAX_PAGES_PER_ZSPAGE (_AC(1, UL) << ZS_MAX_ZSPAGE_ORDER)
++
++/*
++ * Object location (<PFN>, <obj_idx>) is encoded as
++ * as single (void *) handle value.
++ *
++ * Note that object index <obj_idx> is relative to system
++ * page <PFN> it is stored in, so for each sub-page belonging
++ * to a zspage, obj_idx starts with 0.
++ *
++ * This is made more complicated by various memory models and PAE.
++ */
++
++#ifndef MAX_PHYSMEM_BITS
++#ifdef CONFIG_HIGHMEM64G
++#define MAX_PHYSMEM_BITS 36
++#else /* !CONFIG_HIGHMEM64G */
++/*
++ * If this definition of MAX_PHYSMEM_BITS is used, OBJ_INDEX_BITS will just
++ * be PAGE_SHIFT
++ */
++#define MAX_PHYSMEM_BITS BITS_PER_LONG
++#endif
++#endif
++#define _PFN_BITS		(MAX_PHYSMEM_BITS - PAGE_SHIFT)
++#define OBJ_INDEX_BITS	(BITS_PER_LONG - _PFN_BITS)
++#define OBJ_INDEX_MASK	((_AC(1, UL) << OBJ_INDEX_BITS) - 1)
++
++#define MAX(a, b) ((a) >= (b) ? (a) : (b))
++/* ZS_MIN_ALLOC_SIZE must be multiple of ZS_ALIGN */
++#define ZS_MIN_ALLOC_SIZE \
++	MAX(32, (ZS_MAX_PAGES_PER_ZSPAGE << PAGE_SHIFT >> OBJ_INDEX_BITS))
++#define ZS_MAX_ALLOC_SIZE	PAGE_SIZE
++
++/*
++ * On systems with 4K page size, this gives 254 size classes! There is a
++ * trader-off here:
++ *  - Large number of size classes is potentially wasteful as free page are
++ *    spread across these classes
++ *  - Small number of size classes causes large internal fragmentation
++ *  - Probably its better to use specific size classes (empirically
++ *    determined). NOTE: all those class sizes must be set as multiple of
++ *    ZS_ALIGN to make sure link_free itself never has to span 2 pages.
++ *
++ *  ZS_MIN_ALLOC_SIZE and ZS_SIZE_CLASS_DELTA must be multiple of ZS_ALIGN
++ *  (reason above)
++ */
++#define ZS_SIZE_CLASS_DELTA	16
++#define ZS_SIZE_CLASSES		((ZS_MAX_ALLOC_SIZE - ZS_MIN_ALLOC_SIZE) / \
++					ZS_SIZE_CLASS_DELTA + 1)
++
++/*
++ * We do not maintain any list for completely empty or full pages
++ */
++enum fullness_group {
++	ZS_ALMOST_FULL,
++	ZS_ALMOST_EMPTY,
++	_ZS_NR_FULLNESS_GROUPS,
++
++	ZS_EMPTY,
++	ZS_FULL
++};
++
++/*
++ * We assign a page to ZS_ALMOST_EMPTY fullness group when:
++ *	n <= N / f, where
++ * n = number of allocated objects
++ * N = total number of objects zspage can store
++ * f = 1/fullness_threshold_frac
++ *
++ * Similarly, we assign zspage to:
++ *	ZS_ALMOST_FULL	when n > N / f
++ *	ZS_EMPTY	when n == 0
++ *	ZS_FULL		when n == N
++ *
++ * (see: fix_fullness_group())
++ */
++static const int fullness_threshold_frac = 4;
++
++struct size_class {
++	/*
++	 * Size of objects stored in this class. Must be multiple
++	 * of ZS_ALIGN.
++	 */
++	int size;
++	unsigned int index;
++
++	/* Number of PAGE_SIZE sized pages to combine to form a 'zspage' */
++	int pages_per_zspage;
++
++	spinlock_t lock;
++
++	/* stats */
++	u64 pages_allocated;
++
++	struct page *fullness_list[_ZS_NR_FULLNESS_GROUPS];
++};
++
++/*
++ * Placed within free objects to form a singly linked list.
++ * For every zspage, first_page->freelist gives head of this list.
++ *
++ * This must be power of 2 and less than or equal to ZS_ALIGN
++ */
++struct link_free {
++	/* Handle of next free chunk (encodes <PFN, obj_idx>) */
++	void *next;
++};
++
++struct zs_pool {
++	struct size_class size_class[ZS_SIZE_CLASSES];
++
++	gfp_t flags;	/* allocation flags used when growing pool */
++	const char *name;
++};
+ 
+ /*
+  * A zspage's class index and fullness group
+diff --git a/drivers/staging/zsmalloc/zsmalloc_int.h b/drivers/staging/zsmalloc/zsmalloc_int.h
+deleted file mode 100644
+index 8c0b344..0000000
+--- a/drivers/staging/zsmalloc/zsmalloc_int.h
++++ /dev/null
+@@ -1,149 +0,0 @@
+-/*
+- * zsmalloc memory allocator
+- *
+- * Copyright (C) 2011  Nitin Gupta
+- *
+- * This code is released using a dual license strategy: BSD/GPL
+- * You can choose the license that better fits your requirements.
+- *
+- * Released under the terms of 3-clause BSD License
+- * Released under the terms of GNU General Public License Version 2.0
+- */
+-
+-#ifndef _ZS_MALLOC_INT_H_
+-#define _ZS_MALLOC_INT_H_
+-
+-#include <linux/kernel.h>
+-#include <linux/spinlock.h>
+-#include <linux/types.h>
+-
+-/*
+- * This must be power of 2 and greater than of equal to sizeof(link_free).
+- * These two conditions ensure that any 'struct link_free' itself doesn't
+- * span more than 1 page which avoids complex case of mapping 2 pages simply
+- * to restore link_free pointer values.
+- */
+-#define ZS_ALIGN		8
+-
+-/*
+- * A single 'zspage' is composed of up to 2^N discontiguous 0-order (single)
+- * pages. ZS_MAX_ZSPAGE_ORDER defines upper limit on N.
+- */
+-#define ZS_MAX_ZSPAGE_ORDER 2
+-#define ZS_MAX_PAGES_PER_ZSPAGE (_AC(1, UL) << ZS_MAX_ZSPAGE_ORDER)
+-
+-/*
+- * Object location (<PFN>, <obj_idx>) is encoded as
+- * as single (void *) handle value.
+- *
+- * Note that object index <obj_idx> is relative to system
+- * page <PFN> it is stored in, so for each sub-page belonging
+- * to a zspage, obj_idx starts with 0.
+- *
+- * This is made more complicated by various memory models and PAE.
+- */
+-
+-#ifndef MAX_PHYSMEM_BITS
+-#ifdef CONFIG_HIGHMEM64G
+-#define MAX_PHYSMEM_BITS 36
+-#else /* !CONFIG_HIGHMEM64G */
+-/*
+- * If this definition of MAX_PHYSMEM_BITS is used, OBJ_INDEX_BITS will just
+- * be PAGE_SHIFT
+- */
+-#define MAX_PHYSMEM_BITS BITS_PER_LONG
+-#endif
+-#endif
+-#define _PFN_BITS		(MAX_PHYSMEM_BITS - PAGE_SHIFT)
+-#define OBJ_INDEX_BITS	(BITS_PER_LONG - _PFN_BITS)
+-#define OBJ_INDEX_MASK	((_AC(1, UL) << OBJ_INDEX_BITS) - 1)
+-
+-#define MAX(a, b) ((a) >= (b) ? (a) : (b))
+-/* ZS_MIN_ALLOC_SIZE must be multiple of ZS_ALIGN */
+-#define ZS_MIN_ALLOC_SIZE \
+-	MAX(32, (ZS_MAX_PAGES_PER_ZSPAGE << PAGE_SHIFT >> OBJ_INDEX_BITS))
+-#define ZS_MAX_ALLOC_SIZE	PAGE_SIZE
+-
+-/*
+- * On systems with 4K page size, this gives 254 size classes! There is a
+- * trader-off here:
+- *  - Large number of size classes is potentially wasteful as free page are
+- *    spread across these classes
+- *  - Small number of size classes causes large internal fragmentation
+- *  - Probably its better to use specific size classes (empirically
+- *    determined). NOTE: all those class sizes must be set as multiple of
+- *    ZS_ALIGN to make sure link_free itself never has to span 2 pages.
+- *
+- *  ZS_MIN_ALLOC_SIZE and ZS_SIZE_CLASS_DELTA must be multiple of ZS_ALIGN
+- *  (reason above)
+- */
+-#define ZS_SIZE_CLASS_DELTA	16
+-#define ZS_SIZE_CLASSES		((ZS_MAX_ALLOC_SIZE - ZS_MIN_ALLOC_SIZE) / \
+-					ZS_SIZE_CLASS_DELTA + 1)
+-
+-/*
+- * We do not maintain any list for completely empty or full pages
+- */
+-enum fullness_group {
+-	ZS_ALMOST_FULL,
+-	ZS_ALMOST_EMPTY,
+-	_ZS_NR_FULLNESS_GROUPS,
+-
+-	ZS_EMPTY,
+-	ZS_FULL
+-};
+-
+-/*
+- * We assign a page to ZS_ALMOST_EMPTY fullness group when:
+- *	n <= N / f, where
+- * n = number of allocated objects
+- * N = total number of objects zspage can store
+- * f = 1/fullness_threshold_frac
+- *
+- * Similarly, we assign zspage to:
+- *	ZS_ALMOST_FULL	when n > N / f
+- *	ZS_EMPTY	when n == 0
+- *	ZS_FULL		when n == N
+- *
+- * (see: fix_fullness_group())
+- */
+-static const int fullness_threshold_frac = 4;
+-
+-struct size_class {
+-	/*
+-	 * Size of objects stored in this class. Must be multiple
+-	 * of ZS_ALIGN.
+-	 */
+-	int size;
+-	unsigned int index;
+-
+-	/* Number of PAGE_SIZE sized pages to combine to form a 'zspage' */
+-	int pages_per_zspage;
+-
+-	spinlock_t lock;
+-
+-	/* stats */
+-	u64 pages_allocated;
+-
+-	struct page *fullness_list[_ZS_NR_FULLNESS_GROUPS];
+-};
+-
+-/*
+- * Placed within free objects to form a singly linked list.
+- * For every zspage, first_page->freelist gives head of this list.
+- *
+- * This must be power of 2 and less than or equal to ZS_ALIGN
+- */
+-struct link_free {
+-	/* Handle of next free chunk (encodes <PFN, obj_idx>) */
+-	void *next;
+-};
+-
+-struct zs_pool {
+-	struct size_class size_class[ZS_SIZE_CLASSES];
+-
+-	gfp_t flags;	/* allocation flags used when growing pool */
+-	const char *name;
+-};
+-
+-#endif
+-- 
+1.7.9.5
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

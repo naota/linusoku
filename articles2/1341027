@@ -1,0 +1,141 @@
+Path: news.gmane.org!not-for-mail
+From: Cody P Schafer <cody@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 14/16] perf symbol: factor want_symtab out of dso__load_sym()
+Date: Thu,  9 Aug 2012 15:18:39 -0700
+Lines: 75
+Approved: news@gmane.org
+Message-ID: <1344550721-21024-15-git-send-email-cody@linux.vnet.ibm.com>
+References: <1344550721-21024-1-git-send-email-cody@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344551005 24896 80.91.229.3 (9 Aug 2012 22:23:25 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 22:23:25 +0000 (UTC)
+Cc: LKML <linux-kernel@vger.kernel.org>,
+	Ingo Molnar <mingo@redhat.com>,
+	Paul Mackerras <paulus@samba.org>,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Sukadev Bhattiprolu <sukadev@linux.vnet.ibm.com>,
+	Matt Hellsley <matthltc@us.ibm.com>,
+	David Hansen <dave@linux.vnet.ibm.com>
+To: Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 10 00:23:23 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Szb8Q-0000aU-19
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 10 Aug 2012 00:23:18 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932930Ab2HIWXK (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 18:23:10 -0400
+Original-Received: from e5.ny.us.ibm.com ([32.97.182.145]:38813 "EHLO e5.ny.us.ibm.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S932851Ab2HIWXG (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 18:23:06 -0400
+Original-Received: from /spool/local
+	by e5.ny.us.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <cody@linux.vnet.ibm.com>;
+	Thu, 9 Aug 2012 18:23:06 -0400
+Original-Received: from d01dlp01.pok.ibm.com (9.56.250.166)
+	by e5.ny.us.ibm.com (192.168.1.105) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Thu, 9 Aug 2012 18:22:16 -0400
+Original-Received: from d01relay07.pok.ibm.com (d01relay07.pok.ibm.com [9.56.227.147])
+	by d01dlp01.pok.ibm.com (Postfix) with ESMTP id E7E3B38C803D
+	for <linux-kernel@vger.kernel.org>; Thu,  9 Aug 2012 18:22:15 -0400 (EDT)
+Original-Received: from d01av02.pok.ibm.com (d01av02.pok.ibm.com [9.56.224.216])
+	by d01relay07.pok.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q79MMF7a21627058
+	for <linux-kernel@vger.kernel.org>; Thu, 9 Aug 2012 18:22:15 -0400
+Original-Received: from d01av02.pok.ibm.com (loopback [127.0.0.1])
+	by d01av02.pok.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q79MMEQE001722
+	for <linux-kernel@vger.kernel.org>; Thu, 9 Aug 2012 19:22:15 -0300
+Original-Received: from localhost ([9.47.24.219])
+	by d01av02.pok.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q79MMDMA001690;
+	Thu, 9 Aug 2012 19:22:14 -0300
+X-Mailer: git-send-email 1.7.11.3
+In-Reply-To: <1344550721-21024-1-git-send-email-cody@linux.vnet.ibm.com>
+X-Content-Scanned: Fidelis XPS MAILER
+x-cbid: 12080922-5930-0000-0000-00000AB4D210
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341027
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341027>
+
+Only one callsite of dso__load_sym() uses the want_symtab functionality,
+so place the logic at the callsite instead of within dso__load_sym().
+
+This sets us up for removal of want_symtab completely once we keep
+multiple elf handles (within symsrc's) around.
+
+Setup for the later patch
+"perf symbol: use both runtime and debug images"
+
+Signed-off-by: Cody P Schafer <cody@linux.vnet.ibm.com>
+---
+ tools/perf/util/symbol.c | 26 +++++++++++---------------
+ 1 file changed, 11 insertions(+), 15 deletions(-)
+
+diff --git a/tools/perf/util/symbol.c b/tools/perf/util/symbol.c
+index f8fbde2..83d2276 100644
+--- a/tools/perf/util/symbol.c
++++ b/tools/perf/util/symbol.c
+@@ -1320,8 +1320,7 @@ static size_t elf_addr_to_index(Elf *elf, GElf_Addr addr)
+ }
+ 
+ static int dso__load_sym(struct dso *dso, struct map *map, struct symsrc *ss,
+-		         symbol_filter_t filter, int kmodule,
+-			 int want_symtab)
++		         symbol_filter_t filter, int kmodule)
+ {
+ 	struct kmap *kmap = dso->kernel ? map__kmap(map) : NULL;
+ 	struct map *curr_map = map;
+@@ -1346,16 +1345,6 @@ static int dso__load_sym(struct dso *dso, struct map *map, struct symsrc *ss,
+ 	sec = ss->symtab;
+ 	shdr = ss->symshdr;
+ 
+-	if (sec == NULL) {
+-		if (want_symtab)
+-			goto out_elf_end;
+-
+-		sec  = ss->dynsym;
+-		shdr = ss->dynshdr;
+-		if (sec == NULL)
+-			goto out_elf_end;
+-	}
+-
+ 	opdsec = ss->opdsec;
+ 	opdshdr = ss->opdshdr;
+ 	opdidx  = ss->opdidx;
+@@ -1947,8 +1936,15 @@ restart:
+ 		if (symsrc__init(&ss, dso, name, symtab_type) < 0)
+ 			continue;
+ 
+-		ret = dso__load_sym(dso, map, &ss, filter, 0,
+-				    want_symtab);
++		if (want_symtab && !ss.symtab) {
++			symsrc__destroy(&ss);
++			continue;
++		} else if (!want_symtab) {
++			ss.symtab  = ss.dynsym;
++			ss.symshdr = ss.dynshdr;
++		}
++
++		ret = dso__load_sym(dso, map, &ss, filter, 0);
+ 
+ 		/*
+ 		 * Some people seem to have debuginfo files _WITHOUT_ debug
+@@ -2253,7 +2249,7 @@ int dso__load_vmlinux(struct dso *dso, struct map *map,
+ 	if (symsrc__init(&ss, dso, symfs_vmlinux, symtab_type))
+ 		return -1;
+ 
+-	err = dso__load_sym(dso, map, &ss, filter, 0, 0);
++	err = dso__load_sym(dso, map, &ss, filter, 0);
+ 	symsrc__destroy(&ss);
+ 
+ 	if (err > 0) {
+-- 
+1.7.11.3
+

@@ -1,0 +1,177 @@
+Path: news.gmane.org!not-for-mail
+From: Rupesh Gujare <rgujare@ozmodevices.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 1/5] staging: ozwpan: buffer frame if urb not available.
+Date: Mon, 23 Jul 2012 18:49:43 +0100
+Lines: 111
+Approved: news@gmane.org
+Message-ID: <1343065787-7616-2-git-send-email-rgujare@ozmodevices.com>
+References: <1343065787-7616-1-git-send-email-rgujare@ozmodevices.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1343065842 20832 80.91.229.3 (23 Jul 2012 17:50:42 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 17:50:42 +0000 (UTC)
+Cc: <linux-kernel@vger.kernel.org>, <gregkh@linuxfoundation.org>
+To: <devel@driverdev.osuosl.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 19:50:38 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StMly-0005py-T8
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 19:50:23 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754529Ab2GWRuO (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 13:50:14 -0400
+Original-Received: from co1ehsobe003.messaging.microsoft.com ([216.32.180.186]:19975
+	"EHLO co1outboundpool.messaging.microsoft.com" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1754493Ab2GWRuM (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 13:50:12 -0400
+Original-Received: from mail197-co1-R.bigfish.com (10.243.78.243) by
+ CO1EHSOBE009.bigfish.com (10.243.66.72) with Microsoft SMTP Server id
+ 14.1.225.23; Mon, 23 Jul 2012 17:50:11 +0000
+Original-Received: from mail197-co1 (localhost [127.0.0.1])	by
+ mail197-co1-R.bigfish.com (Postfix) with ESMTP id 7E80620032C;	Mon, 23 Jul
+ 2012 17:50:11 +0000 (UTC)
+X-Forefront-Antispam-Report: CIP:157.55.49.13;KIP:(null);UIP:(null);IPV:NLI;H:SN2PRD0802HT003.namprd08.prod.outlook.com;RD:none;EFVD:NLI
+X-SpamScore: 0
+X-BigFish: PS0(zzzz1202hzz8275bhz2fh2a8h668h839hd24he5bhf0ah107ah)
+Received-SPF: pass (mail197-co1: domain of ozmodevices.com designates 157.55.49.13 as permitted sender) client-ip=157.55.49.13; envelope-from=rgujare@ozmodevices.com; helo=SN2PRD0802HT003.namprd08.prod.outlook.com ;.outlook.com ;
+Original-Received: from mail197-co1 (localhost.localdomain [127.0.0.1]) by mail197-co1
+ (MessageSwitch) id 1343065809474971_1231; Mon, 23 Jul 2012 17:50:09 +0000
+ (UTC)
+Original-Received: from CO1EHSMHS003.bigfish.com (unknown [10.243.78.243])	by
+ mail197-co1.bigfish.com (Postfix) with ESMTP id 7205D30004A;	Mon, 23 Jul 2012
+ 17:50:09 +0000 (UTC)
+Original-Received: from SN2PRD0802HT003.namprd08.prod.outlook.com (157.55.49.13) by
+ CO1EHSMHS003.bigfish.com (10.243.66.13) with Microsoft SMTP Server (TLS) id
+ 14.1.225.23; Mon, 23 Jul 2012 17:50:09 +0000
+Original-Received: from localhost.localdomain (81.149.82.179) by pod51019.outlook.com
+ (10.27.84.29) with Microsoft SMTP Server (TLS) id 14.15.86.1; Mon, 23 Jul
+ 2012 17:50:07 +0000
+X-Mailer: git-send-email 1.7.5.4
+In-Reply-To: <1343065787-7616-1-git-send-email-rgujare@ozmodevices.com>
+X-Originating-IP: [81.149.82.179]
+X-OriginatorOrg: ozmodevices.com
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331880
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331880>
+
+For interrupt end point buffer frames, if urb is not available
+& give back as soon as urb is received from usb core.
+
+Signed-off-by: Rupesh Gujare <rgujare@ozmodevices.com>
+---
+ drivers/staging/ozwpan/ozhcd.c |   67 +++++++++++++++++++++++++++++++++++++--
+ 1 files changed, 63 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/staging/ozwpan/ozhcd.c b/drivers/staging/ozwpan/ozhcd.c
+index 251f07c..617bfed 100644
+--- a/drivers/staging/ozwpan/ozhcd.c
++++ b/drivers/staging/ozwpan/ozhcd.c
+@@ -417,6 +417,44 @@ static void oz_ep_free(struct oz_port *port, struct oz_endpoint *ep)
+ /*------------------------------------------------------------------------------
+  * Context: softirq
+  */
++void oz_complete_buffered_urb(struct oz_port *port, struct oz_endpoint *ep,
++			struct urb *urb)
++{
++	u8 data_len, available_space, copy_len;
++
++	memcpy(&data_len, &ep->buffer[ep->out_ix], sizeof(u8));
++	if (data_len <= urb->transfer_buffer_length)
++		available_space = data_len;
++	else
++		available_space = urb->transfer_buffer_length;
++
++	if (++ep->out_ix == ep->buffer_size)
++		ep->out_ix = 0;
++	copy_len = ep->buffer_size - ep->out_ix;
++	if (copy_len >= available_space)
++		copy_len = available_space;
++	memcpy(urb->transfer_buffer, &ep->buffer[ep->out_ix], copy_len);
++
++	if (copy_len < available_space) {
++		memcpy((urb->transfer_buffer + copy_len), ep->buffer,
++						(available_space - copy_len));
++		ep->out_ix = available_space - copy_len;
++	} else {
++		ep->out_ix += copy_len;
++	}
++	urb->actual_length = available_space;
++	if (ep->out_ix == ep->buffer_size)
++		ep->out_ix = 0;
++
++	ep->buffered_units--;
++	oz_trace("Trying to give back buffered frame of size=%d\n",
++						available_space);
++	oz_complete_urb(port->ozhcd->hcd, urb, 0, 0);
++}
++
++/*------------------------------------------------------------------------------
++ * Context: softirq
++ */
+ static int oz_enqueue_ep_urb(struct oz_port *port, u8 ep_addr, int in_dir,
+ 			struct urb *urb, u8 req_id)
+ {
+@@ -452,6 +490,18 @@ static int oz_enqueue_ep_urb(struct oz_port *port, u8 ep_addr, int in_dir,
+ 		ep = port->in_ep[ep_addr];
+ 	else
+ 		ep = port->out_ep[ep_addr];
++
++	/*For interrupt endpoint check for buffered data
++	* & complete urb
++	*/
++	if (((ep->attrib & USB_ENDPOINT_XFERTYPE_MASK) == USB_ENDPOINT_XFER_INT)
++						 && ep->buffered_units > 0) {
++		oz_free_urb_link(urbl);
++		spin_unlock_bh(&port->ozhcd->hcd_lock);
++		oz_complete_buffered_urb(port, ep, urb);
++		return 0;
++	}
++
+ 	if (ep && port->hpd) {
+ 		list_add_tail(&urbl->link, &ep->urb_list);
+ 		if (!in_dir && ep_addr && (ep->credit < 0)) {
+@@ -961,6 +1011,9 @@ void oz_hcd_data_ind(void *hport, u8 endpoint, u8 *data, int data_len)
+ 			urb->actual_length = copy_len;
+ 			oz_complete_urb(port->ozhcd->hcd, urb, 0, 0);
+ 			return;
++		} else {
++			oz_trace("buffering frame as URB is not available\n");
++			oz_hcd_buffer_data(ep, data, data_len);
+ 		}
+ 		break;
+ 	case USB_ENDPOINT_XFER_ISOC:
+@@ -1167,10 +1220,16 @@ static int oz_build_endpoints_for_interface(struct usb_hcd *hcd,
+ 		int buffer_size = 0;
+ 
+ 		oz_trace("%d bEndpointAddress = %x\n", i, ep_addr);
+-		if ((ep_addr & USB_ENDPOINT_DIR_MASK) &&
+-			((hep->desc.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK)
+-			== USB_ENDPOINT_XFER_ISOC)) {
+-			buffer_size = 24*1024;
++		if (ep_addr & USB_ENDPOINT_DIR_MASK) {
++			switch (hep->desc.bmAttributes &
++						USB_ENDPOINT_XFERTYPE_MASK) {
++			case USB_ENDPOINT_XFER_ISOC:
++				buffer_size = 24*1024;
++				break;
++			case USB_ENDPOINT_XFER_INT:
++				buffer_size = 128;
++				break;
++			}
+ 		}
+ 
+ 		ep = oz_ep_alloc(mem_flags, buffer_size);
+-- 
+1.7.5.4
+
+

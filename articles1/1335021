@@ -1,0 +1,183 @@
+Path: news.gmane.org!not-for-mail
+From: Anton Vorontsov <anton.vorontsov@linaro.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel,gmane.linux.kernel.debugging.kgdb.bugs
+Subject: [PATCH 08/11] ARM: kgdb_fiq: Implement knocking into KDB via escape command
+Date: Mon, 30 Jul 2012 04:58:17 -0700
+Lines: 115
+Approved: news@gmane.org
+Message-ID: <1343649500-18491-8-git-send-email-anton.vorontsov@linaro.org>
+References: <20120730115719.GA5742@lizard>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343649787 5202 80.91.229.3 (30 Jul 2012 12:03:07 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 12:03:07 +0000 (UTC)
+Cc: =?UTF-8?q?Arve=20Hj=C3=B8nnev=C3=A5g?= <arve@android.com>,
+	Colin Cross <ccross@android.com>,
+	John Stultz <john.stultz@linaro.org>,
+	linux-kernel@vger.kernel.org, linux-arm-kernel@lists.infradead.org,
+	linaro-kernel@lists.linaro.org, patches@linaro.org,
+	kernel-team@android.com, kgdb-bugreport@lists.sourceforge.net
+To: Russell King <linux@arm.linux.org.uk>,
+	Jason Wessel <jason.wessel@windriver.com>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	Alan Cox <alan@linux.intel.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 14:03:05 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Svoge-0005n6-Lb
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 14:03:01 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753767Ab2G3MCt (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 08:02:49 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:47107 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753790Ab2G3MB5 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 08:01:57 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so9733592pbb.19
+        for <linux-kernel@vger.kernel.org>; Mon, 30 Jul 2012 05:01:56 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :x-gm-message-state;
+        bh=QpNi8X5KnO/rG8S0RRSR3s4AqUWgiBKbMlhEuYFl2So=;
+        b=mD6CK1nSW4r+U/KamEl2PKU+vNRycOwyXegzfMuqdYnYIAy5H+J6ClV2ugxXU+WPe0
+         l2DUG7bZ5AcBHiH+Jmk3ICyfyitSRGsoWQvGpY50NmFJnpmoKURRUgW3EFV1iiaeQZMQ
+         1U322ZDdH6ZE7Jh0KouXNFSNpsssXol6C8QlyQO4J2CZOQb6vDFSJxsh9A9aPnDwicoU
+         k3UavgRyw4mniK78Vu2bxUpwx9WzDOhMjcscQXgIWEQDbnFbxNNO/D7UJ2NxFIruZmJU
+         k3Lm+9+abh1rn4ydR2wj5rQQhcE3ucMQWZn4ROXRtc7WeoecJeOYJM8H74NFUU8d3xDS
+         J2/g==
+Original-Received: by 10.68.194.168 with SMTP id hx8mr34722982pbc.36.1343649716783;
+        Mon, 30 Jul 2012 05:01:56 -0700 (PDT)
+Original-Received: from localhost (c-71-204-165-222.hsd1.ca.comcast.net. [71.204.165.222])
+        by mx.google.com with ESMTPS id wf7sm7815496pbc.34.2012.07.30.05.01.55
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 30 Jul 2012 05:01:56 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <20120730115719.GA5742@lizard>
+X-Gm-Message-State: ALoCoQmgE11UNgDVz83uwWOiPWjf4TTFjnH4WSe8NFkcZN0wwMCN+n53KF3uPPiJgacxp4kAa2tN
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335021 gmane.linux.ports.arm.kernel:179355 gmane.linux.kernel.debugging.kgdb.bugs:5721
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335021>
+
+As Colin Cross noticed, serial ports could be noisy, so occasional
+characters once in a while are possible. So, considering the noise
+possibility, entering the debugger on any received byte is unacceptable
+for production devices.
+
+This changes KGDB FIQ behaviour in a such way so that we have to type the
+GDB-protocol "$3#33" command to actually enter the debugger, the kernel
+will print the following prompt:
+
+	Type $3#33 to enter the debugger>
+
+This is the exactly the same command we use to escape from KGDB to KDB,
+so it should be all pretty familiar.
+
+For convenience, there is a kgdb_fiq.knock kernel command line option,
+when set to 0, this turns the special command to just a return key
+press, so the kernel will be printing this:
+
+	Hit <return> to enter the debugger>
+
+And for the cases when NMI connected to a dedicated button, the knocking
+can be disabled altogether by setting kgdb_fiq.knock to -1.
+
+Suggested-by: Colin Cross <ccross@android.com>
+Signed-off-by: Anton Vorontsov <anton.vorontsov@linaro.org>
+---
+ arch/arm/kernel/kgdb_fiq.c |   58 ++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 58 insertions(+)
+
+diff --git a/arch/arm/kernel/kgdb_fiq.c b/arch/arm/kernel/kgdb_fiq.c
+index 72a62c7..2bf4467 100644
+--- a/arch/arm/kernel/kgdb_fiq.c
++++ b/arch/arm/kernel/kgdb_fiq.c
+@@ -18,6 +18,7 @@
+ #include <linux/slab.h>
+ #include <linux/errno.h>
+ #include <linux/hardirq.h>
++#include <linux/kdb.h>
+ #include <linux/kgdb.h>
+ #include <asm/fiq.h>
+ #include <asm/exception.h>
+@@ -26,6 +27,60 @@ static int kgdb_fiq_enabled;
+ module_param_named(enable, kgdb_fiq_enabled, int, 0600);
+ MODULE_PARM_DESC(enable, "set to 1 to enable FIQ KGDB");
+ 
++static int kgdb_fiq_knock = 1;
++module_param_named(knock, kgdb_fiq_knock, int, 0600);
++MODULE_PARM_DESC(knock, "if set to 1 (default), the special '$3#33' command "
++			"must be used to enter the debugger; when set to 0, "
++			"hitting return key is enough to enter the debugger; "
++			"when set to -1, the debugger is entered immediately "
++			"upon NMI");
++
++/*
++ * "Serial ports are often noisy, especially when muxed over another port (we
++ * often use serial over the headset connector). Noise on the async command
++ * line just causes characters that are ignored, on a command line that blocked
++ * execution noise would be catastrophic." -- Colin Cross
++ *
++ * So, this small function implements KGDB/KDB knocking on the serial line: we
++ * won't enter the debugger until we receive a known magic phrase (which is
++ * actually "$3#33", known as "escape to KDB" command. If knocking is disabled,
++ * just pressing the return key is enough to enter the debugger.
++ */
++static bool kgdb_fiq_poll_knock(void)
++{
++	static int n;
++	int c = -1;
++	get_char_func *getc;
++	char magic[] = "$3#33";
++	size_t m = strlen(magic);
++
++	if (kgdb_fiq_knock < 0)
++		return 1;
++
++	for (getc = &kdb_poll_funcs[0]; *getc; ++getc) {
++		c = (*getc)();
++		if (c >= 0)
++			break;
++	}
++
++	if (!kgdb_fiq_knock && (c == '\r' || c == '\n')) {
++		return 1;
++	} else if (c == magic[n]) {
++		kdb_printf("%c", c);
++		n = (n + 1) % m;
++		if (!n)
++			return 1;
++	} else {
++		n = 0;
++		kdb_printf("\r%s %s to enter the debugger> %*s",
++			   kgdb_fiq_knock ? "Type" : "Hit",
++			   kgdb_fiq_knock ? magic  : "<return>", m, "");
++		memset(magic, '\b', m);
++		kdb_printf("%s", magic);
++	}
++	return 0;
++}
++
+ static unsigned int kgdb_fiq;
+ static void (*kgdb_enable_fiq)(unsigned int irq, bool on);
+ static bool (*is_kgdb_fiq)(unsigned int irq);
+@@ -36,6 +91,9 @@ asmlinkage void __exception_irq_entry kgdb_fiq_do_handle(struct pt_regs *regs)
+ 		return;
+ 	dbg_io_ops->clear_irqs();
+ 
++	if (!kgdb_fiq_poll_knock())
++		return;
++
+ 	nmi_enter();
+ 	kgdb_handle_exception(1, 0, 0, regs);
+ 	nmi_exit();
+-- 
+1.7.10.4
+

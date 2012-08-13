@@ -1,0 +1,440 @@
+Path: news.gmane.org!not-for-mail
+From: Steven Rostedt <rostedt@goodmis.org>
+Newsgroups: gmane.linux.kernel
+Subject: [RFC][PATCH] tracepoints: Move the work out of line from hotpath
+ sections
+Date: Thu, 09 Aug 2012 16:40:23 -0400
+Lines: 382
+Approved: news@gmane.org
+Message-ID: <1344544823.6935.82.camel@gandalf.stny.rr.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="ISO-8859-15"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344544840 9957 80.91.229.3 (9 Aug 2012 20:40:40 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 20:40:40 +0000 (UTC)
+Cc: Linus Torvalds <torvalds@linux-foundation.org>,
+	Ingo Molnar <mingo@elte.hu>,
+	Thomas Gleixner <tglx@linutronix.de>,
+	Peter Zijlstra <peterz@infradead.org>,
+	Mathieu Desnoyers <mathieu.desnoyers@efficios.com>,
+	Masami Hiramatsu <masami.hiramatsu.pt@hitachi.com>,
+	"H. Peter Anvin" <hpa@linux.intel.com>,
+	Avi Kivity <avi@redhat.com>,
+	Christoph Hellwig <hch@infradead.org>,
+	Andrew Morton <akpm@linux-foundation.org>
+To: LKML <linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 09 22:40:37 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzZX1-0002PP-Tz
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 09 Aug 2012 22:40:36 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755461Ab2HIUk2 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 16:40:28 -0400
+Original-Received: from hrndva-omtalb.mail.rr.com ([71.74.56.122]:22502 "EHLO
+	hrndva-omtalb.mail.rr.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751832Ab2HIUk0 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 16:40:26 -0400
+X-Authority-Analysis: v=2.0 cv=ZuBv2qHG c=1 sm=0 a=s5Htg7xnQOKvHEu9STBOug==:17 a=OpT9cpI26MMA:10 a=Vw9dB8nyIlIA:10 a=5SG0PmZfjMsA:10 a=Q9fys5e9bTEA:10 a=meVymXHHAAAA:8 a=ayC55rCoAAAA:8 a=UmJ6p_HmDfTlbPYajsEA:9 a=PUjeQqilurYA:10 a=s5Htg7xnQOKvHEu9STBOug==:117
+X-Cloudmark-Score: 0
+X-Originating-IP: 72.230.195.127
+Original-Received: from [72.230.195.127] ([72.230.195.127:50430] helo=[192.168.23.10])
+	by hrndva-oedge04.mail.rr.com (envelope-from <rostedt@goodmis.org>)
+	(ecelerity 2.2.3.46 r()) with ESMTP
+	id 1C/D2-21135-73024205; Thu, 09 Aug 2012 20:40:25 +0000
+X-Mailer: Evolution 3.4.3-1 
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340980
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340980>
+
+With the recent talk of performance regressions, I decided to take a
+look a tracepoints. For those that are not familiar with them, they are
+static locations scattered throughout the kernel that let developers
+trace their code when needed, with very little overhead when not needed
+but configured in the kernel. Most distributions have tracepoints
+configured into their kernels.
+
+They look like this:
+
+	trace_sched_switch(prev, next);
+
+When tracing is configured, through macro magic, this simple line
+expands to something like this:
+
+static inline void trace_sched_switch(struct task_struct *prev, struct task_struct *next)
+{
+	if (static_key_false(&__tracepoint_sched_switch.key)) {
+		struct tracepoint_func *it_func_ptr;
+		void *it_func;
+		void *__data;
+
+		rcu_read_lock_sched_notrace();
+		it_func_ptr = rcu_dereference_sched((*__tracepoint_sched_switch)->funcs);
+		if (it_func_ptr) {
+			do {
+				it_func = (it_func_ptr)->func;
+				__data = (it_func_ptr)->data;
+				((it_func))(__data, prev, next);
+			} while ((++it_func_ptr)->func);
+		}
+		rcu_read_unlock_sched_notrace();
+	}
+}
+
+There's some more magic involved here. The static_key_false() uses
+jump_labels to make the contents of the if block "unlikely" as well as
+uses a nop in the code when not enabled.
+
+The call site looks like this:
+
+       48 8b b5 10 ff ff ff    mov    -0xf0(%rbp),%rsi
+       c7 46 28 01 00 00 00    movl   $0x1,0x28(%rsi)
+       66 66 66 66 90          nopl
+       48 8b b5 10 ff ff ff    mov    -0xf0(%rbp),%rsi
+       48 8b bd 18 ff ff ff    mov    -0xe8(%rbp),%rdi
+
+When tracing is enabled, the nopl is converted into a jump to the
+tracing code that sits at the end of the function (__schedule in this
+case). That code looks like this:
+
+       65 48 8b 04 25 30 ba    mov    %gs:0xba30,%rax
+       00 00
+       83 80 44 e0 ff ff 01    addl   $0x1,-0x1fbc(%rax)
+       4c 8b 2d b9 d3 80 00    mov    0x80d3b9(%rip),%r13        # ffffffff8257dff0 <__tracepoint_sched_switch+0x30>
+       4d 85 ed                test   %r13,%r13
+       74 54                   je     ffffffff81d70c90 <__schedule+0x510>
+       4d 8d 75 10             lea    0x10(%r13),%r14
+       49 8b 45 00             mov    0x0(%r13),%rax
+       4d 89 ec                mov    %r13,%r12
+       48 89 9d f0 fe ff ff    mov    %rbx,-0x110(%rbp)
+       4c 8b bd 18 ff ff ff    mov    -0xe8(%rbp),%r15
+       4c 89 f3                mov    %r14,%rbx
+       4d 89 ee                mov    %r13,%r14
+       4c 8b ad 10 ff ff ff    mov    -0xf0(%rbp),%r13
+       66 0f 1f 44 00 00       nopw   0x0(%rax,%rax,1)
+       49 8b 7c 24 08          mov    0x8(%r12),%rdi
+       49 83 c4 10             add    $0x10,%r12
+       4c 89 ea                mov    %r13,%rdx
+       4c 89 fe                mov    %r15,%rsi
+       ff d0                   callq  *%rax
+       4c 89 e0                mov    %r12,%rax
+       4c 29 f0                sub    %r14,%rax
+       48 8b 44 03 f0          mov    -0x10(%rbx,%rax,1),%rax
+       48 85 c0                test   %rax,%rax
+       75 df                   jne    ffffffff81d70c68 <__schedule+0x4e8>
+       48 8b 9d f0 fe ff ff    mov    -0x110(%rbp),%rbx
+       65 48 8b 04 25 30 ba    mov    %gs:0xba30,%rax
+       00 00
+       83 a8 44 e0 ff ff 01    subl   $0x1,-0x1fbc(%rax)
+       48 8b 80 38 e0 ff ff    mov    -0x1fc8(%rax),%rax
+       a8 08                   test   $0x8,%al
+       0f 84 e3 fd ff ff       je     ffffffff81d70a92 <__schedule+0x312>
+       e8 7c 05 00 00          callq  ffffffff81d71230 <preempt_schedule>
+       e9 d9 fd ff ff          jmpq   ffffffff81d70a92 <__schedule+0x312>
+
+Now even though this code is moved to the end of the function, it still
+sits in the middle of lots of hot paths. All tracepoints act this way,
+and the kernel is growing rapidly with them. The latest count has
+something like 799 events existing currently in the kernel.
+
+Now I figured, instead of doing all this work in the hot paths, why not
+call a function that is out of line from the hot paths. Something like
+this:
+
+static inline void trace_sched_switch(struct task_struct *prev, struct task_struct *next)
+{
+	if (static_key_false(&__tracepoint_sched_switch.key)) {
+		extern void __tracepoint_hook_sched_switch(struct task_struct *prev, struct task_struct *next);
+
+		__tracepoint_hook_sched_switch(prev, next);
+	}
+}
+
+
+And out of line (in the .text.unlikely section) we would have:
+
+void __tracepoint_hook_sched_switch(struct task_struct *prev, struct task_struct *next)
+{
+	struct tracepoint_func *it_func_ptr;
+	void *it_func;
+	void *__data;
+
+	rcu_read_lock_sched_notrace();
+	it_func_ptr = rcu_dereference_sched((*__tracepoint_sched_switch)->funcs);
+	if (it_func_ptr) {
+		do {
+			it_func = (it_func_ptr)->func;
+			__data = (it_func_ptr)->data;
+			((it_func))(__data, prev, next);
+		} while ((++it_func_ptr)->func);
+	}
+	rcu_read_unlock_sched_notrace();
+}
+
+
+This makes what exists in the hot path files much smaller:
+
+       48 8b b5 10 ff ff ff    mov    -0xf0(%rbp),%rsi
+       48 8b bd 18 ff ff ff    mov    -0xe8(%rbp),%rdi
+       e8 dd f8 fc ff          callq  ffffffff81d40450 <__tracepoint_hook_sched_switch>
+       e9 5a fe ff ff          jmpq   ffffffff81d709d2 <__schedule+0x312>
+
+
+Now, by doing this, it adds a bit more code. Although, the code that is
+added exists in the .text.unlikely section and the normal paths should
+actually shrink, but kernel bloat is added never-the-less.
+
+   text	   data	    bss	    dec	    hex	filename
+20016471	2594648	1945600	24556719	176b4af	vmlinux-before
+20032535	2599960	1945600	24578095	177082f	vmlinux-after
+
+It adds 20K to the code. Well, it's not really this much, because I made
+this kernel pull in all modules (including ext3, xfs and kvm) which all
+add quite a number of tracepoints. But it was better to do this to get a
+picture of how this affects the tracepoints. There were 707 tracepoints
+compiled in, making it roughly 30 bytes per tracepoint added. Which
+makes sense, since the code use to be embedded at the site, but now
+there's a call to another function to do the work.
+
+I haven't ran any good tests to see how much of a performance
+improvement this does, but the patch is here and you can try it out and
+see for yourself.
+
+Pros:
+ Less code in the hot paths.
+ Hopefully, performance improves
+
+Cons:
+ Adds some bloat to the kernel (but in an out-of-the-way section)
+ Slows down actual tracing as it needs to call a function and will
+   have more cache misses during the trace.
+
+This patch just got the code working. I need to update the comments that
+go with tracepoints and fix the tracepoint samples file. But I wanted to
+get peoples reactions before putting any more effort into this.
+
+Should I go ahead with this or not?
+
+-- Steve
+
+Index: linux-trace.git/include/linux/tracepoint.h
+===================================================================
+--- linux-trace.git.orig/include/linux/tracepoint.h
++++ linux-trace.git/include/linux/tracepoint.h
+@@ -114,25 +114,35 @@ static inline void tracepoint_synchroniz
+  * as "(void *, void)". The DECLARE_TRACE_NOARGS() will pass in just
+  * "void *data", where as the DECLARE_TRACE() will pass in "void *data, proto".
+  */
+-#define __DO_TRACE(tp, proto, args, cond, prercu, postrcu)		\
+-	do {								\
++#define __DO_TRACE(name, proto, args, data_proto, data_args)		\
++	void __attribute__((section(".text.unlikely")))			\
++	__tracepoint_hook_##name(proto)					\
++	{								\
+ 		struct tracepoint_func *it_func_ptr;			\
++		struct tracepoint *tp = &__tracepoint_##name;		\
+ 		void *it_func;						\
+ 		void *__data;						\
+ 									\
+-		if (!(cond))						\
+-			return;						\
+-		prercu;							\
+ 		rcu_read_lock_sched_notrace();				\
+ 		it_func_ptr = rcu_dereference_sched((tp)->funcs);	\
+ 		if (it_func_ptr) {					\
+ 			do {						\
+ 				it_func = (it_func_ptr)->func;		\
+ 				__data = (it_func_ptr)->data;		\
+-				((void(*)(proto))(it_func))(args);	\
++				((void(*)(data_proto))(it_func))(data_args); \
+ 			} while ((++it_func_ptr)->func);		\
+ 		}							\
+ 		rcu_read_unlock_sched_notrace();			\
++	}
++
++#define __DO_TRACE_HOOK(name, proto, args, cond, prercu, postrcu)	\
++	do {								\
++		extern void __tracepoint_hook_##name(proto);		\
++									\
++		if (!(cond))						\
++			return;						\
++		prercu;							\
++		__tracepoint_hook_##name(args);				\
+ 		postrcu;						\
+ 	} while (0)
+ 
+@@ -141,22 +151,22 @@ static inline void tracepoint_synchroniz
+  * not add unwanted padding between the beginning of the section and the
+  * structure. Force alignment to the same alignment as the section start.
+  */
+-#define __DECLARE_TRACE(name, proto, args, cond, data_proto, data_args) \
++#define __DECLARE_TRACE(name, proto, args, cond, data_proto)		\
+ 	extern struct tracepoint __tracepoint_##name;			\
+ 	static inline void trace_##name(proto)				\
+ 	{								\
+ 		if (static_key_false(&__tracepoint_##name.key))		\
+-			__DO_TRACE(&__tracepoint_##name,		\
+-				TP_PROTO(data_proto),			\
+-				TP_ARGS(data_args),			\
++			__DO_TRACE_HOOK(name,				\
++				TP_PROTO(proto),			\
++				TP_ARGS(args),				\
+ 				TP_CONDITION(cond),,);			\
+ 	}								\
+ 	static inline void trace_##name##_rcuidle(proto)		\
+ 	{								\
+ 		if (static_key_false(&__tracepoint_##name.key))		\
+-			__DO_TRACE(&__tracepoint_##name,		\
+-				TP_PROTO(data_proto),			\
+-				TP_ARGS(data_args),			\
++			__DO_TRACE_HOOK(name,				\
++				TP_PROTO(proto),			\
++				TP_ARGS(args),				\
+ 				TP_CONDITION(cond),			\
+ 				rcu_idle_exit(),			\
+ 				rcu_idle_enter());			\
+@@ -183,18 +193,31 @@ static inline void tracepoint_synchroniz
+  * structures, so we create an array of pointers that will be used for iteration
+  * on the tracepoints.
+  */
+-#define DEFINE_TRACE_FN(name, reg, unreg)				 \
+-	static const char __tpstrtab_##name[]				 \
+-	__attribute__((section("__tracepoints_strings"))) = #name;	 \
+-	struct tracepoint __tracepoint_##name				 \
+-	__attribute__((section("__tracepoints"))) =			 \
++#define __DEFINE_TRACE_FN(name, proto, args, data_proto, data_args, reg, unreg) \
++	static const char __tpstrtab_##name[]				\
++	__attribute__((section("__tracepoints_strings"))) = #name;	\
++	struct tracepoint __tracepoint_##name				\
++	__attribute__((section("__tracepoints"))) =			\
+ 		{ __tpstrtab_##name, STATIC_KEY_INIT_FALSE, reg, unreg, NULL };\
+-	static struct tracepoint * const __tracepoint_ptr_##name __used	 \
+-	__attribute__((section("__tracepoints_ptrs"))) =		 \
+-		&__tracepoint_##name;
++	static struct tracepoint * const __tracepoint_ptr_##name __used	\
++	__attribute__((section("__tracepoints_ptrs"))) =		\
++		&__tracepoint_##name;					\
++	__DO_TRACE(name,						\
++		   TP_PROTO(proto),					\
++		   TP_ARGS(args),					\
++		   TP_PROTO(data_proto),				\
++		   TP_ARGS(data_args))
++
++#define DEFINE_TRACE_FN_NOARGS(name, proto, args)		\
++	__DEFINE_TRACE_FN(name, void, , void *__data, __data, , )
++
++#define DEFINE_TRACE_FN(name, proto, args, reg, unreg)		\
++	__DEFINE_TRACE_FN(name, PARAMS(proto), PARAMS(args),	\
++			  PARAMS(void *__data, proto),		\
++			  PARAMS(__data, args), reg, unreg)
+ 
+-#define DEFINE_TRACE(name)						\
+-	DEFINE_TRACE_FN(name, NULL, NULL);
++#define DEFINE_TRACE(name, proto, args)					\
++	DEFINE_TRACE_FN(name, PARAMS(proto), PARAMS(args), NULL, NULL);
+ 
+ #define EXPORT_TRACEPOINT_SYMBOL_GPL(name)				\
+ 	EXPORT_SYMBOL_GPL(__tracepoint_##name)
+@@ -202,7 +225,7 @@ static inline void tracepoint_synchroniz
+ 	EXPORT_SYMBOL(__tracepoint_##name)
+ 
+ #else /* !CONFIG_TRACEPOINTS */
+-#define __DECLARE_TRACE(name, proto, args, cond, data_proto, data_args) \
++#define __DECLARE_TRACE(name, proto, args, cond, data_proto)		\
+ 	static inline void trace_##name(proto)				\
+ 	{ }								\
+ 	static inline void trace_##name##_rcuidle(proto)		\
+@@ -223,8 +246,8 @@ static inline void tracepoint_synchroniz
+ 	{								\
+ 	}
+ 
+-#define DEFINE_TRACE_FN(name, reg, unreg)
+-#define DEFINE_TRACE(name)
++#define DEFINE_TRACE_FN(name, proto, args, reg, unreg)
++#define DEFINE_TRACE(name, proto, args)
+ #define EXPORT_TRACEPOINT_SYMBOL_GPL(name)
+ #define EXPORT_TRACEPOINT_SYMBOL(name)
+ 
+@@ -245,17 +268,15 @@ static inline void tracepoint_synchroniz
+  * "void *__data, proto" as the callback prototype.
+  */
+ #define DECLARE_TRACE_NOARGS(name)					\
+-		__DECLARE_TRACE(name, void, , 1, void *__data, __data)
++		__DECLARE_TRACE(name, void, , 1, void *__data)
+ 
+ #define DECLARE_TRACE(name, proto, args)				\
+ 		__DECLARE_TRACE(name, PARAMS(proto), PARAMS(args), 1,	\
+-				PARAMS(void *__data, proto),		\
+-				PARAMS(__data, args))
++				PARAMS(void *__data, proto))
+ 
+ #define DECLARE_TRACE_CONDITION(name, proto, args, cond)		\
+ 	__DECLARE_TRACE(name, PARAMS(proto), PARAMS(args), PARAMS(cond), \
+-			PARAMS(void *__data, proto),			\
+-			PARAMS(__data, args))
++			PARAMS(void *__data, proto))
+ 
+ #define TRACE_EVENT_FLAGS(event, flag)
+ 
+Index: linux-trace.git/include/trace/define_trace.h
+===================================================================
+--- linux-trace.git.orig/include/trace/define_trace.h
++++ linux-trace.git/include/trace/define_trace.h
+@@ -24,7 +24,7 @@
+ 
+ #undef TRACE_EVENT
+ #define TRACE_EVENT(name, proto, args, tstruct, assign, print)	\
+-	DEFINE_TRACE(name)
++	DEFINE_TRACE(name, PARAMS(proto), PARAMS(args))
+ 
+ #undef TRACE_EVENT_CONDITION
+ #define TRACE_EVENT_CONDITION(name, proto, args, cond, tstruct, assign, print) \
+@@ -38,15 +38,15 @@
+ #undef TRACE_EVENT_FN
+ #define TRACE_EVENT_FN(name, proto, args, tstruct,		\
+ 		assign, print, reg, unreg)			\
+-	DEFINE_TRACE_FN(name, reg, unreg)
++	DEFINE_TRACE_FN(name, PARAMS(proto), PARAMS(args), reg, unreg)
+ 
+ #undef DEFINE_EVENT
+ #define DEFINE_EVENT(template, name, proto, args) \
+-	DEFINE_TRACE(name)
++	DEFINE_TRACE(name, PARAMS(proto), PARAMS(args))
+ 
+ #undef DEFINE_EVENT_PRINT
+ #define DEFINE_EVENT_PRINT(template, name, proto, args, print)	\
+-	DEFINE_TRACE(name)
++	DEFINE_TRACE(name, PARAMS(proto), PARAMS(args))
+ 
+ #undef DEFINE_EVENT_CONDITION
+ #define DEFINE_EVENT_CONDITION(template, name, proto, args, cond) \
+@@ -54,7 +54,7 @@
+ 
+ #undef DECLARE_TRACE
+ #define DECLARE_TRACE(name, proto, args)	\
+-	DEFINE_TRACE(name)
++	DEFINE_TRACE(name, PARAMS(proto), PARAMS(args))
+ 
+ #undef TRACE_INCLUDE
+ #undef __TRACE_INCLUDE
+Index: linux-trace.git/samples/tracepoints/tracepoint-sample.c
+===================================================================
+--- linux-trace.git.orig/samples/tracepoints/tracepoint-sample.c
++++ linux-trace.git/samples/tracepoints/tracepoint-sample.c
+@@ -1,4 +1,5 @@
+ /* tracepoint-sample.c
++ * FIX ME
+  *
+  * Executes a tracepoint when /proc/tracepoint-sample is opened.
+  *
+
+

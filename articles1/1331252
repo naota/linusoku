@@ -1,0 +1,152 @@
+Path: news.gmane.org!not-for-mail
+From: "Rafael J. Wysocki" <rjw@sisk.pl>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.sh.devel
+Subject: [RFC][PATCH 3/5] PM / shmobile: Specify device latencies for SH7372 devices directly
+Date: Sat, 21 Jul 2012 23:54:58 +0200
+Lines: 93
+Approved: news@gmane.org
+Message-ID: <201207212354.58375.rjw@sisk.pl>
+References: <201207212349.18294.rjw@sisk.pl>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain;
+  charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342907508 11486 80.91.229.3 (21 Jul 2012 21:51:48 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 21 Jul 2012 21:51:48 +0000 (UTC)
+Cc: LKML <linux-kernel@vger.kernel.org>,
+	Magnus Damm <magnus.damm@gmail.com>,
+	Arnd Bergmann <arnd@arndb.de>,
+	"Linux-sh list" <linux-sh@vger.kernel.org>,
+	Olof Johansson <olof@lixom.net>
+To: Linux PM list <linux-pm@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Jul 21 23:51:46 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SshaR-00022G-M6
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 21 Jul 2012 23:51:44 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752306Ab2GUVvb (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 21 Jul 2012 17:51:31 -0400
+Original-Received: from ogre.sisk.pl ([193.178.161.156]:50966 "EHLO ogre.sisk.pl"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751717Ab2GUVvN (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 21 Jul 2012 17:51:13 -0400
+Original-Received: from localhost (localhost.localdomain [127.0.0.1])
+	by ogre.sisk.pl (Postfix) with ESMTP id 2942F1D8FC0;
+	Sat, 21 Jul 2012 23:46:27 +0200 (CEST)
+Original-Received: from ogre.sisk.pl ([127.0.0.1])
+ by localhost (ogre.sisk.pl [127.0.0.1]) (amavisd-new, port 10024) with ESMTP
+ id 32340-01; Sat, 21 Jul 2012 23:46:04 +0200 (CEST)
+Original-Received: from ferrari.rjw.lan (62-121-64-87.home.aster.pl [62.121.64.87])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by ogre.sisk.pl (Postfix) with ESMTP id 41E691DB085;
+	Sat, 21 Jul 2012 23:46:03 +0200 (CEST)
+User-Agent: KMail/1.13.6 (Linux/3.5.0-rc5+; KDE/4.6.0; x86_64; ; )
+In-Reply-To: <201207212349.18294.rjw@sisk.pl>
+X-Virus-Scanned: amavisd-new at ogre.sisk.pl using MkS_Vir for Linux
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331252 gmane.linux.ports.sh.devel:15967
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331252>
+
+
+The results of adaptive latency computations in
+GENPD_DEV_TIMED_CALLBACK() show that the start/stop and save/restore
+state latencies of all devices on SH7372 I have tried are a little
+below 250 us.  Therefore, if the 250 us is used as the common initial
+value of the latency fields in struct gpd_timing_data for all devices
+on SH7372, the latency values will never have to change at run time
+and there won't be any overhead related to re-computation of the
+corresponding PM QoS data.
+
+Signed-off-by: Rafael J. Wysocki <rjw@sisk.pl>
+---
+ arch/arm/mach-shmobile/setup-sh7372.c |   57 +++++++++++++++++++---------------
+ 1 file changed, 33 insertions(+), 24 deletions(-)
+
+Index: linux/arch/arm/mach-shmobile/setup-sh7372.c
+===================================================================
+--- linux.orig/arch/arm/mach-shmobile/setup-sh7372.c
++++ linux/arch/arm/mach-shmobile/setup-sh7372.c
+@@ -999,8 +999,17 @@ static struct platform_device *sh7372_la
+ 	&spu1_device,
+ };
+ 
++#define DEV_LATENCY_NS	250000
++
+ void __init sh7372_add_standard_devices(void)
+ {
++	struct gpd_timing_data latencies = {
++		.stop_latency_ns = DEV_LATENCY_NS,
++		.start_latency_ns = DEV_LATENCY_NS,
++		.save_state_latency_ns = DEV_LATENCY_NS,
++		.restore_state_latency_ns = DEV_LATENCY_NS,
++	};
++
+ 	sh7372_init_pm_domains();
+ 
+ 	platform_add_devices(sh7372_early_devices,
+@@ -1009,30 +1018,30 @@ void __init sh7372_add_standard_devices(
+ 	platform_add_devices(sh7372_late_devices,
+ 			    ARRAY_SIZE(sh7372_late_devices));
+ 
+-	rmobile_add_device_to_domain("A3RV", &vpu_device);
+-	rmobile_add_device_to_domain("A4MP", &spu0_device);
+-	rmobile_add_device_to_domain("A4MP", &spu1_device);
+-	rmobile_add_device_to_domain("A3SP", &scif0_device);
+-	rmobile_add_device_to_domain("A3SP", &scif1_device);
+-	rmobile_add_device_to_domain("A3SP", &scif2_device);
+-	rmobile_add_device_to_domain("A3SP", &scif3_device);
+-	rmobile_add_device_to_domain("A3SP", &scif4_device);
+-	rmobile_add_device_to_domain("A3SP", &scif5_device);
+-	rmobile_add_device_to_domain("A3SP", &scif6_device);
+-	rmobile_add_device_to_domain("A3SP", &iic1_device);
+-	rmobile_add_device_to_domain("A3SP", &dma0_device);
+-	rmobile_add_device_to_domain("A3SP", &dma1_device);
+-	rmobile_add_device_to_domain("A3SP", &dma2_device);
+-	rmobile_add_device_to_domain("A3SP", &usb_dma0_device);
+-	rmobile_add_device_to_domain("A3SP", &usb_dma1_device);
+-	rmobile_add_device_to_domain("A4R", &iic0_device);
+-	rmobile_add_device_to_domain("A4R", &veu0_device);
+-	rmobile_add_device_to_domain("A4R", &veu1_device);
+-	rmobile_add_device_to_domain("A4R", &veu2_device);
+-	rmobile_add_device_to_domain("A4R", &veu3_device);
+-	rmobile_add_device_to_domain("A4R", &jpu_device);
+-	rmobile_add_device_to_domain("A4R", &tmu00_device);
+-	rmobile_add_device_to_domain("A4R", &tmu01_device);
++	rmobile_add_device_to_domain_td("A3RV", &vpu_device, &latencies);
++	rmobile_add_device_to_domain_td("A4MP", &spu0_device, &latencies);
++	rmobile_add_device_to_domain_td("A4MP", &spu1_device, &latencies);
++	rmobile_add_device_to_domain_td("A3SP", &scif0_device, &latencies);
++	rmobile_add_device_to_domain_td("A3SP", &scif1_device, &latencies);
++	rmobile_add_device_to_domain_td("A3SP", &scif2_device, &latencies);
++	rmobile_add_device_to_domain_td("A3SP", &scif3_device, &latencies);
++	rmobile_add_device_to_domain_td("A3SP", &scif4_device, &latencies);
++	rmobile_add_device_to_domain_td("A3SP", &scif5_device, &latencies);
++	rmobile_add_device_to_domain_td("A3SP", &scif6_device, &latencies);
++	rmobile_add_device_to_domain_td("A3SP", &iic1_device, &latencies);
++	rmobile_add_device_to_domain_td("A3SP", &dma0_device, &latencies);
++	rmobile_add_device_to_domain_td("A3SP", &dma1_device, &latencies);
++	rmobile_add_device_to_domain_td("A3SP", &dma2_device, &latencies);
++	rmobile_add_device_to_domain_td("A3SP", &usb_dma0_device, &latencies);
++	rmobile_add_device_to_domain_td("A3SP", &usb_dma1_device, &latencies);
++	rmobile_add_device_to_domain_td("A4R", &iic0_device, &latencies);
++	rmobile_add_device_to_domain_td("A4R", &veu0_device, &latencies);
++	rmobile_add_device_to_domain_td("A4R", &veu1_device, &latencies);
++	rmobile_add_device_to_domain_td("A4R", &veu2_device, &latencies);
++	rmobile_add_device_to_domain_td("A4R", &veu3_device, &latencies);
++	rmobile_add_device_to_domain_td("A4R", &jpu_device, &latencies);
++	rmobile_add_device_to_domain_td("A4R", &tmu00_device, &latencies);
++	rmobile_add_device_to_domain_td("A4R", &tmu01_device, &latencies);
+ }
+ 
+ static void __init sh7372_earlytimer_init(void)
+

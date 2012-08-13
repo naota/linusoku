@@ -1,0 +1,79 @@
+Path: news.gmane.org!not-for-mail
+From: Cong Wang <amwang@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.network
+Subject: [PATCH 3/7] netconsole: do not release spin_lock before calling __netpoll_cleanup
+Date: Fri, 27 Jul 2012 23:38:00 +0800
+Lines: 29
+Approved: news@gmane.org
+Message-ID: <1343403484-29347-4-git-send-email-amwang@redhat.com>
+References: <1343403484-29347-1-git-send-email-amwang@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343403574 18901 80.91.229.3 (27 Jul 2012 15:39:34 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 15:39:34 +0000 (UTC)
+Cc: Cong Wang <amwang@redhat.com>,
+	"David S. Miller" <davem@davemloft.net>,
+	Gao feng <gaofeng@cn.fujitsu.com>,
+	Lin Ming <ming.m.lin@intel.com>, Joe Perches <joe@perches.com>,
+	Flavio Leitner <fbl@redhat.com>, linux-kernel@vger.kernel.org
+To: netdev@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 17:39:30 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SumdS-00065W-M2
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 17:39:27 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752626Ab2G0PjO (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 11:39:14 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:20844 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752547Ab2G0PjL (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 11:39:11 -0400
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6RFd2WS002016
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Fri, 27 Jul 2012 11:39:02 -0400
+Original-Received: from cr0.redhat.com (vpn-244-37.nrt.redhat.com [10.64.244.37])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6RFcJQk024275;
+	Fri, 27 Jul 2012 11:38:59 -0400
+In-Reply-To: <1343403484-29347-1-git-send-email-amwang@redhat.com>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334369 gmane.linux.network:238563
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334369>
+
+With the previous patch applied, __netpoll_cleanup() is non-block now,
+so we don't need to release the spin_lock before calling it.
+
+Cc: "David S. Miller" <davem@davemloft.net>
+Signed-off-by: Cong Wang <amwang@redhat.com>
+---
+ drivers/net/netconsole.c |    5 -----
+ 1 files changed, 0 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/net/netconsole.c b/drivers/net/netconsole.c
+index f9347ea..f0ad56c 100644
+--- a/drivers/net/netconsole.c
++++ b/drivers/net/netconsole.c
+@@ -640,12 +640,7 @@ static int netconsole_netdev_event(struct notifier_block *this,
+ 				 * rtnl_lock already held
+ 				 */
+ 				if (nt->np.dev) {
+-					spin_unlock_irqrestore(
+-							      &target_list_lock,
+-							      flags);
+ 					__netpoll_cleanup(&nt->np);
+-					spin_lock_irqsave(&target_list_lock,
+-							  flags);
+ 					dev_put(nt->np.dev);
+ 					nt->np.dev = NULL;
+ 					netconsole_target_put(nt);
+-- 
+1.7.7.6
+

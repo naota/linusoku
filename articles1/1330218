@@ -1,0 +1,106 @@
+Path: news.gmane.org!not-for-mail
+From: "Rafael J. Wysocki" <rjw@sisk.pl>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] PM / Sleep: call early resume handlers when suspend_noirq fails
+Date: Thu, 19 Jul 2012 11:10:01 +0200
+Lines: 49
+Approved: news@gmane.org
+Message-ID: <201207191110.01193.rjw@sisk.pl>
+References: <1342663694-3645-1-git-send-email-ccross@android.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain;
+  charset="iso-8859-2"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342688695 2597 80.91.229.3 (19 Jul 2012 09:04:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 09:04:55 +0000 (UTC)
+Cc: Pavel Machek <pavel@ucw.cz>, Len Brown <len.brown@intel.com>,
+	"Greg Kroah-Hartman" <gregkh@linuxfoundation.org>,
+	linux-pm@vger.kernel.org, linux-kernel@vger.kernel.org
+To: Colin Cross <ccross@android.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 11:04:54 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SrmfC-0006xw-GM
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 11:04:50 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753796Ab2GSJE0 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 05:04:26 -0400
+Original-Received: from ogre.sisk.pl ([193.178.161.156]:47711 "EHLO ogre.sisk.pl"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751939Ab2GSJEW (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 05:04:22 -0400
+Original-Received: from localhost (localhost.localdomain [127.0.0.1])
+	by ogre.sisk.pl (Postfix) with ESMTP id CF6241D873D;
+	Thu, 19 Jul 2012 11:00:27 +0200 (CEST)
+Original-Received: from ogre.sisk.pl ([127.0.0.1])
+ by localhost (ogre.sisk.pl [127.0.0.1]) (amavisd-new, port 10024) with ESMTP
+ id 19813-04; Thu, 19 Jul 2012 11:00:18 +0200 (CEST)
+Original-Received: from ferrari.rjw.lan (62-121-64-87.home.aster.pl [62.121.64.87])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by ogre.sisk.pl (Postfix) with ESMTP id 0AB1E1D85D1;
+	Thu, 19 Jul 2012 11:00:18 +0200 (CEST)
+User-Agent: KMail/1.13.6 (Linux/3.5.0-rc5+; KDE/4.6.0; x86_64; ; )
+In-Reply-To: <1342663694-3645-1-git-send-email-ccross@android.com>
+X-Virus-Scanned: amavisd-new at ogre.sisk.pl using MkS_Vir for Linux
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330218
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330218>
+
+On Thursday, July 19, 2012, Colin Cross wrote:
+> Commit cf579dfb82550e34de7ccf3ef090d8b834ccd3a9 (PM / Sleep: Introduce
+> "late suspend" and "early resume" of devices) introduced a bug where
+> suspend_late handlers would be called, but if dpm_suspend_noirq returned
+> an error the early_resume handlers would never be called.  All devices
+> would end up on the dpm_late_early_list, and would never be resumed
+> again.
+> 
+> Fix it by calling dpm_resume_early when dpm_suspend_noirq returns
+> an error.
+> 
+> Signed-off-by: Colin Cross <ccross@android.com>
+
+Nice catch, thanks!
+
+Applied, with a CC to -stable.
+
+Thanks,
+Rafael
+
+
+> ---
+>  drivers/base/power/main.c |   10 +++++++++-
+>  1 files changed, 9 insertions(+), 1 deletions(-)
+> 
+> diff --git a/drivers/base/power/main.c b/drivers/base/power/main.c
+> index 9cb845e..742fcbe 100644
+> --- a/drivers/base/power/main.c
+> +++ b/drivers/base/power/main.c
+> @@ -989,8 +989,16 @@ static int dpm_suspend_late(pm_message_t state)
+>  int dpm_suspend_end(pm_message_t state)
+>  {
+>  	int error = dpm_suspend_late(state);
+> +	if (error)
+> +		return error;
+>  
+> -	return error ? : dpm_suspend_noirq(state);
+> +	error = dpm_suspend_noirq(state);
+> +	if (error) {
+> +		dpm_resume_early(state);
+> +		return error;
+> +	}
+> +
+> +	return 0;
+>  }
+>  EXPORT_SYMBOL_GPL(dpm_suspend_end);
+>  
+> 
+

@@ -1,0 +1,117 @@
+Path: news.gmane.org!not-for-mail
+From: Borislav Petkov <bp@amd64.org>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [RFC PATCH 08/13] driver core: firmware loader: fix device
+ lifetime
+Date: Thu, 26 Jul 2012 14:20:16 +0200
+Lines: 56
+Approved: news@gmane.org
+Message-ID: <20120726122016.GD30717@aftab.osrc.amd.com>
+References: <1343149213-10160-1-git-send-email-ming.lei@canonical.com>
+ <1343149213-10160-9-git-send-email-ming.lei@canonical.com>
+ <20120725160425.GK11152@aftab.osrc.amd.com>
+ <CACVXFVO5HHFraBXsV2S_a_KUrBg3ffyO0qqaGCjzq8Rksr9KaA@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343305266 5582 80.91.229.3 (26 Jul 2012 12:21:06 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 12:21:06 +0000 (UTC)
+Cc: Linus Torvalds <torvalds@linux-foundation.org>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	"Rafael J. Wysocki" <rjw@sisk.pl>, linux-kernel@vger.kernel.org
+To: Ming Lei <ming.lei@canonical.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 14:21:05 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuN3r-0001XL-8c
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 14:20:59 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752147Ab2GZMUn (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 08:20:43 -0400
+Original-Received: from osrc3.amd.com ([217.9.48.20]:40962 "EHLO mail.x86-64.org"
+	rhost-flags-OK-FAIL-OK-OK) by vger.kernel.org with ESMTP
+	id S1751812Ab2GZMUX (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 08:20:23 -0400
+Original-Received: from localhost (localhost [127.0.0.1])
+	by mail.x86-64.org (Postfix) with ESMTP id DF73A1416E0;
+	Thu, 26 Jul 2012 14:20:20 +0200 (CEST)
+X-Virus-Scanned: Nedap ESD1 at etzel.amd.com
+Original-Received: from mail.x86-64.org ([127.0.0.1])
+	by localhost (www.amd64.org [127.0.0.1]) (amavisd-new, port 10024)
+	with ESMTP id 4mBLXxRVI4Oh; Thu, 26 Jul 2012 14:20:20 +0200 (CEST)
+Original-Received: from gwo.osrc.amd.com (gwo.osrc.amd.com [10.97.0.252])
+	by mail.x86-64.org (Postfix) with ESMTP;
+	Thu, 26 Jul 2012 14:20:20 +0200 (CEST)
+Original-Received: from aftab.osrc.amd.com (aftab.osrc.amd.com [165.204.15.109])
+	by gwo.osrc.amd.com (Postfix) with ESMTP id C98A849C69B;
+	Thu, 26 Jul 2012 13:20:20 +0100 (BST)
+Content-Disposition: inline
+In-Reply-To: <CACVXFVO5HHFraBXsV2S_a_KUrBg3ffyO0qqaGCjzq8Rksr9KaA@mail.gmail.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333608
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333608>
+
+On Thu, Jul 26, 2012 at 10:59:08AM +0800, Ming Lei wrote:
+> On Thu, Jul 26, 2012 at 12:04 AM, Borislav Petkov <bp@amd64.org> wrote:
+> >> Also this patch holds the reference cound of @device before
+> >
+> >                                         count
+> 
+> Good catch, will fix it in -v1.
+> 
+> 
+> >> - *   it is not possible to sleep for long time. It can't be called
+> >> - *   in atomic contexts.
+> >> + *   it is not possible to sleep for long time.
+> >
+> > Let's state it explicitly:
+> >
+> >         "it is not allowed to sleep for it is called in atomic context."
+> 
+> Looks you understand it incorrectly, the sentence is below
+> 
+>  *      Asynchronous variant of request_firmware() for user contexts where
+>  *      it is not possible to sleep for long time.
+> 
+> and maybe it should be changed to below:
+> 
+>  *      Asynchronous variant of request_firmware() for user contexts where
+>  *      it is not possible to sleep for long time or can't sleep at all.
+
+Ok, here's what I got from looking at the patch:
+
+Your commit message says: "Also request_firmware_nowait should be called
+in atomic context now, so fix the obsolete comments."
+
+Atomic context in my book means you're not allowed to sleep at all.
+
+But the comment says that it is possible to sleep a little. This is very
+wrongly formulated AFAICT.
+
+But, since request_firmware_nowait receives a GFP mask as one of its
+arguments and some of its callers don't supply GFP_ATOMIC then this
+has nothing to do with atomic contexts at all. Then, you should simply
+explain in the comment why exactly callers aren't allowed to be sleeping
+for a long time. And using adjectives like "long" or "short" is very
+misleading in such explanations so please be more specific as to why the
+callers shouldn't be sleeping for extended periods of time.
+
+I hope I'm making sense here...
+
+-- 
+Regards/Gruss,
+Boris.
+
+Advanced Micro Devices GmbH
+Einsteinring 24, 85609 Dornach
+GM: Alberto Bozzo
+Reg: Dornach, Landkreis Muenchen
+HRB Nr. 43632 WEEE Registernr: 129 19551

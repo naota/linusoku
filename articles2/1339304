@@ -1,0 +1,244 @@
+Path: news.gmane.org!not-for-mail
+From: Steven Rostedt <rostedt@goodmis.org>
+Newsgroups: gmane.linux.kernel
+Subject: [RFC PATCH 4/4] ftrace/x86: Add support for -mfentry to x86_64
+Date: Tue, 07 Aug 2012 15:38:49 -0400
+Lines: 187
+Approved: news@gmane.org
+Message-ID: <20120807194100.130477900@goodmis.org>
+References: <20120807193845.146666357@goodmis.org>
+NNTP-Posting-Host: plane.gmane.org
+Content-Type: multipart/signed; micalg="pgp-sha1"; protocol="application/pgp-signature"; boundary="00GvhwF7k39YY"
+X-Trace: dough.gmane.org 1344368512 16795 80.91.229.3 (7 Aug 2012 19:41:52 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 19:41:52 +0000 (UTC)
+Cc: Ingo Molnar <mingo@elte.hu>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Thomas Gleixner <tglx@linutronix.de>,
+	Frederic Weisbecker <fweisbec@gmail.com>,
+	Masami Hiramatsu <masami.hiramatsu.pt@hitachi.com>,
+	Linus Torvalds <torvalds@linux-foundation.org>,
+	Andi Kleen <andi@firstfloor.org>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 21:41:50 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sypez-00056u-7w
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 21:41:45 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932107Ab2HGTlf (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 15:41:35 -0400
+Original-Received: from hrndva-omtalb.mail.rr.com ([71.74.56.122]:9433 "EHLO
+	hrndva-omtalb.mail.rr.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756230Ab2HGTlD (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 15:41:03 -0400
+X-Authority-Analysis: v=2.0 cv=Vb91zSV9 c=1 sm=0 a=s5Htg7xnQOKvHEu9STBOug==:17 a=OpT9cpI26MMA:10 a=Ciwy3NGCPMMA:10 a=VmDDtvj6LbgA:10 a=5SG0PmZfjMsA:10 a=bbbx4UPp9XUA:10 a=meVymXHHAAAA:8 a=20KFwNOVAAAA:8 a=3nbZYyFuAAAA:8 a=WfulkdPnAAAA:8 a=nLNwRaTa_qNGwSjh7IMA:9 a=QEXdDO2ut3YA:10 a=jEp0ucaQiEUA:10 a=EvKJbDF4Ut8A:10 a=l29vjEC0CZ8A:10 a=jeBq3FmKZ4MA:10 a=lr3qW31h55cfQ7hav4cA:9 a=s5Htg7xnQOKvHEu9STBOug==:117
+X-Cloudmark-Score: 0
+X-Originating-IP: 72.230.195.127
+Original-Received: from [72.230.195.127] ([72.230.195.127:32922] helo=gandalf.stny.rr.com)
+	by hrndva-oedge03.mail.rr.com (envelope-from <rostedt@goodmis.org>)
+	(ecelerity 2.2.3.46 r()) with ESMTP
+	id B5/34-17584-C4F61205; Tue, 07 Aug 2012 19:41:00 +0000
+Original-Received: from rostedt by gandalf.stny.rr.com with local (Exim 4.80)
+	(envelope-from <rostedt@goodmis.org>)
+	id 1SypeG-0005hz-6F; Tue, 07 Aug 2012 15:41:00 -0400
+User-Agent: quilt/0.60-1
+Content-Disposition: inline; filename=0004-ftrace-x86-Add-support-for-mfentry-to-x86_64.patch
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339304
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339304>
+
+--00GvhwF7k39YY
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+From: Steven Rostedt <srostedt@redhat.com>
+
+If the kernel is compiled with gcc 4.6.0 which supports -mfentry,
+then use that instead of mcount.
+
+With mcount, frame pointers are forced with the -pg option and we
+get something like:
+
+<can_vma_merge_before>:
+       55                      push   %rbp
+       48 89 e5                mov    %rsp,%rbp
+       53                      push   %rbx
+       41 51                   push   %r9
+       e8 fe 6a 39 00          callq  ffffffff81483d00 <mcount>
+       31 c0                   xor    %eax,%eax
+       48 89 fb                mov    %rdi,%rbx
+       48 89 d7                mov    %rdx,%rdi
+       48 33 73 30             xor    0x30(%rbx),%rsi
+       48 f7 c6 ff ff ff f7    test   $0xfffffffff7ffffff,%rsi
+
+With -mfentry, frame pointers are no longer forced and the call looks
+like this:
+
+<can_vma_merge_before>:
+       e8 33 af 37 00          callq  ffffffff81461b40 <__fentry__>
+       53                      push   %rbx
+       48 89 fb                mov    %rdi,%rbx
+       31 c0                   xor    %eax,%eax
+       48 89 d7                mov    %rdx,%rdi
+       41 51                   push   %r9
+       48 33 73 30             xor    0x30(%rbx),%rsi
+       48 f7 c6 ff ff ff f7    test   $0xfffffffff7ffffff,%rsi
+
+This adds the ftrace hook at the beginning of the function before a
+frame is set up, and allows the function callbacks to be able to access
+parameters. As kprobes now can use function tracing (at least on x86)
+this speeds up the kprobe hooks that are at the beginning of the
+function.
+
+Cc: Masami Hiramatsu <masami.hiramatsu.pt@hitachi.com>
+Cc: Andi Kleen <andi@firstfloor.org>
+Signed-off-by: Steven Rostedt <rostedt@goodmis.org>
+---
+ arch/x86/Kconfig                 |    1 +
+ arch/x86/include/asm/ftrace.h    |    7 ++++++-
+ arch/x86/kernel/entry_64.S       |   18 +++++++++++++++++-
+ arch/x86/kernel/x8664_ksyms_64.c |    6 +++++-
+ 4 files changed, 29 insertions(+), 3 deletions(-)
+
+diff --git a/arch/x86/Kconfig b/arch/x86/Kconfig
+index c70684f..bbbf5d8 100644
+--- a/arch/x86/Kconfig
++++ b/arch/x86/Kconfig
+@@ -36,6 +36,7 @@ config X86
+ 	select HAVE_KRETPROBES
+ 	select HAVE_OPTPROBES
+ 	select HAVE_FTRACE_MCOUNT_RECORD
++	select HAVE_FENTRY if X86_64
+ 	select HAVE_C_RECORDMCOUNT
+ 	select HAVE_DYNAMIC_FTRACE
+ 	select HAVE_FUNCTION_TRACER
+diff --git a/arch/x86/include/asm/ftrace.h b/arch/x86/include/asm/ftrace.h
+index a6cae0c..9a25b52 100644
+--- a/arch/x86/include/asm/ftrace.h
++++ b/arch/x86/include/asm/ftrace.h
+@@ -35,7 +35,11 @@
+ #endif
+=20
+ #ifdef CONFIG_FUNCTION_TRACER
+-#define MCOUNT_ADDR		((long)(mcount))
++#ifdef CC_USING_FENTRY
++# define MCOUNT_ADDR		((long)(__fentry__))
++#else
++# define MCOUNT_ADDR		((long)(mcount))
++#endif
+ #define MCOUNT_INSN_SIZE	5 /* sizeof mcount call */
+=20
+ #ifdef CONFIG_DYNAMIC_FTRACE
+@@ -46,6 +50,7 @@
+ #ifndef __ASSEMBLY__
+ extern void mcount(void);
+ extern atomic_t modifying_ftrace_code;
++extern void __fentry__(void);
+=20
+ static inline unsigned long ftrace_call_adjust(unsigned long addr)
+ {
+diff --git a/arch/x86/kernel/entry_64.S b/arch/x86/kernel/entry_64.S
+index 38308fa..2add3bb 100644
+--- a/arch/x86/kernel/entry_64.S
++++ b/arch/x86/kernel/entry_64.S
+@@ -69,9 +69,16 @@
+=20
+ #ifdef CONFIG_FUNCTION_TRACER
+ #ifdef CONFIG_DYNAMIC_FTRACE
++
++#ifdef CC_USING_FENTRY
++ENTRY(__fentry__)
++	retq
++END(__fentry__)
++#else
+ ENTRY(mcount)
+ 	retq
+ END(mcount)
++#endif
+=20
+ /* skip is set if stack has been adjusted */
+ .macro ftrace_caller_setup skip=3D0
+@@ -84,7 +91,11 @@ END(mcount)
+ 	movq RIP(%rsp), %rdi
+ 	subq $MCOUNT_INSN_SIZE, %rdi
+ 	/* Load the parent_ip into the second parameter */
++#ifdef CC_USING_FENTRY
++	movq SS+16(%rsp), %rsi
++#else
+ 	movq 8(%rbp), %rsi
++#endif
+ .endm
+=20
+ ENTRY(ftrace_caller)
+@@ -215,9 +226,14 @@ END(mcount)
+ ENTRY(ftrace_graph_caller)
+ 	MCOUNT_SAVE_FRAME
+=20
++#ifdef CC_USING_FENTRY
++	leaq SS+16(%rsp), %rdi
++	movq $0, %rdx	/* No framepointers needed */
++#else
+ 	leaq 8(%rbp), %rdi
+-	movq RIP(%rsp), %rsi
+ 	movq (%rbp), %rdx
++#endif
++	movq RIP(%rsp), %rsi
+ 	subq $MCOUNT_INSN_SIZE, %rsi
+=20
+ 	call	prepare_ftrace_return
+diff --git a/arch/x86/kernel/x8664_ksyms_64.c b/arch/x86/kernel/x8664_ksyms=
+_64.c
+index 9796c2f..643b236 100644
+--- a/arch/x86/kernel/x8664_ksyms_64.c
++++ b/arch/x86/kernel/x8664_ksyms_64.c
+@@ -13,9 +13,13 @@
+ #include <asm/ftrace.h>
+=20
+ #ifdef CONFIG_FUNCTION_TRACER
+-/* mcount is defined in assembly */
++/* mcount and __fentry__ are defined in assembly */
++#ifdef CC_USING_FENTRY
++EXPORT_SYMBOL(__fentry__);
++#else
+ EXPORT_SYMBOL(mcount);
+ #endif
++#endif
+=20
+ EXPORT_SYMBOL(__get_user_1);
+ EXPORT_SYMBOL(__get_user_2);
+--=20
+1.7.10.4
+
+
+
+--00GvhwF7k39YY
+Content-Type: application/pgp-signature; name="signature.asc"
+Content-Description: This is a digitally signed message part
+
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.12 (GNU/Linux)
+
+iQIcBAABAgAGBQJQIW9MAAoJEIy3vGnGbaoAjvIP/1kjUNV+7cWiyb2DYBRWUKLV
+qhDsQHRI5eA53vIqMR2gLe4Nj8+W7oZyMFo6j/6GSeequsoY+bpFs6QwbnfioZnP
+T0mCIIckaQGpfMA2SCAdgEmzG3VFz1fSsAjpIygOX483jyTDjGhgG9/sVkmKs/nK
+Kr0xMHA8+ed5nrv30nDTcRMVqw3f/GzPL6UbIDX6K/d9DvYBnO4j4sJMEV0vb53P
+Af5yWjW1ZN2CGth6NCu53/LjewKp5jaC4JMyo5zM9gHiRK4SmG9CF8MDaNoJ4VyO
+pCID54eF6NySbGnxIlS8B4xqfK4ol2r4HNH1y0JoUvto/Ostd1C5rH5zo0j1URzf
+RTc3tR6js+So6m3GLGs7rS+7BOWRY2USgKcqNX+pQMUq0haUwrfvVwDCoCIwXu/P
+LnJLi9lwXu6nwnC/q14AwmMJrscAV6dJ9v3AB0ovqK7qLAC1+A3GpVl+7Rg7uRGV
+xIDJwXX4q7TUWxYt3IMFXjkbCLUJKkDIJFRNN0j1PXsLmo52nBcf6pbicNSRrjPq
+HUw75GZPBwInqa8IW1WQnYAHDhBuRyP+EBk91ZwNsqLwCykba62QktB2LRJuAOIu
+OJzthCi2iQo1nCkWhDAir/ZMkddZqOv4d8B9XxTWv06WMEqwFZ5tBqYof9pLHiR1
+2Ns/lWzXHalhgWg97Fkv
+=3xNL
+-----END PGP SIGNATURE-----
+
+--00GvhwF7k39YY--

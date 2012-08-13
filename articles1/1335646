@@ -1,0 +1,119 @@
+Path: news.gmane.org!not-for-mail
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 1/2] uprobes: Use a helper instead of ptrace's single step enable
+Date: Tue, 31 Jul 2012 13:52:27 +0200
+Lines: 70
+Approved: news@gmane.org
+Message-ID: <1343735548-18101-1-git-send-email-bigeasy@linutronix.de>
+References: <20120730141638.GA5306@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343735590 13905 80.91.229.3 (31 Jul 2012 11:53:10 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 11:53:10 +0000 (UTC)
+Cc: oleg@redhat.com, ananth@in.ibm.com, a.p.zijlstra@chello.nl,
+	mingo@redhat.com, srikar@linux.vnet.ibm.com, roland@hack.frob.com,
+	Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 13:53:08 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwB0c-0001XA-UT
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 13:53:07 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756083Ab2GaLwq (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 07:52:46 -0400
+Original-Received: from www.linutronix.de ([62.245.132.108]:42479 "EHLO
+	Galois.linutronix.de" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756016Ab2GaLwp (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 07:52:45 -0400
+Original-Received: from localhost ([127.0.0.1] helo=bazinga.HH.breakpoint.cc)
+	by Galois.linutronix.de with esmtp (Exim 4.72)
+	(envelope-from <bigeasy@linutronix.de>)
+	id 1SwB0D-0000zN-Ad; Tue, 31 Jul 2012 13:52:41 +0200
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <20120730141638.GA5306@redhat.com>
+X-Linutronix-Spam-Score: -1.0
+X-Linutronix-Spam-Level: -
+X-Linutronix-Spam-Status: No , -1.0 points, 5.0 required,  ALL_TRUSTED=-1,SHORTCIRCUIT=-0.0001
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335646
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335646>
+
+As Oleg pointed out in [0] utrace should not use the ptrace interface
+for enabling/disabling single stepping.
+
+[0] http://lkml.kernel.org/20120730141638.GA5306@redhat.com
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ include/linux/uprobes.h |    4 ++++
+ kernel/events/uprobes.c |   16 ++++++++++++++--
+ 2 files changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/include/linux/uprobes.h b/include/linux/uprobes.h
+index efe4b33..ea6603b 100644
+--- a/include/linux/uprobes.h
++++ b/include/linux/uprobes.h
+@@ -111,6 +111,10 @@ extern void uprobe_munmap(struct vm_area_struct *vma, unsigned long start, unsig
+ extern void uprobe_free_utask(struct task_struct *t);
+ extern void uprobe_copy_process(struct task_struct *t);
+ extern unsigned long __weak uprobe_get_swbp_addr(struct pt_regs *regs);
++extern void __weak arch_uprobe_enable_step(struct task_struct *child,
++		struct arch_uprobe *arch);
++extern void __weak arch_uprobe_disable_step(struct task_struct *child,
++		struct arch_uprobe *arch);
+ extern int uprobe_post_sstep_notifier(struct pt_regs *regs);
+ extern int uprobe_pre_sstep_notifier(struct pt_regs *regs);
+ extern void uprobe_notify_resume(struct pt_regs *regs);
+diff --git a/kernel/events/uprobes.c b/kernel/events/uprobes.c
+index f935327..3a61f16 100644
+--- a/kernel/events/uprobes.c
++++ b/kernel/events/uprobes.c
+@@ -1482,6 +1482,18 @@ static struct uprobe *find_active_uprobe(unsigned long bp_vaddr, int *is_swbp)
+ 	return uprobe;
+ }
+ 
++void __weak arch_uprobe_enable_step(struct task_struct *child,
++		struct arch_uprobe *arch)
++{
++	user_enable_single_step(current);
++}
++
++void __weak arch_uprobe_disable_step(struct task_struct *child,
++		struct arch_uprobe *arch)
++{
++	user_disable_single_step(child);
++}
++
+ /*
+  * Run handler and ask thread to singlestep.
+  * Ensure all non-fatal signals cannot interrupt thread while it singlesteps.
+@@ -1528,7 +1540,7 @@ static void handle_swbp(struct pt_regs *regs)
+ 
+ 	utask->state = UTASK_SSTEP;
+ 	if (!pre_ssout(uprobe, regs, bp_vaddr)) {
+-		user_enable_single_step(current);
++		arch_uprobe_enable_step(current, &uprobe->arch);
+ 		return;
+ 	}
+ 
+@@ -1569,7 +1581,7 @@ static void handle_singlestep(struct uprobe_task *utask, struct pt_regs *regs)
+ 	put_uprobe(uprobe);
+ 	utask->active_uprobe = NULL;
+ 	utask->state = UTASK_RUNNING;
+-	user_disable_single_step(current);
++	arch_uprobe_disable_step(current, &uprobe->arch);
+ 	xol_free_insn_slot(current);
+ 
+ 	spin_lock_irq(&current->sighand->siglock);
+-- 
+1.7.10.4
+

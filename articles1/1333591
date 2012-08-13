@@ -1,0 +1,170 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org>
+Newsgroups: gmane.linux.nfs,gmane.linux.file-systems,gmane.linux.kernel
+Subject: [PATCH v4 17/17] vfs: have faccessat retry once on an ESTALE error
+Date: Thu, 26 Jul 2012 07:55:20 -0400
+Lines: 109
+Approved: news@gmane.org
+Message-ID: <1343303720-11199-18-git-send-email-jlayton@redhat.com>
+References: <1343303720-11199-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343303781 26181 80.91.229.3 (26 Jul 2012 11:56:21 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 11:56:21 +0000 (UTC)
+Cc: linux-fsdevel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org,
+	linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, michael.brantley-Iq/kdjr4a97QT0dZR+AlfA@public.gmane.org,
+	hch-wEGCiKHe2LqWVfeAwA7xHQ@public.gmane.org, miklos-sUDqSbJrdHQHWmgEVkV9KA@public.gmane.org, pstaubach-83r9SdEf25FBDgjK7y7TUQ@public.gmane.org
+To: viro-3bDd1+5oDREiFSDQTTA3OLVCufUGDwFn@public.gmane.org
+Original-X-From: linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org Thu Jul 26 13:56:18 2012
+Return-path: <linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Envelope-to: glN-linux-nfs-wOFGN7rlS/M9smdsby/KFg@public.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>)
+	id 1SuMfx-0000MD-Nf
+	for glN-linux-nfs-wOFGN7rlS/M9smdsby/KFg@public.gmane.org; Thu, 26 Jul 2012 13:56:18 +0200
+Original-Received: (majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org) by vger.kernel.org via listexpand
+	id S1752519Ab2GZL4L (ORCPT <rfc822;glN-linux-nfs@m.gmane.org>);
+	Thu, 26 Jul 2012 07:56:11 -0400
+Original-Received: from mail-yx0-f174.google.com ([209.85.213.174]:52185 "EHLO
+	mail-yx0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752343Ab2GZLzw (ORCPT
+	<rfc822;linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>); Thu, 26 Jul 2012 07:55:52 -0400
+Original-Received: by mail-yx0-f174.google.com with SMTP id l2so1826946yen.19
+        for <linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>; Thu, 26 Jul 2012 04:55:51 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:x-gm-message-state;
+        bh=Y6swpJZnEdMqFlI9LH8/qJYWzXLcpHV3Xi7ChF0PeJk=;
+        b=N1xR/aYoN9gO3USuFD0waYvm49mPPdRyjStuuvH9ETNAM7LP3fFFWUEhDfxioKyGDj
+         5kgWLTU733ehRNGOJpiK0pCGxSGpC8N/6gih/ihiCWJmw9KZejxer2zJTCFOHmo65FLS
+         BY09tit4NmR2aikvkgmNx5CdHzGWTiAPwTVa3DkZZ656oLKvvbDXQLFYBh2UUqX90QS2
+         jIb32G22fP1bYsUDsDiSIxEb843LoLzcbswsvu6aPeESuMUeD71723qhtf9s7qa9PEHP
+         tI5E2zSrUuCwjdlSCge+xnQ7moNKIvuWfneso6qiTqCCLCJd9uJYik9iT5e07Rs1sg+I
+         By4w==
+Original-Received: by 10.236.130.240 with SMTP id k76mr27816064yhi.20.1343303751452;
+        Thu, 26 Jul 2012 04:55:51 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-076-182-054-194.nc.res.rr.com. [76.182.54.194])
+        by mx.google.com with ESMTPS id l12sm4436364ank.2.2012.07.26.04.55.50
+        (version=SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 04:55:50 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1343303720-11199-1-git-send-email-jlayton-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org>
+X-Gm-Message-State: ALoCoQkI6jz7FSW9L2+3+1zRAGf2x+gxLevY/X6HKBs5Vt7VSqICmCJ05eEdIpWSgyiaS7/IED7z
+Original-Sender: linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Precedence: bulk
+List-ID: <linux-nfs.vger.kernel.org>
+X-Mailing-List: linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Xref: news.gmane.org gmane.linux.nfs:51139 gmane.linux.file-systems:66247 gmane.linux.kernel:1333591
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333591>
+
+Signed-off-by: Jeff Layton <jlayton-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org>
+---
+ fs/open.c | 70 ++++++++++++++++++++++++++++++++++++---------------------------
+ 1 file changed, 40 insertions(+), 30 deletions(-)
+
+diff --git a/fs/open.c b/fs/open.c
+index a7b94ac..8dd37aa 100644
+--- a/fs/open.c
++++ b/fs/open.c
+@@ -313,6 +313,9 @@ SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
+ 	struct path path;
+ 	struct inode *inode;
+ 	int res;
++	unsigned int lookup_flags = LOOKUP_FOLLOW;
++	unsigned int try = 0;
++	char *name;
+ 
+ 	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
+ 		return -EINVAL;
+@@ -334,44 +337,51 @@ SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
+ 				override_cred->cap_permitted;
+ 	}
+ 
++	name = getname_flags(filename, lookup_flags, NULL);
++	if (IS_ERR(name))
++		return PTR_ERR(name);
++
+ 	old_cred = override_creds(override_cred);
+ 
+-	res = user_path_at(dfd, filename, LOOKUP_FOLLOW, &path);
+-	if (res)
+-		goto out;
++	do {
++		res = kern_path_at(dfd, name, lookup_flags, &path);
++		if (res)
++			break;
+ 
+-	inode = path.dentry->d_inode;
++		inode = path.dentry->d_inode;
+ 
+-	if ((mode & MAY_EXEC) && S_ISREG(inode->i_mode)) {
++		if ((mode & MAY_EXEC) && S_ISREG(inode->i_mode)) {
++			/*
++			 * MAY_EXEC on regular files is denied if the fs is
++			 * mounted with the "noexec" flag.
++			 */
++			res = -EACCES;
++			if (path.mnt->mnt_flags & MNT_NOEXEC)
++				goto out_path_release;
++		}
++
++		res = inode_permission(inode, mode | MAY_ACCESS);
++		/* SuS v2 requires we report a read only fs too */
++		if (res || !(mode & S_IWOTH) || special_file(inode->i_mode))
++			goto out_path_release;
+ 		/*
+-		 * MAY_EXEC on regular files is denied if the fs is mounted
+-		 * with the "noexec" flag.
++		 * This is a rare case where using __mnt_is_readonly()
++		 * is OK without a mnt_want/drop_write() pair.  Since
++		 * no actual write to the fs is performed here, we do
++		 * not need to telegraph to that to anyone.
++		 *
++		 * By doing this, we accept that this access is
++		 * inherently racy and know that the fs may change
++		 * state before we even see this result.
+ 		 */
+-		res = -EACCES;
+-		if (path.mnt->mnt_flags & MNT_NOEXEC)
+-			goto out_path_release;
+-	}
+-
+-	res = inode_permission(inode, mode | MAY_ACCESS);
+-	/* SuS v2 requires we report a read only fs too */
+-	if (res || !(mode & S_IWOTH) || special_file(inode->i_mode))
+-		goto out_path_release;
+-	/*
+-	 * This is a rare case where using __mnt_is_readonly()
+-	 * is OK without a mnt_want/drop_write() pair.  Since
+-	 * no actual write to the fs is performed here, we do
+-	 * not need to telegraph to that to anyone.
+-	 *
+-	 * By doing this, we accept that this access is
+-	 * inherently racy and know that the fs may change
+-	 * state before we even see this result.
+-	 */
+-	if (__mnt_is_readonly(path.mnt))
+-		res = -EROFS;
++		if (__mnt_is_readonly(path.mnt))
++			res = -EROFS;
+ 
+ out_path_release:
+-	path_put(&path);
+-out:
++		path_put(&path);
++		lookup_flags |= LOOKUP_REVAL;
++	} while (retry_estale(res, try++));
++	putname(name);
+ 	revert_creds(old_cred);
+ 	put_cred(override_cred);
+ 	return res;
+-- 
+1.7.11.2
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-nfs" in
+the body of a message to majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

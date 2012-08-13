@@ -1,0 +1,128 @@
+Path: news.gmane.org!not-for-mail
+From: Len Brown <lenb@kernel.org>
+Newsgroups: gmane.linux.acpi.devel,gmane.linux.power-management.general,gmane.linux.kernel
+Subject: [PATCH 48/52] tools/power: turbostat: fix large c1% issue
+Date: Tue, 24 Jul 2012 23:41:44 -0400
+Organization: Intel Open Source Technology Center
+Lines: 66
+Approved: news@gmane.org
+Message-ID: <c3ae331d1c2fe25edfbece73fda0bb312445b636.1343187618.git.len.brown@intel.com>
+References: <1343187708-19532-1-git-send-email-lenb@kernel.org>
+Reply-To: Len Brown <lenb@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343187845 28832 80.91.229.3 (25 Jul 2012 03:44:05 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 03:44:05 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, Len Brown <len.brown@intel.com>
+To: linux-acpi@vger.kernel.org, linux-pm@lists.linux-foundation.org
+Original-X-From: linux-acpi-owner@vger.kernel.org Wed Jul 25 05:44:01 2012
+Return-path: <linux-acpi-owner@vger.kernel.org>
+Envelope-to: glad-acpi-devel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-acpi-owner@vger.kernel.org>)
+	id 1StsW0-0001yK-Pw
+	for glad-acpi-devel@plane.gmane.org; Wed, 25 Jul 2012 05:44:01 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S933091Ab2GYDnr (ORCPT <rfc822;glad-acpi-devel@m.gmane.org>);
+	Tue, 24 Jul 2012 23:43:47 -0400
+Original-Received: from mail-qa0-f53.google.com ([209.85.216.53]:52413 "EHLO
+	mail-qa0-f53.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S933053Ab2GYDne (ORCPT
+	<rfc822;linux-acpi@vger.kernel.org>); Tue, 24 Jul 2012 23:43:34 -0400
+Original-Received: by mail-qa0-f53.google.com with SMTP id s11so247432qaa.19
+        for <multiple recipients>; Tue, 24 Jul 2012 20:43:34 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:in-reply-to:references:reply-to:organization;
+        bh=dYmARhERQX4xYhCD0J1u6kVTavL2awVSuppCzKKM/LM=;
+        b=v7Sj9PMATUQLjmTcqvGxc1W4SIstJfuFqVKIokLmZ7PRoumvihUCytLqKWegQj+MwR
+         CZcdF+vz01TlNyMUPb+39uWad5RzA4OsUjBWW8R89IpSxe9jlh/6/6/Xyqg17jiZr42+
+         +pR5LGQgDhfkjA8N1BP4Kyf2W3INEd3aDn88jhQXdUBwR1XuFf+zF8dJ1+Mkv+RKA2B2
+         7wDAKtMKIAuwchvGAUqzbUhgxFhUu3h1+0kpeyyjDVaiBxEKUcgVX6MiBjSDGJ1uumI/
+         ZOqLRMMiPuwN6ej+AZwX7k5vogOPHB1JBi+8fZVoJGIqr0nYitO0s3HCZRveZawElq+C
+         dnQA==
+Original-Received: by 10.224.71.11 with SMTP id f11mr16740231qaj.41.1343187814569;
+        Tue, 24 Jul 2012 20:43:34 -0700 (PDT)
+Original-Received: from x980.localdomain6 (h184-61-125-197.altnnh.dsl.dynamic.tds.net. [184.61.125.197])
+        by mx.google.com with ESMTPS id et6sm15489186qab.8.2012.07.24.20.43.33
+        (version=SSLv3 cipher=OTHER);
+        Tue, 24 Jul 2012 20:43:33 -0700 (PDT)
+X-Mailer: git-send-email 1.7.12.rc0
+In-Reply-To: <1343187708-19532-1-git-send-email-lenb@kernel.org>
+In-Reply-To: <6af1c4fc5227af65092ebc848989693562bfa3e8.1343187617.git.len.brown@intel.com>
+Original-References: <6af1c4fc5227af65092ebc848989693562bfa3e8.1343187617.git.len.brown@intel.com>
+Original-Sender: linux-acpi-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-acpi.vger.kernel.org>
+X-Mailing-List: linux-acpi@vger.kernel.org
+Xref: news.gmane.org gmane.linux.acpi.devel:54480 gmane.linux.power-management.general:27894 gmane.linux.kernel:1332693
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332693>
+
+From: Len Brown <len.brown@intel.com>
+
+Under some conditions, c1% was displayed as very large number,
+much higher than 100%.
+
+c1% is not measured, it is derived as "that, which is left over"
+from other counters.  However, the other counters are not collected
+atomically, and so it is possible for c1% to be calaculagted as
+a small negative number -- displayed as very large positive.
+
+There was a check for mperf vs tsc for this already,
+but it needed to also include the other counters
+that are used to calculate c1.
+
+Signed-off-by: Len Brown <len.brown@intel.com>
+---
+ tools/power/x86/turbostat/turbostat.c | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/tools/power/x86/turbostat/turbostat.c b/tools/power/x86/turbostat/turbostat.c
+index b815a12..861d771 100644
+--- a/tools/power/x86/turbostat/turbostat.c
++++ b/tools/power/x86/turbostat/turbostat.c
+@@ -444,6 +444,9 @@ delta_core(struct core_data *new, struct core_data *old)
+ 	old->c7 = new->c7 - old->c7;
+ }
+ 
++/*
++ * old = new - old
++ */
+ void
+ delta_thread(struct thread_data *new, struct thread_data *old,
+ 	struct core_data *core_delta)
+@@ -482,19 +485,20 @@ delta_thread(struct thread_data *new, struct thread_data *old,
+ 
+ 
+ 	/*
+-	 * As mperf and tsc collection are not atomic,
+-	 * it is possible for mperf's non-halted cycles
++	 * As counter collection is not atomic,
++	 * it is possible for mperf's non-halted cycles + idle states
+ 	 * to exceed TSC's all cycles: show c1 = 0% in that case.
+ 	 */
+-	if (old->mperf > old->tsc)
++	if ((old->mperf + core_delta->c3 + core_delta->c6 + core_delta->c7) > old->tsc)
+ 		old->c1 = 0;
+ 	else {
+ 		/* normal case, derive c1 */
+ 		old->c1 = old->tsc - old->mperf - core_delta->c3
+ 				- core_delta->c6 - core_delta->c7;
+ 	}
++
+ 	if (old->mperf == 0) {
+-		if (verbose) fprintf(stderr, "cpu%d MPERF 0!\n", old->cpu_id);
++		if (verbose > 1) fprintf(stderr, "cpu%d MPERF 0!\n", old->cpu_id);
+ 		old->mperf = 1;	/* divide by 0 protection */
+ 	}
+ 
+-- 
+1.7.12.rc0
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-acpi" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

@@ -1,0 +1,218 @@
+Path: news.gmane.org!not-for-mail
+From: Anton Vorontsov <anton.vorontsov@linaro.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.debugging.kgdb.bugs
+Subject: [PATCH for-3.5 1/4] kdb: Revive dmesg command
+Date: Fri, 20 Jul 2012 17:27:37 -0700
+Lines: 150
+Approved: news@gmane.org
+Message-ID: <20120721002737.GA2213@lizard>
+References: <20120721002529.GA20567@lizard>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+X-Trace: dough.gmane.org 1342830598 24285 80.91.229.3 (21 Jul 2012 00:29:58 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 21 Jul 2012 00:29:58 +0000 (UTC)
+Cc: Kay Sievers <kay@vrfy.org>,
+	Jason Wessel <jason.wessel@windriver.com>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	linux-kernel@vger.kernel.org, kgdb-bugreport@lists.sourceforge.net
+To: Linus Torvalds <torvalds@linux-foundation.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Jul 21 02:29:56 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsNZu-00085N-Mv
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 21 Jul 2012 02:29:51 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752971Ab2GUA3m (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 20:29:42 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:43863 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752178Ab2GUA3l (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 20:29:41 -0400
+Original-Received: by pbbrp8 with SMTP id rp8so6964981pbb.19
+        for <linux-kernel@vger.kernel.org>; Fri, 20 Jul 2012 17:29:41 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=date:from:to:cc:subject:message-id:references:mime-version
+         :content-type:content-disposition:in-reply-to:user-agent
+         :x-gm-message-state;
+        bh=8/0VMdlRUMcJThNQe8YK4ECIAUTpgZx0m2x0swhYHDo=;
+        b=N9swiqt6feCYuc8u1IpZbDSbppZFrpEfDoFK8SGGZWItIKh5QMId2xjwCdbKdLImpY
+         cTAoVtJPqgveTbcO0nxIjKrxFjzec9etRT9eGAFDV0JuzN7rHEmWQKpweg2OziH9eB5t
+         HrpHt59oKMcr32144octFdRBBQ0rg0zBa3tHoYukC84EdVlW23PQy76BBFT8HIcBF7Yc
+         KY9jHKO55jE20TrF7LEZ2wQ639AvIbhwr657A3Ow/Q9rQP+TD+nw4oX9TgiiYfsOEr6g
+         Rf/4YekoWUzm4rjZqjjpR53hmBUtogGrhNGXwPp5p3GqslFQds9o1G/FYBdjAXtplc4I
+         a5zA==
+Original-Received: by 10.68.218.7 with SMTP id pc7mr17758959pbc.88.1342830580889;
+        Fri, 20 Jul 2012 17:29:40 -0700 (PDT)
+Original-Received: from localhost (c-71-204-165-222.hsd1.ca.comcast.net. [71.204.165.222])
+        by mx.google.com with ESMTPS id og4sm4914878pbb.48.2012.07.20.17.29.39
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 20 Jul 2012 17:29:40 -0700 (PDT)
+Content-Disposition: inline
+In-Reply-To: <20120721002529.GA20567@lizard>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Gm-Message-State: ALoCoQmbpLef6gREtQx6iEX7ire0XxN/+N1mgUUFJQMzPda8j6BghjaFBTARbvO+4CNh+GrU3znS
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331113 gmane.linux.kernel.debugging.kgdb.bugs:5691
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331113>
+
+dmesg command appears to be broken after the printk rework. The old logic
+in kdb code makes no sense in terms of current printk/logging storage
+format, and KDB simply hangs forever.
+
+This patch revives the command by switching to kmsg_dumper iterator.
+
+The code is now much more simpler and shorter.
+
+Signed-off-by: Anton Vorontsov <anton.vorontsov@linaro.org>
+---
+ kernel/debug/kdb/kdb_main.c |   91 ++++++++++++++++---------------------------
+ 1 file changed, 33 insertions(+), 58 deletions(-)
+
+diff --git a/kernel/debug/kdb/kdb_main.c b/kernel/debug/kdb/kdb_main.c
+index 67b847d..df17c93 100644
+--- a/kernel/debug/kdb/kdb_main.c
++++ b/kernel/debug/kdb/kdb_main.c
+@@ -14,6 +14,7 @@
+ #include <linux/ctype.h>
+ #include <linux/string.h>
+ #include <linux/kernel.h>
++#include <linux/kmsg_dump.h>
+ #include <linux/reboot.h>
+ #include <linux/sched.h>
+ #include <linux/sysrq.h>
+@@ -2040,8 +2041,15 @@ static int kdb_env(int argc, const char **argv)
+  */
+ static int kdb_dmesg(int argc, const char **argv)
+ {
+-	char *syslog_data[4], *start, *end, c = '\0', *p;
+-	int diag, logging, logsize, lines = 0, adjust = 0, n;
++	int diag;
++	int logging;
++	int lines = 0;
++	int adjust = 0;
++	int n = 0;
++	int skip = 0;
++	struct kmsg_dumper dumper = { .active = 1 };
++	size_t len;
++	char buf[201];
+ 
+ 	if (argc > 2)
+ 		return KDB_ARGCOUNT;
+@@ -2064,22 +2072,10 @@ static int kdb_dmesg(int argc, const char **argv)
+ 		kdb_set(2, setargs);
+ 	}
+ 
+-	/* syslog_data[0,1] physical start, end+1.  syslog_data[2,3]
+-	 * logical start, end+1. */
+-	kdb_syslog_data(syslog_data);
+-	if (syslog_data[2] == syslog_data[3])
+-		return 0;
+-	logsize = syslog_data[1] - syslog_data[0];
+-	start = syslog_data[2];
+-	end = syslog_data[3];
+-#define KDB_WRAP(p) (((p - syslog_data[0]) % logsize) + syslog_data[0])
+-	for (n = 0, p = start; p < end; ++p) {
+-		c = *KDB_WRAP(p);
+-		if (c == '\n')
+-			++n;
+-	}
+-	if (c != '\n')
+-		++n;
++	kmsg_dump_rewind(&dumper);
++	while (kmsg_dump_get_line(&dumper, 1, NULL, 0, NULL))
++		n++;
++
+ 	if (lines < 0) {
+ 		if (adjust >= n)
+ 			kdb_printf("buffer only contains %d lines, nothing "
+@@ -2087,21 +2083,11 @@ static int kdb_dmesg(int argc, const char **argv)
+ 		else if (adjust - lines >= n)
+ 			kdb_printf("buffer only contains %d lines, last %d "
+ 				   "lines printed\n", n, n - adjust);
+-		if (adjust) {
+-			for (; start < end && adjust; ++start) {
+-				if (*KDB_WRAP(start) == '\n')
+-					--adjust;
+-			}
+-			if (start < end)
+-				++start;
+-		}
+-		for (p = start; p < end && lines; ++p) {
+-			if (*KDB_WRAP(p) == '\n')
+-				++lines;
+-		}
+-		end = p;
++		skip = adjust;
++		lines = abs(lines);
+ 	} else if (lines > 0) {
+-		int skip = n - (adjust + lines);
++		skip = n - lines - adjust;
++		lines = abs(lines);
+ 		if (adjust >= n) {
+ 			kdb_printf("buffer only contains %d lines, "
+ 				   "nothing printed\n", n);
+@@ -2112,35 +2098,24 @@ static int kdb_dmesg(int argc, const char **argv)
+ 			kdb_printf("buffer only contains %d lines, first "
+ 				   "%d lines printed\n", n, lines);
+ 		}
+-		for (; start < end && skip; ++start) {
+-			if (*KDB_WRAP(start) == '\n')
+-				--skip;
+-		}
+-		for (p = start; p < end && lines; ++p) {
+-			if (*KDB_WRAP(p) == '\n')
+-				--lines;
+-		}
+-		end = p;
++	} else {
++		lines = n;
+ 	}
+-	/* Do a line at a time (max 200 chars) to reduce protocol overhead */
+-	c = '\n';
+-	while (start != end) {
+-		char buf[201];
+-		p = buf;
+-		if (KDB_FLAG(CMD_INTERRUPT))
+-			return 0;
+-		while (start < end && (c = *KDB_WRAP(start)) &&
+-		       (p - buf) < sizeof(buf)-1) {
+-			++start;
+-			*p++ = c;
+-			if (c == '\n')
+-				break;
++
++	if (skip >= n || skip < 0)
++		return 0;
++
++	kmsg_dump_rewind(&dumper);
++	while (kmsg_dump_get_line(&dumper, 1, buf, sizeof(buf), &len)) {
++		if (skip) {
++			skip--;
++			continue;
+ 		}
+-		*p = '\0';
+-		kdb_printf("%s", buf);
++		if (!lines--)
++			break;
++
++		kdb_printf("%.*s\n", (int)len - 1, buf);
+ 	}
+-	if (c != '\n')
+-		kdb_printf("\n");
+ 
+ 	return 0;
+ }
+-- 
+1.7.10.4
+

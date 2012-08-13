@@ -1,0 +1,101 @@
+Path: news.gmane.org!not-for-mail
+From: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.kvm.devel
+Subject: [PATCH v5 01/12] KVM: fix missing check for memslot flags
+Date: Tue, 07 Aug 2012 17:48:05 +0800
+Lines: 40
+Approved: news@gmane.org
+Message-ID: <5020E455.2090501@linux.vnet.ibm.com>
+References: <5020E423.9080004@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344332913 9596 80.91.229.3 (7 Aug 2012 09:48:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 09:48:33 +0000 (UTC)
+Cc: Avi Kivity <avi@redhat.com>, Marcelo Tosatti <mtosatti@redhat.com>,
+	LKML <linux-kernel@vger.kernel.org>, KVM <kvm@vger.kernel.org>
+To: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 11:48:31 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SygOp-0005jO-Fc
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 11:48:27 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753673Ab2HGJsU (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 05:48:20 -0400
+Original-Received: from e28smtp06.in.ibm.com ([122.248.162.6]:60860 "EHLO
+	e28smtp06.in.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751479Ab2HGJsS (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 05:48:18 -0400
+Original-Received: from /spool/local
+	by e28smtp06.in.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <xiaoguangrong@linux.vnet.ibm.com>;
+	Tue, 7 Aug 2012 15:18:13 +0530
+Original-Received: from d28relay03.in.ibm.com (9.184.220.60)
+	by e28smtp06.in.ibm.com (192.168.1.136) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Tue, 7 Aug 2012 15:18:10 +0530
+Original-Received: from d28av04.in.ibm.com (d28av04.in.ibm.com [9.184.220.66])
+	by d28relay03.in.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q779mAqt10420342;
+	Tue, 7 Aug 2012 15:18:10 +0530
+Original-Received: from d28av04.in.ibm.com (loopback [127.0.0.1])
+	by d28av04.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q779m8Mm010761;
+	Tue, 7 Aug 2012 19:48:09 +1000
+Original-Received: from localhost.localdomain ([9.123.236.99])
+	by d28av04.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q779m5WS010663;
+	Tue, 7 Aug 2012 19:48:06 +1000
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:14.0) Gecko/20120717 Thunderbird/14.0
+In-Reply-To: <5020E423.9080004@linux.vnet.ibm.com>
+x-cbid: 12080709-9574-0000-0000-000003E0351A
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338906 gmane.comp.emulators.kvm.devel:95659
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338906>
+
+Check flags when memslot is registered from userspace as Avi's suggestion
+
+Signed-off-by: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+---
+ virt/kvm/kvm_main.c |   12 ++++++++++++
+ 1 files changed, 12 insertions(+), 0 deletions(-)
+
+diff --git a/virt/kvm/kvm_main.c b/virt/kvm/kvm_main.c
+index a2e85af..7b94d70 100644
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -678,6 +678,14 @@ void update_memslots(struct kvm_memslots *slots, struct kvm_memory_slot *new)
+ 	slots->generation++;
+ }
+
++static int check_memory_region_flags(struct kvm_userspace_memory_region *mem)
++{
++	if (mem->flags & ~KVM_MEM_LOG_DIRTY_PAGES)
++		return -EINVAL;
++
++	return 0;
++}
++
+ /*
+  * Allocate some memory and give it an address in the guest physical address
+  * space.
+@@ -698,6 +706,10 @@ int __kvm_set_memory_region(struct kvm *kvm,
+ 	struct kvm_memory_slot old, new;
+ 	struct kvm_memslots *slots, *old_memslots;
+
++	r = check_memory_region_flags(mem);
++	if (r)
++		goto out;
++
+ 	r = -EINVAL;
+ 	/* General sanity checks */
+ 	if (mem->memory_size & (PAGE_SIZE - 1))
+-- 
+1.7.7.6
+

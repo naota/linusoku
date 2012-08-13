@@ -1,0 +1,127 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 07/49] SCSI: fix eh wakeup (scsi_schedule_eh vs scsi_restart_operations)
+Date: Tue,  7 Aug 2012 15:44:25 -0700
+Lines: 62
+Approved: news@gmane.org
+Message-ID: <20120807222027.526082666@linuxfoundation.org>
+References: <20120807222026.848194739@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344380294 26311 80.91.229.3 (7 Aug 2012 22:58:14 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:58:14 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Tom Jackson <thomas.p.jackson@intel.com>,
+	Dan Williams <dan.j.williams@intel.com>,
+	James Bottomley <JBottomley@Parallels.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:58:12 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sysj6-0000lR-3F
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:58:12 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1031257Ab2HGW6C (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:58:02 -0400
+Original-Received: from mail-yx0-f174.google.com ([209.85.213.174]:64659 "EHLO
+	mail-yx0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1031061Ab2HGWpm (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:45:42 -0400
+Original-Received: by yenl2 with SMTP id l2so172094yen.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:45:42 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=0AHx/h1kP5FmRzvEg0E6xI8GHFVZSzx2UYAeZ+WZFBk=;
+        b=GSOaCP7c272xlAL2p+gKMp/1xcIkkBXyszG2sICmBa4Vy78yPfd+Src2tQQy0jKEIX
+         hfFzfmeQDokaCDNVRvcQ4yFu/1LGjgjNg/BFO6+I8gx34Uru4H2Q0o5gobXu2JLLpE9I
+         1yIx5+06eJA7yrFQM5LyFCpK/yHvloVvzfOdoIxfvBTZz+aC5qdRVZ2Coqf+mY5Eq/G9
+         7+D8tn1rVM8FOCRiFMISf6MEm+s6kQXYDUBXSD3nZOGX7GVwA7i4wdfnk3EMzR/SCgPK
+         4cUDWxxFhxV6j7llWDw7L3qFx/jdsJx17T/oJYwCOH3mf53EmFOMo0HVb0WveQdeGkja
+         gxsA==
+Original-Received: by 10.66.83.161 with SMTP id r1mr29260535pay.69.1344379541502;
+        Tue, 07 Aug 2012 15:45:41 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id qp6sm11977044pbc.55.2012.08.07.15.45.39
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:45:40 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222026.848194739@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQnsExzW45UuiHj1jmoMZOpak91eP1+VHGayS0NX6XDWZ5VQEgE/Sfk4CftSFmcwyYQqrzTb
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339585 gmane.linux.kernel.stable:29418
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339585>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Dan Williams <dan.j.williams@intel.com>
+
+commit 57fc2e335fd3c2f898ee73570dc81426c28dc7b4 upstream.
+
+Rapid ata hotplug on a libsas controller results in cases where libsas
+is waiting indefinitely on eh to perform an ata probe.
+
+A race exists between scsi_schedule_eh() and scsi_restart_operations()
+in the case when scsi_restart_operations() issues i/o to other devices
+in the sas domain.  When this happens the host state transitions from
+SHOST_RECOVERY (set by scsi_schedule_eh) back to SHOST_RUNNING and
+->host_busy is non-zero so we put the eh thread to sleep even though
+->host_eh_scheduled is active.
+
+Before putting the error handler to sleep we need to check if the
+host_state needs to return to SHOST_RECOVERY for another trip through
+eh.  Since i/o that is released by scsi_restart_operations has been
+blocked for at least one eh cycle, this implementation allows those
+i/o's to run before another eh cycle starts to discourage hung task
+timeouts.
+
+Reported-by: Tom Jackson <thomas.p.jackson@intel.com>
+Tested-by: Tom Jackson <thomas.p.jackson@intel.com>
+Signed-off-by: Dan Williams <dan.j.williams@intel.com>
+Signed-off-by: James Bottomley <JBottomley@Parallels.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ drivers/scsi/scsi_error.c |   14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+--- a/drivers/scsi/scsi_error.c
++++ b/drivers/scsi/scsi_error.c
+@@ -1665,6 +1665,20 @@ static void scsi_restart_operations(stru
+ 	 * requests are started.
+ 	 */
+ 	scsi_run_host_queues(shost);
++
++	/*
++	 * if eh is active and host_eh_scheduled is pending we need to re-run
++	 * recovery.  we do this check after scsi_run_host_queues() to allow
++	 * everything pent up since the last eh run a chance to make forward
++	 * progress before we sync again.  Either we'll immediately re-run
++	 * recovery or scsi_device_unbusy() will wake us again when these
++	 * pending commands complete.
++	 */
++	spin_lock_irqsave(shost->host_lock, flags);
++	if (shost->host_eh_scheduled)
++		if (scsi_host_set_state(shost, SHOST_RECOVERY))
++			WARN_ON(scsi_host_set_state(shost, SHOST_CANCEL_RECOVERY));
++	spin_unlock_irqrestore(shost->host_lock, flags);
+ }
+ 
+ /**
+
+

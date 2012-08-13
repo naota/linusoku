@@ -1,0 +1,116 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 40/41] mm/hugetlb: fix warning in alloc_huge_page/dequeue_huge_page_vma
+Date: Mon, 30 Jul 2012 10:31:39 -0700
+Lines: 50
+Approved: news@gmane.org
+Message-ID: <20120730172904.435098765@linuxfoundation.org>
+References: <20120730172901.306897424@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343669706 25715 80.91.229.3 (30 Jul 2012 17:35:06 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 17:35:06 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	Konstantin Khlebnikov <khlebnikov@openvz.org>,
+	Mel Gorman <mgorman@suse.de>,
+	David Rientjes <rientjes@google.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 19:35:01 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Svtru-0003bH-Mh
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 19:34:59 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755224Ab2G3Req (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 13:34:46 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:38517 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755182Ab2G3Rdy (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 13:33:54 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so10147880pbb.19
+        for <linux-kernel@vger.kernel.org>; Mon, 30 Jul 2012 10:33:54 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=fjLDYEA7NQaiIEq4osmolHlw+UfM4ln6/BV6snxmYxY=;
+        b=V9LoRe1Gglcd4esOtIHO8KUIjy2TQJfMLkrZSk/37RKkOvya8NMj+6G5yQJSJ52Pt3
+         pzORzbjl/cG/Jsy1+Zf2l2juHTMqJgR1NOwt5fEuQZF0S7cOMXzX+8uiKGsTpExkJzXz
+         AGCkv3Hy8VefP8kmXxz4J/2bsF84SbpInJtL9bnL46wJI1a3nIBMiv9RiXMAzzf6SKW9
+         ZugJLJDPQd3stKuDFSzXAMsNoYbeiimErTLG7AQs86BYfEvho8qHLak5WmFqjHCdku2q
+         Ah1Ums5PQRzzgSLqWfArncu31bVjxC8rKzR0W6w2a3LEn9r5Kfp5TeGTB+TGPyLhE00J
+         5lvQ==
+Original-Received: by 10.68.132.201 with SMTP id ow9mr36520618pbb.160.1343669634525;
+        Mon, 30 Jul 2012 10:33:54 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id wa14sm8302505pbc.10.2012.07.30.10.33.52
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 30 Jul 2012 10:33:53 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120730172901.306897424@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQlRO1+4JVolcMOCLsaRoS/Z1RvdkLvTwLYkdzYiZUJVnLAiyNPWlWDuB3PwE3U8qpRVJ4wu
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335215 gmane.linux.kernel.stable:28958
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335215>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Konstantin Khlebnikov <khlebnikov@openvz.org>
+
+commit b1c12cbcd0a02527c180a862e8971e249d3b347d upstream.
+
+Stable note: Not tracked in Bugzilla. [get|put]_mems_allowed() is extremely
+	expensive and severely impacted page allocator performance. This
+	is part of a series of patches that reduce page allocator overhead.
+
+Fix a gcc warning (and bug?) introduced in cc9a6c877 ("cpuset: mm: reduce
+large amounts of memory barrier related damage v3")
+
+Local variable "page" can be uninitialized if the nodemask from vma policy
+does not intersects with nodemask from cpuset.  Even if it doesn't happens
+it is better to initialize this variable explicitly than to introduce
+a kernel oops in a weird corner case.
+
+mm/hugetlb.c: In function `alloc_huge_page':
+mm/hugetlb.c:1135:5: warning: `page' may be used uninitialized in this function
+
+Signed-off-by: Konstantin Khlebnikov <khlebnikov@openvz.org>
+Acked-by: Mel Gorman <mgorman@suse.de>
+Acked-by: David Rientjes <rientjes@google.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ mm/hugetlb.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/mm/hugetlb.c
++++ b/mm/hugetlb.c
+@@ -454,7 +454,7 @@ static struct page *dequeue_huge_page_vm
+ 				struct vm_area_struct *vma,
+ 				unsigned long address, int avoid_reserve)
+ {
+-	struct page *page;
++	struct page *page = NULL;
+ 	struct mempolicy *mpol;
+ 	nodemask_t *nodemask;
+ 	struct zonelist *zonelist;
+
+

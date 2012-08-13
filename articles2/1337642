@@ -1,0 +1,119 @@
+Path: news.gmane.org!not-for-mail
+From: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] regulator: add MAX8907 driver
+Date: Sat, 4 Aug 2012 11:19:18 +0100
+Lines: 66
+Approved: news@gmane.org
+Message-ID: <20120804101918.GD9248@opensource.wolfsonmicro.com>
+References: <1343932033-911-1-git-send-email-swarren@wwwdotorg.org>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344076556 21409 80.91.229.3 (4 Aug 2012 10:35:56 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 4 Aug 2012 10:35:56 +0000 (UTC)
+Cc: Liam Girdwood <lrg@ti.com>, linux-kernel@vger.kernel.org,
+	Laxman Dewangan <ldewangan@nvidia.com>,
+	Gyungoh Yoo <jack.yoo@maxim-ic.com>,
+	Stephen Warren <swarren@nvidia.com>
+To: Stephen Warren <swarren@wwwdotorg.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Aug 04 12:35:55 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sxbi3-0002lK-SS
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 04 Aug 2012 12:35:52 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751728Ab2HDKes (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 4 Aug 2012 06:34:48 -0400
+Original-Received: from opensource.wolfsonmicro.com ([80.75.67.52]:58210 "EHLO
+	opensource.wolfsonmicro.com" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1751084Ab2HDKer (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 4 Aug 2012 06:34:47 -0400
+Original-Received: from finisterre.wolfsonmicro.main (host86-154-231-42.range86-154.btcentralplus.com [86.154.231.42])
+	by opensource.wolfsonmicro.com (Postfix) with ESMTPSA id 0ED5F11050F;
+	Sat,  4 Aug 2012 11:34:46 +0100 (BST)
+Original-Received: from broonie by finisterre.wolfsonmicro.main with local (Exim 4.80)
+	(envelope-from <broonie@opensource.wolfsonmicro.com>)
+	id 1SxbS6-0002jR-MQ; Sat, 04 Aug 2012 11:19:22 +0100
+Content-Disposition: inline
+In-Reply-To: <1343932033-911-1-git-send-email-swarren@wwwdotorg.org>
+X-Cookie: Stay the curse.
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337642
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337642>
+
+On Thu, Aug 02, 2012 at 12:27:13PM -0600, Stephen Warren wrote:
+
+> The MAX8907 is an I2C-based power-management IC containing voltage
+> regulators, a reset controller, a real-time clock, and a touch-screen
+> controller.
+
+> * Reworked the regulator driver to be represented as a single device that
+>   provides multiple regulators, rather than as a device per regulator.  It
+>   seems like this is more common?
+
+This is mostly a reflection of the poor reuse available with most
+hardware.  If you've got a bunch of regulators which can usefully
+be instantiated and work out where they are by just getting a
+register range or two, and especially if you've got a bunch of PMICs
+with different arrangements of these things, then it's useful to
+split into multiple drivers.  If each regulator needs a bunch of custom
+data then there's not much point.
+
+> +static int max8907_regulator_list_voltage(struct regulator_dev *rdev,
+> +					  unsigned index)
+> +{
+> +	struct max8907_regulator *pmic = rdev_get_drvdata(rdev);
+> +	int id = rdev_get_id(rdev);
+> +	const struct max8907_regulator_info *info = &pmic->info[id];
+> +
+> +	return info->min_uV + info->step_uV * index;
+> +}
+
+regulator_list_voltage_linear().
+
+> +static int max8907_regulator_ldo_set_voltage(struct regulator_dev *rdev,
+> +					     int min_uV, int max_uV,
+> +					     unsigned *selector)
+
+Should use regulator_set_voltage_sel_regmap() and
+regulator_map_voltage_linear().
+
+> +static int max8907_regulator_bbat_set_voltage(struct regulator_dev *rdev,
+> +					      int min_uV, int max_uV,
+> +					      unsigned *selector)
+
+Similarly for this regulator, use a linear mapping.
+
+> +static int max8907_regulator_fixed_get_voltage(struct regulator_dev *rdev)
+
+This one too.
+
+> +static int max8907_regulator_wled_set_current_limit(struct regulator_dev *rdev,
+> +						    int min_uA, int max_uA)
+
+I'm really not convinced it makes much sense to represent the backlight
+driver current regulators as regulators, they only get used as part of
+the backlight and are usually tightly coupled to their boosts.
+
+> +static int max8907_regulator_ldo_enable(struct regulator_dev *rdev)
+> +{
+> +	struct max8907_regulator *pmic = rdev_get_drvdata(rdev);
+> +	int id = rdev_get_id(rdev);
+> +	const struct max8907_regulator_info *info = &pmic->info[id];
+> +	unsigned int reg = MAX8907_MASK_LDO_EN | MAX8907_MASK_LDO_SEQ;
+> +
+> +	return regmap_update_bits(rdev->regmap, info->reg_base + MAX8907_CTL,
+> +				  reg, reg);
+
+regulator_enable_regmap() and friends (and similarly for a bunch of the
+others).

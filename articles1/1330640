@@ -1,0 +1,107 @@
+Path: news.gmane.org!not-for-mail
+From: Cody Schafer <cody@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH v2] perf: prevent overflow in size calculation
+Date: Thu, 19 Jul 2012 19:49:12 -0700
+Lines: 40
+Approved: news@gmane.org
+Message-ID: <1342752552-3065-1-git-send-email-cody@linux.vnet.ibm.com>
+References: <87a9yv2r5q.fsf@sejong.aot.lge.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342752629 22751 80.91.229.3 (20 Jul 2012 02:50:29 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 02:50:29 +0000 (UTC)
+Cc: Arnaldo Carvalho de Melo <acme@ghostprotocols.net>,
+	Ingo Molnar <mingo@redhat.com>,
+	Paul Mackerras <paulus@samba.org>,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Sukadev Bhattiprolu <sukadev@linux.vnet.ibm.com>,
+	LKML <linux-kernel@vger.kernel.org>,
+	Cody Schafer <cody@linux.vnet.ibm.com>
+To: Namhyung Kim <namhyung@kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 04:50:27 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Ss3IK-0005Qn-75
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 04:50:20 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752971Ab2GTCuM (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 22:50:12 -0400
+Original-Received: from e33.co.us.ibm.com ([32.97.110.151]:57616 "EHLO
+	e33.co.us.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752592Ab2GTCuK (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 22:50:10 -0400
+Original-Received: from /spool/local
+	by e33.co.us.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <cody@linux.vnet.ibm.com>;
+	Thu, 19 Jul 2012 20:50:04 -0600
+Original-Received: from d03dlp02.boulder.ibm.com (9.17.202.178)
+	by e33.co.us.ibm.com (192.168.1.133) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Thu, 19 Jul 2012 20:49:25 -0600
+Original-Received: from d03relay05.boulder.ibm.com (d03relay05.boulder.ibm.com [9.17.195.107])
+	by d03dlp02.boulder.ibm.com (Postfix) with ESMTP id 0296D3E4003C
+	for <linux-kernel@vger.kernel.org>; Fri, 20 Jul 2012 02:49:23 +0000 (WET)
+Original-Received: from d03av02.boulder.ibm.com (d03av02.boulder.ibm.com [9.17.195.168])
+	by d03relay05.boulder.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6K2nNfL268478
+	for <linux-kernel@vger.kernel.org>; Thu, 19 Jul 2012 20:49:23 -0600
+Original-Received: from d03av02.boulder.ibm.com (loopback [127.0.0.1])
+	by d03av02.boulder.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6K2nMkR017748
+	for <linux-kernel@vger.kernel.org>; Thu, 19 Jul 2012 20:49:23 -0600
+Original-Received: from localhost (sig-9-76-148-70.mts.ibm.com [9.76.148.70])
+	by d03av02.boulder.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6K2nLQD017700;
+	Thu, 19 Jul 2012 20:49:21 -0600
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <87a9yv2r5q.fsf@sejong.aot.lge.com>
+X-Content-Scanned: Fidelis XPS MAILER
+x-cbid: 12072002-2398-0000-0000-000008A3F83E
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330640
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330640>
+
+A large enough symbol size causes an overflow in the size parameter to the
+histogram allocation, leading to a segfault in symbol__inc_addr_samples later
+on when this histogram is accessed.
+
+In the case of being called via perf-report, this returns back and
+gracefully ignores the sample, eventually ignoring the chained return
+value of perf_session_deliver_event in flush_sample_queue.
+
+Signed-off-by: Cody Schafer <cody@linux.vnet.ibm.com>
+---
+ tools/perf/util/annotate.c |   13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/tools/perf/util/annotate.c b/tools/perf/util/annotate.c
+index 8069dfb..73a1919 100644
+--- a/tools/perf/util/annotate.c
++++ b/tools/perf/util/annotate.c
+@@ -426,7 +426,18 @@ int symbol__alloc_hist(struct symbol *sym)
+ {
+ 	struct annotation *notes = symbol__annotation(sym);
+ 	const size_t size = symbol__size(sym);
+-	size_t sizeof_sym_hist = (sizeof(struct sym_hist) + size * sizeof(u64));
++	size_t sizeof_sym_hist;
++
++	/* Check for overflow when calculating sizeof_sym_hist */
++	if (size > (SIZE_MAX / sizeof(u64) - sizeof(struct sym_hist)))
++		return -1;
++
++	sizeof_sym_hist = (sizeof(struct sym_hist) + size * sizeof(u64));
++
++	/* Check for overflow in zalloc argument */
++	if (sizeof_sym_hist > (SIZE_MAX / symbol_conf.nr_events
++				- sizeof(*notes->src)))
++		return -1;
+ 
+ 	notes->src = zalloc(sizeof(*notes->src) + symbol_conf.nr_events * sizeof_sym_hist);
+ 	if (notes->src == NULL)
+-- 
+1.7.9.5
+

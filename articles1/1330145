@@ -1,0 +1,159 @@
+Path: news.gmane.org!not-for-mail
+From: Darren Hart <dvhart@linux.intel.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: potential NULL dereference in futex_wait_requeue_pi()
+Date: Wed, 18 Jul 2012 21:21:47 -0700
+Lines: 108
+Approved: news@gmane.org
+Message-ID: <50078B5B.8040104@linux.intel.com>
+References: <20120718142514.GA18850@elgon.mountain> <5006DE4A.4020905@linux.intel.com> <20120718180119.GA1458@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342671819 15820 80.91.229.3 (19 Jul 2012 04:23:39 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 04:23:39 +0000 (UTC)
+To: Dave Jones <davej@redhat.com>,
+	Dan Carpenter <dan.carpenter@oracle.com>,
+	linux-kernel@vger.kernel.org, Thomas Gleixner <tglx@linutronix.de>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 06:23:38 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SriH1-0002o5-Ua
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 06:23:36 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752560Ab2GSEX3 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 00:23:29 -0400
+Original-Received: from mga01.intel.com ([192.55.52.88]:54195 "EHLO mga01.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751114Ab2GSEX0 (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 00:23:26 -0400
+Original-Received: from fmsmga001.fm.intel.com ([10.253.24.23])
+  by fmsmga101.fm.intel.com with ESMTP; 18 Jul 2012 21:23:25 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="180187607"
+Original-Received: from unknown (HELO envy.home) ([10.255.12.165])
+  by fmsmga001.fm.intel.com with ESMTP; 18 Jul 2012 21:23:24 -0700
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120615 Thunderbird/13.0.1
+In-Reply-To: <20120718180119.GA1458@redhat.com>
+X-Enigmail-Version: 1.4.3
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330145
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330145>
+
+
+
+On 07/18/2012 11:01 AM, Dave Jones wrote:
+> On Wed, Jul 18, 2012 at 09:03:22AM -0700, Darren Hart wrote:
+>  
+>  > > This will oops if pi_mutex is NULL.
+>  > > 
+>  > >   2374                          rt_mutex_unlock(pi_mutex);
+>  > >   2375          } else if (ret == -EINTR) {
+>  > 
+>  > Nice Dan, thanks for taking a closer look. This appears to be a simple fix, can
+>  > you try the following:
+>  > 
+>  > 
+>  > futex: Test for pi_mutex on fault in futex_wait_requeue_pi
+>  > 
+>  > If fixup_pi_state_owner() faults, pi_mutex may be NULL. Test
+>  > for pi_mutex != NULL before testing the owner against current
+>  > and possibly unlocking it.
+>  > 
+>  > Signed-off-by: Darren Hart <dvhart@linux.intel.com>
+>  > CC: Dave Jones <davej@redhat.com>
+>  > CC: Dan Carpenter <dan.carpenter@oracle.com>
+>  > CC: Thomas Gleixner <tglx@linutronix.de>
+>  > 
+>  > diff --git a/kernel/futex.c b/kernel/futex.c
+>  > index e2b0fb9..05018bf 100644
+>  > --- a/kernel/futex.c
+>  > +++ b/kernel/futex.c
+>  > @@ -2370,7 +2370,7 @@ static int futex_wait_requeue_pi(u32 __user *uaddr, unsigned int flags,
+>  >  	 * fault, unlock the rt_mutex and return the fault to userspace.
+>  >  	 */
+>  >  	if (ret == -EFAULT) {
+>  > -		if (rt_mutex_owner(pi_mutex) == current)
+>  > +		if (pi_mutex && rt_mutex_owner(pi_mutex) == current)
+>  >  			rt_mutex_unlock(pi_mutex);
+>  >  	} else if (ret == -EINTR) {
+>  >  		/*
+> 
+> Doesn't fix the oops for me unfortunatly.  It looks like it happens further up,
+> so this might be a spearate bug after all.
+> 
+> I added this..
+> 
+> @@ -2344,7 +2351,13 @@ static int futex_wait_requeue_pi(u32 __user *uaddr, unsigned int flags,
+>                  * the pi_state.
+>                  */
+>                 WARN_ON(!&q.pi_state);
+> +
+>                 pi_mutex = &q.pi_state->pi_mutex;
+> +               if (pi_mutex == NULL) {
+> +                       ret = -EINVAL;
+> +                       goto out;
+> +               }
+> +
+>                 ret = rt_mutex_finish_proxy_lock(pi_mutex, to, &rt_waiter, 1);
+> 
+> 
+> But that didn't seem to fix it either.  Somehow we still do this ..
+> 
+> 
+> BUG: unable to handle kernel NULL pointer dereference at 0000000000000028
+
+I was hunting for a lock->owner-> dereference in that path, as I think
+owner can be at 0x28, but it doesn't work with your trace below.
+
+> IP: [<ffffffff810d68be>] __lock_acquire+0x5e/0x1ae0
+> 
+> 	lock_acquire+0xad/0x220
+> 	_raw_spin_lock+0x46/0x80
+> 	rt_mutex_finish_proxy_lock+0x34/0xe0
+> 	futex_wait_requeue_pi.constprop.20+0x2e5/0x400
+> 	do_futex+0xea/0xa20
+> 	sys_futex+0x107/0x1a0
+> 	system_call_fastpath+0x1a/0x1f
+> 
+> Ah, could it somehow be that we have a pi_mutex here, but it hasn't been initialised ?
+> 
+> The code: line fingers this as the failure in kernel/lockdep.c
+> 
+>         if (lock->key == &__lockdep_no_validate__)
+>     3f9e:       49 8b 07                mov    (%r15),%rax
+> 
+> r15 (lock) is somehow '0x28' here, which is why the NULL check I added didn't trigger.
+
+OK, so for debug a < 0xc0000000 check might be useful.
+
+> 
+> This isn't helped by the fact that there seems to be another unrelated bug in futexes
+> that trinity triggers.  If you want to try this, running it with "-c futex" will reproduce
+> it very quickly.
+
+Gave it a shot on the laptop (stock Fedora 17 kernel)... first it killed
+my external display and reverted to the internal screen (nice trick
+that) then it just locked up hard. Took about 2 seconds for the first, a
+few more for the second. All unprivileged... nasty test case you have
+here. I was considering adding fuzz testing to futextest, but I believe
+you have it covered rather nicely here :-)
+
+I'll start in on some instrumentation and further analysis after the
+morning meetings (ugh).
+
+-- 
+Darren Hart
+Intel Open Source Technology Center
+Yocto Project - Linux Kernel
+
+

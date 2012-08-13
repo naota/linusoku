@@ -1,0 +1,134 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org>
+Newsgroups: gmane.linux.nfs,gmane.linux.file-systems,gmane.linux.kernel
+Subject: [PATCH v4 02/17] vfs: add a kern_path_at function
+Date: Thu, 26 Jul 2012 07:55:05 -0400
+Lines: 73
+Approved: news@gmane.org
+Message-ID: <1343303720-11199-3-git-send-email-jlayton@redhat.com>
+References: <1343303720-11199-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343303740 25854 80.91.229.3 (26 Jul 2012 11:55:40 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 11:55:40 +0000 (UTC)
+Cc: linux-fsdevel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org,
+	linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, michael.brantley-Iq/kdjr4a97QT0dZR+AlfA@public.gmane.org,
+	hch-wEGCiKHe2LqWVfeAwA7xHQ@public.gmane.org, miklos-sUDqSbJrdHQHWmgEVkV9KA@public.gmane.org, pstaubach-83r9SdEf25FBDgjK7y7TUQ@public.gmane.org
+To: viro-3bDd1+5oDREiFSDQTTA3OLVCufUGDwFn@public.gmane.org
+Original-X-From: linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org Thu Jul 26 13:55:39 2012
+Return-path: <linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Envelope-to: glN-linux-nfs-wOFGN7rlS/M9smdsby/KFg@public.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>)
+	id 1SuMfK-0008Ml-IZ
+	for glN-linux-nfs-wOFGN7rlS/M9smdsby/KFg@public.gmane.org; Thu, 26 Jul 2012 13:55:38 +0200
+Original-Received: (majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org) by vger.kernel.org via listexpand
+	id S1752137Ab2GZLzd (ORCPT <rfc822;glN-linux-nfs@m.gmane.org>);
+	Thu, 26 Jul 2012 07:55:33 -0400
+Original-Received: from mail-yx0-f174.google.com ([209.85.213.174]:58363 "EHLO
+	mail-yx0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752203Ab2GZLza (ORCPT
+	<rfc822;linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>); Thu, 26 Jul 2012 07:55:30 -0400
+Original-Received: by yenl2 with SMTP id l2so1826947yen.19
+        for <linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>; Thu, 26 Jul 2012 04:55:30 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:x-gm-message-state;
+        bh=jnLRBKHBZkZzwXmBsdtFwCb0XWZcLkipPonwc5QMgtw=;
+        b=oG75m0MTUMdq9KvIlm0/4pIb1ut2f9yKqFIdrPd8OeKnonqK+AFzr0fCk/RhJup04A
+         mxoO+FzWOhsQmYhwHib/7fvWaDoSNAFu567m01GewAYG83dmknyWtGzrV+hUsTt1R/qy
+         L+Z3kukZwrEratQF2uPOGyvvfDCY34P3j5R0xQ3SGqRrE6nfVM9N+S1DZZDXs6qmgPcr
+         WJqhmxADId89SwofVKeEgqeR4OG9Lz9gf4KbYxn0Iba5o1E64J2Sq/YlIjDXMzw/KXIG
+         PTsNTitTlLgYCLjCr4uI3PY/vecGY2o2adV+J0oKUGHqIgKmF4KSEONbPvdVif1YUl9X
+         M1kA==
+Original-Received: by 10.236.193.105 with SMTP id j69mr27533453yhn.21.1343303730018;
+        Thu, 26 Jul 2012 04:55:30 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-076-182-054-194.nc.res.rr.com. [76.182.54.194])
+        by mx.google.com with ESMTPS id l12sm4436364ank.2.2012.07.26.04.55.28
+        (version=SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 04:55:29 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1343303720-11199-1-git-send-email-jlayton-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org>
+X-Gm-Message-State: ALoCoQksEwA4qGYm0bcV5o+jSjoJDrzHyM9nF0U282bUeVGFXyi+Kv0jFenmGKozebBbmfoeEgAN
+Original-Sender: linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Precedence: bulk
+List-ID: <linux-nfs.vger.kernel.org>
+X-Mailing-List: linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Xref: news.gmane.org gmane.linux.nfs:51134 gmane.linux.file-systems:66242 gmane.linux.kernel:1333586
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333586>
+
+This will function like user_path_at, but does not do the getname and
+putname, leaving that to the caller.
+
+Signed-off-by: Jeff Layton <jlayton-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org>
+---
+ fs/namei.c            | 27 +++++++++++++++++++--------
+ include/linux/namei.h |  1 +
+ 2 files changed, 20 insertions(+), 8 deletions(-)
+
+diff --git a/fs/namei.c b/fs/namei.c
+index 3580d47..b6fbe3d 100644
+--- a/fs/namei.c
++++ b/fs/namei.c
+@@ -1974,20 +1974,31 @@ struct dentry *lookup_one_len(const char *name, struct dentry *base, int len)
+ 	return __lookup_hash(&this, base, 0);
+ }
+ 
++int kern_path_at(int dfd, const char *name, unsigned flags, struct path *path)
++{
++	struct nameidata nd;
++	int err;
++
++	BUG_ON(flags & LOOKUP_PARENT);
++
++	err = do_path_lookup(dfd, name, flags, &nd);
++	if (!err)
++		*path = nd.path;
++
++	return err;
++}
++
+ int user_path_at_empty(int dfd, const char __user *name, unsigned flags,
+ 		 struct path *path, int *empty)
+ {
+-	struct nameidata nd;
+ 	char *tmp = getname_flags(name, flags, empty);
+-	int err = PTR_ERR(tmp);
+-	if (!IS_ERR(tmp)) {
+-
+-		BUG_ON(flags & LOOKUP_PARENT);
++	int err;
+ 
+-		err = do_path_lookup(dfd, tmp, flags, &nd);
++	if (IS_ERR(tmp)) {
++		err = PTR_ERR(tmp);
++	} else {
++		err = kern_path_at(dfd, tmp, flags, path);
+ 		putname(tmp);
+-		if (!err)
+-			*path = nd.path;
+ 	}
+ 	return err;
+ }
+diff --git a/include/linux/namei.h b/include/linux/namei.h
+index d2ef8b3..002dc55 100644
+--- a/include/linux/namei.h
++++ b/include/linux/namei.h
+@@ -55,6 +55,7 @@ enum {LAST_NORM, LAST_ROOT, LAST_DOT, LAST_DOTDOT, LAST_BIND};
+ #define LOOKUP_ROOT		0x2000
+ #define LOOKUP_EMPTY		0x4000
+ 
++extern int kern_path_at(int, const char *, unsigned, struct path *);
+ extern int user_path_at(int, const char __user *, unsigned, struct path *);
+ extern int user_path_at_empty(int, const char __user *, unsigned, struct path *, int *empty);
+ 
+-- 
+1.7.11.2
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-nfs" in
+the body of a message to majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

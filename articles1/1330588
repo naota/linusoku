@@ -1,0 +1,130 @@
+Path: news.gmane.org!not-for-mail
+From: Tim Chen <tim.c.chen@linux.intel.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH] Cgroup: Fix memory accounting scalability in
+ shrink_page_list
+Date: Thu, 19 Jul 2012 16:34:26 -0700
+Lines: 63
+Approved: news@gmane.org
+Message-ID: <1342740866.13492.50.camel@schen9-DESK>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342740880 14634 80.91.229.3 (19 Jul 2012 23:34:40 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 23:34:40 +0000 (UTC)
+Cc: "Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>, "andi.kleen"
+ <andi.kleen@intel.com>, linux-mm <linux-mm@kvack.org>, 
+ linux-kernel@vger.kernel.org
+To: Andrew Morton <akpm@linux-foundation.org>, Mel Gorman <mel@csn.ul.ie>, 
+ KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>, Minchan Kim
+ <minchan@kernel.org>, Johannes Weiner <hannes@cmpxchg.org>
+Original-X-From: owner-linux-mm@kvack.org Fri Jul 20 01:34:38 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Ss0Eo-0002eI-BV
+	for glkm-linux-mm-2@m.gmane.org; Fri, 20 Jul 2012 01:34:30 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id AA2906B004D; Thu, 19 Jul 2012 19:34:27 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 8F7166B005D; Thu, 19 Jul 2012 19:34:27 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 5A4276B0068; Thu, 19 Jul 2012 19:34:27 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx161.postini.com [74.125.245.161])
+	by kanga.kvack.org (Postfix) with SMTP id 938476B004D
+	for <linux-mm@kvack.org>; Thu, 19 Jul 2012 19:34:26 -0400 (EDT)
+Original-Received: from mga02.intel.com ([134.134.136.20]) by na3sys010amx161.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 19 Jul 2012 23:34:26 GMT
+Original-Received: from orsmga002.jf.intel.com ([10.7.209.21])
+  by orsmga101.jf.intel.com with ESMTP; 19 Jul 2012 16:34:25 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.67,351,1309762800"; 
+   d="scan'208";a="174510183"
+Original-Received: from schen9-desk.jf.intel.com (HELO [10.7.199.53]) ([10.7.199.53])
+  by orsmga002.jf.intel.com with ESMTP; 19 Jul 2012 16:34:25 -0700
+X-Mailer: Evolution 2.32.3 (2.32.3-1.fc14) 
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:41.66843/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0005) s cv gt3 GT2 gt1 r p m c 
+X-pstn-addresses: from <tim.c.chen@linux.intel.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82734 gmane.linux.kernel:1330588
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330588>
+
+Hi,
+
+I noticed in a multi-process parallel files reading benchmark I ran on a
+8 socket machine,  throughput slowed down by a factor of 8 when I ran
+the benchmark within a cgroup container.  I traced the problem to the
+following code path (see below) when we are trying to reclaim memory
+from file cache.  The res_counter_uncharge function is called on every
+page that's reclaimed and created heavy lock contention.  The patch
+below allows the reclaimed pages to be uncharged from the resource
+counter in batch and recovered the regression. 
+
+Tim
+
+     40.67%           usemem  [kernel.kallsyms]                   [k] _raw_spin_lock
+                      |
+                      --- _raw_spin_lock
+                         |
+                         |--92.61%-- res_counter_uncharge
+                         |          |
+                         |          |--100.00%-- __mem_cgroup_uncharge_common
+                         |          |          |
+                         |          |          |--100.00%-- mem_cgroup_uncharge_cache_page
+                         |          |          |          __remove_mapping
+                         |          |          |          shrink_page_list
+                         |          |          |          shrink_inactive_list
+                         |          |          |          shrink_mem_cgroup_zone
+                         |          |          |          shrink_zone
+                         |          |          |          do_try_to_free_pages
+                         |          |          |          try_to_free_pages
+                         |          |          |          __alloc_pages_nodemask
+                         |          |          |          alloc_pages_current
+
+
+---
+Signed-off-by: Tim Chen <tim.c.chen@linux.intel.com>
+diff --git a/mm/vmscan.c b/mm/vmscan.c
+index 33dc256..aac5672 100644
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -779,6 +779,7 @@ static unsigned long shrink_page_list(struct list_head *page_list,
+ 
+ 	cond_resched();
+ 
++	mem_cgroup_uncharge_start();
+ 	while (!list_empty(page_list)) {
+ 		enum page_references references;
+ 		struct address_space *mapping;
+@@ -1026,6 +1027,7 @@ keep_lumpy:
+ 
+ 	list_splice(&ret_pages, page_list);
+ 	count_vm_events(PGACTIVATE, pgactivate);
++	mem_cgroup_uncharge_end();
+ 	*ret_nr_dirty += nr_dirty;
+ 	*ret_nr_writeback += nr_writeback;
+ 	return nr_reclaimed;
+
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

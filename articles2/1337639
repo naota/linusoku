@@ -1,0 +1,111 @@
+Path: news.gmane.org!not-for-mail
+From: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH v2] regmap: Add regmap dummy driver
+Date: Sat, 4 Aug 2012 11:05:23 +0100
+Lines: 61
+Approved: news@gmane.org
+Message-ID: <20120804100522.GC9248@opensource.wolfsonmicro.com>
+References: <1343397500-31283-1-git-send-email-dp@opensource.wolfsonmicro.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344074757 9833 80.91.229.3 (4 Aug 2012 10:05:57 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 4 Aug 2012 10:05:57 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, patches@opensource.wolfsonmicro.com
+To: Dimitris Papastamos <dp@opensource.wolfsonmicro.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Aug 04 12:05:57 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxbF6-00073x-J6
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 04 Aug 2012 12:05:56 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753445Ab2HDKFu (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 4 Aug 2012 06:05:50 -0400
+Original-Received: from opensource.wolfsonmicro.com ([80.75.67.52]:34856 "EHLO
+	opensource.wolfsonmicro.com" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1753189Ab2HDKFZ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 4 Aug 2012 06:05:25 -0400
+Original-Received: from finisterre.wolfsonmicro.main (host86-154-231-42.range86-154.btcentralplus.com [86.154.231.42])
+	by opensource.wolfsonmicro.com (Postfix) with ESMTPSA id 3ED3611050F;
+	Sat,  4 Aug 2012 11:05:24 +0100 (BST)
+Original-Received: from broonie by finisterre.wolfsonmicro.main with local (Exim 4.80)
+	(envelope-from <broonie@opensource.wolfsonmicro.com>)
+	id 1SxbEZ-0002ff-CC; Sat, 04 Aug 2012 11:05:23 +0100
+Content-Disposition: inline
+In-Reply-To: <1343397500-31283-1-git-send-email-dp@opensource.wolfsonmicro.com>
+X-Cookie: Is this really happening?
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337639
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337639>
+
+On Fri, Jul 27, 2012 at 02:58:20PM +0100, Dimitris Papastamos wrote:
+> Add a pseudo-driver for debugging and stress-testing the
+> regmap/regcache APIs.  A standard set of tools for working
+
+Overall this looks good, most of the stuff below is fairly small.  As a
+very high level comment it'd be really helpful to split this into a
+series of commits, for example adding just the dummy device then
+building out the functionality.  It'd make review much easier.
+
+> with this driver (mainly sh scripts) will be put in a repo
+> at https://github.com/quantumdream/regmap-tools
+
+Any reason not to put this in the tools directory?
+
+> Some of these tests will require one to build with
+> REGMAP_ALLOW_WRITE_DEBUGFS defined.
+
+Can we add a write mechanism specifically for this dummy driver?
+
+> +	/* Set when regdummy defaults have been modified.
+> +	 * This is useful to know so we don't reinit the
+> +	 * cache if there is no reason to do so. */
+> +	unsigned int dirty:1;
+
+Should we perhaps just reinit anyway?  It's not like this is performance
+critical...
+
+> +/* Default volatile register callback, this should
+> + * normally be configured by the user via a debugfs
+> + * entry */
+> +static bool regdummy_volatile_reg(struct device *dev,
+> +				  unsigned int reg)
+> +{
+> +	return false;
+> +}
+
+All these functions just seem to be implementing the default behaviour,
+why are they needed?
+
+> +		/* If we're in the region the user is trying to read */
+> +		if (p >= *ppos) {
+> +			/* ...but not beyond it */
+> +			if (buf_pos >= count - 1 - tot_len)
+> +				break;
+
+Any potential for code reuse?  This stuff does look awfully familiar!
+
+> +	/* Allocate the new register defaults */
+> +	regdef_num_new = rdevp->regs_size_new / config->reg_stride;
+> +	regdef_num_raw_new = regdef_num_new * sizeof(*regdef_new);
+> +	regdef_new = kzalloc(regdef_num_raw_new, GFP_KERNEL);
+
+Can we factor this stuff out - there's a lot of overlap with the vanilla
+init?
+
+> +static struct platform_device regdummy_device = {
+> +	.name = "regdummy",
+> +	.id = 0,
+> +};
+
+Set id to -1 if there's only one of them.

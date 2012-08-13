@@ -1,0 +1,170 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 031/108] USB: cdc-wdm: fix lockup on error in wdm_read
+Date: Mon, 23 Jul 2012 02:07:22 +0100
+Lines: 102
+Approved: news@gmane.org
+Message-ID: <20120723010656.209678390@decadent.org.uk>
+References: <20120723010651.408577075@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: TEXT/PLAIN; charset=ISO-8859-1
+Content-Transfer-Encoding: QUOTED-PRINTABLE
+X-Trace: dough.gmane.org 1343008072 14423 80.91.229.3 (23 Jul 2012 01:47:52 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 01:47:52 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	=?UTF-8?q?Bj=C3=B8rn=20Mork?= <bjorn@mork.no>,
+	Oliver Neukum <oneukum@suse.de>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 03:47:51 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1St7kT-0005II-GW
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 03:47:49 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753789Ab2GWBqm (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 21:46:42 -0400
+X-Warning: Original message contained 8-bit characters, however during
+	   the SMTP transport session the receiving system did not announce
+	   capability of receiving 8-bit SMTP (RFC 1651-1653), and as this
+	   message does not have MIME headers (RFC 2045-2049) to enable
+	   encoding change, we had very little choice.
+X-Warning: We ASSUME it is less harmful to add the MIME headers, and
+	   convert the text to Quoted-Printable, than not to do so,
+	   and to strip the message to 7-bits.. (RFC 1428 Appendix A)
+X-Warning: We don't know what character set the user used, thus we had to
+	   write these MIME-headers with our local system default value.
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:54486 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1753624Ab2GWBnv (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 21:43:51 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7gS-0008Rv-Sq; Mon, 23 Jul 2012 02:43:41 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7eY-0008AV-SM; Mon, 23 Jul 2012 02:41:42 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120723010651.408577075@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331492 gmane.linux.kernel.stable:28644
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331492>
+
+3.2-stable review patch.  If anyone has any objections, please let me k=
+now.
+
+------------------
+
+=46rom: Bj=C3=B8rn Mork <bjorn@mork.no> <bjorn@mork.no>
+
+commit b086b6b10d9f182cd8d2f0dcfd7fd11edba93fc9 upstream.
+
+Clear the WDM_READ flag on empty reads to avoid running
+forever in an infinite tight loop, causing lockups:
+
+Jul  1 21:58:11 nemi kernel: [ 3658.898647] qmi_wwan 2-1:1.2: Unexpecte=
+d error -71
+Jul  1 21:58:36 nemi kernel: [ 3684.072021] BUG: soft lockup - CPU#0 st=
+uck for 23s! [qmi.pl:12235]
+Jul  1 21:58:36 nemi kernel: [ 3684.072212] CPU 0
+Jul  1 21:58:36 nemi kernel: [ 3684.072355]
+Jul  1 21:58:36 nemi kernel: [ 3684.072367] Pid: 12235, comm: qmi.pl Ta=
+inted: P           O 3.5.0-rc2+ #13 LENOVO 2776LEG/2776LEG
+Jul  1 21:58:36 nemi kernel: [ 3684.072383] RIP: 0010:[<ffffffffa063500=
+8>]  [<ffffffffa0635008>] spin_unlock_irq+0x8/0xc [cdc_wdm]
+Jul  1 21:58:36 nemi kernel: [ 3684.072388] RSP: 0018:ffff88022dca1e70 =
+ EFLAGS: 00000282
+Jul  1 21:58:36 nemi kernel: [ 3684.072393] RAX: ffff88022fc3f650 RBX: =
+ffffffff811c56f7 RCX: 00000001000ce8c1
+Jul  1 21:58:36 nemi kernel: [ 3684.072398] RDX: 0000000000000010 RSI: =
+000000000267d810 RDI: ffff88022fc3f650
+Jul  1 21:58:36 nemi kernel: [ 3684.072403] RBP: ffff88022dca1eb0 R08: =
+ffffffffa063578e R09: 0000000000000000
+Jul  1 21:58:36 nemi kernel: [ 3684.072407] R10: 0000000000000008 R11: =
+0000000000000246 R12: 0000000000000002
+Jul  1 21:58:36 nemi kernel: [ 3684.072412] R13: 0000000000000246 R14: =
+ffffffff00000002 R15: ffff8802281d8c88
+Jul  1 21:58:36 nemi kernel: [ 3684.072418] FS:  00007f666a260700(0000)=
+ GS:ffff88023bc00000(0000) knlGS:0000000000000000
+Jul  1 21:58:36 nemi kernel: [ 3684.072423] CS:  0010 DS: 0000 ES: 0000=
+ CR0: 0000000080050033
+Jul  1 21:58:36 nemi kernel: [ 3684.072428] CR2: 000000000270d9d8 CR3: =
+000000022e865000 CR4: 00000000000007f0
+Jul  1 21:58:36 nemi kernel: [ 3684.072433] DR0: 0000000000000000 DR1: =
+0000000000000000 DR2: 0000000000000000
+Jul  1 21:58:36 nemi kernel: [ 3684.072438] DR3: 0000000000000000 DR6: =
+00000000ffff0ff0 DR7: 0000000000000400
+Jul  1 21:58:36 nemi kernel: [ 3684.072444] Process qmi.pl (pid: 12235,=
+ threadinfo ffff88022dca0000, task ffff88022ff76380)
+Jul  1 21:58:36 nemi kernel: [ 3684.072448] Stack:
+Jul  1 21:58:36 nemi kernel: [ 3684.072458]  ffffffffa063592e 000000010=
+0020000 ffff88022fc3f650 ffff88022fc3f6a8
+Jul  1 21:58:36 nemi kernel: [ 3684.072466]  0000000000000200 000000010=
+0000000 000000000267d810 0000000000000000
+Jul  1 21:58:36 nemi kernel: [ 3684.072475]  0000000000000000 ffff88021=
+2cfb6d0 0000000000000200 ffff880212cfb6c0
+Jul  1 21:58:36 nemi kernel: [ 3684.072479] Call Trace:
+Jul  1 21:58:36 nemi kernel: [ 3684.072489]  [<ffffffffa063592e>] ? wdm=
+_read+0x1a0/0x263 [cdc_wdm]
+Jul  1 21:58:36 nemi kernel: [ 3684.072500]  [<ffffffff8110adb7>] ? vfs=
+_read+0xa1/0xfb
+Jul  1 21:58:36 nemi kernel: [ 3684.072509]  [<ffffffff81040589>] ? ala=
+rm_setitimer+0x35/0x64
+Jul  1 21:58:36 nemi kernel: [ 3684.072517]  [<ffffffff8110aec7>] ? sys=
+_read+0x45/0x6e
+Jul  1 21:58:36 nemi kernel: [ 3684.072525]  [<ffffffff813725f9>] ? sys=
+tem_call_fastpath+0x16/0x1b
+Jul  1 21:58:36 nemi kernel: [ 3684.072557] Code: <66> 66 90 c3 83 ff e=
+d 89 f8 74 16 7f 06 83 ff a1 75 0a c3 83 ff f4
+
+The WDM_READ flag is normally cleared by wdm_int_callback
+before resubmitting the read urb, and set by wdm_in_callback
+when this urb returns with data or an error.  But a crashing
+device may cause both a read error and cancelling all urbs.
+Make sure that the flag is cleared by wdm_read if the buffer
+is empty.
+
+We don't clear the flag on errors, as there may be pending
+data in the buffer which should be processed.  The flag will
+instead be cleared on the next wdm_read call.
+
+Signed-off-by: Bj=C3=B8rn Mork <bjorn@mork.no>
+Acked-by: Oliver Neukum <oneukum@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ drivers/usb/class/cdc-wdm.c |    2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/usb/class/cdc-wdm.c b/drivers/usb/class/cdc-wdm.c
+index 8fd398d..ee46927 100644
+--- a/drivers/usb/class/cdc-wdm.c
++++ b/drivers/usb/class/cdc-wdm.c
+@@ -500,6 +500,8 @@ retry:
+ 			goto retry;
+ 		}
+ 		if (!desc->reslength) { /* zero length read */
++			dev_dbg(&desc->intf->dev, "%s: zero length - clearing WDM_READ\n", =
+__func__);
++			clear_bit(WDM_READ, &desc->flags);
+ 			spin_unlock_irq(&desc->iuspin);
+ 			goto retry;
+ 		}
+
+

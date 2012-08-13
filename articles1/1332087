@@ -1,0 +1,100 @@
+Path: news.gmane.org!not-for-mail
+From: Cyril Chemparathy <cyril@ti.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: [RFC 19/23] drivers: cma: fix addressing on PAE machines
+Date: Mon, 23 Jul 2012 21:09:21 -0400
+Lines: 41
+Approved: news@gmane.org
+Message-ID: <1343092165-9470-20-git-send-email-cyril@ti.com>
+References: <1343092165-9470-1-git-send-email-cyril@ti.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1343092551 7742 80.91.229.3 (24 Jul 2012 01:15:51 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 01:15:51 +0000 (UTC)
+Cc: <linux-kernel@vger.kernel.org>, <nico@linaro.org>,
+	<will.deacon@arm.com>, <catalin.marinas@arm.com>,
+	Cyril Chemparathy <cyril@ti.com>,
+	Vitaly Andrianov <vitalya@ti.com>
+To: <linux-arm-kernel@lists.infradead.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 03:15:50 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StTj3-00013F-7J
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 03:15:49 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755433Ab2GXBJv (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 21:09:51 -0400
+Original-Received: from bear.ext.ti.com ([192.94.94.41]:46932 "EHLO bear.ext.ti.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755147Ab2GXBJt (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 21:09:49 -0400
+Original-Received: from dlelxv30.itg.ti.com ([172.17.2.17])
+	by bear.ext.ti.com (8.13.7/8.13.7) with ESMTP id q6O19e3D030397;
+	Mon, 23 Jul 2012 20:09:40 -0500
+Original-Received: from DLEE74.ent.ti.com (dlee74.ent.ti.com [157.170.170.8])
+	by dlelxv30.itg.ti.com (8.13.8/8.13.8) with ESMTP id q6O19eSh010278;
+	Mon, 23 Jul 2012 20:09:40 -0500
+Original-Received: from dlelxv22.itg.ti.com (172.17.1.197) by DLEE74.ent.ti.com
+ (157.170.170.8) with Microsoft SMTP Server id 14.1.323.3; Mon, 23 Jul 2012
+ 20:09:40 -0500
+Original-Received: from ares-ubuntu.am.dhcp.ti.com (ares-ubuntu.am.dhcp.ti.com
+ [158.218.103.17])	by dlelxv22.itg.ti.com (8.13.8/8.13.8) with ESMTP id
+ q6O19dYW024611;	Mon, 23 Jul 2012 20:09:40 -0500
+Original-Received: from a0875269 by ares-ubuntu.am.dhcp.ti.com with local (Exim 4.76)
+	(envelope-from <cyril@ti.com>)	id 1StTd5-0002Ul-PQ; Mon, 23 Jul 2012 21:09:39
+ -0400
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1343092165-9470-1-git-send-email-cyril@ti.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332087 gmane.linux.ports.arm.kernel:178517
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332087>
+
+This patch fixes a couple of bugs that otherwise impair CMA functionality on
+PAE machines:
+
+  - alignment must be a 64-bit type when running on systems with 64-bit
+    physical addresses.  If this is not the case, the limit calculation thunks
+    allocations down to an address range < 4G.
+
+  - The allocated range is now being checked using dma_supported() instead of
+    hardcoding a 32-bit addressable limit.
+
+Signed-off-by: Vitaly Andrianov <vitalya@ti.com>
+Signed-off-by: Cyril Chemparathy <cyril@ti.com>
+---
+ drivers/base/dma-contiguous.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/base/dma-contiguous.c b/drivers/base/dma-contiguous.c
+index 78efb03..e10bd9a 100644
+--- a/drivers/base/dma-contiguous.c
++++ b/drivers/base/dma-contiguous.c
+@@ -234,7 +234,7 @@ int __init dma_declare_contiguous(struct device *dev, unsigned long size,
+ 				  phys_addr_t base, phys_addr_t limit)
+ {
+ 	struct cma_reserved *r = &cma_reserved[cma_reserved_count];
+-	unsigned long alignment;
++	phys_addr_t alignment;
+ 
+ 	pr_debug("%s(size %lx, base %08lx, limit %08lx)\n", __func__,
+ 		 (unsigned long)size, (unsigned long)base,
+@@ -271,7 +271,7 @@ int __init dma_declare_contiguous(struct device *dev, unsigned long size,
+ 		if (!addr) {
+ 			base = -ENOMEM;
+ 			goto err;
+-		} else if (addr + size > ~(unsigned long)0) {
++		} else if (!dma_supported(dev, addr + size)) {
+ 			memblock_free(addr, size);
+ 			base = -EINVAL;
+ 			goto err;
+-- 
+1.7.9.5
+

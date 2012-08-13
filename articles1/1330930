@@ -1,0 +1,87 @@
+Path: news.gmane.org!not-for-mail
+From: Paolo Bonzini <pbonzini@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.scsi
+Subject: [PATCH] sg_io: allow UNMAP and WRITE SAME without CAP_SYS_RAWIO
+Date: Fri, 20 Jul 2012 18:30:01 +0200
+Lines: 31
+Approved: news@gmane.org
+Message-ID: <1342801801-15617-1-git-send-email-pbonzini@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342801844 6645 80.91.229.3 (20 Jul 2012 16:30:44 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 16:30:44 +0000 (UTC)
+Cc: axboe@kernel.dk, linux-scsi@vger.kernel.org
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 18:30:43 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsG6A-0006Ql-IW
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 18:30:38 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752516Ab2GTQaR (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 12:30:17 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:62274 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750969Ab2GTQaO (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 12:30:14 -0400
+Original-Received: by pbbrp8 with SMTP id rp8so6382564pbb.19
+        for <multiple recipients>; Fri, 20 Jul 2012 09:30:14 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer;
+        bh=I/W2UK/9abggjHztCN5BYTnmVqIDSA/UvSVIulaW9j8=;
+        b=o8LdteA2u8CXNsARK9GxRMBUxwZptXK2+jYNN0YK+I0SypKYGoj5mp3l5OUMsrzEpm
+         UvVZ9iqU4ZB4OgBeJwldR/s/YV/4UMh5WRfJYHgmOz49pBNOR6pjK54R0UmW/Xs8dNRK
+         GJPxydaL3N37rfX3raewLYIifSMQr4TbQ/cHvDcsEXOOZs0vUpZe35AHk8ykVeoNAOzt
+         NWxHdZ+BTAF256hbD2rGedQnIGLuvZ1puGV1n5SGueThdN2bL1azD/uDyHDjF9YOY+Bm
+         mjou1YPHDDvQQ/+3SyA5B37YGv2fCuk2Ck1KQnuGtYBwVQqOlYSEHoPtlevuzLUrTcuE
+         gH5A==
+Original-Received: by 10.68.138.166 with SMTP id qr6mr15080585pbb.43.1342801814042;
+        Fri, 20 Jul 2012 09:30:14 -0700 (PDT)
+Original-Received: from yakj.usersys.redhat.com (93-34-189-113.ip51.fastwebnet.it. [93.34.189.113])
+        by mx.google.com with ESMTPS id pj10sm4247533pbb.46.2012.07.20.09.30.10
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 20 Jul 2012 09:30:12 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.4
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330930 gmane.linux.scsi:76463
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330930>
+
+These commands cannot be issued right now without giving CAP_SYS_RAWIO to
+the process who wishes to send them.  These commands can be useful also to
+non-privileged programs who have access to the block devices.  For example
+a virtual machine monitor needs them to forward trim/discard to host disks.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ block/scsi_ioctl.c |    3 ++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/block/scsi_ioctl.c b/block/scsi_ioctl.c
+index 260fa80..dd71f18 100644
+--- a/block/scsi_ioctl.c
++++ b/block/scsi_ioctl.c
+@@ -168,13 +168,16 @@ static void blk_set_cmd_filter_defaults(struct blk_cmd_filter *filter)
+ 	/* Basic writing commands */
+ 	__set_bit(WRITE_6, filter->write_ok);
+ 	__set_bit(WRITE_10, filter->write_ok);
++	__set_bit(WRITE_SAME, filter->write_ok);
+ 	__set_bit(WRITE_VERIFY, filter->write_ok);
+ 	__set_bit(WRITE_12, filter->write_ok);
+ 	__set_bit(WRITE_VERIFY_12, filter->write_ok);
+ 	__set_bit(WRITE_16, filter->write_ok);
++	__set_bit(WRITE_SAME_16, filter->write_ok);
+ 	__set_bit(WRITE_LONG, filter->write_ok);
+ 	__set_bit(WRITE_LONG_2, filter->write_ok);
+ 	__set_bit(ERASE, filter->write_ok);
++	__set_bit(UNMAP, filter->write_ok);
+ 	__set_bit(GPCMD_MODE_SELECT_10, filter->write_ok);
+ 	__set_bit(MODE_SELECT, filter->write_ok);
+ 	__set_bit(LOG_SELECT, filter->write_ok);

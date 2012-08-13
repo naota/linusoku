@@ -1,0 +1,96 @@
+Path: news.gmane.org!not-for-mail
+From: Minchan Kim <minchan@kernel.org>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH] compaction: fix deferring compaction mistake
+Date: Wed,  8 Aug 2012 09:57:44 +0900
+Lines: 36
+Approved: news@gmane.org
+Message-ID: <1344387464-10037-1-git-send-email-minchan@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344387387 8235 80.91.229.3 (8 Aug 2012 00:56:27 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 00:56:27 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org,
+	linux-mm@kvack.org,
+	Minchan Kim <minchan@kernel.org>,
+	Rik van Riel <riel@redhat.com>,
+	Mel Gorman <mel@csn.ul.ie>
+To: Andrew Morton <akpm@linux-foundation.org>
+Original-X-From: owner-linux-mm@kvack.org Wed Aug 08 02:56:23 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SyuZS-0001jp-E1
+	for glkm-linux-mm-2@m.gmane.org; Wed, 08 Aug 2012 02:56:22 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id E2EA16B004D; Tue,  7 Aug 2012 20:56:19 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id D258F6B005A; Tue,  7 Aug 2012 20:56:19 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 82BE56B005D; Tue,  7 Aug 2012 20:56:19 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx138.postini.com [74.125.245.138])
+	by kanga.kvack.org (Postfix) with SMTP id 7E9856B004D
+	for <linux-mm@kvack.org>; Tue,  7 Aug 2012 20:56:18 -0400 (EDT)
+Original-Received: from LGEMRELSE7Q.lge.com ([156.147.1.151]) by na3sys010amx138.postini.com ([74.125.244.10]) with SMTP;
+	Wed, 08 Aug 2012 00:56:18 GMT
+X-AuditID: 9c930197-b7b66ae000006a2c-5d-5021b92e07c1
+Original-Received: from localhost.localdomain ( [10.177.220.67])
+	by LGEMRELSE7Q.lge.com (Symantec Brightmail Gateway) with SMTP id CB.39.27180.E29B1205; Wed,  8 Aug 2012 09:56:14 +0900 (KST)
+X-Mailer: git-send-email 1.7.9.5
+X-Brightmail-Tracker: AAAAAA==
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:93.99506/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <minchan@kernel.org> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83788 gmane.linux.kernel:1339717
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339717>
+
+[1] fixed bad deferring policy but made mistake about checking
+compact_order_failed in __compact_pgdat so it can't update
+compact_order_failed with new order. It ends up preventing working
+of deffering policy rightly. This patch fixes it.
+
+[1] aff62249, vmscan: only defer compaction for failed order and higher
+
+Cc: Rik van Riel <riel@redhat.com>
+Cc: Mel Gorman <mel@csn.ul.ie>
+Signed-off-by: Minchan Kim <minchan@kernel.org>
+---
+ mm/compaction.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/mm/compaction.c b/mm/compaction.c
+index e78cb96..b6984e2 100644
+--- a/mm/compaction.c
++++ b/mm/compaction.c
+@@ -861,7 +861,7 @@ static int __compact_pgdat(pg_data_t *pgdat, struct compact_control *cc)
+ 		if (cc->order > 0) {
+ 			int ok = zone_watermark_ok(zone, cc->order,
+ 						low_wmark_pages(zone), 0, 0);
+-			if (ok && cc->order > zone->compact_order_failed)
++			if (ok && cc->order >= zone->compact_order_failed)
+ 				zone->compact_order_failed = cc->order + 1;
+ 			/* Currently async compaction is never deferred. */
+ 			else if (!ok && cc->sync)
+-- 
+1.7.9.5
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

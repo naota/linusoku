@@ -1,0 +1,124 @@
+Path: news.gmane.org!not-for-mail
+From: Cyril Chemparathy <cyril@ti.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: [RFC 03/23] ARM: LPAE: use phys_addr_t on virt <--> phys conversion
+Date: Mon, 23 Jul 2012 21:09:05 -0400
+Lines: 65
+Approved: news@gmane.org
+Message-ID: <1343092165-9470-4-git-send-email-cyril@ti.com>
+References: <1343092165-9470-1-git-send-email-cyril@ti.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1343092237 5776 80.91.229.3 (24 Jul 2012 01:10:37 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 01:10:37 +0000 (UTC)
+Cc: <linux-kernel@vger.kernel.org>, <nico@linaro.org>,
+	<will.deacon@arm.com>, <catalin.marinas@arm.com>,
+	Cyril Chemparathy <cyril@ti.com>,
+	Vitaly Andrianov <vitalya@ti.com>
+To: <linux-arm-kernel@lists.infradead.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 03:10:34 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StTdv-0005Wk-U9
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 03:10:32 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755803Ab2GXBK0 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 21:10:26 -0400
+Original-Received: from bear.ext.ti.com ([192.94.94.41]:46981 "EHLO bear.ext.ti.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755591Ab2GXBKS (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 21:10:18 -0400
+Original-Received: from dlelxv30.itg.ti.com ([172.17.2.17])
+	by bear.ext.ti.com (8.13.7/8.13.7) with ESMTP id q6O19cH1030390;
+	Mon, 23 Jul 2012 20:09:38 -0500
+Original-Received: from DFLE73.ent.ti.com (dfle73.ent.ti.com [128.247.5.110])
+	by dlelxv30.itg.ti.com (8.13.8/8.13.8) with ESMTP id q6O19cs2010225;
+	Mon, 23 Jul 2012 20:09:38 -0500
+Original-Received: from dlelxv22.itg.ti.com (172.17.1.197) by dfle73.ent.ti.com
+ (128.247.5.110) with Microsoft SMTP Server id 14.1.323.3; Mon, 23 Jul 2012
+ 20:09:38 -0500
+Original-Received: from ares-ubuntu.am.dhcp.ti.com (ares-ubuntu.am.dhcp.ti.com
+ [158.218.103.17])	by dlelxv22.itg.ti.com (8.13.8/8.13.8) with ESMTP id
+ q6O19caU024555;	Mon, 23 Jul 2012 20:09:38 -0500
+Original-Received: from a0875269 by ares-ubuntu.am.dhcp.ti.com with local (Exim 4.76)
+	(envelope-from <cyril@ti.com>)	id 1StTd3-0002Tz-VG; Mon, 23 Jul 2012 21:09:38
+ -0400
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1343092165-9470-1-git-send-email-cyril@ti.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332070 gmane.linux.ports.arm.kernel:178500
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332070>
+
+This patch fixes up the types used when converting back and forth between
+physical and virtual addresses.
+
+Signed-off-by: Vitaly Andrianov <vitalya@ti.com>
+Signed-off-by: Cyril Chemparathy <cyril@ti.com>
+---
+ arch/arm/include/asm/memory.h |   17 +++++++++++------
+ 1 file changed, 11 insertions(+), 6 deletions(-)
+
+diff --git a/arch/arm/include/asm/memory.h b/arch/arm/include/asm/memory.h
+index fcb5757..7629dfe 100644
+--- a/arch/arm/include/asm/memory.h
++++ b/arch/arm/include/asm/memory.h
+@@ -169,22 +169,27 @@ extern unsigned long __pv_phys_offset;
+ 	: "=r" (to)					\
+ 	: "r" (from), "I" (type))
+ 
+-static inline unsigned long __virt_to_phys(unsigned long x)
++static inline phys_addr_t __virt_to_phys(unsigned long x)
+ {
+ 	unsigned long t;
+ 	__pv_stub(x, t, "add", __PV_BITS_31_24);
+ 	return t;
+ }
+ 
+-static inline unsigned long __phys_to_virt(unsigned long x)
++static inline unsigned long __phys_to_virt(phys_addr_t x)
+ {
+ 	unsigned long t;
+ 	__pv_stub(x, t, "sub", __PV_BITS_31_24);
+ 	return t;
+ }
+ #else
+-#define __virt_to_phys(x)	((x) - PAGE_OFFSET + PHYS_OFFSET)
+-#define __phys_to_virt(x)	((x) - PHYS_OFFSET + PAGE_OFFSET)
++
++#define __virt_to_phys(x)		\
++	((phys_addr_t)(x) - PAGE_OFFSET + PHYS_OFFSET)
++
++#define __phys_to_virt(x)		\
++	((unsigned long)((phys_addr_t)(x) - PHYS_OFFSET + PAGE_OFFSET))
++
+ #endif
+ #endif
+ 
+@@ -219,14 +224,14 @@ static inline phys_addr_t virt_to_phys(const volatile void *x)
+ 
+ static inline void *phys_to_virt(phys_addr_t x)
+ {
+-	return (void *)(__phys_to_virt((unsigned long)(x)));
++	return (void *)__phys_to_virt(x);
+ }
+ 
+ /*
+  * Drivers should NOT use these either.
+  */
+ #define __pa(x)			__virt_to_phys((unsigned long)(x))
+-#define __va(x)			((void *)__phys_to_virt((unsigned long)(x)))
++#define __va(x)			((void *)__phys_to_virt((phys_addr_t)(x)))
+ #define pfn_to_kaddr(pfn)	__va((pfn) << PAGE_SHIFT)
+ 
+ /*
+-- 
+1.7.9.5
+

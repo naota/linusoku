@@ -1,0 +1,88 @@
+Path: news.gmane.org!not-for-mail
+From: Takuya Yoshikawa <yoshikawa.takuya@oss.ntt.co.jp>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.kvm.devel
+Subject: [PATCH 5/5] KVM: Replace test_and_set_bit_le() in
+ mark_page_dirty_in_slot() with set_bit_le()
+Date: Tue, 7 Aug 2012 20:12:32 +0900
+Lines: 29
+Approved: news@gmane.org
+Message-ID: <20120807201232.30aa6242.yoshikawa.takuya@oss.ntt.co.jp>
+References: <20120807200759.26ca8faa.yoshikawa.takuya@oss.ntt.co.jp>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=US-ASCII
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344338004 16456 80.91.229.3 (7 Aug 2012 11:13:24 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 11:13:24 +0000 (UTC)
+Cc: bhutchings@solarflare.com, grundler@parisc-linux.org,
+	arnd@arndb.de, benh@kernel.crashing.org, avi@redhat.com,
+	mtosatti@redhat.com, linux-kernel@vger.kernel.org,
+	kvm@vger.kernel.org, takuya.yoshikawa@gmail.com
+To: akpm@linux-foundation.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 13:13:21 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Syhiv-0001uD-1h
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 13:13:17 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754169Ab2HGLNI (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 07:13:08 -0400
+Original-Received: from tama500.ecl.ntt.co.jp ([129.60.39.148]:51022 "EHLO
+	tama500.ecl.ntt.co.jp" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751690Ab2HGLNG (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 07:13:06 -0400
+Original-Received: from mfs5.rdh.ecl.ntt.co.jp (mfs5.rdh.ecl.ntt.co.jp [129.60.39.144])
+	by tama500.ecl.ntt.co.jp (8.14.5/8.14.5) with ESMTP id q77BCpYx016291;
+	Tue, 7 Aug 2012 20:12:51 +0900 (JST)
+Original-Received: from mfs5.rdh.ecl.ntt.co.jp (localhost.localdomain [127.0.0.1])
+	by mfs5.rdh.ecl.ntt.co.jp (Postfix) with ESMTP id EF857E00F2;
+	Tue,  7 Aug 2012 20:12:50 +0900 (JST)
+Original-Received: from imail2.m.ecl.ntt.co.jp (imail2.m.ecl.ntt.co.jp [129.60.5.247])
+	by mfs5.rdh.ecl.ntt.co.jp (Postfix) with ESMTP id DA133E00F1;
+	Tue,  7 Aug 2012 20:12:50 +0900 (JST)
+Original-Received: from yshpad ([129.60.241.248])
+	by imail2.m.ecl.ntt.co.jp (8.13.8/8.13.8) with SMTP id q77BCo7M007452;
+	Tue, 7 Aug 2012 20:12:50 +0900
+In-Reply-To: <20120807200759.26ca8faa.yoshikawa.takuya@oss.ntt.co.jp>
+X-Mailer: Sylpheed 3.1.0 (GTK+ 2.24.4; x86_64-pc-linux-gnu)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338945 gmane.comp.emulators.kvm.devel:95690
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338945>
+
+From: Takuya Yoshikawa <yoshikawa.takuya@oss.ntt.co.jp>
+
+Now that we have defined generic set_bit_le() we do not need to use
+test_and_set_bit_le() for atomically setting a bit.
+
+Signed-off-by: Takuya Yoshikawa <yoshikawa.takuya@oss.ntt.co.jp>
+Cc: Avi Kivity <avi@redhat.com>
+Cc: Marcelo Tosatti <mtosatti@redhat.com>
+---
+ virt/kvm/kvm_main.c |    3 +--
+ 1 files changed, 1 insertions(+), 2 deletions(-)
+
+diff --git a/virt/kvm/kvm_main.c b/virt/kvm/kvm_main.c
+index a2e85af..b983f23 100644
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -1440,8 +1440,7 @@ void mark_page_dirty_in_slot(struct kvm *kvm, struct kvm_memory_slot *memslot,
+ 	if (memslot && memslot->dirty_bitmap) {
+ 		unsigned long rel_gfn = gfn - memslot->base_gfn;
+ 
+-		/* TODO: introduce set_bit_le() and use it */
+-		test_and_set_bit_le(rel_gfn, memslot->dirty_bitmap);
++		set_bit_le(rel_gfn, memslot->dirty_bitmap);
+ 	}
+ }
+ 
+-- 
+1.7.5.4
+

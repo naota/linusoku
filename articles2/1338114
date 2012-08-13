@@ -1,0 +1,143 @@
+Path: news.gmane.org!not-for-mail
+From: Namhyung Kim <namhyung@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 5/7] perf hists: Use hpp_functions->width to calculate the column widths
+Date: Mon,  6 Aug 2012 17:57:40 +0900
+Lines: 93
+Approved: news@gmane.org
+Message-ID: <1344243462-28403-6-git-send-email-namhyung@kernel.org>
+References: <1344243462-28403-1-git-send-email-namhyung@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344243891 10751 80.91.229.3 (6 Aug 2012 09:04:51 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 09:04:51 +0000 (UTC)
+Cc: Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Paul Mackerras <paulus@samba.org>,
+	Ingo Molnar <mingo@kernel.org>,
+	LKML <linux-kernel@vger.kernel.org>,
+	Stephane Eranian <eranian@google.com>,
+	Pekka Enberg <penberg@kernel.org>,
+	Namhyung Kim <namhyung.kim@lge.com>
+To: Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Aug 06 11:04:50 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyJF3-0008VQ-T0
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 06 Aug 2012 11:04:50 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755435Ab2HFJEl (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 05:04:41 -0400
+Original-Received: from LGEMRELSE6Q.lge.com ([156.147.1.121]:51175 "EHLO
+	LGEMRELSE6Q.lge.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754143Ab2HFJDx (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 05:03:53 -0400
+X-AuditID: 9c930179-b7bdcae000003d91-35-501f8875f301
+Original-Received: from sejong.aot.lge.com ( [10.177.220.181])
+	by LGEMRELSE6Q.lge.com (Symantec Brightmail Gateway) with SMTP id 5E.DB.15761.5788F105; Mon,  6 Aug 2012 18:03:49 +0900 (KST)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1344243462-28403-1-git-send-email-namhyung@kernel.org>
+X-Brightmail-Tracker: AAAAAA==
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338114
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338114>
+
+From: Namhyung Kim <namhyung.kim@lge.com>
+
+Signed-off-by: Namhyung Kim <namhyung@kernel.org>
+---
+ tools/perf/ui/hist.c   | 27 +++++++++++++++++++++++++++
+ tools/perf/util/hist.c | 33 ---------------------------------
+ 2 files changed, 27 insertions(+), 33 deletions(-)
+
+diff --git a/tools/perf/ui/hist.c b/tools/perf/ui/hist.c
+index 01724a9905c0..1293546cf7f2 100644
+--- a/tools/perf/ui/hist.c
++++ b/tools/perf/ui/hist.c
+@@ -835,6 +835,33 @@ out:
+ 	return ret;
+ }
+ 
++/*
++ * See hists__fprintf to match the column widths
++ */
++unsigned int hists__sort_list_width(struct hists *hists)
++{
++	struct sort_entry *se;
++	int i, ret = 0;
++
++	for (i = 0; i < PERF_HPP__MAX_INDEX; i++) {
++		if (!hpp_functions[i].cond)
++			continue;
++		if (i)
++			ret += 2;
++
++		ret += hpp_functions[i].width(NULL);
++	}
++
++	list_for_each_entry(se, &hist_entry__sort_list, list)
++		if (!se->elide)
++			ret += 2 + hists__col_len(hists, se->se_width_idx);
++
++	if (verbose) /* Addr + origin */
++		ret += 3 + BITS_PER_LONG / 4;
++
++	return ret;
++}
++
+ size_t hists__fprintf_nr_events(struct hists *hists, FILE *fp)
+ {
+ 	int i;
+diff --git a/tools/perf/util/hist.c b/tools/perf/util/hist.c
+index b1817f15bb87..0ba65ad07cd1 100644
+--- a/tools/perf/util/hist.c
++++ b/tools/perf/util/hist.c
+@@ -563,39 +563,6 @@ void hists__output_resort_threaded(struct hists *hists)
+ 	return __hists__output_resort(hists, true);
+ }
+ 
+-/*
+- * See hists__fprintf to match the column widths
+- */
+-unsigned int hists__sort_list_width(struct hists *hists)
+-{
+-	struct sort_entry *se;
+-	int ret = 9; /* total % */
+-
+-	if (symbol_conf.show_cpu_utilization) {
+-		ret += 7; /* count_sys % */
+-		ret += 6; /* count_us % */
+-		if (perf_guest) {
+-			ret += 13; /* count_guest_sys % */
+-			ret += 12; /* count_guest_us % */
+-		}
+-	}
+-
+-	if (symbol_conf.show_nr_samples)
+-		ret += 11;
+-
+-	if (symbol_conf.show_total_period)
+-		ret += 13;
+-
+-	list_for_each_entry(se, &hist_entry__sort_list, list)
+-		if (!se->elide)
+-			ret += 2 + hists__col_len(hists, se->se_width_idx);
+-
+-	if (verbose) /* Addr + origin */
+-		ret += 3 + BITS_PER_LONG / 4;
+-
+-	return ret;
+-}
+-
+ static void hists__remove_entry_filter(struct hists *hists, struct hist_entry *h,
+ 				       enum hist_filter filter)
+ {
+-- 
+1.7.11.2
+

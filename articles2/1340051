@@ -1,0 +1,111 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.file-systems,gmane.linux.nfs
+Subject: [PATCH v5 09/19] vfs: fix mkdir to retry on ESTALE errors
+Date: Wed,  8 Aug 2012 09:21:32 -0400
+Lines: 49
+Approved: news@gmane.org
+Message-ID: <1344432102-22312-10-git-send-email-jlayton@redhat.com>
+References: <1344432102-22312-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344432376 560 80.91.229.3 (8 Aug 2012 13:26:16 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 13:26:16 +0000 (UTC)
+Cc: linux-fsdevel@vger.kernel.org, linux-nfs@vger.kernel.org,
+	linux-kernel@vger.kernel.org, michael.brantley@deshaw.com,
+	hch@infradead.org, miklos@szeredi.hu, pstaubach@exagrid.com
+To: viro@ZenIV.linux.org.uk
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 15:26:15 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sz6H7-0003c9-FW
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 15:26:13 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1758573Ab2HHN0G (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 09:26:06 -0400
+Original-Received: from mail-gg0-f174.google.com ([209.85.161.174]:39317 "EHLO
+	mail-gg0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1758452Ab2HHNWA (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 09:22:00 -0400
+Original-Received: by mail-gg0-f174.google.com with SMTP id k6so15227ggd.19
+        for <linux-kernel@vger.kernel.org>; Wed, 08 Aug 2012 06:22:00 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:x-gm-message-state;
+        bh=bxGWTLszL6+e+BJAXrTxV7HQmZkZDbL0uW5tw3USUR4=;
+        b=PV9djf3m8OkTNi7HyOe7RzAEM7h/+U4PqV5MlPzoPLqPfzRhlBMHBag60jCwyndmFa
+         uhEhzNctAQXjJl0BhSxWpDkVauQZxgDE0BETUMNDSKxDliVn5uo1gGhI+myW2QQHiKOP
+         mrUmbm/Hi0dVKQrdGysFWv40lB6yWHdfzlbUbGKLjvYz1Jj5dt4nKVZXeSYAZ+/0gA6E
+         Mhf3FspQoqGXQa02wbutVWxpoW7JNQBPiG5z+mIztd88t9A6kVhmYpB7rBFaBdyqZBBN
+         VEE4ApAS9sv7z6Svp24D3T5bXMBR7AZATSrwH/y6j3R5jB1HUXBh2+okj4AeNM0HCXTR
+         DX/A==
+Original-Received: by 10.236.176.71 with SMTP id a47mr271500yhm.43.1344432120411;
+        Wed, 08 Aug 2012 06:22:00 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-069-134-145-027.nc.res.rr.com. [69.134.145.27])
+        by mx.google.com with ESMTPS id l1sm24418002yhm.19.2012.08.08.06.21.59
+        (version=SSLv3 cipher=OTHER);
+        Wed, 08 Aug 2012 06:21:59 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1344432102-22312-1-git-send-email-jlayton@redhat.com>
+X-Gm-Message-State: ALoCoQlJImVCc3L+st1gvgoacYdmSxg9gglTA/GDsIB4AX8PUHfgsjEWZUp1k54RRYV6b+81HwuP
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340051 gmane.linux.file-systems:66469 gmane.linux.nfs:51373
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340051>
+
+Signed-off-by: Jeff Layton <jlayton@redhat.com>
+---
+ fs/namei.c | 29 +++++++++++++++++++----------
+ 1 file changed, 19 insertions(+), 10 deletions(-)
+
+diff --git a/fs/namei.c b/fs/namei.c
+index 0a0397f..9fd5163 100644
+--- a/fs/namei.c
++++ b/fs/namei.c
+@@ -3190,17 +3190,26 @@ SYSCALL_DEFINE3(mkdirat, int, dfd, const char __user *, pathname, umode_t, mode)
+ 	struct dentry *dentry;
+ 	struct path path;
+ 	int error;
++	char *name;
++	unsigned int try = 0;
+ 
+-	dentry = user_path_create(dfd, pathname, &path, 1);
+-	if (IS_ERR(dentry))
+-		return PTR_ERR(dentry);
+-
+-	if (!IS_POSIXACL(path.dentry->d_inode))
+-		mode &= ~current_umask();
+-	error = security_path_mkdir(&path, dentry, mode);
+-	if (!error)
+-		error = vfs_mkdir(path.dentry->d_inode, dentry, mode);
+-	done_path_create(&path, dentry);
++	name = getname(pathname);
++	if (IS_ERR(name))
++		return PTR_ERR(name);
++	do {
++		dentry = kern_path_create(dfd, name, &path, true, try);
++		if (IS_ERR(dentry)) {
++			error = PTR_ERR(dentry);
++			break;
++		}
++		if (!IS_POSIXACL(path.dentry->d_inode))
++			mode &= ~current_umask();
++		error = security_path_mkdir(&path, dentry, mode);
++		if (!error)
++			error = vfs_mkdir(path.dentry->d_inode, dentry, mode);
++		done_path_create(&path, dentry);
++	} while (retry_estale(error, try++));
++	putname(name);
+ 	return error;
+ }
+ 
+-- 
+1.7.11.2
+

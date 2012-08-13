@@ -1,0 +1,154 @@
+Path: news.gmane.org!not-for-mail
+From: "Rafael J. Wysocki" <rjw@sisk.pl>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] RTC: Avoid races between RTC alarm wakeup and suspend.
+Date: Sun, 5 Aug 2012 23:11:28 +0200
+Lines: 97
+Approved: news@gmane.org
+Message-ID: <201208052311.28823.rjw@sisk.pl>
+References: <20120730113547.2c425ea9@notabene.brown> <201207302301.49972.rjw@sisk.pl> <20120731125104.7a07f251@notabene.brown>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain;
+  charset="iso-8859-2"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344200764 31467 80.91.229.3 (5 Aug 2012 21:06:04 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 5 Aug 2012 21:06:04 +0000 (UTC)
+Cc: Alessandro Zummo <a.zummo@towertech.it>,
+	rtc-linux@googlegroups.com, linux-pm@vger.kernel.org,
+	linux-kernel@vger.kernel.org, Paul Fox <pgf@laptop.org>
+To: NeilBrown <neilb@suse.de>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Aug 05 23:06:04 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sy81Q-0003NR-Dh
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 05 Aug 2012 23:06:00 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755039Ab2HEVFo (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 5 Aug 2012 17:05:44 -0400
+Original-Received: from ogre.sisk.pl ([193.178.161.156]:42738 "EHLO ogre.sisk.pl"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754936Ab2HEVFn (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 5 Aug 2012 17:05:43 -0400
+Original-Received: from localhost (localhost.localdomain [127.0.0.1])
+	by ogre.sisk.pl (Postfix) with ESMTP id E14B61DB6D1;
+	Sun,  5 Aug 2012 22:56:06 +0200 (CEST)
+Original-Received: from ogre.sisk.pl ([127.0.0.1])
+ by localhost (ogre.sisk.pl [127.0.0.1]) (amavisd-new, port 10024) with ESMTP
+ id 29763-06; Sun,  5 Aug 2012 22:55:50 +0200 (CEST)
+Original-Received: from ferrari.rjw.lan (62-121-64-87.home.aster.pl [62.121.64.87])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by ogre.sisk.pl (Postfix) with ESMTP id 6E8911DB4D4;
+	Sun,  5 Aug 2012 22:55:50 +0200 (CEST)
+User-Agent: KMail/1.13.6 (Linux/3.5.0+; KDE/4.6.0; x86_64; ; )
+In-Reply-To: <20120731125104.7a07f251@notabene.brown>
+X-Virus-Scanned: amavisd-new at ogre.sisk.pl using MkS_Vir for Linux
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337903
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337903>
+
+On Tuesday, July 31, 2012, NeilBrown wrote:
+> On Mon, 30 Jul 2012 23:01:49 +0200 "Rafael J. Wysocki" <rjw@sisk.pl> wrote:
+> 
+> > On Monday, July 30, 2012, NeilBrown wrote:
+> > > 
+> > > If an RTC alarm fires just as suspend is happening, it is possible for
+> > > suspend to complete and the alarm to be missed.
+> > > 
+> > > To avoid the race, we must register the event with the PM core.
+> > > 
+> > > As the event is made visible to userspace through a thread which is
+> > > only scheduled by the interrupt, we need a pm_stay_awake/pm_relax
+> > > pair preventing suspend from the interrupt until the thread completes
+> > > its work.
+> > > 
+> > > Signed-off-by: NeilBrown <neilb@suse.de>
+> > > 
+> > > --
+> > > This makes the pm_wakeup_event() call in cmos_interrupt unnecessary as it
+> > > provides suspend protection for all RTCs that use rtc_update_irq.
+> > 
+> > Care to remove the call in cmos_interrupt(), then?
+> > 
+> > > I think the pm_stay_awake//pm_relax is needed - just pm_wakup_event() is 
+> > > theoretically not sufficient.
+> > > 
+> > > This is because there is no guarantee (that I know of) that the workqueue
+> > > thread will actually get scheduled before 'suspend' takes over.
+> > 
+> > I think you are right.
+> 
+> Thanks.
+> Here is the revised patch.
+> 
+> NeilBrown
+> 
+> 
+> ==========
+> Subject: [PATCH] RTC: Avoid races between RTC alarm wakeup and suspend.
+> 
+> If an RTC alarm fires just as suspend is happening, it is possible for
+> suspend to complete and the alarm to be missed.
+> 
+> To avoid the race, we must register the event with the PM core.
+> 
+> As the event is made visible to userspace through a thread which is
+> only scheduled by the interrupt, we need a pm_stay_awake/pm_relax
+> pair preventing suspend from the interrupt until the thread completes
+> its work.
+> 
+> This makes the pm_wakeup_event() call in cmos_interrupt unnecessary as
+> it provides suspend protection for all RTCs that use rtc_update_irq.
+> 
+> Cc: Paul Fox <pgf@laptop.org>
+> Signed-off-by: NeilBrown <neilb@suse.de>
+
+Applied to the linux-next branch of the linux-pm.git tree.  I'm going to
+push it as a fix for v3.6.
+
+Thanks,
+Rafael
+
+
+> diff --git a/drivers/rtc/interface.c b/drivers/rtc/interface.c
+> index eb415bd..9592b93 100644
+> --- a/drivers/rtc/interface.c
+> +++ b/drivers/rtc/interface.c
+> @@ -582,6 +582,7 @@ enum hrtimer_restart rtc_pie_update_irq(struct hrtimer *timer)
+>  void rtc_update_irq(struct rtc_device *rtc,
+>  		unsigned long num, unsigned long events)
+>  {
+> +	pm_stay_awake(rtc->dev.parent);
+>  	schedule_work(&rtc->irqwork);
+>  }
+>  EXPORT_SYMBOL_GPL(rtc_update_irq);
+> @@ -844,6 +845,7 @@ void rtc_timer_do_work(struct work_struct *work)
+>  
+>  	mutex_lock(&rtc->ops_lock);
+>  again:
+> +	pm_relax(rtc->dev.parent);
+>  	__rtc_read_time(rtc, &tm);
+>  	now = rtc_tm_to_ktime(tm);
+>  	while ((next = timerqueue_getnext(&rtc->timerqueue))) {
+> diff --git a/drivers/rtc/rtc-cmos.c b/drivers/rtc/rtc-cmos.c
+> index 132333d..4267789 100644
+> --- a/drivers/rtc/rtc-cmos.c
+> +++ b/drivers/rtc/rtc-cmos.c
+> @@ -568,7 +568,6 @@ static irqreturn_t cmos_interrupt(int irq, void *p)
+>  		hpet_mask_rtc_irq_bit(RTC_AIE);
+>  
+>  		CMOS_READ(RTC_INTR_FLAGS);
+> -		pm_wakeup_event(cmos_rtc.dev, 0);
+>  	}
+>  	spin_unlock(&rtc_lock);
+>  
+> 
+

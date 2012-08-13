@@ -1,0 +1,134 @@
+Path: news.gmane.org!not-for-mail
+From: Alex Williamson <alex.williamson-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org>
+Newsgroups: gmane.linux.kernel.iommu,gmane.linux.kernel.pci,gmane.linux.kernel
+Subject: [PATCH 2/2] amd-iommu: Fix ACS path checking
+Date: Sat, 04 Aug 2012 12:09:03 -0600
+Lines: 60
+Approved: news@gmane.org
+Message-ID: <20120804180901.6144.28457.stgit@bling.home>
+References: <20120804180155.6144.83332.stgit@bling.home>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344103775 7769 80.91.229.3 (4 Aug 2012 18:09:35 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 4 Aug 2012 18:09:35 +0000 (UTC)
+Cc: linux-pci-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, iommu-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org,
+	linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, dsahern-Re5JQEeQqe8AvxtiuMwx3w@public.gmane.org
+To: joerg.roedel-5C7GfCeVMHo@public.gmane.org, dwmw2-wEGCiKHe2LqWVfeAwA7xHQ@public.gmane.org
+Original-X-From: iommu-bounces-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org Sat Aug 04 20:09:35 2012
+Return-path: <iommu-bounces-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org>
+Envelope-to: glki-iommu@m.gmane.org
+Original-Received: from mail.linuxfoundation.org ([140.211.169.12])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <iommu-bounces-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org>)
+	id 1Sxin5-00047k-MW
+	for glki-iommu@m.gmane.org; Sat, 04 Aug 2012 20:09:32 +0200
+Original-Received: from mail.linux-foundation.org (localhost [IPv6:::1])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id BAB98830;
+	Sat,  4 Aug 2012 18:09:30 +0000 (UTC)
+X-Original-To: iommu-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org
+Delivered-To: iommu-i9wRM+HIrmnmtl4Z8vJ8Kg761KYD1DLY@public.gmane.org
+Original-Received: from smtp1.linuxfoundation.org (smtp1.linux-foundation.org
+	[172.17.192.35])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id 595797F4
+	for <iommu-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org>;
+	Sat,  4 Aug 2012 18:09:29 +0000 (UTC)
+X-Greylist: domain auto-whitelisted by SQLgrey-1.7.6
+Original-Received: from mx1.redhat.com (mx1.redhat.com [209.132.183.28])
+	by smtp1.linuxfoundation.org (Postfix) with ESMTP id F3ED61F7CC
+	for <iommu-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org>;
+	Sat,  4 Aug 2012 18:09:28 +0000 (UTC)
+Original-Received: from int-mx10.intmail.prod.int.phx2.redhat.com
+	(int-mx10.intmail.prod.int.phx2.redhat.com [10.5.11.23])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q74I94L3024854
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Sat, 4 Aug 2012 14:09:04 -0400
+Original-Received: from bling.home (ovpn-113-63.phx2.redhat.com [10.3.113.63])
+	by int-mx10.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP
+	id q74I93q5011182; Sat, 4 Aug 2012 14:09:03 -0400
+In-Reply-To: <20120804180155.6144.83332.stgit-xdHQ/5r00wBBDLzU/O5InQ@public.gmane.org>
+User-Agent: StGIT/0.14.3
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.23
+X-Spam-Status: No, score=-6.9 required=5.0 tests=BAYES_00,RCVD_IN_DNSWL_HI,
+	T_RP_MATCHES_RCVD autolearn=ham version=3.3.1
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on
+	smtp1.linux-foundation.org
+X-BeenThere: iommu-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org
+X-Mailman-Version: 2.1.12
+Precedence: list
+List-Id: Development issues for Linux IOMMU support
+	<iommu.lists.linux-foundation.org>
+List-Unsubscribe: <https://lists.linuxfoundation.org/mailman/options/iommu>,
+	<mailto:iommu-request-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org?subject=unsubscribe>
+List-Archive: <http://lists.linuxfoundation.org/pipermail/iommu/>
+List-Post: <mailto:iommu-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org>
+List-Help: <mailto:iommu-request-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org?subject=help>
+List-Subscribe: <https://lists.linuxfoundation.org/mailman/listinfo/iommu>,
+	<mailto:iommu-request-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org?subject=subscribe>
+Original-Sender: iommu-bounces-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org
+Errors-To: iommu-bounces-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org
+Xref: news.gmane.org gmane.linux.kernel.iommu:1032 gmane.linux.kernel.pci:16885 gmane.linux.kernel:1337720
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337720>
+
+SR-IOV can create buses without a bridge.  There may be other cases
+where this happens as well.  In these cases skip to the parent bus
+and continue testing devices there.
+    
+Signed-off-by: Alex Williamson <alex.williamson-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org>
+---
+
+ drivers/iommu/amd_iommu.c |   25 ++++++++++++++++++++++---
+ 1 file changed, 22 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/iommu/amd_iommu.c b/drivers/iommu/amd_iommu.c
+index 6d1cbdf..b64502d 100644
+--- a/drivers/iommu/amd_iommu.c
++++ b/drivers/iommu/amd_iommu.c
+@@ -296,8 +296,13 @@ static int iommu_init_device(struct device *dev)
+ 	} else
+ 		dma_pdev = pci_dev_get(pdev);
+ 
++	/* Account for quirked devices */
+ 	swap_pci_ref(&dma_pdev, pci_get_dma_source(dma_pdev));
+ 
++	/*
++	 * If it's a multifunction device that does not support our
++	 * required ACS flags, add to the same group as function 0.
++	 */
+ 	if (dma_pdev->multifunction &&
+ 	    !pci_acs_enabled(dma_pdev, REQ_ACS_FLAGS))
+ 		swap_pci_ref(&dma_pdev,
+@@ -305,14 +310,28 @@ static int iommu_init_device(struct device *dev)
+ 					  PCI_DEVFN(PCI_SLOT(dma_pdev->devfn),
+ 					  0)));
+ 
++	/*
++	 * Devices on the root bus go through the iommu.  If that's not us,
++	 * find the next upstream device and test ACS up to the root bus.
++	 * Finding the next device may require skipping virtual buses.
++	 */
+ 	while (!pci_is_root_bus(dma_pdev->bus)) {
+-		if (pci_acs_path_enabled(dma_pdev->bus->self,
+-					 NULL, REQ_ACS_FLAGS))
++		struct pci_bus *bus = dma_pdev->bus;
++
++		while (!bus->self) {
++			if (!pci_is_root_bus(bus))
++				bus = bus->parent;
++			else
++				goto root_bus;
++		}
++
++		if (pci_acs_path_enabled(bus->self, NULL, REQ_ACS_FLAGS))
+ 			break;
+ 
+-		swap_pci_ref(&dma_pdev, pci_dev_get(dma_pdev->bus->self));
++		swap_pci_ref(&dma_pdev, pci_dev_get(bus->self));
+ 	}
+ 
++root_bus:
+ 	group = iommu_group_get(&dma_pdev->dev);
+ 	pci_dev_put(dma_pdev);
+ 	if (!group) {

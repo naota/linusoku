@@ -1,0 +1,122 @@
+Path: news.gmane.org!not-for-mail
+From: Herton Ronaldo Krzesinski <herton.krzesinski@canonical.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: Re: [ 35/73] ASoC: dapm: Fix locking during codec shutdown
+Date: Tue, 31 Jul 2012 13:11:01 -0300
+Lines: 69
+Approved: news@gmane.org
+Message-ID: <20120731161100.GB3111@herton-Z68MA-D2H-B3>
+References: <20120731044310.013763753@decadent.org.uk>
+ <20120731044316.865191013@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343751079 21772 80.91.229.3 (31 Jul 2012 16:11:19 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 16:11:19 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, stable@vger.kernel.org,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Liam Girdwood <lrg@ti.com>,
+	Misael Lopez Cruz <misael.lopez@ti.com>,
+	Mark Brown <broonie@opensource.wolfsonmicro.com>
+To: Ben Hutchings <ben@decadent.org.uk>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 18:11:18 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwF2S-00082d-US
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 18:11:17 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755494Ab2GaQLJ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 12:11:09 -0400
+Original-Received: from youngberry.canonical.com ([91.189.89.112]:56689 "EHLO
+	youngberry.canonical.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754562Ab2GaQLH (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 12:11:07 -0400
+Original-Received: from [189.58.135.194] (helo=canonical.com)
+	by youngberry.canonical.com with esmtpsa (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.71)
+	(envelope-from <herton.krzesinski@canonical.com>)
+	id 1SwF2G-0004TM-P7; Tue, 31 Jul 2012 16:11:05 +0000
+Content-Disposition: inline
+In-Reply-To: <20120731044316.865191013@decadent.org.uk>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335848 gmane.linux.kernel.stable:29056
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335848>
+
+On Tue, Jul 31, 2012 at 05:43:45AM +0100, Ben Hutchings wrote:
+> 3.2-stable review patch.  If anyone has any objections, please let me know.
+> 
+> ------------------
+> 
+> From: Liam Girdwood <lrg@ti.com>
+> 
+> commit 01005a729a17ab419f61a366e22f3419e7a2c3fe upstream.
+> 
+> Codec shutdown performs a DAPM power sequence that might cause conflicts
+> and/or race conditions if another stream power event is running simultaneously.
+> Use card's dapm mutex to protect any potential race condition between them.
+> 
+> Signed-off-by: Misael Lopez Cruz <misael.lopez@ti.com>
+> Signed-off-by: Liam Girdwood <lrg@ti.com>
+> Signed-off-by: Mark Brown <broonie@opensource.wolfsonmicro.com>
+> Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+> ---
+>  sound/soc/soc-dapm.c |    5 +++++
+>  1 file changed, 5 insertions(+)
+> 
+> diff --git a/sound/soc/soc-dapm.c b/sound/soc/soc-dapm.c
+> index 5be4f9a..114f2af 100644
+> --- a/sound/soc/soc-dapm.c
+> +++ b/sound/soc/soc-dapm.c
+> @@ -3537,10 +3537,13 @@ EXPORT_SYMBOL_GPL(snd_soc_dapm_free);
+>  
+>  static void soc_dapm_shutdown_codec(struct snd_soc_dapm_context *dapm)
+>  {
+> +	struct snd_soc_card *card = dapm->card;
+>  	struct snd_soc_dapm_widget *w;
+>  	LIST_HEAD(down_list);
+>  	int powerdown = 0;
+>  
+> +	mutex_lock(&card->dapm_mutex);
+> +
+
+Hi, this doesn't build on 3.2:
+
+linux-stable/sound/soc/soc-dapm.c: In function 'soc_dapm_shutdown_codec':
+linux-stable/sound/soc/soc-dapm.c:2982:18: error: 'struct snd_soc_card' has no member named 'dapm_mutex'
+linux-stable/sound/soc/soc-dapm.c:3007:20: error: 'struct snd_soc_card' has no member named 'dapm_mutex'
+
+Looking at it, I'm not sure the fix is needed on 3.2, and introducing
+dapm_mutex would be several changes.
+
+>  	list_for_each_entry(w, &dapm->card->widgets, list) {
+>  		if (w->dapm != dapm)
+>  			continue;
+> @@ -3563,6 +3566,8 @@ static void soc_dapm_shutdown_codec(struct snd_soc_dapm_context *dapm)
+>  			snd_soc_dapm_set_bias_level(dapm,
+>  						    SND_SOC_BIAS_STANDBY);
+>  	}
+> +
+> +	mutex_unlock(&card->dapm_mutex);
+>  }
+>  
+>  /*
+> 
+> 
+> --
+> To unsubscribe from this list: send the line "unsubscribe stable" in
+> the body of a message to majordomo@vger.kernel.org
+> More majordomo info at  http://vger.kernel.org/majordomo-info.html
+> 
+
+-- 
+[]'s
+Herton

@@ -1,0 +1,199 @@
+Path: news.gmane.org!not-for-mail
+From: Kent Overstreet <koverstreet@google.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.bcache.devel,gmane.linux.kernel.device-mapper.devel,gmane.linux.kernel.drbd.devel
+Subject: [PATCH v4 08/12] block: Introduce new bio_split()
+Date: Tue, 24 Jul 2012 13:11:25 -0700
+Lines: 123
+Approved: news@gmane.org
+Message-ID: <1343160689-12378-9-git-send-email-koverstreet@google.com>
+References: <1343160689-12378-1-git-send-email-koverstreet@google.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343160805 7456 80.91.229.3 (24 Jul 2012 20:13:25 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 20:13:25 +0000 (UTC)
+Cc: Kent Overstreet <koverstreet@google.com>, tj@kernel.org,
+	axboe@kernel.dk, agk@redhat.com, neilb@suse.de,
+	drbd-dev@lists.linbit.com, bharrosh@panasas.com, vgoyal@redhat.com,
+	mpatocka@redhat.com, sage@newdream.net, yehuda@hq.newdream.net
+To: linux-bcache@vger.kernel.org, linux-kernel@vger.kernel.org,
+	dm-devel@redhat.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 22:13:16 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StlTe-0003bI-Sq
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 22:13:07 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755968Ab2GXUMR (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 16:12:17 -0400
+Original-Received: from mail-yx0-f174.google.com ([209.85.213.174]:45559 "EHLO
+	mail-yx0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755787Ab2GXUME (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 16:12:04 -0400
+Original-Received: by yenl2 with SMTP id l2so7121378yen.19
+        for <linux-kernel@vger.kernel.org>; Tue, 24 Jul 2012 13:12:03 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=UTedYswLjrvF4vdBgLC99Q0TBIAycadu7u/QCsiXSik=;
+        b=o6DiwzEGjHZ0LKfVa5ObJuE9FkXPlTUUJ6NUgWabcj9VSAn/AvK70wY3ncG7JVEtND
+         M8j1TP5IyAmF4GCe7mOX+nJ5IWGsEwehNW6T47QzBqeA3ZnGaWITMNWwFQeIIlOiiYoz
+         9AT2EdxvrhBjA1w9BoYvSJXhWMCwPsaDRhlwtvY+UXaVD9egKdsgYeXwGwI28Fg+4EmZ
+         jIswc7CZHjXvnjVTNF0C3Isxy3VNdg6b1gFtS1/+arlJTk41c/jSuzLK29voc38FCGBP
+         Hg/x5NgpqWt5adedlaIRvg6VqJ8Oy2bu6ND7SgX5scWf4njuKDdn8N40rWAvTgdOkNGg
+         CrmA==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :x-gm-message-state;
+        bh=UTedYswLjrvF4vdBgLC99Q0TBIAycadu7u/QCsiXSik=;
+        b=LuCkYWM7/gOcFUgM5tLK+j6RsN28HCaHZitrGh9tOEguL/X+S+UxdKlm8IMtyZqiyK
+         HyrR5bV7EW6MDr38luS4R9tfGd1DgLpCBi/nfI1G9H2KBXvIUzO6ZojewdYZgF7zV1t4
+         G9T1z4o1QKsuHhpK65XrXjkaSHZWRUkNbJ/eKfWNjPHJt/vLbLaukGTGb8HaUZxFqzFT
+         QgXo6RDyClKCl9haFUr/GH0GdvaDlpwZeGTj0fzTkab/Zk3IxOxVmivRScGKiqGd9xQe
+         KMLLkxPqdalPpmRSa1RCRxtkhEqKshj50U/TAwTfEYyfjWAzfCUJQ0gUmzPZ5wlZWzyX
+         SoFg==
+Original-Received: by 10.66.83.6 with SMTP id m6mr7174329pay.29.1343160723006;
+        Tue, 24 Jul 2012 13:12:03 -0700 (PDT)
+Original-Received: by 10.66.83.6 with SMTP id m6mr7174293pay.29.1343160722904;
+        Tue, 24 Jul 2012 13:12:02 -0700 (PDT)
+Original-Received: from formenos.mtv.corp.google.com (formenos.mtv.corp.google.com [172.18.110.66])
+        by mx.google.com with ESMTPS id jv6sm12774301pbc.40.2012.07.24.13.12.01
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 24 Jul 2012 13:12:02 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7.3
+In-Reply-To: <1343160689-12378-1-git-send-email-koverstreet@google.com>
+X-Gm-Message-State: ALoCoQnqe+cmQAVJpeynwno4XJ7aotgXkVedCMNjuhGc0uQQdWc+/XXBI3hTEt1ICTRODDs1MLOrr0wFrlx1/+2nyK/DkUyvMofpnMnhdcXtRbsARNkTLbpI20Hpwf9sqnpli9cKtuBpOjX5XWlOUsl6W9AFrEPTG05Jz2wydSxNWFHZQPXz417ipCSKJexsrrUebj+uNt54
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332557 gmane.linux.kernel.bcache.devel:627 gmane.linux.kernel.device-mapper.devel:16408 gmane.linux.kernel.drbd.devel:2032
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332557>
+
+The new bio_split() can split arbitrary bios - it's not restricted to
+single page bios, like the old bio_split() (previously renamed to
+bio_pair_split()). It also has different semantics - it doesn't allocate
+a struct bio_pair, leaving it up to the caller to handle completions.
+
+Signed-off-by: Kent Overstreet <koverstreet@google.com>
+---
+ fs/bio.c |   99 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 files changed, 99 insertions(+), 0 deletions(-)
+
+diff --git a/fs/bio.c b/fs/bio.c
+index 5d02aa5..a15e121 100644
+--- a/fs/bio.c
++++ b/fs/bio.c
+@@ -1539,6 +1539,105 @@ struct bio_pair *bio_pair_split(struct bio *bi, int first_sectors)
+ EXPORT_SYMBOL(bio_pair_split);
+ 
+ /**
++ * bio_split - split a bio
++ * @bio:	bio to split
++ * @sectors:	number of sectors to split from the front of @bio
++ * @gfp:	gfp mask
++ * @bs:		bio set to allocate from
++ *
++ * Allocates and returns a new bio which represents @sectors from the start of
++ * @bio, and updates @bio to represent the remaining sectors.
++ *
++ * If bio_sectors(@bio) was less than or equal to @sectors, returns @bio
++ * unchanged.
++ *
++ * The newly allocated bio will point to @bio's bi_io_vec, if the split was on a
++ * bvec boundry; it is the caller's responsibility to ensure that @bio is not
++ * freed before the split.
++ *
++ * If bio_split() is running under generic_make_request(), it's not safe to
++ * allocate more than one bio from the same bio set. Therefore, if it is running
++ * under generic_make_request() it masks out __GFP_WAIT when doing the
++ * allocation. The caller must check for failure if there's any possibility of
++ * it being called from under generic_make_request(); it is then the caller's
++ * responsibility to retry from a safe context (by e.g. punting to workqueue).
++ */
++struct bio *bio_split(struct bio *bio, int sectors,
++		      gfp_t gfp, struct bio_set *bs)
++{
++	unsigned idx, vcnt = 0, nbytes = sectors << 9;
++	struct bio_vec *bv;
++	struct bio *ret = NULL;
++
++	BUG_ON(sectors <= 0);
++
++	/*
++	 * If we're being called from underneath generic_make_request() and we
++	 * already allocated any bios from this bio set, we risk deadlock if we
++	 * use the mempool. So instead, we possibly fail and let the caller punt
++	 * to workqueue or somesuch and retry in a safe context.
++	 */
++	if (current->bio_list)
++		gfp &= ~__GFP_WAIT;
++
++	if (sectors >= bio_sectors(bio))
++		return bio;
++
++	trace_block_split(bdev_get_queue(bio->bi_bdev), bio,
++			  bio->bi_sector + sectors);
++
++	bio_for_each_segment(bv, bio, idx) {
++		vcnt = idx - bio->bi_idx;
++
++		if (!nbytes) {
++			ret = bio_alloc_bioset(gfp, 0, bs);
++			if (!ret)
++				return NULL;
++
++			ret->bi_io_vec = bio_iovec(bio);
++			ret->bi_flags |= 1 << BIO_CLONED;
++			break;
++		} else if (nbytes < bv->bv_len) {
++			ret = bio_alloc_bioset(gfp, ++vcnt, bs);
++			if (!ret)
++				return NULL;
++
++			memcpy(ret->bi_io_vec, bio_iovec(bio),
++			       sizeof(struct bio_vec) * vcnt);
++
++			ret->bi_io_vec[vcnt - 1].bv_len = nbytes;
++			bv->bv_offset	+= nbytes;
++			bv->bv_len	-= nbytes;
++			break;
++		}
++
++		nbytes -= bv->bv_len;
++	}
++
++	ret->bi_bdev	= bio->bi_bdev;
++	ret->bi_sector	= bio->bi_sector;
++	ret->bi_size	= sectors << 9;
++	ret->bi_rw	= bio->bi_rw;
++	ret->bi_vcnt	= vcnt;
++	ret->bi_max_vecs = vcnt;
++	ret->bi_end_io	= bio->bi_end_io;
++	ret->bi_private	= bio->bi_private;
++
++	bio->bi_sector	+= sectors;
++	bio->bi_size	-= sectors << 9;
++	bio->bi_idx	 = idx;
++
++	if (bio_integrity(bio)) {
++		bio_integrity_clone(ret, bio, gfp, bs);
++		bio_integrity_trim(ret, 0, bio_sectors(ret));
++		bio_integrity_trim(bio, bio_sectors(ret), bio_sectors(bio));
++	}
++
++	return ret;
++}
++EXPORT_SYMBOL_GPL(bio_split);
++
++/**
+  *      bio_sector_offset - Find hardware sector offset in bio
+  *      @bio:           bio to inspect
+  *      @index:         bio_vec index
+-- 
+1.7.7.3
+

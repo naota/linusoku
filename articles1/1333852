@@ -1,0 +1,100 @@
+Path: news.gmane.org!not-for-mail
+From: "Rafael J. Wysocki" <rjw@sisk.pl>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] cpuidle: coupled: fix sleeping while atomic in cpu notifier
+Date: Thu, 26 Jul 2012 21:55:31 +0200
+Lines: 41
+Approved: news@gmane.org
+Message-ID: <201207262155.31280.rjw@sisk.pl>
+References: <1343251216-24106-1-git-send-email-ccross@android.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain;
+  charset="iso-8859-2"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343332206 11964 80.91.229.3 (26 Jul 2012 19:50:06 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 19:50:06 +0000 (UTC)
+Cc: Len Brown <lenb@kernel.org>, Len Brown <len.brown@intel.com>,
+	Kevin Hilman <khilman@ti.com>,
+	Santosh Shilimkar <santosh.shilimkar@ti.com>,
+	linux-kernel@vger.kernel.org,
+	Linux PM list <linux-pm@vger.kernel.org>
+To: Colin Cross <ccross@android.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 21:50:05 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuU4S-0002Pd-An
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 21:50:04 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752331Ab2GZTtq (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 15:49:46 -0400
+Original-Received: from ogre.sisk.pl ([193.178.161.156]:58974 "EHLO ogre.sisk.pl"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751251Ab2GZTto (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 15:49:44 -0400
+Original-Received: from localhost (localhost.localdomain [127.0.0.1])
+	by ogre.sisk.pl (Postfix) with ESMTP id 81C201D7A38;
+	Thu, 26 Jul 2012 21:43:25 +0200 (CEST)
+Original-Received: from ogre.sisk.pl ([127.0.0.1])
+ by localhost (ogre.sisk.pl [127.0.0.1]) (amavisd-new, port 10024) with ESMTP
+ id 01552-01; Thu, 26 Jul 2012 21:43:15 +0200 (CEST)
+Original-Received: from ferrari.rjw.lan (62-121-64-87.home.aster.pl [62.121.64.87])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by ogre.sisk.pl (Postfix) with ESMTP id 93A121D66B9;
+	Thu, 26 Jul 2012 21:43:15 +0200 (CEST)
+User-Agent: KMail/1.13.6 (Linux/3.5.0+; KDE/4.6.0; x86_64; ; )
+In-Reply-To: <1343251216-24106-1-git-send-email-ccross@android.com>
+X-Virus-Scanned: amavisd-new at ogre.sisk.pl using MkS_Vir for Linux
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333852
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333852>
+
+On Wednesday, July 25, 2012, Colin Cross wrote:
+> The cpu hotplug notifier gets called in both atomic and non-atomic
+> contexts, it is not always safe to lock a mutex.  Filter out all events
+> except the six necessary ones, which are all sleepable, before taking
+> the mutex.
+
+I wonder what mutual exclusion mechanis we rely on when the mutex is not taken?
+
+Rafael
+
+
+> Signed-off-by: Colin Cross <ccross@android.com>
+> ---
+>  drivers/cpuidle/coupled.c |   12 ++++++++++++
+>  1 files changed, 12 insertions(+), 0 deletions(-)
+> 
+> diff --git a/drivers/cpuidle/coupled.c b/drivers/cpuidle/coupled.c
+> index 2c9bf26..c24dda0 100644
+> --- a/drivers/cpuidle/coupled.c
+> +++ b/drivers/cpuidle/coupled.c
+> @@ -678,6 +678,18 @@ static int cpuidle_coupled_cpu_notify(struct notifier_block *nb,
+>  	int cpu = (unsigned long)hcpu;
+>  	struct cpuidle_device *dev;
+>  
+> +	switch (action & ~CPU_TASKS_FROZEN) {
+> +	case CPU_UP_PREPARE:
+> +	case CPU_DOWN_PREPARE:
+> +	case CPU_ONLINE:
+> +	case CPU_DEAD:
+> +	case CPU_UP_CANCELED:
+> +	case CPU_DOWN_FAILED:
+> +		break;
+> +	default:
+> +		return NOTIFY_OK;
+> +	}
+> +
+>  	mutex_lock(&cpuidle_lock);
+>  
+>  	dev = per_cpu(cpuidle_devices, cpu);
+> 
+

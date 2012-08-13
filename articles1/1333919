@@ -1,0 +1,117 @@
+Path: news.gmane.org!not-for-mail
+From: "Paul E. McKenney" <paulmck@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH RFC] cpu: No more __stop_machine() in _cpu_down()
+Date: Thu, 26 Jul 2012 14:19:27 -0700
+Lines: 50
+Approved: news@gmane.org
+Message-ID: <20120726211927.GA26016@linux.vnet.ibm.com>
+Reply-To: paulmck@linux.vnet.ibm.com
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343338002 7468 80.91.229.3 (26 Jul 2012 21:26:42 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 21:26:42 +0000 (UTC)
+Cc: tglx@linutronix.de, sbw@mit.edu, srivatsa.bhat@linux.vnet.ibm.com,
+	rusty@rustcorp.com.au, vincent.guittot@linaro.org,
+	amit.kucheria@linaro.org
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 23:26:40 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuVZs-0002N9-Pp
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 23:26:37 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753048Ab2GZV01 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 17:26:27 -0400
+Original-Received: from e32.co.us.ibm.com ([32.97.110.150]:41537 "EHLO
+	e32.co.us.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752142Ab2GZVUd (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 17:20:33 -0400
+Original-Received: from /spool/local
+	by e32.co.us.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <paulmck@linux.vnet.ibm.com>;
+	Thu, 26 Jul 2012 15:20:31 -0600
+Original-Received: from d03dlp03.boulder.ibm.com (9.17.202.179)
+	by e32.co.us.ibm.com (192.168.1.132) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Thu, 26 Jul 2012 15:19:48 -0600
+Original-Received: from d03relay05.boulder.ibm.com (d03relay05.boulder.ibm.com [9.17.195.107])
+	by d03dlp03.boulder.ibm.com (Postfix) with ESMTP id 21E6B19D8048
+	for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 21:19:44 +0000 (WET)
+Original-Received: from d03av01.boulder.ibm.com (d03av01.boulder.ibm.com [9.17.195.167])
+	by d03relay05.boulder.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6QLJUeg066740
+	for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 15:19:33 -0600
+Original-Received: from d03av01.boulder.ibm.com (loopback [127.0.0.1])
+	by d03av01.boulder.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6QLJSI5020000
+	for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 15:19:30 -0600
+Original-Received: from paulmck-ThinkPad-W500 ([9.47.24.210])
+	by d03av01.boulder.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6QLJShe019980;
+	Thu, 26 Jul 2012 15:19:28 -0600
+Original-Received: by paulmck-ThinkPad-W500 (Postfix, from userid 1000)
+	id A2132E50E9; Thu, 26 Jul 2012 14:19:27 -0700 (PDT)
+Content-Disposition: inline
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Content-Scanned: Fidelis XPS MAILER
+x-cbid: 12072621-2356-0000-0000-000000B8C1B9
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333919
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333919>
+
+The _cpu_down() function invoked as part of the CPU-hotplug offlining
+process currently invokes __stop_machine(), which is slow and inflicts
+substantial real-time latencies on the entire system.  This patch
+substitutes stop_cpus() for __stop_machine() in order to improve
+both performance and real-time latency.
+
+This is currently unsafe, because there are a number of uses of
+preempt_disable() that are intended to block CPU-hotplug offlining.
+These will be fixed, but in the meantime, this commit is one way to help
+locate them.  It nevertheless passes light rcutorture/hotplug stress
+testing.  Meaning that we should not be relying on pure testing to find
+places where people are relying on preemption disabling to block CPUs
+from going offline.  ;-)
+
+Not-yet-signed-off-by: Paul E. McKenney <paul.mckenney@linaro.org>
+
+diff --git a/kernel/cpu.c b/kernel/cpu.c
+index a4eb522..47e63a0 100644
+--- a/kernel/cpu.c
++++ b/kernel/cpu.c
+@@ -243,13 +243,18 @@ static int __ref take_cpu_down(void *_param)
+ {
+ 	struct take_cpu_down_param *param = _param;
+ 	int err;
++	unsigned long flags;
+ 
+ 	/* Ensure this CPU doesn't handle any more interrupts. */
++	local_irq_save(flags);
+ 	err = __cpu_disable();
+-	if (err < 0)
++	if (err < 0) {
++		local_irq_restore(flags);
+ 		return err;
++	}
+ 
+ 	cpu_notify(CPU_DYING | param->mod, param->hcpu);
++	local_irq_restore(flags);
+ 	return 0;
+ }
+ 
+@@ -281,7 +286,7 @@ static int __ref _cpu_down(unsigned int cpu, int tasks_frozen)
+ 		goto out_release;
+ 	}
+ 
+-	err = __stop_machine(take_cpu_down, &tcd_param, cpumask_of(cpu));
++	err = stop_cpus(cpumask_of(cpu), take_cpu_down, &tcd_param);
+ 	if (err) {
+ 		/* CPU didn't die: tell everyone.  Can't complain. */
+ 		cpu_notify_nofail(CPU_DOWN_FAILED | mod, hcpu);
+

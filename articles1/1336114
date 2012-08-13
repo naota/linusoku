@@ -1,0 +1,83 @@
+Path: news.gmane.org!not-for-mail
+From: Mike Snitzer <snitzer@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.device-mapper.devel
+Subject: [RESEND PATCH] block: do not artificially constrain max_sectors for stacking drivers
+Date: Tue, 31 Jul 2012 20:39:13 -0400
+Lines: 35
+Approved: news@gmane.org
+Message-ID: <1343781553-17089-1-git-send-email-snitzer@redhat.com>
+References: <20120710191859.GB3831@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343781603 31810 80.91.229.3 (1 Aug 2012 00:40:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 1 Aug 2012 00:40:03 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, dm-devel@redhat.com,
+	vijay.chauhan@netapp.com
+To: axboe@kernel.dk
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 01 02:40:00 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwMyl-0008L5-5s
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 01 Aug 2012 02:39:59 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755280Ab2HAAjZ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 20:39:25 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:52151 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752146Ab2HAAjY (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 20:39:24 -0400
+Original-Received: from int-mx12.intmail.prod.int.phx2.redhat.com (int-mx12.intmail.prod.int.phx2.redhat.com [10.5.11.25])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q710dKGB003609
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Tue, 31 Jul 2012 20:39:20 -0400
+Original-Received: from localhost (dhcp-185-13.bos.redhat.com [10.16.185.13])
+	by int-mx12.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q710dDnd024421
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES128-SHA bits=128 verify=NO);
+	Tue, 31 Jul 2012 20:39:14 -0400
+In-Reply-To: <20120710191859.GB3831@redhat.com>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.25
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336114 gmane.linux.kernel.device-mapper.devel:16451
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336114>
+
+blk_set_stacking_limits is intended to allow stacking drivers to build
+up the limits of the stacked device based on the underlying devices'
+limits.  But defaulting 'max_sectors' to BLK_DEF_MAX_SECTORS (1024)
+doesn't allow the stacking driver to inherit a max_sectors larger than
+1024 -- due to blk_stack_limits' use of min_not_zero.
+
+It is now clear that this artificial limit is getting in the way so
+change blk_set_stacking_limits's max_sectors to UINT_MAX (which allows
+stacking drivers like dm-multipath to inherit 'max_sectors' from the
+underlying paths).
+
+Reported-by: Vijay Chauhan <vijay.chauhan@netapp.com>
+Tested-by: Vijay Chauhan <vijay.chauhan@netapp.com>
+Signed-off-by: Mike Snitzer <snitzer@redhat.com>
+---
+ block/blk-settings.c |    3 +--
+ 1 files changed, 1 insertions(+), 2 deletions(-)
+
+diff --git a/block/blk-settings.c b/block/blk-settings.c
+index d3234fc..565a678 100644
+--- a/block/blk-settings.c
++++ b/block/blk-settings.c
+@@ -143,8 +143,7 @@ void blk_set_stacking_limits(struct queue_limits *lim)
+ 	lim->discard_zeroes_data = 1;
+ 	lim->max_segments = USHRT_MAX;
+ 	lim->max_hw_sectors = UINT_MAX;
+-
+-	lim->max_sectors = BLK_DEF_MAX_SECTORS;
++	lim->max_sectors = UINT_MAX;
+ }
+ EXPORT_SYMBOL(blk_set_stacking_limits);
+ 
+-- 
+1.7.4.4
+

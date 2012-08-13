@@ -1,0 +1,136 @@
+Path: news.gmane.org!not-for-mail
+From: H Hartley Sweeten <hartleys@visionengravers.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 28/90] staging: comedi: cb_pcidio: store the pci_dev in the comedi_device
+Date: Wed, 18 Jul 2012 18:37:05 -0700
+Lines: 82
+Approved: news@gmane.org
+Message-ID: <201207181837.06140.hartleys@visionengravers.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342661843 21072 80.91.229.3 (19 Jul 2012 01:37:23 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 01:37:23 +0000 (UTC)
+Cc: <devel@driverdev.osuosl.org>, <abbotti@mev.co.uk>,
+	<gregkh@linuxfoundation.org>
+To: Linux Kernel <linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 03:37:23 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SrfgA-0005hY-PX
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 03:37:23 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755208Ab2GSBhP (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 18 Jul 2012 21:37:15 -0400
+Original-Received: from mail209.messagelabs.com ([216.82.255.3]:11077 "EHLO
+	mail209.messagelabs.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753243Ab2GSBhM (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 18 Jul 2012 21:37:12 -0400
+X-Env-Sender: hartleys@visionengravers.com
+X-Msg-Ref: server-15.tower-209.messagelabs.com!1342661831!9080887!1
+X-Originating-IP: [216.166.12.98]
+X-StarScan-Version: 6.5.10; banners=-,-,-
+X-VirusChecked: Checked
+Original-Received: (qmail 8896 invoked from network); 19 Jul 2012 01:37:11 -0000
+Original-Received: from out001.collaborationhost.net (HELO out001.collaborationhost.net) (216.166.12.98)
+  by server-15.tower-209.messagelabs.com with RC4-SHA encrypted SMTP; 19 Jul 2012 01:37:11 -0000
+Original-Received: from etch.local (10.2.3.210) by smtp.collaborationhost.net
+ (10.2.0.59) with Microsoft SMTP Server (TLS) id 8.3.213.0; Wed, 18 Jul 2012
+ 20:37:10 -0500
+User-Agent: KMail/1.9.9
+Content-Disposition: inline
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330062
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330062>
+
+Use the hw_dev pointer in the comedi_device struct to hold the
+pci_dev instead of carrying it in the private data.
+
+Signed-off-by: H Hartley Sweeten <hsweeten@visionengravers.com>
+Cc: Ian Abbott <abbotti@mev.co.uk>
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/staging/comedi/drivers/cb_pcidio.c | 25 ++++++++++++-------------
+ 1 file changed, 12 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/staging/comedi/drivers/cb_pcidio.c b/drivers/staging/comedi/drivers/cb_pcidio.c
+index 5527b4b..11c7502 100644
+--- a/drivers/staging/comedi/drivers/cb_pcidio.c
++++ b/drivers/staging/comedi/drivers/cb_pcidio.c
+@@ -96,9 +96,6 @@ static const struct pcidio_board pcidio_boards[] = {
+ struct pcidio_private {
+ 	int data;		/*  currently unused */
+ 
+-	/* would be useful for a PCI device */
+-	struct pci_dev *pci_dev;
+-
+ 	/* used for DO readback, currently unused */
+ 	unsigned int do_readback[4];	/* up to 4 unsigned int suffice to hold 96 bits for PCI-DIO96 */
+ 
+@@ -143,6 +140,7 @@ static struct pci_dev *pcidio_find_pci_dev(struct comedi_device *dev,
+ 
+ static int pcidio_attach(struct comedi_device *dev, struct comedi_devconfig *it)
+ {
++	struct pci_dev *pcidev;
+ 	int i;
+ 	int ret;
+ 
+@@ -153,9 +151,10 @@ static int pcidio_attach(struct comedi_device *dev, struct comedi_devconfig *it)
+ 	if (alloc_private(dev, sizeof(struct pcidio_private)) < 0)
+ 		return -ENOMEM;
+ 
+-	devpriv->pci_dev = pcidio_find_pci_dev(dev, it);
+-	if (!devpriv->pci_dev)
++	pcidev = pcidio_find_pci_dev(dev, it);
++	if (!pcidev)
+ 		return -EIO;
++	comedi_set_hw_dev(dev, &pcidev->dev);
+ 
+ /*
+  * Initialize dev->board_name.  Note that we can use the "thisboard"
+@@ -163,12 +162,12 @@ static int pcidio_attach(struct comedi_device *dev, struct comedi_devconfig *it)
+  */
+ 	dev->board_name = thisboard->name;
+ 
+-	if (comedi_pci_enable(devpriv->pci_dev, thisboard->name))
++	if (comedi_pci_enable(pcidev, thisboard->name))
+ 		return -EIO;
+ 
+ 	devpriv->dio_reg_base
+ 	    =
+-	    pci_resource_start(devpriv->pci_dev, thisboard->dioregs_badrindex);
++	    pci_resource_start(pcidev, thisboard->dioregs_badrindex);
+ 
+ 	ret = comedi_alloc_subdevices(dev, thisboard->n_8255);
+ 	if (ret)
+@@ -186,12 +185,12 @@ static int pcidio_attach(struct comedi_device *dev, struct comedi_devconfig *it)
+ 
+ static void pcidio_detach(struct comedi_device *dev)
+ {
+-	if (devpriv) {
+-		if (devpriv->pci_dev) {
+-			if (devpriv->dio_reg_base)
+-				comedi_pci_disable(devpriv->pci_dev);
+-			pci_dev_put(devpriv->pci_dev);
+-		}
++	struct pci_dev *pcidev = comedi_to_pci_dev(dev);
++
++	if (pcidev) {
++		if (devpriv->dio_reg_base)
++			comedi_pci_disable(pcidev);
++		pci_dev_put(pcidev);
+ 	}
+ 	if (dev->subdevices) {
+ 		int i;
+-- 
+1.7.11
+

@@ -1,0 +1,163 @@
+Path: news.gmane.org!not-for-mail
+From: Len Brown <lenb@kernel.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.acpi.devel,gmane.linux.power-management.general
+Subject: [PATCH 15/52] cpuidle: refactor out cpuidle_enter_state
+Date: Tue, 24 Jul 2012 23:41:11 -0400
+Organization: Intel Open Source Technology Center
+Lines: 99
+Approved: news@gmane.org
+Message-ID: <56cfbf74a17c40f3a741398103c9f5d5a6806715.1343187617.git.len.brown@intel.com>
+References: <1343187708-19532-1-git-send-email-lenb@kernel.org>
+Reply-To: Len Brown <lenb@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343187843 28824 80.91.229.3 (25 Jul 2012 03:44:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 03:44:03 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, Colin Cross <ccross@android.com>,
+	Len Brown <len.brown@intel.com>
+To: linux-acpi@vger.kernel.org, linux-pm@lists.linux-foundation.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 05:43:58 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StsVt-0001yK-7G
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 05:43:53 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932855Ab2GYDmj (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 23:42:39 -0400
+Original-Received: from mail-qa0-f53.google.com ([209.85.216.53]:33308 "EHLO
+	mail-qa0-f53.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S932812Ab2GYDm3 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 23:42:29 -0400
+Original-Received: by mail-qa0-f53.google.com with SMTP id s11so247411qaa.19
+        for <multiple recipients>; Tue, 24 Jul 2012 20:42:29 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:in-reply-to:references:reply-to:organization;
+        bh=pPmJKrP/eblqK/DIAR7W0FDiY8zVMbiSW0HKOJ+3AyY=;
+        b=lvtSAP7p3W5PcOQmdOHN6NUq4x/zkfYY6PgOF9BgZTyJzPDUQ7VfvC6QJFNzNDas9e
+         rGCe6lqqsT2ome9xoQKiW4t5B5KTljDgPkAT4FUyMZ+5ek6kpdKYW1YONsbDSeUTDZvU
+         cxBnCldPVngH7TT6FkdKgDw3ANrXFrOH9UHgltgkJOOln8u4XRavedyzWfi2XY2uTyMq
+         dFsCBhpgKVZtD+2EWHfiF6wN8UThOvlUz1UIEQN0mC9MghhK4IaXxlTc4WyLKtGNtXZw
+         cBbSwfd11+s3tOGSZgIo1lHvfHrvLb6U1aQZXEcGEMGKZAiQu35eSPM3W8PHxXXxijWw
+         TR8Q==
+Original-Received: by 10.229.106.225 with SMTP id y33mr10349658qco.76.1343187749559;
+        Tue, 24 Jul 2012 20:42:29 -0700 (PDT)
+Original-Received: from x980.localdomain6 (h184-61-125-197.altnnh.dsl.dynamic.tds.net. [184.61.125.197])
+        by mx.google.com with ESMTPS id et6sm15489186qab.8.2012.07.24.20.42.27
+        (version=SSLv3 cipher=OTHER);
+        Tue, 24 Jul 2012 20:42:28 -0700 (PDT)
+X-Mailer: git-send-email 1.7.12.rc0
+In-Reply-To: <1343187708-19532-1-git-send-email-lenb@kernel.org>
+In-Reply-To: <6af1c4fc5227af65092ebc848989693562bfa3e8.1343187617.git.len.brown@intel.com>
+Original-References: <6af1c4fc5227af65092ebc848989693562bfa3e8.1343187617.git.len.brown@intel.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332692 gmane.linux.acpi.devel:54479 gmane.linux.power-management.general:27893
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332692>
+
+From: Colin Cross <ccross@android.com>
+
+Split the code to enter a state and update the stats into a helper
+function, cpuidle_enter_state, and export it.  This function will
+be called by the coupled state code to handle entering the safe
+state and the final coupled state.
+
+Reviewed-by: Santosh Shilimkar <santosh.shilimkar@ti.com>
+Tested-by: Santosh Shilimkar <santosh.shilimkar@ti.com>
+Reviewed-by: Kevin Hilman <khilman@ti.com>
+Tested-by: Kevin Hilman <khilman@ti.com>
+Signed-off-by: Colin Cross <ccross@android.com>
+Reviewed-by: Rafael J. Wysocki <rjw@sisk.pl>
+Signed-off-by: Len Brown <len.brown@intel.com>
+---
+ drivers/cpuidle/cpuidle.c | 42 +++++++++++++++++++++++++++++-------------
+ drivers/cpuidle/cpuidle.h |  2 ++
+ 2 files changed, 31 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/cpuidle/cpuidle.c b/drivers/cpuidle/cpuidle.c
+index 2f0083a..3e3e3e4 100644
+--- a/drivers/cpuidle/cpuidle.c
++++ b/drivers/cpuidle/cpuidle.c
+@@ -103,6 +103,34 @@ int cpuidle_play_dead(void)
+ }
+ 
+ /**
++ * cpuidle_enter_state - enter the state and update stats
++ * @dev: cpuidle device for this cpu
++ * @drv: cpuidle driver for this cpu
++ * @next_state: index into drv->states of the state to enter
++ */
++int cpuidle_enter_state(struct cpuidle_device *dev, struct cpuidle_driver *drv,
++		int next_state)
++{
++	int entered_state;
++
++	entered_state = cpuidle_enter_ops(dev, drv, next_state);
++
++	if (entered_state >= 0) {
++		/* Update cpuidle counters */
++		/* This can be moved to within driver enter routine
++		 * but that results in multiple copies of same code.
++		 */
++		dev->states_usage[entered_state].time +=
++				(unsigned long long)dev->last_residency;
++		dev->states_usage[entered_state].usage++;
++	} else {
++		dev->last_residency = 0;
++	}
++
++	return entered_state;
++}
++
++/**
+  * cpuidle_idle_call - the main idle loop
+  *
+  * NOTE: no locks or semaphores should be used here
+@@ -143,23 +171,11 @@ int cpuidle_idle_call(void)
+ 	trace_power_start_rcuidle(POWER_CSTATE, next_state, dev->cpu);
+ 	trace_cpu_idle_rcuidle(next_state, dev->cpu);
+ 
+-	entered_state = cpuidle_enter_ops(dev, drv, next_state);
++	entered_state = cpuidle_enter_state(dev, drv, next_state);
+ 
+ 	trace_power_end_rcuidle(dev->cpu);
+ 	trace_cpu_idle_rcuidle(PWR_EVENT_EXIT, dev->cpu);
+ 
+-	if (entered_state >= 0) {
+-		/* Update cpuidle counters */
+-		/* This can be moved to within driver enter routine
+-		 * but that results in multiple copies of same code.
+-		 */
+-		dev->states_usage[entered_state].time +=
+-				(unsigned long long)dev->last_residency;
+-		dev->states_usage[entered_state].usage++;
+-	} else {
+-		dev->last_residency = 0;
+-	}
+-
+ 	/* give the governor an opportunity to reflect on the outcome */
+ 	if (cpuidle_curr_governor->reflect)
+ 		cpuidle_curr_governor->reflect(dev, entered_state);
+diff --git a/drivers/cpuidle/cpuidle.h b/drivers/cpuidle/cpuidle.h
+index 7db1866..d8a3ccc 100644
+--- a/drivers/cpuidle/cpuidle.h
++++ b/drivers/cpuidle/cpuidle.h
+@@ -14,6 +14,8 @@ extern struct list_head cpuidle_detected_devices;
+ extern struct mutex cpuidle_lock;
+ extern spinlock_t cpuidle_driver_lock;
+ extern int cpuidle_disabled(void);
++extern int cpuidle_enter_state(struct cpuidle_device *dev,
++		struct cpuidle_driver *drv, int next_state);
+ 
+ /* idle loop */
+ extern void cpuidle_install_idle_handler(void);
+-- 
+1.7.12.rc0
+

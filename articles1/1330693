@@ -1,0 +1,84 @@
+Path: news.gmane.org!not-for-mail
+From: Dan Carpenter <dan.carpenter@oracle.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.drivers.devicetree,gmane.linux.kernel.janitors
+Subject: [patch] driver-core: dev_to_node() should handle NULL pointers
+Date: Fri, 20 Jul 2012 09:56:23 +0300
+Lines: 24
+Approved: news@gmane.org
+Message-ID: <20120720065622.GA11710@elgon.mountain>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1342767418 14478 80.91.229.3 (20 Jul 2012 06:56:58 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 06:56:58 +0000 (UTC)
+Cc: Rob Herring <rob.herring@calxeda.com>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	Lars-Peter Clausen <lars@metafoo.de>,
+	linux-kernel@vger.kernel.org, devicetree-discuss@lists.ozlabs.org,
+	kernel-janitors@vger.kernel.org
+To: Grant Likely <grant.likely@secretlab.ca>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 08:56:56 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Ss78s-00077i-34
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 08:56:50 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752189Ab2GTG4m (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 02:56:42 -0400
+Original-Received: from acsinet15.oracle.com ([141.146.126.227]:43887 "EHLO
+	acsinet15.oracle.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750991Ab2GTG4k (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 02:56:40 -0400
+Original-Received: from acsinet22.oracle.com (acsinet22.oracle.com [141.146.126.238])
+	by acsinet15.oracle.com (Sentrion-MTA-4.2.2/Sentrion-MTA-4.2.2) with ESMTP id q6K6uUlD002536
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Fri, 20 Jul 2012 06:56:30 GMT
+Original-Received: from acsmt358.oracle.com (acsmt358.oracle.com [141.146.40.158])
+	by acsinet22.oracle.com (8.14.4+Sun/8.14.4) with ESMTP id q6K6uTmS020651
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Fri, 20 Jul 2012 06:56:29 GMT
+Original-Received: from abhmt117.oracle.com (abhmt117.oracle.com [141.146.116.69])
+	by acsmt358.oracle.com (8.12.11.20060308/8.12.11) with ESMTP id q6K6uSFh005311;
+	Fri, 20 Jul 2012 01:56:28 -0500
+Original-Received: from elgon.mountain (/41.139.221.94)
+	by default (Oracle Beehive Gateway v4.0)
+	with ESMTP ; Thu, 19 Jul 2012 23:56:27 -0700
+Content-Disposition: inline
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Source-IP: acsinet22.oracle.com [141.146.126.238]
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330693 gmane.linux.drivers.devicetree:18385 gmane.linux.kernel.janitors:25157
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330693>
+
+What prompted this patch is that in dma_pool_create() we call
+dev_to_node() before checking whether "dev" is NULL.  It looks like
+there are places which call dma_pool_create() with a NULL pointer.  An
+example is in drivers/usb/gadget/amd5536udc.c.
+
+Signed-off-by: Dan Carpenter <dan.carpenter@oracle.com>
+---
+Static checker fix.
+
+diff --git a/include/linux/device.h b/include/linux/device.h
+index aa7b3b4..c80e7a8d 100644
+--- a/include/linux/device.h
++++ b/include/linux/device.h
+@@ -714,7 +714,9 @@ int dev_set_name(struct device *dev, const char *name, ...);
+ #ifdef CONFIG_NUMA
+ static inline int dev_to_node(struct device *dev)
+ {
+-	return dev->numa_node;
++	if (dev)
++		return dev->numa_node;
++	return -1;
+ }
+ static inline void set_dev_node(struct device *dev, int node)
+ {

@@ -1,0 +1,469 @@
+Path: news.gmane.org!not-for-mail
+From: Asias He <asias@redhat.com>
+Newsgroups: gmane.linux.kernel.virtualization,gmane.linux.kernel,gmane.comp.emulators.kvm.devel
+Subject: [PATCH V7 2/2] virtio-blk: Add REQ_FLUSH and REQ_FUA support to bio
+	path
+Date: Wed,  8 Aug 2012 16:07:05 +0800
+Lines: 393
+Approved: news@gmane.org
+Message-ID: <1344413225-1843-3-git-send-email-asias@redhat.com>
+References: <1344413225-1843-1-git-send-email-asias@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344413129 9676 80.91.229.3 (8 Aug 2012 08:05:29 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 08:05:29 +0000 (UTC)
+Cc: Jens Axboe <axboe@kernel.dk>, kvm@vger.kernel.org,
+	"Michael S. Tsirkin" <mst@redhat.com>,
+	virtualization@lists.linux-foundation.org,
+	Tejun Heo <tj@kernel.org>, Shaohua Li <shli@kernel.org>,
+	Christoph Hellwig <hch@lst.de>
+To: linux-kernel@vger.kernel.org
+Original-X-From: virtualization-bounces@lists.linux-foundation.org Wed Aug 08 10:05:26 2012
+Return-path: <virtualization-bounces@lists.linux-foundation.org>
+Envelope-to: glkv-virtualization@gmane.org
+Original-Received: from mail.linuxfoundation.org ([140.211.169.12])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <virtualization-bounces@lists.linux-foundation.org>)
+	id 1Sz1Gf-0005bO-RX
+	for glkv-virtualization@gmane.org; Wed, 08 Aug 2012 10:05:26 +0200
+Original-Received: from mail.linux-foundation.org (localhost [IPv6:::1])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id 7B5F3829;
+	Wed,  8 Aug 2012 08:05:15 +0000 (UTC)
+X-Original-To: virtualization@lists.linux-foundation.org
+Delivered-To: virtualization@mail.linuxfoundation.org
+Original-Received: from smtp1.linuxfoundation.org (smtp1.linux-foundation.org
+	[172.17.192.35])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id 66B6F829
+	for <virtualization@lists.linux-foundation.org>;
+	Wed,  8 Aug 2012 08:05:14 +0000 (UTC)
+X-Greylist: domain auto-whitelisted by SQLgrey-1.7.6
+Original-Received: from mx1.redhat.com (mx1.redhat.com [209.132.183.28])
+	by smtp1.linuxfoundation.org (Postfix) with ESMTP id 76F931F950
+	for <virtualization@lists.linux-foundation.org>;
+	Wed,  8 Aug 2012 08:05:13 +0000 (UTC)
+Original-Received: from int-mx11.intmail.prod.int.phx2.redhat.com
+	(int-mx11.intmail.prod.int.phx2.redhat.com [10.5.11.24])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q78859mr003420
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Wed, 8 Aug 2012 04:05:10 -0400
+Original-Received: from hj.localdomain.com ([10.66.7.175])
+	by int-mx11.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP
+	id q7884vcG015536; Wed, 8 Aug 2012 04:05:06 -0400
+In-Reply-To: <1344413225-1843-1-git-send-email-asias@redhat.com>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.24
+X-Spam-Status: No, score=-6.9 required=5.0 tests=BAYES_00,RCVD_IN_DNSWL_HI,
+	T_RP_MATCHES_RCVD autolearn=ham version=3.3.1
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on
+	smtp1.linux-foundation.org
+X-BeenThere: virtualization@lists.linux-foundation.org
+X-Mailman-Version: 2.1.12
+Precedence: list
+List-Id: Linux virtualization <virtualization.lists.linux-foundation.org>
+List-Unsubscribe: <https://lists.linuxfoundation.org/mailman/options/virtualization>,
+	<mailto:virtualization-request@lists.linux-foundation.org?subject=unsubscribe>
+List-Archive: <http://lists.linuxfoundation.org/pipermail/virtualization/>
+List-Post: <mailto:virtualization@lists.linux-foundation.org>
+List-Help: <mailto:virtualization-request@lists.linux-foundation.org?subject=help>
+List-Subscribe: <https://lists.linuxfoundation.org/mailman/listinfo/virtualization>,
+	<mailto:virtualization-request@lists.linux-foundation.org?subject=subscribe>
+Original-Sender: virtualization-bounces@lists.linux-foundation.org
+Errors-To: virtualization-bounces@lists.linux-foundation.org
+Xref: news.gmane.org gmane.linux.kernel.virtualization:16430 gmane.linux.kernel:1339884 gmane.comp.emulators.kvm.devel:95784
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339884>
+
+We need to support both REQ_FLUSH and REQ_FUA for bio based path since
+it does not get the sequencing of REQ_FUA into REQ_FLUSH that request
+based drivers can request.
+
+REQ_FLUSH is emulated by:
+A) If the bio has no data to write:
+1. Send VIRTIO_BLK_T_FLUSH to device,
+2. In the flush I/O completion handler, finish the bio
+
+B) If the bio has data to write:
+1. Send VIRTIO_BLK_T_FLUSH to device
+2. In the flush I/O completion handler, send the actual write data to device
+3. In the write I/O completion handler, finish the bio
+
+REQ_FUA is emulated by:
+1. Send the actual write data to device
+2. In the write I/O completion handler, send VIRTIO_BLK_T_FLUSH to device
+3. In the flush I/O completion handler, finish the bio
+
+Changes in v7:
+- Using vbr->flags to trace request type
+- Dropped unnecessary struct virtio_blk *vblk parameter
+- Reuse struct virtblk_req in bio done function
+
+Cahnges in v6:
+- Reworked REQ_FLUSH and REQ_FUA emulatation order
+
+Cc: Rusty Russell <rusty@rustcorp.com.au>
+Cc: Jens Axboe <axboe@kernel.dk>
+Cc: Christoph Hellwig <hch@lst.de>
+Cc: Tejun Heo <tj@kernel.org>
+Cc: Shaohua Li <shli@kernel.org>
+Cc: "Michael S. Tsirkin" <mst@redhat.com>
+Cc: kvm@vger.kernel.org
+Cc: linux-kernel@vger.kernel.org
+Cc: virtualization@lists.linux-foundation.org
+Signed-off-by: Asias He <asias@redhat.com>
+---
+ drivers/block/virtio_blk.c | 272 +++++++++++++++++++++++++++++++--------------
+ 1 file changed, 188 insertions(+), 84 deletions(-)
+
+diff --git a/drivers/block/virtio_blk.c b/drivers/block/virtio_blk.c
+index 95cfeed..2edfb5c 100644
+--- a/drivers/block/virtio_blk.c
++++ b/drivers/block/virtio_blk.c
+@@ -58,10 +58,20 @@ struct virtblk_req
+ 	struct bio *bio;
+ 	struct virtio_blk_outhdr out_hdr;
+ 	struct virtio_scsi_inhdr in_hdr;
++	struct work_struct work;
++	struct virtio_blk *vblk;
++	int flags;
+ 	u8 status;
+ 	struct scatterlist sg[];
+ };
+ 
++enum {
++	VBLK_IS_FLUSH		= 1,
++	VBLK_REQ_FLUSH		= 2,
++	VBLK_REQ_DATA		= 4,
++	VBLK_REQ_FUA		= 8,
++};
++
+ static inline int virtblk_result(struct virtblk_req *vbr)
+ {
+ 	switch (vbr->status) {
+@@ -74,9 +84,133 @@ static inline int virtblk_result(struct virtblk_req *vbr)
+ 	}
+ }
+ 
+-static inline void virtblk_request_done(struct virtio_blk *vblk,
+-					struct virtblk_req *vbr)
++static inline struct virtblk_req *virtblk_alloc_req(struct virtio_blk *vblk,
++						    gfp_t gfp_mask)
++{
++	struct virtblk_req *vbr;
++
++	vbr = mempool_alloc(vblk->pool, gfp_mask);
++	if (vbr && use_bio)
++		sg_init_table(vbr->sg, vblk->sg_elems);
++
++	vbr->vblk = vblk;
++
++	return vbr;
++}
++
++static void virtblk_add_buf_wait(struct virtio_blk *vblk,
++				 struct virtblk_req *vbr,
++				 unsigned long out,
++				 unsigned long in)
++{
++	DEFINE_WAIT(wait);
++
++	for (;;) {
++		prepare_to_wait_exclusive(&vblk->queue_wait, &wait,
++					  TASK_UNINTERRUPTIBLE);
++
++		spin_lock_irq(vblk->disk->queue->queue_lock);
++		if (virtqueue_add_buf(vblk->vq, vbr->sg, out, in, vbr,
++				      GFP_ATOMIC) < 0) {
++			spin_unlock_irq(vblk->disk->queue->queue_lock);
++			io_schedule();
++		} else {
++			virtqueue_kick(vblk->vq);
++			spin_unlock_irq(vblk->disk->queue->queue_lock);
++			break;
++		}
++
++	}
++
++	finish_wait(&vblk->queue_wait, &wait);
++}
++
++static inline void virtblk_add_req(struct virtblk_req *vbr,
++				   unsigned int out, unsigned int in)
++{
++	struct virtio_blk *vblk = vbr->vblk;
++
++	spin_lock_irq(vblk->disk->queue->queue_lock);
++	if (unlikely(virtqueue_add_buf(vblk->vq, vbr->sg, out, in, vbr,
++					GFP_ATOMIC) < 0)) {
++		spin_unlock_irq(vblk->disk->queue->queue_lock);
++		virtblk_add_buf_wait(vblk, vbr, out, in);
++		return;
++	}
++	virtqueue_kick(vblk->vq);
++	spin_unlock_irq(vblk->disk->queue->queue_lock);
++}
++
++static int virtblk_bio_send_flush(struct virtblk_req *vbr)
++{
++	unsigned int out = 0, in = 0;
++
++	vbr->flags |= VBLK_IS_FLUSH;
++	vbr->out_hdr.type = VIRTIO_BLK_T_FLUSH;
++	vbr->out_hdr.sector = 0;
++	vbr->out_hdr.ioprio = 0;
++	sg_set_buf(&vbr->sg[out++], &vbr->out_hdr, sizeof(vbr->out_hdr));
++	sg_set_buf(&vbr->sg[out + in++], &vbr->status, sizeof(vbr->status));
++
++	virtblk_add_req(vbr, out, in);
++
++	return 0;
++}
++
++static int virtblk_bio_send_data(struct virtblk_req *vbr)
+ {
++	struct virtio_blk *vblk = vbr->vblk;
++	unsigned int num, out = 0, in = 0;
++	struct bio *bio = vbr->bio;
++
++	vbr->flags &= ~VBLK_IS_FLUSH;
++	vbr->out_hdr.type = 0;
++	vbr->out_hdr.sector = bio->bi_sector;
++	vbr->out_hdr.ioprio = bio_prio(bio);
++
++	sg_set_buf(&vbr->sg[out++], &vbr->out_hdr, sizeof(vbr->out_hdr));
++
++	num = blk_bio_map_sg(vblk->disk->queue, bio, vbr->sg + out);
++
++	sg_set_buf(&vbr->sg[num + out + in++], &vbr->status,
++		   sizeof(vbr->status));
++
++	if (num) {
++		if (bio->bi_rw & REQ_WRITE) {
++			vbr->out_hdr.type |= VIRTIO_BLK_T_OUT;
++			out += num;
++		} else {
++			vbr->out_hdr.type |= VIRTIO_BLK_T_IN;
++			in += num;
++		}
++	}
++
++	virtblk_add_req(vbr, out, in);
++
++	return 0;
++}
++
++static void virtblk_bio_send_data_work(struct work_struct *work)
++{
++	struct virtblk_req *vbr;
++
++	vbr = container_of(work, struct virtblk_req, work);
++
++	virtblk_bio_send_data(vbr);
++}
++
++static void virtblk_bio_send_flush_work(struct work_struct *work)
++{
++	struct virtblk_req *vbr;
++
++	vbr = container_of(work, struct virtblk_req, work);
++
++	virtblk_bio_send_flush(vbr);
++}
++
++static inline void virtblk_request_done(struct virtblk_req *vbr)
++{
++	struct virtio_blk *vblk = vbr->vblk;
+ 	struct request *req = vbr->req;
+ 	int error = virtblk_result(vbr);
+ 
+@@ -92,17 +226,47 @@ static inline void virtblk_request_done(struct virtio_blk *vblk,
+ 	mempool_free(vbr, vblk->pool);
+ }
+ 
+-static inline void virtblk_bio_done(struct virtio_blk *vblk,
+-				    struct virtblk_req *vbr)
++static inline void virtblk_bio_flush_done(struct virtblk_req *vbr)
+ {
+-	bio_endio(vbr->bio, virtblk_result(vbr));
+-	mempool_free(vbr, vblk->pool);
++	struct virtio_blk *vblk = vbr->vblk;
++
++	if (vbr->flags & VBLK_REQ_DATA) {
++		/* Send out the actual write data */
++		INIT_WORK(&vbr->work, virtblk_bio_send_data_work);
++		queue_work(virtblk_wq, &vbr->work);
++	} else {
++		bio_endio(vbr->bio, virtblk_result(vbr));
++		mempool_free(vbr, vblk->pool);
++	}
++}
++
++static inline void virtblk_bio_data_done(struct virtblk_req *vbr)
++{
++	struct virtio_blk *vblk = vbr->vblk;
++
++	if (unlikely(vbr->flags & VBLK_REQ_FUA)) {
++		/* Send out a flush before end the bio */
++		vbr->flags &= ~VBLK_REQ_DATA;
++		INIT_WORK(&vbr->work, virtblk_bio_send_flush_work);
++		queue_work(virtblk_wq, &vbr->work);
++	} else {
++		bio_endio(vbr->bio, virtblk_result(vbr));
++		mempool_free(vbr, vblk->pool);
++	}
++}
++
++static inline void virtblk_bio_done(struct virtblk_req *vbr)
++{
++	if (unlikely(vbr->flags & VBLK_IS_FLUSH))
++		virtblk_bio_flush_done(vbr);
++	else
++		virtblk_bio_data_done(vbr);
+ }
+ 
+ static void virtblk_done(struct virtqueue *vq)
+ {
+ 	struct virtio_blk *vblk = vq->vdev->priv;
+-	unsigned long bio_done = 0, req_done = 0;
++	bool bio_done = false, req_done = false;
+ 	struct virtblk_req *vbr;
+ 	unsigned long flags;
+ 	unsigned int len;
+@@ -110,11 +274,11 @@ static void virtblk_done(struct virtqueue *vq)
+ 	spin_lock_irqsave(vblk->disk->queue->queue_lock, flags);
+ 	while ((vbr = virtqueue_get_buf(vblk->vq, &len)) != NULL) {
+ 		if (vbr->bio) {
+-			virtblk_bio_done(vblk, vbr);
+-			bio_done++;
++			virtblk_bio_done(vbr);
++			bio_done = true;
+ 		} else {
+-			virtblk_request_done(vblk, vbr);
+-			req_done++;
++			virtblk_request_done(vbr);
++			req_done = true;
+ 		}
+ 	}
+ 	/* In case queue is stopped waiting for more buffers. */
+@@ -126,18 +290,6 @@ static void virtblk_done(struct virtqueue *vq)
+ 		wake_up(&vblk->queue_wait);
+ }
+ 
+-static inline struct virtblk_req *virtblk_alloc_req(struct virtio_blk *vblk,
+-						    gfp_t gfp_mask)
+-{
+-	struct virtblk_req *vbr;
+-
+-	vbr = mempool_alloc(vblk->pool, gfp_mask);
+-	if (vbr && use_bio)
+-		sg_init_table(vbr->sg, vblk->sg_elems);
+-
+-	return vbr;
+-}
+-
+ static bool do_req(struct request_queue *q, struct virtio_blk *vblk,
+ 		   struct request *req)
+ {
+@@ -242,41 +394,12 @@ static void virtblk_request(struct request_queue *q)
+ 		virtqueue_kick(vblk->vq);
+ }
+ 
+-static void virtblk_add_buf_wait(struct virtio_blk *vblk,
+-				 struct virtblk_req *vbr,
+-				 unsigned long out,
+-				 unsigned long in)
+-{
+-	DEFINE_WAIT(wait);
+-
+-	for (;;) {
+-		prepare_to_wait_exclusive(&vblk->queue_wait, &wait,
+-					  TASK_UNINTERRUPTIBLE);
+-
+-		spin_lock_irq(vblk->disk->queue->queue_lock);
+-		if (virtqueue_add_buf(vblk->vq, vbr->sg, out, in, vbr,
+-				      GFP_ATOMIC) < 0) {
+-			spin_unlock_irq(vblk->disk->queue->queue_lock);
+-			io_schedule();
+-		} else {
+-			virtqueue_kick(vblk->vq);
+-			spin_unlock_irq(vblk->disk->queue->queue_lock);
+-			break;
+-		}
+-
+-	}
+-
+-	finish_wait(&vblk->queue_wait, &wait);
+-}
+-
+ static void virtblk_make_request(struct request_queue *q, struct bio *bio)
+ {
+ 	struct virtio_blk *vblk = q->queuedata;
+-	unsigned int num, out = 0, in = 0;
+ 	struct virtblk_req *vbr;
+ 
+ 	BUG_ON(bio->bi_phys_segments + 2 > vblk->sg_elems);
+-	BUG_ON(bio->bi_rw & (REQ_FLUSH | REQ_FUA));
+ 
+ 	vbr = virtblk_alloc_req(vblk, GFP_NOIO);
+ 	if (!vbr) {
+@@ -285,37 +408,18 @@ static void virtblk_make_request(struct request_queue *q, struct bio *bio)
+ 	}
+ 
+ 	vbr->bio = bio;
+-	vbr->req = NULL;
+-	vbr->out_hdr.type = 0;
+-	vbr->out_hdr.sector = bio->bi_sector;
+-	vbr->out_hdr.ioprio = bio_prio(bio);
+-
+-	sg_set_buf(&vbr->sg[out++], &vbr->out_hdr, sizeof(vbr->out_hdr));
+-
+-	num = blk_bio_map_sg(q, bio, vbr->sg + out);
+-
+-	sg_set_buf(&vbr->sg[num + out + in++], &vbr->status,
+-		   sizeof(vbr->status));
+-
+-	if (num) {
+-		if (bio->bi_rw & REQ_WRITE) {
+-			vbr->out_hdr.type |= VIRTIO_BLK_T_OUT;
+-			out += num;
+-		} else {
+-			vbr->out_hdr.type |= VIRTIO_BLK_T_IN;
+-			in += num;
+-		}
+-	}
+-
+-	spin_lock_irq(vblk->disk->queue->queue_lock);
+-	if (unlikely(virtqueue_add_buf(vblk->vq, vbr->sg, out, in, vbr,
+-				       GFP_ATOMIC) < 0)) {
+-		spin_unlock_irq(vblk->disk->queue->queue_lock);
+-		virtblk_add_buf_wait(vblk, vbr, out, in);
+-		return;
+-	}
+-	virtqueue_kick(vblk->vq);
+-	spin_unlock_irq(vblk->disk->queue->queue_lock);
++	vbr->flags = 0;
++	if (bio->bi_rw & REQ_FLUSH)
++		vbr->flags |= VBLK_REQ_FLUSH;
++	if (bio->bi_rw & REQ_FUA)
++		vbr->flags |= VBLK_REQ_FUA;
++	if (bio->bi_size)
++		vbr->flags |= VBLK_REQ_DATA;
++
++	if (unlikely(vbr->flags & VBLK_REQ_FLUSH))
++		virtblk_bio_send_flush(vbr);
++	else
++		virtblk_bio_send_data(vbr);
+ }
+ 
+ /* return id (s/n) string for *disk to *id_str
+@@ -529,7 +633,7 @@ static void virtblk_update_cache_mode(struct virtio_device *vdev)
+ 	u8 writeback = virtblk_get_cache_mode(vdev);
+ 	struct virtio_blk *vblk = vdev->priv;
+ 
+-	if (writeback && !use_bio)
++	if (writeback)
+ 		blk_queue_flush(vblk->disk->queue, REQ_FLUSH);
+ 	else
+ 		blk_queue_flush(vblk->disk->queue, 0);
+-- 
+1.7.11.2

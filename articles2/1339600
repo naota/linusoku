@@ -1,0 +1,120 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 075/109] ext4: dont let i_reserved_meta_blocks go negative
+Date: Tue,  7 Aug 2012 15:35:34 -0700
+Lines: 56
+Approved: news@gmane.org
+Message-ID: <20120807222049.687392754@linuxfoundation.org>
+References: <20120807222043.089735600@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344380722 29364 80.91.229.3 (7 Aug 2012 23:05:22 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 23:05:22 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Brian Foster <bfoster@redhat.com>,
+	"Theodore Tso" <tytso@mit.edu>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 01:05:21 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Syspx-0000oE-IW
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 01:05:17 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S933039Ab2HGXFG (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 19:05:06 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:56573 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030650Ab2HGWkG (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:40:06 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so359594pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:40:05 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=/cX8lzRgfDEG7rGtQnujtf/m6xOlC/w6HoeY8yXxwss=;
+        b=MOPsqHd/NHH3df3mjSuSMCea1J0GDm2pggiUrj2pmT79SC/pQx7dTC5y8Ssi/oTBzD
+         wvEsEWXZoAWH2R5JvBPRKov/rUDyOrkcPGe+6lcQN8VRGEJRzQ2lZ2POU3Vk+P+osi6I
+         sRORNSiBlInFCLVRVYcwW68MnfyqhW2b3QDbulvlj7so6CW99Sko5qGoFzlTM6opfPgk
+         TPnsCi4VMo9UWlvY2ZJDkQJqb2S7pDMlx6D12iVMc+AFrxXQmNs2+DSycWBaxU7pH/UM
+         K4GtC9aBWNHkrZbdVpVhfeGhs9RREO2FnWJxW2gL498WbLCPlQSnf6yjWISQhm16OVmi
+         asCQ==
+Original-Received: by 10.68.227.198 with SMTP id sc6mr31159368pbc.138.1344379205745;
+        Tue, 07 Aug 2012 15:40:05 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id gh9sm11977518pbc.20.2012.08.07.15.40.03
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:40:04 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222043.089735600@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQmodA8vZyZRYlMPyTmWslk4FdoT9ABKNMqpE92h/phnc6YuSjfSSn3oq43nxGVJ6L1WVeM5
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339600 gmane.linux.kernel.stable:29433
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339600>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.4-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Brian Foster <bfoster@redhat.com>
+
+commit 97795d2a5b8d3c8dc4365d4bd3404191840453ba upstream.
+
+If we hit a condition where we have allocated metadata blocks that
+were not appropriately reserved, we risk underflow of
+ei->i_reserved_meta_blocks.  In turn, this can throw
+sbi->s_dirtyclusters_counter significantly out of whack and undermine
+the nondelalloc fallback logic in ext4_nonda_switch().  Warn if this
+occurs and set i_allocated_meta_blocks to avoid this problem.
+
+This condition is reproduced by xfstests 270 against ext2 with
+delalloc enabled:
+
+Mar 28 08:58:02 localhost kernel: [  171.526344] EXT4-fs (loop1): delayed block allocation failed for inode 14 at logical offset 64486 with max blocks 64 with error -28
+Mar 28 08:58:02 localhost kernel: [  171.526346] EXT4-fs (loop1): This should not happen!! Data will be lost
+
+270 ultimately fails with an inconsistent filesystem and requires an
+fsck to repair.  The cause of the error is an underflow in
+ext4_da_update_reserve_space() due to an unreserved meta block
+allocation.
+
+Signed-off-by: Brian Foster <bfoster@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ fs/ext4/inode.c |    9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -279,6 +279,15 @@ void ext4_da_update_reserve_space(struct
+ 		used = ei->i_reserved_data_blocks;
+ 	}
+ 
++	if (unlikely(ei->i_allocated_meta_blocks > ei->i_reserved_meta_blocks)) {
++		ext4_msg(inode->i_sb, KERN_NOTICE, "%s: ino %lu, allocated %d "
++			 "with only %d reserved metadata blocks\n", __func__,
++			 inode->i_ino, ei->i_allocated_meta_blocks,
++			 ei->i_reserved_meta_blocks);
++		WARN_ON(1);
++		ei->i_allocated_meta_blocks = ei->i_reserved_meta_blocks;
++	}
++
+ 	/* Update per-inode reservations */
+ 	ei->i_reserved_data_blocks -= used;
+ 	ei->i_reserved_meta_blocks -= ei->i_allocated_meta_blocks;
+
+

@@ -1,0 +1,165 @@
+Path: news.gmane.org!not-for-mail
+From: Oleg Nesterov <oleg@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH 2/2] x86/uprobes: implement x86 specific
+	arch_uprobe_*_step
+Date: Wed, 1 Aug 2012 14:26:16 +0200
+Lines: 110
+Approved: news@gmane.org
+Message-ID: <20120801122616.GA32705@redhat.com>
+References: <20120730141638.GA5306@redhat.com> <1343735548-18101-1-git-send-email-bigeasy@linutronix.de> <1343735548-18101-2-git-send-email-bigeasy@linutronix.de> <20120731175108.GC14576@redhat.com> <50183273.9070304@linutronix.de>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343824188 7301 80.91.229.3 (1 Aug 2012 12:29:48 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 1 Aug 2012 12:29:48 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, ananth@in.ibm.com,
+	a.p.zijlstra@chello.nl, mingo@redhat.com,
+	srikar@linux.vnet.ibm.com, roland@hack.frob.com
+To: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 01 14:29:47 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwY3a-0000bf-Vu
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 01 Aug 2012 14:29:43 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753594Ab2HAM3g (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 1 Aug 2012 08:29:36 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:38579 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752154Ab2HAM3e (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 1 Aug 2012 08:29:34 -0400
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q71CTHBE030155
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Wed, 1 Aug 2012 08:29:18 -0400
+Original-Received: from tranklukator.englab.brq.redhat.com (dhcp-1-232.brq.redhat.com [10.34.1.232])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with SMTP id q71CTCQE006818;
+	Wed, 1 Aug 2012 08:29:13 -0400
+Original-Received: by tranklukator.englab.brq.redhat.com (nbSMTP-1.00) for uid 500
+	oleg@redhat.com; Wed,  1 Aug 2012 14:26:21 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <50183273.9070304@linutronix.de>
+User-Agent: Mutt/1.5.18 (2008-05-17)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336298
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336298>
+
+On 07/31, Sebastian Andrzej Siewior wrote:
+>
+> On 07/31/2012 07:51 PM, Oleg Nesterov wrote:
+>> However, honestly I do not like it. I think we should change this
+>> step-by-step, that is why I suggested to use TIF_SINGLESTEP and
+>> user_enable_single_step() like your initial patch did. With this
+>> patch at least the debugger doesn't lose the control over the tracee
+>> if it steps over the probed insn, and this is the main (and known ;)
+>> problem to me.
+>
+> I thought you did not like the nesting with TIF_SIGNLESTEP and the
+> _FORCE and suggested to handle the complete state within uprobe.
+
+Yes, but I suggested to do this in a separate patch.
+
+In particular, because even if we do not care about DEBUGCTLMSR_BTF
+after _disable, _enable has to clear it. See below.
+
+>> Every change needs the discussion. For example, _enable should
+>> clear DEBUGCTLMSR_BTF, this is obvious. But it is not clear to
+>> me if _disable should restore it. What if the probed insn was
+>> "jmp"? We need the additional complications to handle this case
+>> really correctly, and for what? OK, gdb can get the extra SIGTRAP
+>> from the tracee, but this is fine. And uprobes can confuse gdb
+>> in many ways.
+>
+> I don't know if it is worth to have correct behavior here or rather go
+> for the easy way which is either always do the wakeup or delay until
+> the next jump.
+
+This is debatable, personally I think it is fine to lose DEBUGCTLMSR_BTF.
+Otherwise we need much more complications, not sure if it worth a trouble.
+And an extra SIGTRAP for gdb is certainly better than the lost SIGTRAP.
+
+However, once again, at least we should clear DEBUGCTLMSR_BTF
+before the step. And I strongly believe we should not copy-and-paste
+this code from step.c. This means we need something like the patch
+below, before we teach uprobes to play with _TF directly, imho.
+
+And btw, this is offtopic, but the usage of update_debugctlmsr()
+doesn't look right to me (I can be easily wrong though). I'll write
+another email.
+
+Oleg.
+
+--- x/arch/x86/kernel/step.c
++++ x/arch/x86/kernel/step.c
+@@ -157,6 +157,21 @@ static int enable_single_step(struct tas
+ 	return 1;
+ }
+ 
++void enable_block_step(struct task_struct *child, bool on)
++{
++	unsigned long debugctl = get_debugctlmsr();
++
++	if (on) {
++		set_tsk_thread_flag(child, TIF_BLOCKSTEP);
++		debugctl |= DEBUGCTLMSR_BTF;
++	} else {
++		clear_tsk_thread_flag(child, TIF_BLOCKSTEP);
++		debugctl &= ~DEBUGCTLMSR_BTF;
++	}
++
++	update_debugctlmsr(debugctl);
++}
++
+ /*
+  * Enable single or block step.
+  */
+@@ -169,19 +184,10 @@ static void enable_step(struct task_stru
+ 	 * So no one should try to use debugger block stepping in a program
+ 	 * that uses user-mode single stepping itself.
+ 	 */
+-	if (enable_single_step(child) && block) {
+-		unsigned long debugctl = get_debugctlmsr();
+-
+-		debugctl |= DEBUGCTLMSR_BTF;
+-		update_debugctlmsr(debugctl);
+-		set_tsk_thread_flag(child, TIF_BLOCKSTEP);
+-	} else if (test_tsk_thread_flag(child, TIF_BLOCKSTEP)) {
+-		unsigned long debugctl = get_debugctlmsr();
+-
+-		debugctl &= ~DEBUGCTLMSR_BTF;
+-		update_debugctlmsr(debugctl);
+-		clear_tsk_thread_flag(child, TIF_BLOCKSTEP);
+-	}
++	if (enable_single_step(child) && block)
++		enable_block_step(true);
++	else if (test_tsk_thread_flag(child, TIF_BLOCKSTEP))
++		enable_block_step(false);
+ }
+ 
+ void user_enable_single_step(struct task_struct *child)
+@@ -199,13 +205,8 @@ void user_disable_single_step(struct tas
+ 	/*
+ 	 * Make sure block stepping (BTF) is disabled.
+ 	 */
+-	if (test_tsk_thread_flag(child, TIF_BLOCKSTEP)) {
+-		unsigned long debugctl = get_debugctlmsr();
+-
+-		debugctl &= ~DEBUGCTLMSR_BTF;
+-		update_debugctlmsr(debugctl);
+-		clear_tsk_thread_flag(child, TIF_BLOCKSTEP);
+-	}
++	if (test_tsk_thread_flag(child, TIF_BLOCKSTEP))
++		enable_block_step(false);
+ 
+ 	/* Always clear TIF_SINGLESTEP... */
+ 	clear_tsk_thread_flag(child, TIF_SINGLESTEP);
+

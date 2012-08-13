@@ -1,0 +1,98 @@
+Path: news.gmane.org!not-for-mail
+From: Daniel Mack <zonque@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] gpiolib: fix chip->base handling in of_gpio_simple_xlate()
+Date: Sun, 22 Jul 2012 19:10:52 +0200
+Lines: 47
+Approved: news@gmane.org
+Message-ID: <1342977052-7880-1-git-send-email-zonque@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342977614 15429 80.91.229.3 (22 Jul 2012 17:20:14 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 22 Jul 2012 17:20:14 +0000 (UTC)
+Cc: Daniel Mack <zonque@gmail.com>,
+	Grant Likely <grant.likely@secretlab.ca>,
+	Linus Walleij <linus.walleij@stericsson.com>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 22 19:20:13 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sszp7-0005my-QV
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 22 Jul 2012 19:20:06 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752263Ab2GVRT5 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 13:19:57 -0400
+Original-Received: from svenfoo.org ([82.94.215.22]:44269 "EHLO mail.zonque.de"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752183Ab2GVRT4 (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 13:19:56 -0400
+X-Greylist: delayed 531 seconds by postgrey-1.27 at vger.kernel.org; Sun, 22 Jul 2012 13:19:55 EDT
+Original-Received: from localhost (localhost [127.0.0.1])
+	by mail.zonque.de (Postfix) with ESMTP id D8A03C0298;
+	Sun, 22 Jul 2012 19:11:01 +0200 (CEST)
+Original-Received: from mail.zonque.de ([127.0.0.1])
+	by localhost (rambrand.bugwerft.de [127.0.0.1]) (amavisd-new, port 10024)
+	with ESMTP id 6jiegJoZbTYW; Sun, 22 Jul 2012 19:11:01 +0200 (CEST)
+Original-Received: from tamtam.taperay.com (i59F70425.versanet.de [89.247.4.37])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mail.zonque.de (Postfix) with ESMTPSA id 782ECC0077;
+	Sun, 22 Jul 2012 19:11:01 +0200 (CEST)
+X-Mailer: git-send-email 1.7.10.4
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331377
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331377>
+
+of_gpio_simple_xlate() is called for each chip when a GPIO is looked up.
+When registering several chips off the same DT node (with different pin
+offsets) however, the lookup fails as the GPIO number passed in to
+of_gpio_simple_xlate() is likely higher than the chip's ->ngpio value.
+
+Fix that by taking into account the chip's ->base value, and return the
+relative offset of the pin inside the chip.
+
+Signed-off-by: Daniel Mack <zonque@gmail.com>
+Cc: Grant Likely <grant.likely@secretlab.ca>
+Cc: Linus Walleij <linus.walleij@stericsson.com>
+---
+
+I'm currently porting the PXA pieces over to DT, and stumbled over what
+looks like an obvious bug to me. Correct me if I'm mistaken, but I see
+no reason why one shouldn't be able to instanciate several GPIO chips
+from a single DT node.
+
+Thanks,
+Daniel
+
+ drivers/gpio/gpiolib-of.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpio/gpiolib-of.c b/drivers/gpio/gpiolib-of.c
+index d18068a..51bc232 100644
+--- a/drivers/gpio/gpiolib-of.c
++++ b/drivers/gpio/gpiolib-of.c
+@@ -147,13 +147,13 @@ int of_gpio_simple_xlate(struct gpio_chip *gc,
+ 	if (WARN_ON(gpiospec->args_count < gc->of_gpio_n_cells))
+ 		return -EINVAL;
+ 
+-	if (gpiospec->args[0] >= gc->ngpio)
++	if (gpiospec->args[0] >= gc->ngpio + gc->base)
+ 		return -EINVAL;
+ 
+ 	if (flags)
+ 		*flags = gpiospec->args[1];
+ 
+-	return gpiospec->args[0];
++	return gpiospec->args[0] - gc->base;
+ }
+ EXPORT_SYMBOL(of_gpio_simple_xlate);
+ 
+-- 
+1.7.10.4
+

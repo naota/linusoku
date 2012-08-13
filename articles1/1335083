@@ -1,0 +1,172 @@
+Path: news.gmane.org!not-for-mail
+From: tip-bot for Oleg Nesterov <oleg@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: [tip:perf/core] uprobes: Clean up and document write_opcode()->
+ lock_page(old_page)
+Date: Mon, 30 Jul 2012 07:12:18 -0700
+Lines: 106
+Approved: news@gmane.org
+Message-ID: <tip-9f92448ceeea5326db7d114005a7e7ac03904edf@git.kernel.org>
+References: <20120729182220.GA20322@redhat.com>
+Reply-To: mingo@kernel.org, hpa@zytor.com, anton@redhat.com,
+	  linux-kernel@vger.kernel.org, srikar@linux.vnet.ibm.com,
+	  tglx@linutronix.de, oleg@redhat.com
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+X-Trace: dough.gmane.org 1343657610 7893 80.91.229.3 (30 Jul 2012 14:13:30 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 14:13:30 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, anton@redhat.com, hpa@zytor.com,
+	mingo@kernel.org, srikar@linux.vnet.ibm.com, oleg@redhat.com,
+	tglx@linutronix.de
+To: linux-tip-commits@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 16:13:28 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Svqis-0002TA-0l
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 16:13:26 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754581Ab2G3ONQ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 10:13:16 -0400
+Original-Received: from terminus.zytor.com ([198.137.202.10]:45574 "EHLO
+	terminus.zytor.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754446Ab2G3ONO (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 10:13:14 -0400
+Original-Received: from terminus.zytor.com (localhost [127.0.0.1])
+	by terminus.zytor.com (8.14.5/8.14.5) with ESMTP id q6UECJqt022359
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Mon, 30 Jul 2012 07:12:24 -0700
+Original-Received: (from tipbot@localhost)
+	by terminus.zytor.com (8.14.5/8.14.5/Submit) id q6UECI2S022356;
+	Mon, 30 Jul 2012 07:12:18 -0700
+X-Authentication-Warning: terminus.zytor.com: tipbot set sender to tipbot@zytor.com using -f
+In-Reply-To: <20120729182220.GA20322@redhat.com>
+Git-Commit-ID: 9f92448ceeea5326db7d114005a7e7ac03904edf
+X-Mailer: tip-git-log-daemon
+Robot-ID: <tip-bot.git.kernel.org>
+Robot-Unsubscribe: Contact <mailto:hpa@kernel.org>
+  to get blacklisted from these emails
+Content-Disposition: inline
+X-Spam-Status: No, score=-2.9 required=5.0 tests=ALL_TRUSTED,BAYES_00,
+	T_DATE_IN_FUTURE_96_Q autolearn=ham version=3.3.2
+X-Spam-Checker-Version: SpamAssassin 3.3.2 (2011-06-06) on terminus.zytor.com
+X-Greylist: Sender IP whitelisted, not delayed by milter-greylist-4.2.6 (terminus.zytor.com [127.0.0.1]); Mon, 30 Jul 2012 07:12:24 -0700 (PDT)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335083
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335083>
+
+Commit-ID:  9f92448ceeea5326db7d114005a7e7ac03904edf
+Gitweb:     http://git.kernel.org/tip/9f92448ceeea5326db7d114005a7e7ac03904edf
+Author:     Oleg Nesterov <oleg@redhat.com>
+AuthorDate: Sun, 29 Jul 2012 20:22:20 +0200
+Committer:  Ingo Molnar <mingo@kernel.org>
+CommitDate: Mon, 30 Jul 2012 11:27:20 +0200
+
+uprobes: Clean up and document write_opcode()->lock_page(old_page)
+
+The comment above write_opcode()->lock_page(old_page) tells
+about the race with do_wp_page(). I don't really understand
+which exactly race it means, but afaics this lock_page() was not
+enough to close all races with do_wp_page().
+
+Anyway, since:
+
+   77fc4af1b59d uprobes: Change register_for_each_vma() to take mm->mmap_sem for writing
+
+this code is always called with ->mmap_sem held for writing,
+so we can forget about do_wp_page().
+
+However, we can't simply remove this lock_page(), and the only
+(afaics) reason is __replace_page()->try_to_free_swap().
+
+Nothing in write_opcode() needs it, move it into
+__replace_page() and fix the comment.
+
+Signed-off-by: Oleg Nesterov <oleg@redhat.com>
+Acked-by: Srikar Dronamraju <srikar.vnet.ibm.com>
+Cc: Anton Arapov <anton@redhat.com>
+Cc: Srikar Dronamraju <srikar@linux.vnet.ibm.com>
+Link: http://lkml.kernel.org/r/20120729182220.GA20322@redhat.com
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+---
+ kernel/events/uprobes.c |   27 ++++++++++++++-------------
+ 1 files changed, 14 insertions(+), 13 deletions(-)
+
+diff --git a/kernel/events/uprobes.c b/kernel/events/uprobes.c
+index 23c562b7..5db150b 100644
+--- a/kernel/events/uprobes.c
++++ b/kernel/events/uprobes.c
+@@ -139,10 +139,15 @@ static int __replace_page(struct vm_area_struct *vma, unsigned long addr,
+ 	struct mm_struct *mm = vma->vm_mm;
+ 	spinlock_t *ptl;
+ 	pte_t *ptep;
++	int err;
+ 
++	/* freeze PageSwapCache() for try_to_free_swap() below */
++	lock_page(page);
++
++	err = -EAGAIN;
+ 	ptep = page_check_address(page, mm, addr, &ptl, 0);
+ 	if (!ptep)
+-		return -EAGAIN;
++		goto unlock;
+ 
+ 	get_page(kpage);
+ 	page_add_new_anon_rmap(kpage, vma, addr);
+@@ -162,7 +167,10 @@ static int __replace_page(struct vm_area_struct *vma, unsigned long addr,
+ 	put_page(page);
+ 	pte_unmap_unlock(ptep, ptl);
+ 
+-	return 0;
++	err = 0;
++ unlock:
++	unlock_page(page);
++	return err;
+ }
+ 
+ /**
+@@ -216,15 +224,10 @@ retry:
+ 	ret = -ENOMEM;
+ 	new_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, vaddr);
+ 	if (!new_page)
+-		goto put_out;
++		goto put_old;
+ 
+ 	__SetPageUptodate(new_page);
+ 
+-	/*
+-	 * lock page will serialize against do_wp_page()'s
+-	 * PageAnon() handling
+-	 */
+-	lock_page(old_page);
+ 	/* copy the page now that we've got it stable */
+ 	vaddr_old = kmap_atomic(old_page);
+ 	vaddr_new = kmap_atomic(new_page);
+@@ -237,15 +240,13 @@ retry:
+ 
+ 	ret = anon_vma_prepare(vma);
+ 	if (ret)
+-		goto unlock_out;
++		goto put_new;
+ 
+ 	ret = __replace_page(vma, vaddr, old_page, new_page);
+ 
+-unlock_out:
+-	unlock_page(old_page);
++put_new:
+ 	page_cache_release(new_page);
+-
+-put_out:
++put_old:
+ 	put_page(old_page);
+ 
+ 	if (unlikely(ret == -EAGAIN))

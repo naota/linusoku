@@ -1,0 +1,155 @@
+Path: news.gmane.org!not-for-mail
+From: "Rafael J. Wysocki" <rjw@sisk.pl>
+Newsgroups: gmane.linux.ports.sh.devel,gmane.linux.kernel
+Subject: [PATCH 1/4] PM / shmobile: Set PM domain on/off latencies directly
+Date: Wed, 8 Aug 2012 00:27:10 +0200
+Lines: 98
+Approved: news@gmane.org
+Message-ID: <201208080027.10394.rjw@sisk.pl>
+References: <201207212349.18294.rjw@sisk.pl> <201208080026.01738.rjw@sisk.pl>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain;
+  charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344416596 3745 80.91.229.3 (8 Aug 2012 09:03:16 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 09:03:16 +0000 (UTC)
+Cc: Linux PM list <linux-pm@vger.kernel.org>,
+	LKML <linux-kernel@vger.kernel.org>,
+	Magnus Damm <magnus.damm@gmail.com>
+To: "Linux-sh list" <linux-sh@vger.kernel.org>
+Original-X-From: linux-sh-owner@vger.kernel.org Wed Aug 08 11:03:14 2012
+Return-path: <linux-sh-owner@vger.kernel.org>
+Envelope-to: glps-linuxsh-dev@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-sh-owner@vger.kernel.org>)
+	id 1Sz2AV-0004qG-MQ
+	for glps-linuxsh-dev@plane.gmane.org; Wed, 08 Aug 2012 11:03:08 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S964789Ab2HHJDF (ORCPT <rfc822;glps-linuxsh-dev@m.gmane.org>);
+	Wed, 8 Aug 2012 05:03:05 -0400
+Original-Received: from ogre.sisk.pl ([193.178.161.156]:48327 "EHLO ogre.sisk.pl"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1757892Ab2HHJBJ (ORCPT <rfc822;linux-sh@vger.kernel.org>);
+	Wed, 8 Aug 2012 05:01:09 -0400
+Original-Received: from localhost (localhost.localdomain [127.0.0.1])
+	by ogre.sisk.pl (Postfix) with ESMTP id 859761D644C;
+	Wed,  8 Aug 2012 10:50:44 +0200 (CEST)
+Original-Received: from ogre.sisk.pl ([127.0.0.1])
+ by localhost (ogre.sisk.pl [127.0.0.1]) (amavisd-new, port 10024) with ESMTP
+ id 13898-08; Wed,  8 Aug 2012 10:50:24 +0200 (CEST)
+Original-Received: from ferrari.rjw.lan (62-121-64-87.home.aster.pl [62.121.64.87])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by ogre.sisk.pl (Postfix) with ESMTP id E66661DB9BB;
+	Wed,  8 Aug 2012 10:50:24 +0200 (CEST)
+User-Agent: KMail/1.13.6 (Linux/3.5.0+; KDE/4.6.0; x86_64; ; )
+In-Reply-To: <201208080026.01738.rjw@sisk.pl>
+X-Virus-Scanned: amavisd-new at ogre.sisk.pl using MkS_Vir for Linux
+Original-Sender: linux-sh-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-sh.vger.kernel.org>
+X-Mailing-List: linux-sh@vger.kernel.org
+Xref: news.gmane.org gmane.linux.ports.sh.devel:16175 gmane.linux.kernel:1339910
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339910>
+
+
+The results of adaptive latency computations in __pm_genpd_poweron()
+and pm_genpd_poweroff() show that the power on/power off latencies
+of all power domains in SH7372 are a little below 250 us.  Therefore,
+if 250 us is used as the common initial value of the latency fields
+in struct generic_pm_domain for all domains, the latency values
+will never have to change at run time and there won't be any overhead
+related to re-computation of the corresponding PM QoS data.
+
+Signed-off-by: Rafael J. Wysocki <rjw@sisk.pl>
+---
+ arch/arm/mach-shmobile/pm-sh7372.c |   20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+Index: linux/arch/arm/mach-shmobile/pm-sh7372.c
+===================================================================
+--- linux.orig/arch/arm/mach-shmobile/pm-sh7372.c
++++ linux/arch/arm/mach-shmobile/pm-sh7372.c
+@@ -71,6 +71,8 @@
+ 
+ #ifdef CONFIG_PM
+ 
++#define PM_DOMAIN_ON_OFF_LATENCY_NS	250000
++
+ static int sh7372_a4r_pd_suspend(void)
+ {
+ 	sh7372_intcs_suspend();
+@@ -110,32 +112,46 @@ static int sh7372_a3sp_pd_suspend(void)
+ static struct rmobile_pm_domain sh7372_pm_domains[] = {
+ 	{
+ 		.genpd.name = "A4LC",
++		.genpd.power_on_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
++		.genpd.power_off_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+ 		.bit_shift = 1,
+ 	},
+ 	{
+ 		.genpd.name = "A4MP",
++		.genpd.power_on_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
++		.genpd.power_off_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+ 		.bit_shift = 2,
+ 	},
+ 	{
+ 		.genpd.name = "D4",
++		.genpd.power_on_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
++		.genpd.power_off_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+ 		.bit_shift = 3,
+ 	},
+ 	{
+ 		.genpd.name = "A4R",
++		.genpd.power_on_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
++		.genpd.power_off_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+ 		.bit_shift = 5,
+ 		.suspend = sh7372_a4r_pd_suspend,
+ 		.resume = sh7372_intcs_resume,
+ 	},
+ 	{
+ 		.genpd.name = "A3RV",
++		.genpd.power_on_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
++		.genpd.power_off_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+ 		.bit_shift = 6,
+ 	},
+ 	{
+ 		.genpd.name = "A3RI",
++		.genpd.power_on_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
++		.genpd.power_off_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+ 		.bit_shift = 8,
+ 	},
+ 	{
+ 		.genpd.name = "A4S",
++		.genpd.power_on_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
++		.genpd.power_off_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+ 		.bit_shift = 10,
+ 		.gov = &pm_domain_always_on_gov,
+ 		.no_debug = true,
+@@ -144,6 +160,8 @@ static struct rmobile_pm_domain sh7372_p
+ 	},
+ 	{
+ 		.genpd.name = "A3SP",
++		.genpd.power_on_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
++		.genpd.power_off_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+ 		.bit_shift = 11,
+ 		.gov = &pm_domain_always_on_gov,
+ 		.no_debug = true,
+@@ -151,6 +169,8 @@ static struct rmobile_pm_domain sh7372_p
+ 	},
+ 	{
+ 		.genpd.name = "A3SG",
++		.genpd.power_on_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
++		.genpd.power_off_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+ 		.bit_shift = 13,
+ 	},
+ };
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-sh" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

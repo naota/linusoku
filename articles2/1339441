@@ -1,0 +1,169 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 071/122] cifs: ensure that we always do cifsFileInfo_get under the spinlock
+Date: Tue,  7 Aug 2012 15:25:59 -0700
+Lines: 104
+Approved: news@gmane.org
+Message-ID: <20120807221954.959761503@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344378807 15267 80.91.229.3 (7 Aug 2012 22:33:27 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:33:27 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Pavel Shilovsky <pshilovsky@samba.org>,
+	Jeff Layton <jlayton@redhat.com>,
+	Steve French <smfrench@gmail.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:33:26 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysL3-0004aE-Jt
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:33:21 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932707Ab2HGWaq (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:30:46 -0400
+Original-Received: from mail-yx0-f174.google.com ([209.85.213.174]:34616 "EHLO
+	mail-yx0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S932684Ab2HGWan (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:30:43 -0400
+Original-Received: by mail-yx0-f174.google.com with SMTP id l2so160412yen.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:30:42 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=SQrPmVL9K+U9fz2SrDziG3MX4L2J40rObU6CJMtkwHY=;
+        b=C+DwOtqCAtnh5m2G/5Cps9Z3Mlz/vokACXv9Y6k7C/RhPvmflPzAvr+0QB9EwPpbcS
+         CF8C0TPfNDJril6+tQAENcpBmpV0WTUgE/p+D3Yglz/i7FFjEA4RCdcu0owQPGgD19fs
+         njePA661zcp+7Bm5HexbrgYwXHsh4zdPyqKJzMRInRSBmWAXZm7qOV8xNlVTE7/EhkpF
+         P9XbOm8d6vzqVO+fh3exrLP3bSzQRjJ53Z+VCxkPfGrXF/NsW2Emgdq9hDywVNS4PJKv
+         kOYYFzTUM+/RY0P4P5maJIZdzLgM5cRlbPK5fokUraiQD5ojd9TIHDETJBPxPrVVB+df
+         Ws3w==
+Original-Received: by 10.66.87.132 with SMTP id ay4mr28725461pab.82.1344378642238;
+        Tue, 07 Aug 2012 15:30:42 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id pv8sm2695167pbb.25.2012.08.07.15.30.40
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:30:41 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQlF+T78ebI1+WwmsWryG4CdSmv+zg2uPU7M1ITamcjrfDr26qLhYGIM7NfuT7z2SKLAaLA2
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339441 gmane.linux.kernel.stable:29280
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339441>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Jeff Layton <jlayton@redhat.com>
+
+commit 764a1b1acecedfe204cb2e80d8e2cc7c6df1b0b8 upstream.
+
+The readpages bug is a regression that was introduced in 6993f74a5.
+This also fixes a couple of similar bugs in the uncached read and write
+codepaths.
+
+Also, prevent this sort of thing in the future by having cifsFileInfo_get
+take the spinlock itself, and adding a _locked variant for use in places
+that are already holding the lock. The _put code has always done that
+so this makes for a less confusing interface.
+
+Reviewed-by: Pavel Shilovsky <pshilovsky@samba.org>
+Signed-off-by: Jeff Layton <jlayton@redhat.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ fs/cifs/cifsglob.h |    6 +++---
+ fs/cifs/file.c     |   17 ++++++++++++-----
+ 2 files changed, 15 insertions(+), 8 deletions(-)
+
+--- a/fs/cifs/cifsglob.h
++++ b/fs/cifs/cifsglob.h
+@@ -657,13 +657,13 @@ struct cifs_io_parms {
+  * Take a reference on the file private data. Must be called with
+  * cifs_file_list_lock held.
+  */
+-static inline
+-struct cifsFileInfo *cifsFileInfo_get(struct cifsFileInfo *cifs_file)
++static inline void
++cifsFileInfo_get_locked(struct cifsFileInfo *cifs_file)
+ {
+ 	++cifs_file->count;
+-	return cifs_file;
+ }
+ 
++struct cifsFileInfo *cifsFileInfo_get(struct cifsFileInfo *cifs_file);
+ void cifsFileInfo_put(struct cifsFileInfo *cifs_file);
+ 
+ /*
+--- a/fs/cifs/file.c
++++ b/fs/cifs/file.c
+@@ -284,6 +284,15 @@ cifs_new_fileinfo(__u16 fileHandle, stru
+ 
+ static void cifs_del_lock_waiters(struct cifsLockInfo *lock);
+ 
++struct cifsFileInfo *
++cifsFileInfo_get(struct cifsFileInfo *cifs_file)
++{
++	spin_lock(&cifs_file_list_lock);
++	cifsFileInfo_get_locked(cifs_file);
++	spin_unlock(&cifs_file_list_lock);
++	return cifs_file;
++}
++
+ /*
+  * Release a reference on the file private data. This may involve closing
+  * the filehandle out on the server. Must be called without holding
+@@ -1563,7 +1572,7 @@ struct cifsFileInfo *find_readable_file(
+ 			if (!open_file->invalidHandle) {
+ 				/* found a good file */
+ 				/* lock it so it will not be closed on us */
+-				cifsFileInfo_get(open_file);
++				cifsFileInfo_get_locked(open_file);
+ 				spin_unlock(&cifs_file_list_lock);
+ 				return open_file;
+ 			} /* else might as well continue, and look for
+@@ -1615,7 +1624,7 @@ refind_writable:
+ 		if (OPEN_FMODE(open_file->f_flags) & FMODE_WRITE) {
+ 			if (!open_file->invalidHandle) {
+ 				/* found a good writable file */
+-				cifsFileInfo_get(open_file);
++				cifsFileInfo_get_locked(open_file);
+ 				spin_unlock(&cifs_file_list_lock);
+ 				return open_file;
+ 			} else {
+@@ -1632,7 +1641,7 @@ refind_writable:
+ 
+ 	if (inv_file) {
+ 		any_available = false;
+-		cifsFileInfo_get(inv_file);
++		cifsFileInfo_get_locked(inv_file);
+ 	}
+ 
+ 	spin_unlock(&cifs_file_list_lock);
+@@ -3082,8 +3091,6 @@ static int cifs_readpages(struct file *f
+ 			break;
+ 		}
+ 
+-		spin_lock(&cifs_file_list_lock);
+-		spin_unlock(&cifs_file_list_lock);
+ 		rdata->cfile = cifsFileInfo_get(open_file);
+ 		rdata->mapping = mapping;
+ 		rdata->offset = offset;
+
+

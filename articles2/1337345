@@ -1,0 +1,89 @@
+Path: news.gmane.org!not-for-mail
+From: Alan Stern <stern@rowland.harvard.edu>
+Newsgroups: gmane.linux.kernel.pci,gmane.linux.kernel
+Subject: Re: [BUGFIX 3/4] PCI/PM: Fix config reg access for D3cold and bridge
+ suspending
+Date: Fri, 3 Aug 2012 10:46:20 -0400 (EDT)
+Lines: 42
+Approved: news@gmane.org
+Message-ID: <Pine.LNX.4.44L0.1208031042580.1520-100000@iolanthe.rowland.org>
+References: <1343975435-25469-4-git-send-email-ying.huang@intel.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: TEXT/PLAIN; charset=US-ASCII
+X-Trace: dough.gmane.org 1344005186 25265 80.91.229.3 (3 Aug 2012 14:46:26 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 14:46:26 +0000 (UTC)
+Cc: Bjorn Helgaas <bhelgaas@google.com>,
+	<linux-kernel@vger.kernel.org>, <linux-pci@vger.kernel.org>,
+	<linux-pm@vger.kernel.org>, "Rafael J. Wysocki" <rjw@sisk.pl>
+To: Huang Ying <ying.huang@intel.com>
+Original-X-From: linux-pci-owner@vger.kernel.org Fri Aug 03 16:46:24 2012
+Return-path: <linux-pci-owner@vger.kernel.org>
+Envelope-to: glp-linux-pci@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-pci-owner@vger.kernel.org>)
+	id 1SxJ8x-00029c-Hj
+	for glp-linux-pci@plane.gmane.org; Fri, 03 Aug 2012 16:46:23 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754091Ab2HCOqW (ORCPT <rfc822;glp-linux-pci@m.gmane.org>);
+	Fri, 3 Aug 2012 10:46:22 -0400
+Original-Received: from iolanthe.rowland.org ([192.131.102.54]:55597 "HELO
+	iolanthe.rowland.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with SMTP id S1753657Ab2HCOqV (ORCPT
+	<rfc822;linux-pci@vger.kernel.org>); Fri, 3 Aug 2012 10:46:21 -0400
+Original-Received: (qmail 2234 invoked by uid 2102); 3 Aug 2012 10:46:20 -0400
+Original-Received: from localhost (sendmail-bs@127.0.0.1)
+  by localhost with SMTP; 3 Aug 2012 10:46:20 -0400
+X-X-Sender: stern@iolanthe.rowland.org
+In-Reply-To: <1343975435-25469-4-git-send-email-ying.huang@intel.com>
+Original-Sender: linux-pci-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-pci.vger.kernel.org>
+X-Mailing-List: linux-pci@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel.pci:16856 gmane.linux.kernel:1337345
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337345>
+
+On Fri, 3 Aug 2012, Huang Ying wrote:
+
+> This patch fixes the following bug:
+> 
+> http://marc.info/?l=linux-pci&m=134338059022620&w=2
+> 
+> Where lspci does not work properly if a device and the corresponding
+> parent bridge (such as PCIe port) is suspended.  This is because the
+> device configuration space registers will be not accessible if the
+> corresponding parent bridge is suspended or the device is put into
+> D3cold state.
+> 
+> To solve the issue, the bridge/PCIe port connected to the device is
+> put into active state before read/write configuration space registers.
+> If the device is in D3cold state, it will be put into active state
+> too.
+> 
+> To avoid resume/suspend PCIe port for each configuration register
+> read/write, a small delay is added before the PCIe port to go
+> suspended.
+
+
+> +static void
+> +pci_config_pm_runtime_put(struct pci_dev *pdev)
+> +{
+> +	struct device *dev = &pdev->dev;
+> +	struct device *parent = dev->parent;
+> +
+> +	pm_runtime_put(dev);
+> +	if (parent)
+> +		pm_runtime_put(parent);
+> +}
+
+This is just the sort of thing Rafael and I have been talking about.  
+Why do an asynchronous put, going to all the trouble of using the 
+workqueue, if the idle routine is just going to call 
+pm_schedule_suspend()?
+
+Why not call pm_runtime_put_sync() instead?
+
+Alan Stern
+

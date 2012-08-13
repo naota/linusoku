@@ -1,0 +1,217 @@
+Path: news.gmane.org!not-for-mail
+From: "Srivatsa S. Bhat" <srivatsa.bhat@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel
+Subject: [RFC PATCH 5/6] sched,
+ perf: Prepare migration and perf CPU hotplug callbacks for reverse
+ invocation
+Date: Wed, 25 Jul 2012 17:24:57 +0530
+Lines: 151
+Approved: news@gmane.org
+Message-ID: <20120725115439.3900.59443.stgit@srivatsabhat.in.ibm.com>
+References: <20120725115224.3900.80783.stgit@srivatsabhat.in.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343217325 21101 80.91.229.3 (25 Jul 2012 11:55:25 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 11:55:25 +0000 (UTC)
+Cc: rjw@sisk.pl, srivatsa.bhat@linux.vnet.ibm.com,
+	nikunj@linux.vnet.ibm.com, linux-pm@vger.kernel.org,
+	linux-kernel@vger.kernel.org
+To: tglx@linutronix.de, mingo@kernel.org, peterz@infradead.org,
+	rusty@rustcorp.com.au, paulmck@linux.vnet.ibm.com,
+	namhyung@kernel.org, tj@kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 13:55:22 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su0BU-0005zd-SW
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 13:55:21 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756663Ab2GYLzL (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 07:55:11 -0400
+Original-Received: from e28smtp08.in.ibm.com ([122.248.162.8]:55165 "EHLO
+	e28smtp08.in.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756535Ab2GYLzI (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 07:55:08 -0400
+Original-Received: from /spool/local
+	by e28smtp08.in.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <srivatsa.bhat@linux.vnet.ibm.com>;
+	Wed, 25 Jul 2012 17:25:05 +0530
+Original-Received: from d28relay05.in.ibm.com (9.184.220.62)
+	by e28smtp08.in.ibm.com (192.168.1.138) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Wed, 25 Jul 2012 17:25:03 +0530
+Original-Received: from d28av03.in.ibm.com (d28av03.in.ibm.com [9.184.220.65])
+	by d28relay05.in.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6PBt21526607794;
+	Wed, 25 Jul 2012 17:25:02 +0530
+Original-Received: from d28av03.in.ibm.com (loopback [127.0.0.1])
+	by d28av03.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6PBt0mP022705;
+	Wed, 25 Jul 2012 21:55:02 +1000
+Original-Received: from srivatsabhat.in.ibm.com (srivatsabhat.in.ibm.com [9.124.35.188])
+	by d28av03.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6PBt0XP022700;
+	Wed, 25 Jul 2012 21:55:00 +1000
+In-Reply-To: <20120725115224.3900.80783.stgit@srivatsabhat.in.ibm.com>
+User-Agent: StGIT/0.14.3
+x-cbid: 12072511-2000-0000-0000-0000087C2F28
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332917
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332917>
+
+While dealing with reverse invocation of callbacks during CPU offline, we
+get an opportunity to revisit some of the reasons behind the existing callback
+invocation orders and how they would fit into the new reverse invocation model
+(which poses its own constraints and challenges).
+
+It is documented that the perf and migration CPU hotplug callbacks must be
+run pretty early (ie., before the normal callbacks that have priority 0 and
+lower)... and also that the perf callbacks must be run before the migration
+one. Again, at first glance, it looks like the "Notifier A must be followed
+by B, always, in both cpu online and cpu offline paths" rule. However, looking
+a bit closely at the code, it appears that this requirement is true mainly for
+the CPU online path, and not for the CPU offline path.
+
+In the CPU offline path, some of the perf callbacks deal with low-level
+registers, whereas the migration callback deals with the scheduler runqueues
+and stuff, which look quite unrelated. Also, there are quite a few priority 0
+callbacks that deal with low-level arch-specific-cpu-disable stuff in the
+CPU down path.
+
+All in all, it appears that the requirement can be restated as follows:
+
+CPU online path:
+Run the perf callbacks early, followed by the migration callback and later
+run the priority 0 and other callbacks as usual.
+
+CPU offline path:
+Run the migration callback early, followed by the priority 0 callbacks and
+later run the perf callbacks.
+
+Keeping this in mind, adjust the perf and migration callbacks in preparation
+for moving over to the reverse invocation model. That is, split up the
+migration callback into CPU online and CPU offline components and assign
+suitable priorities to them. This split would help us move over to the
+reverse invocation model easily, since we would now have the necessary control
+over both the paths (online and offline) to handle the ordering requirements
+correctly.
+
+Signed-off-by: Srivatsa S. Bhat <srivatsa.bhat@linux.vnet.ibm.com>
+---
+
+ include/linux/cpu.h |    3 ++-
+ kernel/sched/core.c |   55 ++++++++++++++++++++++++++++++++++++++++-----------
+ 2 files changed, 45 insertions(+), 13 deletions(-)
+
+diff --git a/include/linux/cpu.h b/include/linux/cpu.h
+index 255b889..88de47d 100644
+--- a/include/linux/cpu.h
++++ b/include/linux/cpu.h
+@@ -70,7 +70,8 @@ enum {
+ 
+ 	/* migration should happen before other stuff but after perf */
+ 	CPU_PRI_PERF		= 20,
+-	CPU_PRI_MIGRATION	= 10,
++	CPU_PRI_MIGRATION_UP	= 10,
++	CPU_PRI_MIGRATION_DOWN	= 9,
+ 	/* bring up workqueues before normal notifiers and down after */
+ 	CPU_PRI_WORKQUEUE_UP	= 5,
+ 	CPU_PRI_WORKQUEUE_DOWN	= -5,
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 9ccebdd..6a511f2 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -5444,12 +5444,10 @@ static void set_rq_offline(struct rq *rq)
+ 	}
+ }
+ 
+-/*
+- * migration_call - callback that gets triggered when a CPU is added.
+- * Here we can start up the necessary migration thread for the new CPU.
+- */
++/* cpu_up_migration_call - callback that gets triggered when a CPU is added. */
+ static int __cpuinit
+-migration_call(struct notifier_block *nfb, unsigned long action, void *hcpu)
++cpu_up_migration_call(struct notifier_block *nfb, unsigned long action,
++								void *hcpu)
+ {
+ 	int cpu = (long)hcpu;
+ 	unsigned long flags;
+@@ -5471,6 +5469,36 @@ migration_call(struct notifier_block *nfb, unsigned long action, void *hcpu)
+ 		}
+ 		raw_spin_unlock_irqrestore(&rq->lock, flags);
+ 		break;
++	}
++
++	update_max_interval();
++
++	return NOTIFY_OK;
++}
++
++/*
++ * Register at high priority so that task migration (migrate_tasks)
++ * happens before everything else.  This has to be lower priority than
++ * the notifier in the perf_event subsystem, though.
++ */
++static struct notifier_block __cpuinitdata cpu_up_migration_notifier = {
++	.notifier_call = cpu_up_migration_call,
++	.priority = CPU_PRI_MIGRATION_UP,
++};
++
++/*
++ * cpu_down_migration_call - callback that gets triggered when a CPU is
++ * removed.
++ */
++static int __cpuinit
++cpu_down_migration_call(struct notifier_block *nfb, unsigned long action,
++								void *hcpu)
++{
++	int cpu = (long)hcpu;
++	unsigned long flags;
++	struct rq *rq = cpu_rq(cpu);
++
++	switch (action & ~CPU_TASKS_FROZEN) {
+ 
+ #ifdef CONFIG_HOTPLUG_CPU
+ 	case CPU_DYING:
+@@ -5497,13 +5525,13 @@ migration_call(struct notifier_block *nfb, unsigned long action, void *hcpu)
+ }
+ 
+ /*
+- * Register at high priority so that task migration (migrate_all_tasks)
++ * Register at high priority so that task migration (migrate_tasks)
+  * happens before everything else.  This has to be lower priority than
+  * the notifier in the perf_event subsystem, though.
+  */
+-static struct notifier_block __cpuinitdata migration_notifier = {
+-	.notifier_call = migration_call,
+-	.priority = CPU_PRI_MIGRATION,
++static struct notifier_block __cpuinitdata cpu_down_migration_notifier = {
++	.notifier_call = cpu_down_migration_call,
++	.priority = CPU_PRI_MIGRATION_DOWN,
+ };
+ 
+ /*
+@@ -5583,10 +5611,13 @@ static int __init migration_init(void)
+ 	int err;
+ 
+ 	/* Initialize migration for the boot CPU */
+-	err = migration_call(&migration_notifier, CPU_UP_PREPARE, cpu);
++	err = cpu_up_migration_call(&cpu_up_migration_notifier,
++						CPU_UP_PREPARE, cpu);
+ 	BUG_ON(err == NOTIFY_BAD);
+-	migration_call(&migration_notifier, CPU_ONLINE, cpu);
+-	register_cpu_notifier(&migration_notifier);
++	cpu_up_migration_call(&cpu_up_migration_notifier, CPU_ONLINE, cpu);
++	register_cpu_notifier(&cpu_up_migration_notifier);
++
++	register_cpu_notifier(&cpu_down_migration_notifier);
+ 
+ 	/* Register cpu active notifiers */
+ 	cpu_notifier(sched_cpu_active, CPU_PRI_SCHED_ACTIVE);
+

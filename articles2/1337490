@@ -1,0 +1,136 @@
+Path: news.gmane.org!not-for-mail
+From: Silas Boyd-Wickizer <sbw@mit.edu>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 2/4 V2] Use get_online_cpus to avoid races involving CPU
+ hotplug
+Date: Fri, 3 Aug 2012 12:34:50 -0700
+Lines: 73
+Approved: news@gmane.org
+Message-ID: <20120803193449.GC4227@mit.edu>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344022748 11314 80.91.229.3 (3 Aug 2012 19:39:08 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 19:39:08 +0000 (UTC)
+Cc: "Paul E. McKenney" <paulmck@linux.vnet.ibm.com>,
+	"H. Peter Anvin" <hpa@zytor.com>,
+	Thomas Gleixner <tglx@linutronix.de>, x86@kernel.org
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 21:39:03 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxNiB-00065t-BO
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 21:39:03 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753676Ab2HCTi4 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 15:38:56 -0400
+Original-Received: from mail-vc0-f174.google.com ([209.85.220.174]:35882 "EHLO
+	mail-vc0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752496Ab2HCTiz (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 15:38:55 -0400
+Original-Received: by vcbfk26 with SMTP id fk26so1064967vcb.19
+        for <linux-kernel@vger.kernel.org>; Fri, 03 Aug 2012 12:38:54 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:date:from:to:cc:subject:message-id:mime-version:content-type
+         :content-disposition:user-agent;
+        bh=jMuajnl0OOEI7NSk2QRssppvEZ8wXnRBZhD9a1jwop0=;
+        b=pPGQYQIn6K7H/DR/zGQKze7UQRkJVOpSiU/2RIC4etb9kEult7g2npABzN12S8gyJy
+         FfoxPb8YB5q9PKQDgDNus3AU6vuTgROxkkynO643SAOMQCP0uLEs6QLPy7FXXE7BlGap
+         tGvGrq5dQdz4Bw7vaksAEMfhZF3qt9M7laDSGrU5AiwBnXsrUct4pnTvsjoPgVxCCpzT
+         TlMaerd4B/rutC23xiGRj3cKLl8aPtB6MHWl6dl8WNSu3IY+ejQgNl5/rHxf8dVCTukB
+         CJPm0nbTlx6QPamh5vFn1IO5CiTpUkEinfhZCNh26A+eHPkNvhZRBtRiZhBSPSsqoztG
+         lF6g==
+Original-Received: by 10.220.219.71 with SMTP id ht7mr2269659vcb.3.1344022734766;
+        Fri, 03 Aug 2012 12:38:54 -0700 (PDT)
+Original-Received: from mit.edu ([129.33.193.86])
+        by mx.google.com with ESMTPS id w11sm9538223vdt.16.2012.08.03.12.38.52
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 03 Aug 2012 12:38:54 -0700 (PDT)
+Content-Disposition: inline
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337490
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337490>
+
+If arch/x86/kernel/cpuid.c is a module, a CPU might offline or online
+between the for_each_online_cpu() loop and the call to
+register_hotcpu_notifier in cpuid_init or the call to
+unregister_hotcpu_notifier in cpuid_exit.  The potential races can
+lead to leaks/duplicates, attempts to destroy non-existant devices, or
+random pointer dereferences.
+
+For example, in cpuid_exit if:
+
+        for_each_online_cpu(cpu)
+                cpuid_device_destroy(cpu);
+        class_destroy(cpuid_class);
+        __unregister_chrdev(CPUID_MAJOR, 0, NR_CPUS, "cpu/cpuid");
+        <----- CPU onlines
+        unregister_hotcpu_notifier(&cpuid_class_cpu_notifier);
+
+the hotcpu notifier will attempt to create a device for the
+cpuid_class, which the module already destroyed.
+
+This fix surrounds for_each_online_cpu and register_hotcpu_notifier or
+unregister_hotcpu_notifier with get_online_cpus+put_online_cpus.
+
+Tested on a VM.
+
+Signed-off-by: Silas Boyd-Wickizer <sbw@mit.edu>
+---
+ arch/x86/kernel/cpuid.c |    5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/arch/x86/kernel/cpuid.c b/arch/x86/kernel/cpuid.c
+index 39472dd..60c7891 100644
+--- a/arch/x86/kernel/cpuid.c
++++ b/arch/x86/kernel/cpuid.c
+@@ -199,12 +199,14 @@ static int __init cpuid_init(void)
+ 		goto out_chrdev;
+ 	}
+ 	cpuid_class->devnode = cpuid_devnode;
++	get_online_cpus();
+ 	for_each_online_cpu(i) {
+ 		err = cpuid_device_create(i);
+ 		if (err != 0)
+ 			goto out_class;
+ 	}
+ 	register_hotcpu_notifier(&cpuid_class_cpu_notifier);
++	put_online_cpus();
+ 
+ 	err = 0;
+ 	goto out;
+@@ -214,6 +216,7 @@ out_class:
+ 	for_each_online_cpu(i) {
+ 		cpuid_device_destroy(i);
+ 	}
++	put_online_cpus();
+ 	class_destroy(cpuid_class);
+ out_chrdev:
+ 	__unregister_chrdev(CPUID_MAJOR, 0, NR_CPUS, "cpu/cpuid");
+@@ -225,11 +228,13 @@ static void __exit cpuid_exit(void)
+ {
+ 	int cpu = 0;
+ 
++	get_online_cpus();
+ 	for_each_online_cpu(cpu)
+ 		cpuid_device_destroy(cpu);
+ 	class_destroy(cpuid_class);
+ 	__unregister_chrdev(CPUID_MAJOR, 0, NR_CPUS, "cpu/cpuid");
+ 	unregister_hotcpu_notifier(&cpuid_class_cpu_notifier);
++	put_online_cpus();
+ }
+ 
+ module_init(cpuid_init);
+-- 
+1.7.10.4
+

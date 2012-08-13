@@ -1,0 +1,1010 @@
+Path: news.gmane.org!not-for-mail
+From: Tony Prisk <linux@prisktech.co.nz>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: [PATCH] ARM: vt8500: clk: Add clock support for arch-vt8500
+Date: Mon, 23 Jul 2012 03:03:20 +1200
+Lines: 963
+Approved: news@gmane.org
+Message-ID: <1342969400-21123-1-git-send-email-linux@prisktech.co.nz>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342969454 20921 80.91.229.3 (22 Jul 2012 15:04:14 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 22 Jul 2012 15:04:14 +0000 (UTC)
+Cc: Tony Prisk <linux@prisktech.co.nz>,
+	VT8500 mailing list 
+	<vt8500-wm8505-linux-kernel@googlegroups.com>,
+	linux-kernel@vger.kernel.org, linux-arm-kernel@lists.infradead.org,
+	Russell King <linux@arm.linux.org.uk>,
+	Arnd Bergmann <arnd@arndb.de>,
+	Alexey Charkov <alchark@gmail.com>
+To: Mike Turquette <mturquette@ti.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 22 17:04:12 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsxhZ-0000jO-Jc
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 22 Jul 2012 17:04:10 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751771Ab2GVPD6 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 11:03:58 -0400
+Original-Received: from mta05.xtra.co.nz ([210.54.141.250]:60567 "EHLO mta02.xtra.co.nz"
+	rhost-flags-OK-OK-OK-FAIL) by vger.kernel.org with ESMTP
+	id S1751263Ab2GVPD5 (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 11:03:57 -0400
+Original-Received: from debian6.prisktech.co.nz ([115.188.14.127])
+          by mta02.xtra.co.nz with ESMTP
+          id <20120722150351.FFWN8118.mta02.xtra.co.nz@debian6.prisktech.co.nz>;
+          Mon, 23 Jul 2012 03:03:51 +1200
+X-Mailer: git-send-email 1.7.2.5
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331359 gmane.linux.ports.arm.kernel:178311
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331359>
+
+This patch adds common clock framework support for arch-vt8500.
+WM8650 support is included in preparation for devicetree support.
+Each SoC has a seperate initialization function due to no
+devicetree support to identify SoCs at the moment. Once devicetree
+is implemented, VT8500 and WM8505 should be combined. WM8650 uses
+different functions for clocks.
+
+Signed-off-by: Tony Prisk <linux@prisktech.co.nz>
+---
+ arch/arm/Kconfig                        |    2 +
+ arch/arm/mach-vt8500/bv07.c             |    4 +
+ arch/arm/mach-vt8500/include/mach/clk.h |    9 ++
+ arch/arm/mach-vt8500/wm8505_7in.c       |    4 +
+ drivers/clk/Makefile                    |    1 +
+ drivers/clk/vt8500/Makefile             |   12 +++
+ drivers/clk/vt8500/clk-gatediv.c        |  152 +++++++++++++++++++++++++++++++
+ drivers/clk/vt8500/clk.h                |   36 +++++++
+ drivers/clk/vt8500/vt8500_clk.c         |  108 ++++++++++++++++++++++
+ drivers/clk/vt8500/wm8505_clk.c         |  122 +++++++++++++++++++++++++
+ drivers/clk/vt8500/wm85xx-pll.c         |  103 +++++++++++++++++++++
+ drivers/clk/vt8500/wm8650_clk.c         |  127 ++++++++++++++++++++++++++
+ drivers/clk/vt8500/wm86xx-pll.c         |  135 +++++++++++++++++++++++++++
+ 13 files changed, 815 insertions(+), 0 deletions(-)
+ create mode 100644 arch/arm/mach-vt8500/include/mach/clk.h
+ create mode 100644 drivers/clk/vt8500/Makefile
+ create mode 100644 drivers/clk/vt8500/clk-gatediv.c
+ create mode 100644 drivers/clk/vt8500/clk.h
+ create mode 100644 drivers/clk/vt8500/vt8500_clk.c
+ create mode 100644 drivers/clk/vt8500/wm8505_clk.c
+ create mode 100644 drivers/clk/vt8500/wm85xx-pll.c
+ create mode 100644 drivers/clk/vt8500/wm8650_clk.c
+ create mode 100644 drivers/clk/vt8500/wm86xx-pll.c
+
+diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
+index c0c465e..721bb2c 100644
+--- a/arch/arm/Kconfig
++++ b/arch/arm/Kconfig
+@@ -999,6 +999,8 @@ config ARCH_VT8500
+ 	select ARCH_HAS_CPUFREQ
+ 	select GENERIC_CLOCKEVENTS
+ 	select ARCH_REQUIRE_GPIOLIB
++	select CLKDEV_LOOKUP
++	select COMMON_CLK
+ 	help
+ 	  Support for VIA/WonderMedia VT8500/WM85xx System-on-Chip.
+ 
+diff --git a/arch/arm/mach-vt8500/bv07.c b/arch/arm/mach-vt8500/bv07.c
+index f9fbeb2..ec84b2a 100644
+--- a/arch/arm/mach-vt8500/bv07.c
++++ b/arch/arm/mach-vt8500/bv07.c
+@@ -24,6 +24,7 @@
+ #include <asm/mach-types.h>
+ #include <asm/mach/arch.h>
+ #include <mach/restart.h>
++#include <mach/clk.h>
+ 
+ #include "devices.h"
+ 
+@@ -67,6 +68,9 @@ void __init bv07_init(void)
+ 	vt8500_set_resources();
+ 	platform_add_devices(devices, ARRAY_SIZE(devices));
+ 	vt8500_gpio_init();
++
++	/* this call can be moved to timer_init once devicetree is ready */
++	vt8500_clk_init();
+ }
+ 
+ MACHINE_START(BV07, "Benign BV07 Mini Netbook")
+diff --git a/arch/arm/mach-vt8500/include/mach/clk.h b/arch/arm/mach-vt8500/include/mach/clk.h
+new file mode 100644
+index 0000000..d4cc9c4
+--- /dev/null
++++ b/arch/arm/mach-vt8500/include/mach/clk.h
+@@ -0,0 +1,9 @@
++#ifndef __WMT_CLK
++#define __WMT_CLK
++
++void __init vt8500_clk_init(void);
++void __init wm8505_clk_init(void);
++/* WM8650 support not added yet, but included for completeness */
++void __init wm8650_clk_init(void);
++
++#endif
+diff --git a/arch/arm/mach-vt8500/wm8505_7in.c b/arch/arm/mach-vt8500/wm8505_7in.c
+index db19886..d6049bb 100644
+--- a/arch/arm/mach-vt8500/wm8505_7in.c
++++ b/arch/arm/mach-vt8500/wm8505_7in.c
+@@ -24,6 +24,7 @@
+ #include <asm/mach-types.h>
+ #include <asm/mach/arch.h>
+ #include <mach/restart.h>
++#include <mach/clk.h>
+ 
+ #include "devices.h"
+ 
+@@ -66,6 +67,9 @@ void __init wm8505_7in_init(void)
+ 	wm8505_set_resources();
+ 	platform_add_devices(devices, ARRAY_SIZE(devices));
+ 	vt8500_gpio_init();
++
++	/* this call can be moved to timer_init once devicetree is ready */
++	wm8505_clk_init();
+ }
+ 
+ MACHINE_START(WM8505_7IN_NETBOOK, "WM8505 7-inch generic netbook")
+diff --git a/drivers/clk/Makefile b/drivers/clk/Makefile
+index 5869ea3..2d37177 100644
+--- a/drivers/clk/Makefile
++++ b/drivers/clk/Makefile
+@@ -10,6 +10,7 @@ obj-$(CONFIG_ARCH_SOCFPGA)	+= socfpga/
+ obj-$(CONFIG_PLAT_SPEAR)	+= spear/
+ obj-$(CONFIG_ARCH_U300)		+= clk-u300.o
+ obj-$(CONFIG_ARCH_INTEGRATOR)	+= versatile/
++obj-$(CONFIG_ARCH_VT8500)	+= vt8500/
+ 
+ # Chip specific
+ obj-$(CONFIG_COMMON_CLK_WM831X) += clk-wm831x.o
+diff --git a/drivers/clk/vt8500/Makefile b/drivers/clk/vt8500/Makefile
+new file mode 100644
+index 0000000..319f65b
+--- /dev/null
++++ b/drivers/clk/vt8500/Makefile
+@@ -0,0 +1,12 @@
++#
++# Wondermedia Clock specific Makefile
++#
++obj-y	+= clk-gatediv.o
++
++obj-$(CONFIG_VTWM_VERSION_VT8500)	+= vt8500_clk.o wm85xx-pll.o
++obj-$(CONFIG_VTWM_VERSION_WM8505)	+= wm8505_clk.o wm85xx-pll.o
++
++# WM8650 board support missing - has different clock functions so
++# added for completeness. Will be needed for devicetree support.
++obj-$(CONFIG_VTWM_VERSION_WM8650)	+= wm8650_clk.o wm86xx-pll.o
++
+diff --git a/drivers/clk/vt8500/clk-gatediv.c b/drivers/clk/vt8500/clk-gatediv.c
+new file mode 100644
+index 0000000..fa6f2be
+--- /dev/null
++++ b/drivers/clk/vt8500/clk-gatediv.c
+@@ -0,0 +1,152 @@
++/* drivers/clk/wmt/clk-pll.c
++ *
++ * Copyright (C) 2012 Tony Prisk <linux@prisktech.co.nz>
++ *
++ * This software is licensed under the terms of the GNU General Public
++ * License version 2, as published by the Free Software Foundation, and
++ * may be copied, distributed, and modified under those terms.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++
++#include <linux/slab.h>
++#include <linux/io.h>
++#include <linux/err.h>
++#include <linux/clk-provider.h>
++
++#include "clk.h"
++
++#define to_clk_gatediv(_hw) container_of(_hw, struct clk_gatediv, hw)
++
++static long clk_gatediv_round_rate(struct clk_hw *hw, unsigned long drate,
++				unsigned long *prate)
++{
++	u32 div;
++	unsigned long parent_rate = __clk_get_rate(__clk_get_parent(hw->clk));
++
++	if ((drate == 0) || (parent_rate == 0))
++		return 0;
++
++	if (parent_rate % drate)
++		div = (parent_rate / drate) + 1;
++	else
++		div = parent_rate / drate;
++
++	return parent_rate / div;
++}
++
++static unsigned long clk_gatediv_recalc_rate(struct clk_hw *hw, unsigned long
++		parent_rate)
++{
++	struct clk_gatediv *gatediv = to_clk_gatediv(hw);
++
++	u32 div = (readl(gatediv->div_reg) & 0x1F);
++
++	if (div == 0)
++		div = 32;
++
++	return parent_rate / div;
++}
++
++static int clk_gatediv_set_rate(struct clk_hw *hw, unsigned long drate,
++				unsigned long prate)
++{
++	u32 div;
++	struct clk_gatediv *gatediv = to_clk_gatediv(hw);
++	unsigned long parent_rate = __clk_get_rate(__clk_get_parent(hw->clk));
++
++	if ((drate == 0) || (drate > prate) || (parent_rate == 0))
++		return -EINVAL;
++
++	if (parent_rate % drate)
++		div = (parent_rate / drate) + 1;
++	else
++		div = parent_rate / drate;
++
++	if (div > 32)
++		return -EINVAL;
++
++	if (div == 32)
++		div = 0;
++
++	writel(div, gatediv->div_reg);
++
++	return 0;
++}
++
++static int clk_gatediv_enable(struct clk_hw *hw)
++{
++	struct clk_gatediv *gatediv = to_clk_gatediv(hw);
++	u32 tmp = readl(gatediv->en_reg);
++
++	tmp |= BIT(gatediv->en_bit);
++	writel(tmp, gatediv->en_reg);
++
++	return 0;
++}
++
++static void clk_gatediv_disable(struct clk_hw *hw)
++{
++	struct clk_gatediv *gatediv = to_clk_gatediv(hw);
++	u32 tmp = readl(gatediv->en_reg);
++
++	tmp &= ~BIT(gatediv->en_bit);
++	writel(tmp, gatediv->en_reg);
++}
++
++static int clk_gatediv_is_enabled(struct clk_hw *hw)
++{
++	struct clk_gatediv *gatediv = to_clk_gatediv(hw);
++	u32 tmp = readl(gatediv->en_reg);
++	tmp &= BIT(gatediv->en_bit);
++
++	return tmp ? 1 : 0;
++}
++
++const struct clk_ops clk_gatediv_ops = {
++	.enable = clk_gatediv_enable,
++	.disable = clk_gatediv_disable,
++	.is_enabled = clk_gatediv_is_enabled,
++	.recalc_rate = clk_gatediv_recalc_rate,
++	.round_rate = clk_gatediv_round_rate,
++	.set_rate = clk_gatediv_set_rate,
++};
++
++struct clk *clk_register_gatediv(const char *name, const char *parent_name,
++		unsigned long flags, void __iomem *div_reg,
++		void __iomem *en_reg, u8 en_bit, spinlock_t *lock)
++{
++	struct clk_init_data init;
++	struct clk_gatediv *gatediv;
++	struct clk *clk;
++
++	/* allocate the gatediv */
++	gatediv = kzalloc(sizeof(struct clk_gatediv), GFP_KERNEL);
++	if (!gatediv) {
++		pr_err("%s: could not allocate gatediv clk\n", __func__);
++		return ERR_PTR(-ENOMEM);
++	}
++
++	init.name = name;
++	init.ops = &clk_gatediv_ops;
++	init.flags = flags;
++	init.parent_names = (parent_name ? &parent_name : NULL);
++	init.num_parents = (parent_name ? 1 : 0);
++
++	gatediv->div_reg = div_reg;
++	gatediv->en_reg = en_reg;
++	gatediv->en_bit = en_bit;
++	gatediv->lock = lock;
++	gatediv->hw.init = &init;
++
++	clk = clk_register(NULL, &gatediv->hw);
++
++	if (IS_ERR(clk))
++		kfree(gatediv);
++
++	return clk;
++}
+diff --git a/drivers/clk/vt8500/clk.h b/drivers/clk/vt8500/clk.h
+new file mode 100644
+index 0000000..12f87a2
+--- /dev/null
++++ b/drivers/clk/vt8500/clk.h
+@@ -0,0 +1,36 @@
++/* drivers/clk/wmt/clk.h
++ *
++ * Copyright (C) 2012 Tony Prisk <linux@prisktech.co.nz>
++ *
++ * This software is licensed under the terms of the GNU General Public
++ * License version 2, as published by the Free Software Foundation, and
++ * may be copied, distributed, and modified under those terms.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++
++struct clk_pll {
++	struct clk_hw hw;
++	void __iomem	*reg;
++	spinlock_t	*lock;
++};
++
++struct clk_gatediv {
++	struct clk_hw hw;
++	void __iomem	*en_reg;
++	u8		en_bit;
++	void __iomem	*div_reg;
++	spinlock_t	*lock;
++};
++
++struct clk *clk_register_pll_wm85xx(const char *name, const char *parent_name,
++		unsigned long flags, void __iomem *reg, spinlock_t *lock);
++struct clk *clk_register_pll_wm86xx(const char *name, const char *parent_name,
++		unsigned long flags, void __iomem *reg, spinlock_t *lock);
++struct clk *clk_register_gatediv(const char *name, const char *parent_name,
++		unsigned long flags, void __iomem *div_reg,
++		void __iomem *en_reg, u8 en_bit, spinlock_t *lock);
+diff --git a/drivers/clk/vt8500/vt8500_clk.c b/drivers/clk/vt8500/vt8500_clk.c
+new file mode 100644
+index 0000000..0da5d92
+--- /dev/null
++++ b/drivers/clk/vt8500/vt8500_clk.c
+@@ -0,0 +1,108 @@
++/* drivers/clk/wmt/wm8505-clk.c
++ *
++ * Copyright (C) 2012 Tony Prisk <linux@prisktech.co.nz>
++ *
++ * This software is licensed under the terms of the GNU General Public
++ * License version 2, as published by the Free Software Foundation, and
++ * may be copied, distributed, and modified under those terms.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++
++#include <linux/io.h>
++#include <linux/clk.h>
++#include <linux/clkdev.h>
++#include <linux/clk-provider.h>
++
++#include <mach/vt8500_regs.h>
++
++#include "clk.h"
++
++static DEFINE_SPINLOCK(_lock);
++
++#define CLK_PLLA_MULTIPLIER	0x200
++#define CLK_PLLB_MULTIPLIER	0x204
++#define CLK_PLLC_MULTIPLIER	0x208
++#define CLK_PLLD_MULTIPLIER	0x20C
++
++#define CLK_EN_LOW		0x250
++#define CLK_EN_HIGH		0x254
++
++/* PLL A Divisor Regisiters */
++#define CLK_ARM_DIVISOR		0x300
++#define CLK_AHB_DIVISOR		0x304
++#define CLK_APB_DIVISOR		0x350
++
++/* PLL B Divisor Registers */
++#define CLK_SF_DIVISOR		0x314
++#define CLK_SDMMC0_DIVISOR	0x328
++#define CLK_NAND_DIVISOR	0x330
++#define CLK_SPI0_DIVISOR	0x33C
++#define CLK_PWM_DIVISOR		0x348
++
++/* PLL C Divisor Registers */
++#define CLK_DDR_DIVISOR		0x310
++
++void __init vt8500_clk_init(void)
++{
++	struct clk *clk;
++	void __iomem *pmc_base = ioremap(VT8500_PMC_BASE, 0x380);
++
++	clk = clk_register_fixed_rate(NULL, "ref", NULL, CLK_IS_ROOT, 25000000);
++	clk_register_clkdev(clk, "ref", NULL);
++
++	clk = clk_register_pll_wm85xx("pll-a", "ref", 0,
++					pmc_base+CLK_PLLA_MULTIPLIER, &_lock);
++	clk_register_clkdev(clk, "pll-a", NULL);
++
++	clk = clk_register_pll_wm85xx("pll-b", "ref", 0,
++					pmc_base+CLK_PLLB_MULTIPLIER, &_lock);
++	clk_register_clkdev(clk, "pll-b", NULL);
++
++	clk = clk_register_pll_wm85xx("pll-c", "ref", 0,
++					pmc_base+CLK_PLLC_MULTIPLIER, &_lock);
++	clk_register_clkdev(clk, "pll-c", NULL);
++
++	/* PLL A derived */
++	clk = clk_register_divider(NULL, "arm", "pll-a", 0,
++				pmc_base+CLK_ARM_DIVISOR, 0, 5, 0, &_lock);
++	clk_register_clkdev(clk, "arm", NULL);
++
++	clk = clk_register_divider(NULL, "ahb", "pll-a", 0,
++				pmc_base+CLK_AHB_DIVISOR, 0, 3, 0, &_lock);
++	clk_register_clkdev(clk, "ahb", NULL);
++
++	clk = clk_register_divider(NULL, "apb", "pll-a", 0,
++				pmc_base+CLK_APB_DIVISOR, 0, 5, 0, &_lock);
++	clk_register_clkdev(clk, "apb", NULL);
++
++	/* PLL B derived */
++	clk = clk_register_gatediv("sf", "pll-b", 0,
++		pmc_base+CLK_SF_DIVISOR, pmc_base+CLK_EN_HIGH, 23, &_lock);
++	clk_register_clkdev(clk, "sf", NULL);
++
++	clk = clk_register_gatediv("sdmmc", "pll-b", 0,
++		pmc_base+CLK_SDMMC0_DIVISOR, pmc_base+CLK_EN_HIGH, 18, &_lock);
++	clk_register_clkdev(clk, "sdmmc", NULL);
++
++	clk = clk_register_gatediv("nand", "pll-b", 0,
++		pmc_base+CLK_NAND_DIVISOR, pmc_base+CLK_EN_HIGH, 16, &_lock);
++	clk_register_clkdev(clk, "nand", NULL);
++
++	clk = clk_register_gatediv("spi0", "pll-b", 0,
++		pmc_base+CLK_SPI0_DIVISOR, pmc_base+CLK_EN_LOW, 12, &_lock);
++	clk_register_clkdev(clk, "spi0", NULL);
++
++	clk = clk_register_gatediv("pwm", "pll-b", 0,
++		pmc_base+CLK_PWM_DIVISOR, pmc_base+CLK_EN_LOW, 10, &_lock);
++	clk_register_clkdev(clk, "pwm", NULL);
++
++	/* PLL C derived */
++	clk = clk_register_divider(NULL, "ddr", "pll-c", 0,
++				pmc_base+CLK_DDR_DIVISOR, 0, 5, 0, &_lock);
++	clk_register_clkdev(clk, "ddr", NULL);
++}
+diff --git a/drivers/clk/vt8500/wm8505_clk.c b/drivers/clk/vt8500/wm8505_clk.c
+new file mode 100644
+index 0000000..8211721
+--- /dev/null
++++ b/drivers/clk/vt8500/wm8505_clk.c
+@@ -0,0 +1,122 @@
++/* drivers/clk/wmt/wm8505-clk.c
++ *
++ * Copyright (C) 2012 Tony Prisk <linux@prisktech.co.nz>
++ *
++ * This software is licensed under the terms of the GNU General Public
++ * License version 2, as published by the Free Software Foundation, and
++ * may be copied, distributed, and modified under those terms.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++
++#include <linux/io.h>
++#include <linux/clk.h>
++#include <linux/clkdev.h>
++#include <linux/clk-provider.h>
++
++#include <mach/wm8505_regs.h>
++
++#include "clk.h"
++
++static DEFINE_SPINLOCK(_lock);
++
++#define CLK_PLLA_MULTIPLIER	0x200
++#define CLK_PLLB_MULTIPLIER	0x204
++#define CLK_PLLC_MULTIPLIER	0x208
++#define CLK_PLLD_MULTIPLIER	0x20C
++
++#define CLK_EN_LOW		0x250
++#define CLK_EN_HIGH		0x254
++
++/* PLL A Divisor Regisiters */
++#define CLK_ARM_DIVISOR		0x300
++#define CLK_AHB_DIVISOR		0x304
++#define CLK_APB_DIVISOR		0x350
++
++/* PLL B Divisor Registers */
++#define CLK_SF_DIVISOR		0x314
++#define CLK_SDMMC0_DIVISOR	0x328
++#define CLK_NAND_DIVISOR	0x330
++#define CLK_SPI0_DIVISOR	0x33C
++#define CLK_PWM_DIVISOR		0x348
++#define CLK_I2C0_DIVISOR	0x36C
++#define CLK_I2C1_DIVISOR	0x370
++
++/* PLL C Divisor Registers */
++#define CLK_DDR_DIVISOR		0x310
++
++void __init wm8505_clk_init(void)
++{
++	struct clk *clk;
++	void __iomem *pmc_base = ioremap(WM8505_PMC_BASE, 0x380);
++
++	clk = clk_register_fixed_rate(NULL, "ref", NULL, CLK_IS_ROOT, 25000000);
++	clk_register_clkdev(clk, "ref", NULL);
++
++	clk = clk_register_pll_wm85xx("pll-a", "ref", 0,
++					pmc_base+CLK_PLLA_MULTIPLIER, &_lock);
++	clk_register_clkdev(clk, "pll-a", NULL);
++
++	clk = clk_register_pll_wm85xx("pll-b", "ref", 0,
++					pmc_base+CLK_PLLB_MULTIPLIER, &_lock);
++	clk_register_clkdev(clk, "pll-b", NULL);
++
++	clk = clk_register_pll_wm85xx("pll-c", "ref", 0,
++					pmc_base+CLK_PLLC_MULTIPLIER, &_lock);
++	clk_register_clkdev(clk, "pll-c", NULL);
++
++	clk = clk_register_pll_wm85xx("pll-d", "ref", 0,
++					pmc_base+CLK_PLLD_MULTIPLIER, &_lock);
++	clk_register_clkdev(clk, "pll-d", NULL);
++
++	/* PLL A derived */
++	clk = clk_register_divider(NULL, "arm", "pll-a", 0,
++				pmc_base+CLK_ARM_DIVISOR, 0, 5, 0, &_lock);
++	clk_register_clkdev(clk, "arm", NULL);
++
++	clk = clk_register_divider(NULL, "ahb", "pll-a", 0,
++				pmc_base+CLK_AHB_DIVISOR, 0, 3, 0, &_lock);
++	clk_register_clkdev(clk, "ahb", NULL);
++
++	clk = clk_register_divider(NULL, "apb", "pll-a", 0,
++				pmc_base+CLK_APB_DIVISOR, 0, 5, 0, &_lock);
++	clk_register_clkdev(clk, "apb", NULL);
++
++	/* PLL B derived */
++	clk = clk_register_gatediv("sf", "pll-b", 0, pmc_base+CLK_SF_DIVISOR,
++			pmc_base+CLK_EN_HIGH, 23, &_lock);
++	clk_register_clkdev(clk, "sf", NULL);
++
++	clk = clk_register_gatediv("sdmmc", "pll-b", 0,
++		pmc_base+CLK_SDMMC0_DIVISOR, pmc_base+CLK_EN_HIGH, 18, &_lock);
++	clk_register_clkdev(clk, "sdmmc", NULL);
++
++	clk = clk_register_gatediv("nand", "pll-b", 0,
++		pmc_base+CLK_NAND_DIVISOR, pmc_base+CLK_EN_HIGH, 16, &_lock);
++	clk_register_clkdev(clk, "nand", NULL);
++
++	clk = clk_register_gatediv("spi0", "pll-b", 0,
++		pmc_base+CLK_SPI0_DIVISOR, pmc_base+CLK_EN_LOW, 12, &_lock);
++	clk_register_clkdev(clk, "spi0", NULL);
++
++	clk = clk_register_gatediv("pwm", "pll-b", 0,
++		pmc_base+CLK_PWM_DIVISOR, pmc_base+CLK_EN_LOW, 10, &_lock);
++	clk_register_clkdev(clk, "pwm", NULL);
++
++	clk = clk_register_gatediv("i2c0", "pll-b", 0,
++		pmc_base+CLK_I2C0_DIVISOR, pmc_base+CLK_EN_LOW, 5, &_lock);
++	clk_register_clkdev(clk, "i2c0", NULL);
++
++	clk = clk_register_gatediv("i2c1", "pll-b", 0,
++		pmc_base+CLK_I2C1_DIVISOR, pmc_base+CLK_EN_LOW, 9, &_lock);
++	clk_register_clkdev(clk, "i2c1", NULL);
++
++	/* PLL C derived */
++	clk = clk_register_divider(NULL, "ddr", "pll-c", 0,
++				pmc_base+CLK_DDR_DIVISOR, 0, 5, 0, &_lock);
++	clk_register_clkdev(clk, "ddr", NULL);
++}
+diff --git a/drivers/clk/vt8500/wm85xx-pll.c b/drivers/clk/vt8500/wm85xx-pll.c
+new file mode 100644
+index 0000000..890e98f
+--- /dev/null
++++ b/drivers/clk/vt8500/wm85xx-pll.c
+@@ -0,0 +1,103 @@
++/* drivers/clk/wmt/wm85xx-pll.c
++ *
++ * Copyright (C) 2012 Tony Prisk <linux@prisktech.co.nz>
++ *
++ * This software is licensed under the terms of the GNU General Public
++ * License version 2, as published by the Free Software Foundation, and
++ * may be copied, distributed, and modified under those terms.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++
++#include <linux/slab.h>
++#include <linux/io.h>
++#include <linux/err.h>
++#include <linux/clk-provider.h>
++
++#include "clk.h"
++
++#define to_clk_pll(_hw) container_of(_hw, struct clk_pll, hw)
++
++static long clk_pll_round_rate(struct clk_hw *hw, unsigned long drate,
++				unsigned long *prate)
++{
++	u32 mul;
++	unsigned long parent_rate = __clk_get_rate(__clk_get_parent(hw->clk));
++
++	mul = (drate / parent_rate) & 0xFE;
++
++	if (mul > 62)
++		return -EINVAL;
++
++	return parent_rate * mul;
++}
++
++static unsigned long clk_pll_recalc_rate(struct clk_hw *hw, unsigned long
++		parent_rate)
++{
++	struct clk_pll *pll = to_clk_pll(hw);
++
++	u32 pll_val = readl(pll->reg);
++	u32 divisor = (pll_val & 0x100) ? 2 : 1;
++
++	return (parent_rate * ((pll_val & 0x1F) << 1)) / divisor;
++}
++
++static int clk_pll_set_rate(struct clk_hw *hw, unsigned long drate,
++				unsigned long prate)
++{
++	u32 mul;
++	struct clk_pll *pll = to_clk_pll(hw);
++	unsigned long parent_rate = __clk_get_rate(__clk_get_parent(hw->clk));
++
++	mul = (drate / parent_rate) & 0xFE;
++
++	if (mul > 62)
++		return -EINVAL;
++
++	writel((mul >> 1), pll->reg);
++
++	return 0;
++}
++
++static const struct clk_ops clk_pll_ops = {
++	.recalc_rate = clk_pll_recalc_rate,
++	.round_rate = clk_pll_round_rate,
++	.set_rate = clk_pll_set_rate,
++};
++
++struct clk *clk_register_pll_wm85xx(const char *name, const char *parent_name,
++		unsigned long flags, void __iomem *reg, spinlock_t *lock)
++{
++	struct clk_init_data init;
++	struct clk_pll *pll;
++	struct clk *clk;
++
++	/* allocate the pll */
++	pll = kzalloc(sizeof(struct clk_pll), GFP_KERNEL);
++	if (!pll) {
++		pr_err("%s: could not allocate pll clk\n", __func__);
++		return ERR_PTR(-ENOMEM);
++	}
++
++	init.name = name;
++	init.ops = &clk_pll_ops;
++	init.flags = flags;
++	init.parent_names = (parent_name ? &parent_name : NULL);
++	init.num_parents = (parent_name ? 1 : 0);
++
++	pll->reg = reg;
++	pll->lock = lock;
++	pll->hw.init = &init;
++
++	clk = clk_register(NULL, &pll->hw);
++
++	if (IS_ERR(clk))
++		kfree(pll);
++
++	return clk;
++}
+diff --git a/drivers/clk/vt8500/wm8650_clk.c b/drivers/clk/vt8500/wm8650_clk.c
+new file mode 100644
+index 0000000..eb8e242
+--- /dev/null
++++ b/drivers/clk/vt8500/wm8650_clk.c
+@@ -0,0 +1,127 @@
++/* drivers/clk/wmt/wm8650-clk.c
++ *
++ * Copyright (C) 2012 Tony Prisk <linux@prisktech.co.nz>
++ *
++ * This software is licensed under the terms of the GNU General Public
++ * License version 2, as published by the Free Software Foundation, and
++ * may be copied, distributed, and modified under those terms.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++
++#include <linux/io.h>
++#include <linux/clk.h>
++#include <linux/clkdev.h>
++#include <linux/clk-provider.h>
++
++#include <mach/wm8650_regs.h>
++
++#include "clk.h"
++
++static DEFINE_SPINLOCK(_lock);
++
++#define CLK_PLLA_MULTIPLIER	0x200
++#define CLK_PLLB_MULTIPLIER	0x204
++#define CLK_PLLC_MULTIPLIER	0x208
++#define CLK_PLLD_MULTIPLIER	0x20C
++
++#define CLK_EN_LOW		0x250
++#define CLK_EN_HIGH		0x254
++
++/* PLL A Divisor Regisiters */
++#define CLK_ARM_DIVISOR		0x300
++#define CLK_AHB_DIVISOR		0x304
++#define CLK_APB_DIVISOR		0x320
++
++/* PLL B Divisor Registers */
++#define CLK_SF_DIVISOR		0x314
++#define CLK_SDMMC0_DIVISOR	0x328
++#define CLK_NAND_DIVISOR	0x330
++#define CLK_SPI0_DIVISOR	0x33C
++#define CLK_SDMMC1_DIVISOR	0x340
++#define CLK_PWM_DIVISOR		0x348
++#define CLK_I2C0_DIVISOR	0x36C
++#define CLK_I2C1_DIVISOR	0x378
++
++/* PLL C Divisor Registers */
++#define CLK_DDR_DIVISOR		0x310
++
++void __init wm8650_clk_init(void)
++{
++	struct clk *clk;
++	void __iomem *pmc_base = ioremap(WM8650_PMC_BASE, 0x380);
++
++	clk = clk_register_fixed_rate(NULL, "ref", NULL, CLK_IS_ROOT, 25000000);
++	clk_register_clkdev(clk, "ref", NULL);
++
++	clk = clk_register_pll_wm86xx("pll-a", "ref", 0,
++					pmc_base+CLK_PLLA_MULTIPLIER, &_lock);
++	clk_register_clkdev(clk, "pll-a", NULL);
++
++	clk = clk_register_pll_wm86xx("pll-b", "ref", 0,
++					pmc_base+CLK_PLLB_MULTIPLIER, &_lock);
++	clk_register_clkdev(clk, "pll-b", NULL);
++
++	clk = clk_register_pll_wm86xx("pll-c", "ref", 0,
++					pmc_base+CLK_PLLC_MULTIPLIER, &_lock);
++	clk_register_clkdev(clk, "pll-c", NULL);
++
++	clk = clk_register_pll_wm86xx("pll-d", "ref", 0,
++					pmc_base+CLK_PLLD_MULTIPLIER, &_lock);
++	clk_register_clkdev(clk, "pll-d", NULL);
++
++	/* PLL A derived */
++	clk = clk_register_divider(NULL, "arm", "pll-a", 0,
++				pmc_base+CLK_ARM_DIVISOR, 0, 5, 0, &_lock);
++	clk_register_clkdev(clk, "arm", NULL);
++
++	clk = clk_register_divider(NULL, "ahb", "pll-a", 0,
++				pmc_base+CLK_AHB_DIVISOR, 0, 3, 0, &_lock);
++	clk_register_clkdev(clk, "ahb", NULL);
++
++	clk = clk_register_divider(NULL, "apb", "pll-a", 0,
++				pmc_base+CLK_APB_DIVISOR, 0, 5, 0, &_lock);
++	clk_register_clkdev(clk, "apb", NULL);
++
++	/* PLL B derived */
++	clk = clk_register_gatediv("sf", "pll-b", 0,
++		pmc_base+CLK_SF_DIVISOR, pmc_base+CLK_EN_HIGH, 23, &_lock);
++	clk_register_clkdev(clk, "sf", NULL);
++
++	clk = clk_register_gatediv("sdmmc", "pll-b", 0,
++		pmc_base+CLK_SDMMC0_DIVISOR, pmc_base+CLK_EN_HIGH, 18, &_lock);
++	clk_register_clkdev(clk, "sdmmc", NULL);
++
++	clk = clk_register_gatediv("nand", "pll-b", 0,
++		pmc_base+CLK_NAND_DIVISOR, pmc_base+CLK_EN_HIGH, 16, &_lock);
++	clk_register_clkdev(clk, "nand", NULL);
++
++	clk = clk_register_gatediv("spi0", "pll-b", 0,
++		pmc_base+CLK_SPI0_DIVISOR, pmc_base+CLK_EN_LOW, 12, &_lock);
++	clk_register_clkdev(clk, "spi0", NULL);
++
++	clk = clk_register_gatediv("sdmmc1", "pll-b", 0,
++		pmc_base+CLK_SDMMC1_DIVISOR, pmc_base+CLK_EN_LOW, 4, &_lock);
++	clk_register_clkdev(clk, "sdmmc1", NULL);
++
++	clk = clk_register_gatediv("pwm", "pll-b", 0,
++		pmc_base+CLK_PWM_DIVISOR, pmc_base+CLK_EN_LOW, 10, &_lock);
++	clk_register_clkdev(clk, "pwm", NULL);
++
++	clk = clk_register_gatediv("i2c0", "pll-b", 0,
++		pmc_base+CLK_I2C0_DIVISOR, pmc_base+CLK_EN_LOW, 5, &_lock);
++	clk_register_clkdev(clk, "i2c0", NULL);
++
++	clk = clk_register_gatediv("i2c1", "pll-b", 0,
++		pmc_base+CLK_I2C1_DIVISOR, pmc_base+CLK_EN_LOW, 9, &_lock);
++	clk_register_clkdev(clk, "i2c1", NULL);
++
++	/* PLL D derived */
++	clk = clk_register_divider(NULL, "ddr", "pll-d", 0,
++		pmc_base+CLK_DDR_DIVISOR, 0, 5, 0, &_lock);
++	clk_register_clkdev(clk, "ddr", NULL);
++}
+diff --git a/drivers/clk/vt8500/wm86xx-pll.c b/drivers/clk/vt8500/wm86xx-pll.c
+new file mode 100644
+index 0000000..a23f0eb
+--- /dev/null
++++ b/drivers/clk/vt8500/wm86xx-pll.c
+@@ -0,0 +1,135 @@
++/* drivers/clk/wmt/wm86xx-pll.c
++ *
++ * Copyright (C) 2012 Tony Prisk <linux@prisktech.co.nz>
++ *
++ * This software is licensed under the terms of the GNU General Public
++ * License version 2, as published by the Free Software Foundation, and
++ * may be copied, distributed, and modified under those terms.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++
++#include <linux/slab.h>
++#include <linux/io.h>
++#include <linux/err.h>
++#include <linux/clk-provider.h>
++
++#include "clk.h"
++
++#define to_clk_pll(_hw) container_of(_hw, struct clk_pll, hw)
++
++static long clk_pll_round_rate(struct clk_hw *hw, unsigned long drate,
++				unsigned long *prate)
++{
++	u32 mul;
++	u32 div;
++	unsigned long parent_rate = __clk_get_rate(__clk_get_parent(hw->clk));
++
++	/* Multiplier only gives a range of (OSC..OSC*1023) */
++	mul = (drate / parent_rate);
++	if (mul < 0x400) {
++		/* No divider required */
++		return parent_rate * mul;
++	}
++
++	/* Simple divider gives a range of (OSC/7..OSC*511.5) */
++	for (div = 2; div < 8; div++) {
++		mul = (drate / div) / parent_rate;
++		if (mul < 0x400)
++			break;
++	}
++	if (mul < 0x400) {
++		/* Simple divider required */
++		return (parent_rate * mul) / div;
++	}
++
++	/*
++	 * TODO: Add support for extended divider.
++	 * Could be used to give better resolution for matches
++	 */
++
++	return -EINVAL;
++}
++
++static unsigned long clk_pll_recalc_rate(struct clk_hw *hw, unsigned long
++		parent_rate)
++{
++	struct clk_pll *pll = to_clk_pll(hw);
++
++	u32 pll_val = readl(pll->reg);
++	u32 divisor = ((pll_val >> 10) & 7) * (1 << ((pll_val >> 13) & 3));
++
++	return (parent_rate * (pll_val & 0x3FF)) / divisor;
++}
++
++static int clk_pll_set_rate(struct clk_hw *hw, unsigned long drate,
++				unsigned long prate)
++{
++	u32 mul;
++	u32 div;
++	struct clk_pll *pll = to_clk_pll(hw);
++	unsigned long parent_rate = __clk_get_rate(__clk_get_parent(hw->clk));
++
++	/* Multiplier only gives a range of (OSC..OSC*1023) */
++	mul = (drate / parent_rate);
++	if (mul < 0x400) {
++		/* No divider required */
++		div = 1;
++		goto set_clock;
++	}
++
++	/* Simple divider gives a range of (OSC/7..OSC*511.5) */
++	for (div = 2; div < 8; div++) {
++		mul = (drate / div) / parent_rate;
++		if (mul < 0x400)
++			break;
++	}
++	if (mul > 0x3FF)
++		return -EINVAL;
++
++set_clock:
++	writel((div << 10)|mul, pll->reg);
++	return 0;
++}
++
++static const struct clk_ops clk_pll_ops = {
++	.recalc_rate = clk_pll_recalc_rate,
++	.round_rate = clk_pll_round_rate,
++	.set_rate = clk_pll_set_rate,
++};
++
++struct clk *clk_register_pll_wm86xx(const char *name, const char *parent_name,
++		unsigned long flags, void __iomem *reg, spinlock_t *lock)
++{
++	struct clk_init_data init;
++	struct clk_pll *pll;
++	struct clk *clk;
++
++	/* allocate the pll */
++	pll = kzalloc(sizeof(struct clk_pll), GFP_KERNEL);
++	if (!pll) {
++		pr_err("%s: could not allocate pll clk\n", __func__);
++		return ERR_PTR(-ENOMEM);
++	}
++
++	init.name = name;
++	init.ops = &clk_pll_ops;
++	init.flags = flags;
++	init.parent_names = (parent_name ? &parent_name : NULL);
++	init.num_parents = (parent_name ? 1 : 0);
++
++	pll->reg = reg;
++	pll->lock = lock;
++	pll->hw.init = &init;
++
++	clk = clk_register(NULL, &pll->hw);
++
++	if (IS_ERR(clk))
++		kfree(pll);
++
++	return clk;
++}
+-- 
+1.7.2.5
+

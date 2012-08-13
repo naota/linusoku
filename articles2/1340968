@@ -1,0 +1,120 @@
+Path: news.gmane.org!not-for-mail
+From: Alex Elder <elder@inktank.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH]  lib/parser.c: avoid overflow in match_number()
+Date: Thu, 09 Aug 2012 13:03:41 -0700
+Lines: 60
+Approved: news@gmane.org
+Message-ID: <5024179D.30308@inktank.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1; format=flowed
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344542699 24204 80.91.229.3 (9 Aug 2012 20:04:59 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 20:04:59 +0000 (UTC)
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 09 22:05:00 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzYyU-0004y8-VO
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 09 Aug 2012 22:04:55 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1759542Ab2HIUEs (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 16:04:48 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:33816 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750848Ab2HIUEq (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 16:04:46 -0400
+Original-Received: by pbbrr13 with SMTP id rr13so1410439pbb.19
+        for <linux-kernel@vger.kernel.org>; Thu, 09 Aug 2012 13:04:46 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=message-id:date:from:user-agent:mime-version:to:subject
+         :content-type:content-transfer-encoding:x-gm-message-state;
+        bh=8DPc9zC5J3YaEVjndAbtqODGo4qFS/+A5hLnyaDwSgA=;
+        b=pPw3Jm0J1FYBLWnJlEMQqSjQ/wHpt7/WZlvGcBjKgpmjRuPsaxsL8+iLhrYlmhSp95
+         0MfaccCaw/FxLyE/EOoKSHAGWav8CEvMeY+m3ey0WZ22DYNlqHb9TIBUeqUxJC6MeQ8K
+         Sdd/tINFEuht0T4HfSqNSqDBLEhd2WmEEQn30B2eoBbFFWy66MhuDUsrFEA4GOTFgnOG
+         jtJX6qaS6TXXbI/mBQ0RHLNpw4o5XRdCu+0ViHSmPwYVtRb5E1nIGIIDyp3lYUd/8uTb
+         cNhd6mPqG8hhTqxPiJjJ/eLB8cXxk7RD2XkIA/K2kT1p3juJNu9skrCRKAYweBBuIm6i
+         13JA==
+Original-Received: by 10.68.130.163 with SMTP id of3mr6694062pbb.108.1344542686192;
+        Thu, 09 Aug 2012 13:04:46 -0700 (PDT)
+Original-Received: from [192.168.107.150] ([38.122.20.226])
+        by mx.google.com with ESMTPS id gv1sm1730257pbc.38.2012.08.09.13.04.45
+        (version=SSLv3 cipher=OTHER);
+        Thu, 09 Aug 2012 13:04:45 -0700 (PDT)
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:14.0) Gecko/20120714 Thunderbird/14.0
+X-Gm-Message-State: ALoCoQkbxdyCpBcx4ewMWvsTD3MW/SihY/kHNhN/AN74XOfJV+JGUwIV+7xCoGeICUZJP1ilO03I
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340968
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340968>
+
+The result of converting an integer value to another signed integer
+type that's unable to represent the original value is implementation
+defined.  (See notes in section 6.3.1.3 of the C standard.)
+
+In match_number(), the result of simple_strtol() (which returns type
+long) is assigned to a value of type int.
+
+Instead, handle the result of simple_strtol() in a well-defined way,
+and return -ERANGE if the result won't fit in the int variable used
+to hold the parsed result.
+
+No current callers pay attention to the particular error value
+returned, so this additional return code shouldn't do any harm.
+
+Signed-off-by: Alex Elder <elder@inktank.com>
+---
+  lib/parser.c |   10 ++++++++--
+  1 file changed, 8 insertions(+), 2 deletions(-)
+
+Index: b/lib/parser.c
+===================================================================
+--- a/lib/parser.c
++++ b/lib/parser.c
+@@ -122,13 +122,14 @@ int match_token(char *s, const match_tab
+   *
+   * Description: Given a &substring_t and a base, attempts to parse the 
+substring
+   * as a number in that base. On success, sets @result to the integer 
+represented
+- * by the string and returns 0. Returns either -ENOMEM or -EINVAL on 
+failure.
++ * by the string and returns 0. Returns -ENOMEM, -EINVAL, or -ERANGE on 
+failure.
+   */
+  static int match_number(substring_t *s, int *result, int base)
+  {
+  	char *endp;
+  	char *buf;
+  	int ret;
++	long val;
+  	size_t len = s->to - s->from;
+
+  	buf = kmalloc(len + 1, GFP_KERNEL);
+@@ -136,10 +137,15 @@ static int match_number(substring_t *s,
+  		return -ENOMEM;
+  	memcpy(buf, s->from, len);
+  	buf[len] = '\0';
+-	*result = simple_strtol(buf, &endp, base);
++
+  	ret = 0;
++	val = simple_strtol(buf, &endp, base);
+  	if (endp == buf)
+  		ret = -EINVAL;
++	else if (val < (long) INT_MIN || val > (long) INT_MAX)
++		ret = -ERANGE;
++	else
++		*result = (int) val;
+  	kfree(buf);
+  	return ret;
+  }

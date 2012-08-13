@@ -1,0 +1,123 @@
+Path: news.gmane.org!not-for-mail
+From: Avi Kivity <avi@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.kvm.devel
+Subject: Re: [PATCH v2 3/3] KVM: remove dummy pages
+Date: Thu, 26 Jul 2012 11:56:15 +0300
+Lines: 72
+Approved: news@gmane.org
+Message-ID: <5011062F.3080505@redhat.com>
+References: <5010C008.4030304@linux.vnet.ibm.com> <5010C083.30102@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343292992 4171 80.91.229.3 (26 Jul 2012 08:56:32 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 08:56:32 +0000 (UTC)
+Cc: Marcelo Tosatti <mtosatti@redhat.com>,
+	LKML <linux-kernel@vger.kernel.org>, KVM <kvm@vger.kernel.org>
+To: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 10:56:31 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuJrz-0005dj-5H
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 10:56:31 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751735Ab2GZI4X (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 04:56:23 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:62090 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1750741Ab2GZI4V (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 04:56:21 -0400
+Original-Received: from int-mx12.intmail.prod.int.phx2.redhat.com (int-mx12.intmail.prod.int.phx2.redhat.com [10.5.11.25])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6Q8uJdW032233
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Thu, 26 Jul 2012 04:56:20 -0400
+Original-Received: from balrog.usersys.redhat.com (dhcp-4-121.tlv.redhat.com [10.35.4.121])
+	by int-mx12.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6Q8uF4R025156;
+	Thu, 26 Jul 2012 04:56:17 -0400
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120615 Thunderbird/13.0.1
+In-Reply-To: <5010C083.30102@linux.vnet.ibm.com>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.25
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333465 gmane.comp.emulators.kvm.devel:95075
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333465>
+
+On 07/26/2012 06:58 AM, Xiao Guangrong wrote:
+> Currently, kvm allocates some pages and use them as error indicators,
+> it wastes memory and is not good for scalability
+> 
+> Base on Avi's suggestion, we use the error codes instead of these pages
+> to indicate the error conditions
+> 
+> 
+> +static pfn_t get_bad_pfn(void)
+> +{
+> +	return -ENOENT;
+> +}
+> +
+> +pfn_t get_fault_pfn(void)
+> +{
+> +	return -EFAULT;
+> +}
+> +EXPORT_SYMBOL_GPL(get_fault_pfn);
+> +
+> +static pfn_t get_hwpoison_pfn(void)
+> +{
+> +	return -EHWPOISON;
+> +}
+> +
+
+Would be better as #defines
+
+>  int is_hwpoison_pfn(pfn_t pfn)
+>  {
+> -	return pfn == hwpoison_pfn;
+> +	return pfn == -EHWPOISON;
+>  }
+>  EXPORT_SYMBOL_GPL(is_hwpoison_pfn);
+> 
+>  int is_noslot_pfn(pfn_t pfn)
+>  {
+> -	return pfn == bad_pfn;
+> +	return pfn == -ENOENT;
+>  }
+>  EXPORT_SYMBOL_GPL(is_noslot_pfn);
+> 
+>  int is_invalid_pfn(pfn_t pfn)
+>  {
+> -	return pfn == hwpoison_pfn || pfn == fault_pfn;
+> +	return !is_noslot_pfn(pfn) && is_error_pfn(pfn);
+>  }
+>  EXPORT_SYMBOL_GPL(is_invalid_pfn);
+> 
+
+So is_*_pfn() could go away and be replaced by ==.
+
+> 
+>  EXPORT_SYMBOL_GPL(gfn_to_page);
+> 
+>  void kvm_release_page_clean(struct page *page)
+>  {
+> -	kvm_release_pfn_clean(page_to_pfn(page));
+> +	if (!is_error_page(page))
+> +		kvm_release_pfn_clean(page_to_pfn(page));
+>  }
+>  EXPORT_SYMBOL_GPL(kvm_release_page_clean);
+
+Note, we can remove calls to kvm_release_page_clean() from error paths
+now, so in the future we can drop the test.
+
+Since my comments are better done as a separate patch, I applied all
+three patches.  Thanks!
+
+-- 
+error compiling committee.c: too many arguments to function
+
+

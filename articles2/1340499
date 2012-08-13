@@ -1,0 +1,99 @@
+Path: news.gmane.org!not-for-mail
+From: "Yan, Zheng" <zheng.z.yan@intel.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [BUG] perf: sharing of cpuctx between core and ibs PMU causes
+ problems
+Date: Thu, 09 Aug 2012 14:55:12 +0800
+Lines: 47
+Approved: news@gmane.org
+Message-ID: <50235ED0.5010107@intel.com>
+References: <CABPqkBRWLcP_9WOL_VvucnY7A2AcpzuvsUt4_ZUgYMREo-65dA@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344495327 15828 80.91.229.3 (9 Aug 2012 06:55:27 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 06:55:27 +0000 (UTC)
+Cc: LKML <linux-kernel@vger.kernel.org>,
+	Peter Zijlstra <peterz@infradead.org>,
+	Robert Richter <robert.richter@amd.com>, mingo@elte.hu
+To: Stephane Eranian <eranian@google.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 09 08:55:27 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzMeS-0008Aq-MA
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 09 Aug 2012 08:55:25 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755420Ab2HIGzR (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 02:55:17 -0400
+Original-Received: from mga11.intel.com ([192.55.52.93]:36938 "EHLO mga11.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755149Ab2HIGzO (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 02:55:14 -0400
+Original-Received: from fmsmga002.fm.intel.com ([10.253.24.26])
+  by fmsmga102.fm.intel.com with ESMTP; 08 Aug 2012 23:55:13 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.77,738,1336374000"; 
+   d="scan'208";a="205333400"
+Original-Received: from zyan5-mobl.sh.intel.com (HELO [10.239.198.191]) ([10.239.198.191])
+  by fmsmga002.fm.intel.com with ESMTP; 08 Aug 2012 23:55:12 -0700
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:14.0) Gecko/20120717 Thunderbird/14.0
+In-Reply-To: <CABPqkBRWLcP_9WOL_VvucnY7A2AcpzuvsUt4_ZUgYMREo-65dA@mail.gmail.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340499
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340499>
+
+On 08/09/2012 08:51 AM, Stephane Eranian wrote:
+> Hi,
+> 
+> I ran into a problem on my AMD box whereby I would hit the
+> WARN_ON_ONCE(cpuctx->cgrp) in perf_cgroup_switch().
+> 
+> It took me a while to track this down. It turns out that the
+> list_for_each_entry_rcu() loop had multiple iterations. That's
+> normal, we have CPU PMU and IBS PMU.  But what caused
+> the warning to fire is that both the core and IBS PMU were
+> pointing to the same cpuctx struct. Thus, the cpuctx->cgrp
+> was already set  in the second iteration.
+> 
+> Is the warning a false positive?
+
+I think it's a false positive, I'm not sure.
+
+> 
+> In perf_pmu_register(), there is a search for a matching
+> pmu->task_ctx_nr. Given that the field is pointing to
+> perf_hw_context for both cpu and IBS PMU, there is
+> a match and therefore the cpuctx are shared.
+> 
+> The question is: why do we have to share the cpuctx?
+> 
+> Note that the same issue probably exists with the Intel
+> uncore PMU.
+
+uncore PMU does not have this issue because uncore_pmu->task_ctx_nr
+is 'perf_invalid_context'. find_pmu_context() always return NULL in
+that case.
+
+Regards
+Yan, Zheng.
+
+> 
+> If we need to share, then the perf_cgroup_switch() code
+> needs to change because, as it stands, it is doing the
+> switching twice in this case.
+> 
+
+
+> Either way something looks wrong here.
+> 
+> Any idea?
+> 
+

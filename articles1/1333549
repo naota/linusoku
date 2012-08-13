@@ -1,0 +1,93 @@
+Path: news.gmane.org!not-for-mail
+From: Hideki EIRAKU <hdk@igel.co.jp>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel,gmane.linux.drivers.video-input-infrastructure,gmane.linux.alsa.devel
+Subject: [PATCH v2 0/4] Use dma_mmap_coherent to support IOMMU mapper
+Date: Thu, 26 Jul 2012 20:13:07 +0900
+Lines: 27
+Approved: news@gmane.org
+Message-ID: <1343301191-26001-1-git-send-email-hdk@igel.co.jp>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343301234 5160 80.91.229.3 (26 Jul 2012 11:13:54 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 11:13:54 +0000 (UTC)
+Cc: linux-arm-kernel@lists.infradead.org, linux-kernel@vger.kernel.org,
+	linux-media@vger.kernel.org, linux-fbdev@vger.kernel.org,
+	alsa-devel@alsa-project.org, Katsuya MATSUBARA <matsu@igel.co.jp>,
+	Hideki EIRAKU <hdk@igel.co.jp>
+To: Russell King <linux@arm.linux.org.uk>,
+	Pawel Osciak <pawel@osciak.com>,
+	Marek Szyprowski <m.szyprowski@samsung.com>,
+	Kyungmin Park <kyungmin.park@samsung.com>,
+	Mauro Carvalho Chehab <mchehab@infradead.org>,
+	Florian Tobias Schandinat <FlorianSchandinat@gmx.de>,
+	Jaroslav Kysela <perex@perex.cz>, Takashi Iwai <tiwai@suse.de>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 13:13:51 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuM0s-0003OT-Fl
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 13:13:50 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752426Ab2GZLNk (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 07:13:40 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:44389 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752043Ab2GZLNi (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 07:13:38 -0400
+Original-Received: by pbbrp8 with SMTP id rp8so3069480pbb.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 04:13:38 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:x-gm-message-state;
+        bh=EujMjT1WOBWBhlVqVBhukBcKqztiA8NOTeeNu9pNkIU=;
+        b=Ps23XpXlDt5cUCsfBgmYAcP6/QEgpwqksgGktVcY8L2EAH34d0NhLcJn4VMBpvvFGb
+         70YnKdE6ggknZIehRavZBffUEAVhLahz4xvBxjbj9AfPunbzaEV7VuoaYv+9jVjfzB3G
+         OUzLsJvzn3Fc1PNjLQaUKICXLu+Q1D8nf6Q1FantypzOOqBO+PKN7JIdl0smZM73G1zU
+         IskKj11GkFvPobSTtrh1eKib63a9tVpFHjM1M2Lhz19tYEGoR4JYPFNrjHhKU9R3llFC
+         HbYwn97GhFRINvqozljQN//GBVazF23HszUIOvXIcFGxh8zbZ4IUDLfg8lHbKzfAZIdm
+         lmjQ==
+Original-Received: by 10.68.201.135 with SMTP id ka7mr4520939pbc.15.1343301217786;
+        Thu, 26 Jul 2012 04:13:37 -0700 (PDT)
+Original-Received: from localhost.localdomain ([219.106.231.132])
+        by mx.google.com with ESMTPS id ru10sm16359210pbc.50.2012.07.26.04.13.34
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 04:13:37 -0700 (PDT)
+X-Mailer: git-send-email 1.7.0.4
+X-Gm-Message-State: ALoCoQk8l2kvnWtqGtwHXDhbjmHXvyaVvUWZQ3/FdhqqBgBrp5dOdIeADkngQkQCU20VVDtLKXdw
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333549 gmane.linux.ports.arm.kernel:178831 gmane.linux.drivers.video-input-infrastructure:51358 gmane.linux.alsa.devel:99288
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333549>
+
+There is a dma_mmap_coherent() API in some architectures.  This API
+provides a mmap function for memory allocated by dma_alloc_coherent().
+Some drivers mmap a dma_addr_t returned by dma_alloc_coherent() as a
+physical address.  But such drivers do not work correctly when IOMMU
+mapper is used.
+
+v2:
+- Rebase on fbdev-next branch of
+  git://github.com/schandinat/linux-2.6.git.
+- Initialize .fb_mmap in both sh_mobile_lcdc_overlay_ops and
+  sh_mobile_lcdc_ops.
+- Add Laurent's clean up patch.
+
+Hideki EIRAKU (3):
+  ARM: dma-mapping: define ARCH_HAS_DMA_MMAP_COHERENT
+  media: videobuf2-dma-contig: use dma_mmap_coherent if available
+  fbdev: sh_mobile_lcdc: use dma_mmap_coherent if available
+
+Laurent Pinchart (1):
+  ALSA: pcm - Don't define ARCH_HAS_DMA_MMAP_COHERENT privately for ARM
+
+ arch/arm/include/asm/dma-mapping.h         |    1 +
+ drivers/media/video/videobuf2-dma-contig.c |   18 ++++++++++++++++++
+ drivers/video/sh_mobile_lcdcfb.c           |   28 ++++++++++++++++++++++++++++
+ sound/core/pcm_native.c                    |    7 -------
+ 4 files changed, 47 insertions(+), 7 deletions(-)
+

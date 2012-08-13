@@ -1,0 +1,112 @@
+Path: news.gmane.org!not-for-mail
+From: Oleg Nesterov <oleg@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] uprobes: mmap_region() corrupts mm->mm_rb if
+	uprobe_mmap() fails
+Date: Tue, 31 Jul 2012 14:48:05 +0200
+Lines: 56
+Approved: news@gmane.org
+Message-ID: <20120731124805.GA485@redhat.com>
+References: <20120728163157.GA22719@redhat.com> <20120731064730.GB5087@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343739093 10734 80.91.229.3 (31 Jul 2012 12:51:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 12:51:33 +0000 (UTC)
+Cc: Ingo Molnar <mingo@elte.hu>, Anton Arapov <anton@redhat.com>,
+	"Frank Ch. Eigler" <fche@redhat.com>,
+	Peter Zijlstra <peterz@infradead.org>,
+	William Cohen <wcohen@redhat.com>, linux-kernel@vger.kernel.org
+To: Srikar Dronamraju <srikar@linux.vnet.ibm.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 14:51:31 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwBv8-0000YJ-45
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 14:51:30 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932065Ab2GaMvW (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 08:51:22 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:14704 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755198Ab2GaMvU (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 08:51:20 -0400
+Original-Received: from int-mx10.intmail.prod.int.phx2.redhat.com (int-mx10.intmail.prod.int.phx2.redhat.com [10.5.11.23])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6VCp25W026948
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Tue, 31 Jul 2012 08:51:02 -0400
+Original-Received: from tranklukator.englab.brq.redhat.com (dhcp-1-232.brq.redhat.com [10.34.1.232])
+	by int-mx10.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with SMTP id q6VCoxfX023675;
+	Tue, 31 Jul 2012 08:51:00 -0400
+Original-Received: by tranklukator.englab.brq.redhat.com (nbSMTP-1.00) for uid 500
+	oleg@redhat.com; Tue, 31 Jul 2012 14:48:08 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <20120731064730.GB5087@linux.vnet.ibm.com>
+User-Agent: Mutt/1.5.18 (2008-05-17)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.23
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335672
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335672>
+
+On 07/31, Srikar Dronamraju wrote:
+>
+> > --- a/kernel/fork.c
+> > +++ b/kernel/fork.c
+> > @@ -454,8 +454,8 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
+> >  		if (retval)
+> >  			goto out;
+> >
+> > -		if (file && uprobe_mmap(tmp))
+> > -			goto out;
+> > +		if (file)
+> > +			uprobe_mmap(tmp);
+>
+> I am not comfortable with this fix.
+
+OK, so what you suggest for now?
+
+Please note that it is very trivial to crash the kernel. Just
+do something like
+
+	echo "p /bin/true:OFFSET_OF_SYSCALL_INSN" > /sys/kernel/debug/tracing/uprobe_events
+	/bin/true
+
+(or any other unsupported insn)
+
+Yes sure, I agree that in the long term this change should be
+reconsidered.
+
+> I think the long term solution is as you mentioned, move the
+> instruction analysis to register.
+
+Exactly. And we already discusssed this, we have a lot of other
+reasons to do this.
+
+> Lets say there were 10 probes that were to be installed in that vma.
+> we were able to install five probes and the 6th one happened to fail
+> because of invalid instruction; we dont continue with the registering
+> probes for the remaining 4 probes.
+
+Yes. And I already have the patch. I didn't send it because, unlike
+this fix, it depends on other changes (already in -tip).
+
+Until we move analysis to register, until we teach the callers of
+uprobe_mmap() to bailout (and please note that vma_adjust() ignores
+the result too), uprobe_mmap() should not give up if install fails,
+it should continue.
+
+> The intention behind failing mmap()/fork() if uprobe_mmap failed,
+> was to make sure that we always report the correct number of events.
+
+Sure, I understand and agree.
+
+But what we can do right now?
+
+Oleg.
+

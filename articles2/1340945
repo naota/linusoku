@@ -1,0 +1,92 @@
+Path: news.gmane.org!not-for-mail
+From: Alex Williamson <alex.williamson@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.kvm.devel
+Subject: Re: [PATCH v7 2/2] kvm: KVM_EOIFD, an eventfd for EOIs
+Date: Thu, 09 Aug 2012 13:26:15 -0600
+Lines: 40
+Approved: news@gmane.org
+Message-ID: <1344540375.3441.228.camel@ul30vt.home>
+References: <20120724203628.21081.56884.stgit@bling.home>
+	 <20120724204320.21081.32333.stgit@bling.home> <501F99A8.9050006@redhat.com>
+	 <501F9E99.9010109@redhat.com> <501F9F27.708@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344540387 5888 80.91.229.3 (9 Aug 2012 19:26:27 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 19:26:27 +0000 (UTC)
+Cc: mst@redhat.com, gleb@redhat.com, kvm@vger.kernel.org,
+	linux-kernel@vger.kernel.org, jan.kiszka@siemens.com
+To: Avi Kivity <avi@redhat.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 09 21:26:26 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzYNF-00018Q-8I
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 09 Aug 2012 21:26:25 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1759407Ab2HIT0T (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 15:26:19 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:58626 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1759223Ab2HIT0S (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 15:26:18 -0400
+Original-Received: from int-mx10.intmail.prod.int.phx2.redhat.com (int-mx10.intmail.prod.int.phx2.redhat.com [10.5.11.23])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q79JQFQR011441
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Thu, 9 Aug 2012 15:26:15 -0400
+Original-Received: from [10.3.113.73] (ovpn-113-73.phx2.redhat.com [10.3.113.73])
+	by int-mx10.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q79JQFIp007107;
+	Thu, 9 Aug 2012 15:26:15 -0400
+In-Reply-To: <501F9F27.708@redhat.com>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.23
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340945 gmane.comp.emulators.kvm.devel:95927
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340945>
+
+On Mon, 2012-08-06 at 13:40 +0300, Avi Kivity wrote:
+> On 08/06/2012 01:38 PM, Avi Kivity wrote:
+> 
+> > Regarding the implementation, instead of a linked list, would an array
+> > of counters parallel to the bitmap make it simpler?
+> 
+> Or even, replace the bitmap with an array of counters.
+
+I'm not sure a counter array is what we're really after.  That gives us
+reference counting for the irq source IDs, but not the key->gsi lookup.
+It also highlights another issue, that we have a limited set of source
+IDs.  Looks like we have BITS_PER_LONG IDs, with two already used, one
+for the shared userspace ID and another for the PIT.  How happy are we
+going to be with a limit of 62 level interrupts in use at one time?
+
+It's arguably a reasonable number since the most virtualization friendly
+devices (sr-iov VFs) don't even support this kind of interrupt.  It's
+also very wasteful allocating an entire source ID for a single GSI
+within that source ID.  PCI supports interrupts A, B, C, and D, which,
+in the most optimal config, each go to different GSIs.  So we could
+theoretically be more efficient in our use and allocation of irq source
+IDs if we tracked use by the source ID, gsi pair.
+
+That probably makes it less practical to replace anything at the top
+level with a counter array.  The key that we pass back is currently the
+actual source ID, but we don't specify what it is, so we could split it
+and have it encode a 16bit source ID plus 16 bit GSI.  It could also be
+an idr entry.
+
+Michael, would the interface be more acceptable to you if we added
+separate ioctls to allocate and free some representation of an irq
+source ID, gsi pair?  For instance, an ioctl might return an idr entry
+for an irq source ID/gsi object which would then be passed as a
+parameter in struct kvm_irqfd and struct kvm_eoifd so that the object
+representing the source id/gsi isn't magically freed on it's own.  This
+would also allow us to deassign/close one end and reconfigure it later.
+Thanks,
+
+Alex
+

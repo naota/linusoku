@@ -1,0 +1,137 @@
+Path: news.gmane.org!not-for-mail
+From: Stanislav Kinsbursky <skinsbursky@parallels.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.nfs,gmane.linux.openvz.devel
+Subject: [PATCH v2 05/15] Lockd: host complaining function introduced
+Date: Wed, 25 Jul 2012 16:56:27 +0400
+Lines: 91
+Approved: news@gmane.org
+Message-ID: <20120725125627.24376.62413.stgit@localhost.localdomain>
+References: <20120725125258.24376.82525.stgit@localhost.localdomain>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343221109 21156 80.91.229.3 (25 Jul 2012 12:58:29 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 12:58:29 +0000 (UTC)
+Cc: linux-nfs@vger.kernel.org, Trond.Myklebust@netapp.com,
+	linux-kernel@vger.kernel.org, devel@openvz.org
+To: bfields@fieldses.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 14:58:25 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su1AT-0003Zm-TC
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 14:58:22 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756786Ab2GYM5y (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 08:57:54 -0400
+Original-Received: from mailhub.sw.ru ([195.214.232.25]:25445 "EHLO relay.sw.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1756366Ab2GYM5v (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 08:57:51 -0400
+Original-Received: from localhost.localdomain ([10.30.21.131])
+	by relay.sw.ru (8.13.4/8.13.4) with ESMTP id q6PCveWi020717;
+	Wed, 25 Jul 2012 16:57:41 +0400 (MSK)
+In-Reply-To: <20120725125258.24376.82525.stgit@localhost.localdomain>
+User-Agent: StGit/0.16
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332959 gmane.linux.nfs:51106 gmane.linux.openvz.devel:1890
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332959>
+
+Just a small cleanup.
+
+Signed-off-by: Stanislav Kinsbursky <skinsbursky@parallels.com>
+---
+ fs/lockd/host.c |   57 +++++++++++++++++++++++++++++--------------------------
+ 1 files changed, 30 insertions(+), 27 deletions(-)
+
+diff --git a/fs/lockd/host.c b/fs/lockd/host.c
+index 6c56090..8cbf53d 100644
+--- a/fs/lockd/host.c
++++ b/fs/lockd/host.c
+@@ -572,6 +572,35 @@ void nlm_host_rebooted(const struct nlm_reboot *info)
+ 	nsm_release(nsm);
+ }
+ 
++static void nlm_complain_hosts(struct net *net)
++{
++	struct hlist_head *chain;
++	struct hlist_node *pos;
++	struct nlm_host	*host;
++
++	if (net) {
++		struct lockd_net *ln = net_generic(net, lockd_net_id);
++
++		if (ln->nrhosts == 0)
++			return;
++		printk(KERN_WARNING "lockd: couldn't shutdown host module for net %p!\n", net);
++		dprintk("lockd: %lu hosts left in net %p:\n", ln->nrhosts, net);
++	} else {
++		if (nrhosts == 0)
++			return;
++		printk(KERN_WARNING "lockd: couldn't shutdown host module!\n");
++		dprintk("lockd: %lu hosts left:\n", nrhosts);
++	}
++
++	for_each_host(host, pos, chain, nlm_server_hosts) {
++		if (net && host->net != net)
++			continue;
++		dprintk("       %s (cnt %d use %d exp %ld net %p)\n",
++			host->h_name, atomic_read(&host->h_count),
++			host->h_inuse, host->h_expires, host->net);
++	}
++}
++
+ void
+ nlm_shutdown_hosts_net(struct net *net)
+ {
+@@ -598,18 +627,7 @@ nlm_shutdown_hosts_net(struct net *net)
+ 	nlm_gc_hosts(net);
+ 	mutex_unlock(&nlm_host_mutex);
+ 
+-	/* complain if any hosts are left */
+-	if (net) {
+-		struct lockd_net *ln = net_generic(net, lockd_net_id);
+-
+-		printk(KERN_WARNING "lockd: couldn't shutdown host module for net %p!\n", net);
+-		dprintk("lockd: %lu hosts left in net %p:\n", ln->nrhosts, net);
+-		for_each_host(host, pos, chain, nlm_server_hosts) {
+-			dprintk("       %s (cnt %d use %d exp %ld net %p)\n",
+-				host->h_name, atomic_read(&host->h_count),
+-				host->h_inuse, host->h_expires, host->net);
+-		}
+-	}
++	nlm_complain_hosts(net);
+ }
+ 
+ /*
+@@ -619,22 +637,7 @@ nlm_shutdown_hosts_net(struct net *net)
+ void
+ nlm_shutdown_hosts(void)
+ {
+-	struct hlist_head *chain;
+-	struct hlist_node *pos;
+-	struct nlm_host	*host;
+-
+ 	nlm_shutdown_hosts_net(NULL);
+-
+-	/* complain if any hosts are left */
+-	if (nrhosts != 0) {
+-		printk(KERN_WARNING "lockd: couldn't shutdown host module!\n");
+-		dprintk("lockd: %lu hosts left:\n", nrhosts);
+-		for_each_host(host, pos, chain, nlm_server_hosts) {
+-			dprintk("       %s (cnt %d use %d exp %ld net %p)\n",
+-				host->h_name, atomic_read(&host->h_count),
+-				host->h_inuse, host->h_expires, host->net);
+-		}
+-	}
+ }
+ 
+ /*
+

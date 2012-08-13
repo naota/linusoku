@@ -1,0 +1,320 @@
+Path: news.gmane.org!not-for-mail
+From: Jiang Liu <jiang.liu@huawei.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.acpi.devel,gmane.linux.kernel.pci
+Subject: [RFC PATCH v2 05/16] ACPIHP: scan and walk ACPI devices connecting  to an ACPI hotplug slot
+Date: Sat, 4 Aug 2012 20:13:52 +0800
+Lines: 252
+Approved: news@gmane.org
+Message-ID: <1344082443-4608-6-git-send-email-jiang.liu@huawei.com>
+References: <1344082443-4608-1-git-send-email-jiang.liu@huawei.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1344082605 28481 80.91.229.3 (4 Aug 2012 12:16:45 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 4 Aug 2012 12:16:45 +0000 (UTC)
+Cc: Jiang Liu <jiang.liu@huawei.com>, Tony Luck <tony.luck@intel.com>,
+	Huang Ying <ying.huang@intel.com>,
+	Bob Moore <robert.moore@intel.com>,
+	Len Brown <lenb@kernel.org>,
+	"Srivatsa S. Bhat" <srivatsa.bhat@linux.vnet.ibm.com>,
+	Bjorn Helgaas <bhelgaas@google.com>,
+	<linux-kernel@vger.kernel.org>, <linux-acpi@vger.kernel.org>,
+	<linux-pci@vger.kernel.org>, Jiang Liu <liuj97@gmail.com>,
+	Hanjun Guo <guohanjun@huawei.com>,
+	Gaohuai Han <hangaohuai@huawei.com>
+To: Yinghai Lu <yinghai@kernel.org>,
+	Yasuaki Ishimatsu <isimatu.yasuaki@jp.fujitsu.com>,
+	Kenji Kaneshige <kaneshige.kenji@jp.fujitsu.com>,
+	Wen Congyang <wency@cn.fujitsu.com>,
+	Tang Chen <tangchen@cn.fujitsu.com>,
+	Taku Izumi <izumi.taku@jp.fujitsu.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Aug 04 14:16:41 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxdHc-0004xh-0x
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 04 Aug 2012 14:16:40 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753516Ab2HDMQh (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 4 Aug 2012 08:16:37 -0400
+Original-Received: from szxga01-in.huawei.com ([119.145.14.64]:17413 "EHLO
+	szxga01-in.huawei.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752729Ab2HDMOx (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 4 Aug 2012 08:14:53 -0400
+Original-Received: from 172.24.2.119 (EHLO szxeml202-edg.china.huawei.com) ([172.24.2.119])
+	by szxrg01-dlp.huawei.com (MOS 4.3.4-GA FastPath queued)
+	with ESMTP id AMQ61466;
+	Sat, 04 Aug 2012 20:14:30 +0800 (CST)
+Original-Received: from SZXEML421-HUB.china.huawei.com (10.82.67.160) by
+ szxeml202-edg.china.huawei.com (172.24.2.42) with Microsoft SMTP Server (TLS)
+ id 14.1.323.3; Sat, 4 Aug 2012 20:14:13 +0800
+Original-Received: from localhost (10.108.108.229) by szxeml421-hub.china.huawei.com
+ (10.82.67.160) with Microsoft SMTP Server id 14.1.323.3; Sat, 4 Aug 2012
+ 20:14:21 +0800
+X-Mailer: git-send-email 1.7.11.msysgit.1
+In-Reply-To: <1344082443-4608-1-git-send-email-jiang.liu@huawei.com>
+X-Originating-IP: [10.108.108.229]
+X-CFilter-Loop: Reflected
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337660 gmane.linux.acpi.devel:54766 gmane.linux.kernel.pci:16873
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337660>
+
+From: Jiang Liu <jiang.liu@huawei.com>
+
+This patch enhances existing acpi_bus_scan() to create ACPI devices for
+hot-added system devices connecting to an ACPI hotplug slot.
+It also introduces a new interface to walk all ACPI devices connecting to
+an ACPI hotplug slot.
+
+Signed-off-by: Jiang Liu <liuj97@gmail.com>
+Signed-off-by: Hanjun Guo <guohanjun@huawei.com>
+Signed-off-by: Gaohuai Han <hangaohuai@huawei.com>
+---
+ drivers/acpi/hotplug/Makefile |    2 +-
+ drivers/acpi/hotplug/device.c |  121 +++++++++++++++++++++++++++++++++++++++++
+ drivers/acpi/internal.h       |    2 +
+ drivers/acpi/scan.c           |   11 +++-
+ include/acpi/acpi_bus.h       |    2 +
+ include/acpi/acpi_hotplug.h   |   16 ++++++
+ 6 files changed, 152 insertions(+), 2 deletions(-)
+ create mode 100644 drivers/acpi/hotplug/device.c
+
+diff --git a/drivers/acpi/hotplug/Makefile b/drivers/acpi/hotplug/Makefile
+index 23dfa93..25fac24 100644
+--- a/drivers/acpi/hotplug/Makefile
++++ b/drivers/acpi/hotplug/Makefile
+@@ -3,7 +3,7 @@
+ #
+ 
+ obj-$(CONFIG_ACPI_HOTPLUG)			+= acpihp.o
+-acpihp-y					= core.o
++acpihp-y					= core.o device.o
+ 
+ obj-$(CONFIG_ACPI_HOTPLUG_ENUM)			+= acpihp_enum.o
+ acpihp_enum-y					= slot_enum.o
+diff --git a/drivers/acpi/hotplug/device.c b/drivers/acpi/hotplug/device.c
+new file mode 100644
+index 0000000..1795939
+--- /dev/null
++++ b/drivers/acpi/hotplug/device.c
+@@ -0,0 +1,121 @@
++/*
++ * Copyright (C) 2011 Huawei Tech. Co., Ltd.
++ * Copyright (C) 2011 Jiang Liu <jiang.liu@huawei.com>
++ *
++ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ */
++#include <linux/types.h>
++#include <linux/device.h>
++#include <acpi/acpi.h>
++#include <acpi/acpi_bus.h>
++#include <acpi/acpi_hotplug.h>
++#include "../internal.h"
++
++/*
++ * When creating ACPI devices for hot-added system devices connecting to slot,
++ * we shouldn't cross the slot boundary. Otherwise it will cause inconsistence
++ * to other slots.
++ */
++static acpi_status acpihp_filter_device(acpi_handle hdl, u32 level, void *arg)
++{
++	/* Skip if the handle corresponds to a child hotplug slot. */
++	if (level > 0 && acpihp_check_slot(hdl) != 0)
++		return AE_CTRL_DEPTH;
++
++	return AE_OK;
++}
++
++/* Create ACPI devices for hot-added system devices connecting to a slot. */
++int acpihp_add_devices(acpi_handle handle, struct acpi_device **child)
++{
++	struct acpi_bus_ops ops;
++
++	memset(&ops, 0, sizeof(ops));
++	ops.acpi_op_add = 1;
++	ops.acpi_op_filter_fn = &acpihp_filter_device;
++	ops.acpi_op_filter_arg = NULL;
++
++	return acpi_bus_scan(handle, &ops, child);
++}
++EXPORT_SYMBOL_GPL(acpihp_add_devices);
++
++struct acpihp_walk_arg {
++	acpihp_walk_device_cb cb;
++	void *arg;
++	acpi_status status;
++};
++
++static int acpihp_walk_cb(struct device *dev, void *data)
++{
++	acpi_status status;
++	struct acpihp_walk_arg *argp = (struct acpihp_walk_arg *)data;
++	struct acpi_device *acpi_dev = container_of(dev,
++						    struct acpi_device, dev);
++
++	/* Skip if the handle corresponds to a child hotplug slot. */
++	if (acpihp_check_slot(acpi_dev->handle))
++		return 0;
++
++	status = argp->cb(acpi_dev, argp->arg);
++	if (status == AE_OK) {
++		return device_for_each_child(dev, data, &acpihp_walk_cb);
++	} else if (status == AE_CTRL_DEPTH || status == AE_CTRL_TERMINATE ||
++		   status == AE_CTRL_SKIP) {
++		return 0;
++	} else {
++		argp->status = status;
++		return -1;
++	}
++}
++
++/*
++ * Walk all ACPI devices connecting to a hotplug slot, and don't cross the
++ * hotplug slot boundary.
++ */
++int acpihp_walk_devices(acpi_handle handle, acpihp_walk_device_cb cb,
++			void *argp)
++{
++	acpi_status status;
++	struct acpi_device *device;
++	struct acpihp_walk_arg arg;
++
++	if (acpi_bus_get_device(handle, &device))
++		return -ENODEV;
++
++	status = (*cb)(device, argp);
++	if (ACPI_SUCCESS(status)) {
++		arg.cb = cb;
++		arg.arg = argp;
++		arg.status = AE_OK;
++		(void) device_for_each_child(&device->dev, &arg,
++					     &acpihp_walk_cb);
++		status = arg.status;
++	}
++
++	if (status == AE_CTRL_DEPTH || status == AE_CTRL_TERMINATE ||
++	    status == AE_CTRL_SKIP)
++		status = AE_OK;
++	else if (ACPI_FAILURE(status))
++		ACPIHP_DEBUG("fails to walk devices under %p.\n", handle);
++
++	acpi_device_put(device);
++
++	return status == AE_OK ? 0 : -ENODEV;
++}
++EXPORT_SYMBOL_GPL(acpihp_walk_devices);
+diff --git a/drivers/acpi/internal.h b/drivers/acpi/internal.h
+index 70843c0..6f0632d 100644
+--- a/drivers/acpi/internal.h
++++ b/drivers/acpi/internal.h
+@@ -95,5 +95,7 @@ static inline void suspend_nvs_restore(void) {}
+ 
+ extern struct rw_semaphore acpi_device_data_handler_sem;
+ void acpi_bus_data_handler(acpi_handle handle, void *context);
++int acpi_bus_scan(acpi_handle handle, struct acpi_bus_ops *ops,
++		  struct acpi_device **child);
+ 
+ #endif /* _ACPI_INTERNAL_H_ */
+diff --git a/drivers/acpi/scan.c b/drivers/acpi/scan.c
+index 28408af..4586373 100644
+--- a/drivers/acpi/scan.c
++++ b/drivers/acpi/scan.c
+@@ -1443,6 +1443,14 @@ static acpi_status acpi_bus_check_add(acpi_handle handle, u32 lvl,
+ 		return AE_CTRL_DEPTH;
+ 	}
+ 
++	/* Hooks for ACPI based system device hotplug */
++	if (ops->acpi_op_filter_fn != NULL) {
++		result = ops->acpi_op_filter_fn(handle, lvl,
++						ops->acpi_op_filter_arg);
++		if (result != AE_OK)
++			return result;
++	}
++
+ 	/*
+ 	 * We may already have an acpi_device from a previous enumeration.  If
+ 	 * so, we needn't add it again, but we may still have to start it.
+@@ -1466,7 +1474,7 @@ static acpi_status acpi_bus_check_add(acpi_handle handle, u32 lvl,
+ 	return AE_OK;
+ }
+ 
+-static int acpi_bus_scan(acpi_handle handle, struct acpi_bus_ops *ops,
++int acpi_bus_scan(acpi_handle handle, struct acpi_bus_ops *ops,
+ 			 struct acpi_device **child)
+ {
+ 	acpi_status status;
+@@ -1624,6 +1632,7 @@ int __init acpi_scan_init(void)
+ 	memset(&ops, 0, sizeof(ops));
+ 	ops.acpi_op_add = 1;
+ 	ops.acpi_op_start = 1;
++	ops.acpi_op_filter_fn = NULL;
+ 
+ 	result = bus_register(&acpi_bus_type);
+ 	if (result) {
+diff --git a/include/acpi/acpi_bus.h b/include/acpi/acpi_bus.h
+index e2a3eb0..81b4c3f 100644
+--- a/include/acpi/acpi_bus.h
++++ b/include/acpi/acpi_bus.h
+@@ -127,6 +127,8 @@ typedef void (*acpi_op_notify) (struct acpi_device * device, u32 event);
+ struct acpi_bus_ops {
+ 	u32 acpi_op_add:1;
+ 	u32 acpi_op_start:1;
++	acpi_status (*acpi_op_filter_fn)(acpi_handle, u32, void *);
++	void *acpi_op_filter_arg;
+ };
+ 
+ struct acpi_device_ops {
+diff --git a/include/acpi/acpi_hotplug.h b/include/acpi/acpi_hotplug.h
+index 09c935e..b81d934 100644
+--- a/include/acpi/acpi_hotplug.h
++++ b/include/acpi/acpi_hotplug.h
+@@ -174,6 +174,22 @@ extern acpi_status acpihp_slot_get_capabilities(struct acpihp_slot *slot,
+ extern acpi_status acpihp_slot_poweron(struct acpihp_slot *slot);
+ extern acpi_status acpihp_slot_poweroff(struct acpihp_slot *slot);
+ 
++/*
++ * Add devices for ACPI objects connecting to an ACPI hotplug slot,
++ * and don't cross the hotplug slot boundary.
++ */
++extern int acpihp_add_devices(acpi_handle handle, struct acpi_device **child);
++
++typedef acpi_status (*acpihp_walk_device_cb)(struct acpi_device *acpi_device,
++					     void *argp);
++
++/*
++ * Walk all ACPI devices connecting to an ACPI hotplug slot,
++ * and don't cross the hotplug slot boundary.
++ */
++extern int acpihp_walk_devices(acpi_handle handle, acpihp_walk_device_cb cb,
++			       void *argp);
++
+ extern int acpihp_debug;
+ 
+ #define ACPIHP_DEBUG(fmt, ...) \
+-- 
+1.7.9.5
+
+

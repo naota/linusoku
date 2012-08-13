@@ -1,0 +1,98 @@
+Path: news.gmane.org!not-for-mail
+From: Cody P Schafer <cody@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH v2 00/16] perf: various symbol resolution fixes, including .opd section use.
+Date: Fri, 10 Aug 2012 15:22:46 -0700
+Lines: 32
+Approved: news@gmane.org
+Message-ID: <1344637382-22789-1-git-send-email-cody@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344637419 22923 80.91.229.3 (10 Aug 2012 22:23:39 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 22:23:39 +0000 (UTC)
+Cc: LKML <linux-kernel@vger.kernel.org>,
+	Ingo Molnar <mingo@redhat.com>,
+	Paul Mackerras <paulus@samba.org>,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Sukadev Bhattiprolu <sukadev@linux.vnet.ibm.com>,
+	Matt Hellsley <matthltc@us.ibm.com>,
+	David Hansen <dave@linux.vnet.ibm.com>,
+	Namhyung Kim <namhyung@kernel.org>
+To: Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Aug 11 00:23:37 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzxcE-0002pm-RA
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 11 Aug 2012 00:23:35 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1760177Ab2HJWX3 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 10 Aug 2012 18:23:29 -0400
+Original-Received: from e36.co.us.ibm.com ([32.97.110.154]:59228 "EHLO
+	e36.co.us.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755186Ab2HJWX2 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 10 Aug 2012 18:23:28 -0400
+Original-Received: from /spool/local
+	by e36.co.us.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <cody@linux.vnet.ibm.com>;
+	Fri, 10 Aug 2012 16:23:27 -0600
+Original-Received: from d03dlp03.boulder.ibm.com (9.17.202.179)
+	by e36.co.us.ibm.com (192.168.1.136) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Fri, 10 Aug 2012 16:23:25 -0600
+Original-Received: from d03relay01.boulder.ibm.com (d03relay01.boulder.ibm.com [9.17.195.226])
+	by d03dlp03.boulder.ibm.com (Postfix) with ESMTP id 9A47119D8040
+	for <linux-kernel@vger.kernel.org>; Fri, 10 Aug 2012 22:23:18 +0000 (WET)
+Original-Received: from d03av06.boulder.ibm.com (d03av06.boulder.ibm.com [9.17.195.245])
+	by d03relay01.boulder.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q7AMNN7K179532
+	for <linux-kernel@vger.kernel.org>; Fri, 10 Aug 2012 16:23:23 -0600
+Original-Received: from d03av06.boulder.ibm.com (loopback [127.0.0.1])
+	by d03av06.boulder.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q7AMOdwc019555
+	for <linux-kernel@vger.kernel.org>; Fri, 10 Aug 2012 16:24:40 -0600
+Original-Received: from localhost ([9.47.24.219])
+	by d03av06.boulder.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q7AMOdnU019547;
+	Fri, 10 Aug 2012 16:24:39 -0600
+X-Mailer: git-send-email 1.7.11.3
+X-Content-Scanned: Fidelis XPS MAILER
+x-cbid: 12081022-7606-0000-0000-000002B61B30
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341445
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341445>
+
+1-4,6,7 are small cleanups.
+
+5 fixes a potential segfault.
+
+8 fixes a use after free for dso->long_name
+
+9 avoids a segfault in elfutils when a truncated elf is loaded.
+
+10 properly tracks that a dso had symbols loaded from a vmlinux image
+
+11-16 fix handling of the '.opd' section in the presence of debuginfo. They
+      should also fix plt symbol synthesis (haven't seen the plt issues in
+      practice).
+
+--
+
+Changes from v1:
+ - rebased on top of
+   git://git.kernel.org/pub/scm/linux/kernel/git/acme/linux.git  perf/core
+ - In #2, make the symbols have size 0 instead of 1.
+
+--
+
+ tools/perf/util/event.c          |   2 +-
+ tools/perf/util/map.c            |   8 --
+ tools/perf/util/map.h            |   1 -
+ tools/perf/util/symbol-elf.c     | 182 ++++++++++++++++++++++++++-------------
+ tools/perf/util/symbol-minimal.c |  48 +++++++++--
+ tools/perf/util/symbol.c         | 136 +++++++++++++++++------------
+ tools/perf/util/symbol.h         |  49 +++++++++--
+ 7 files changed, 290 insertions(+), 136 deletions(-)
+

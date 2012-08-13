@@ -1,0 +1,118 @@
+Path: news.gmane.org!not-for-mail
+From: "Jan Beulich" <JBeulich@suse.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [Xen-devel] [PATCH 1/2] xen/swiotlb: If iommu=soft was not
+ passed in on > 4GB, don't turn it on.
+Date: Mon, 30 Jul 2012 08:06:17 +0100
+Lines: 66
+Approved: news@gmane.org
+Message-ID: <50164E890200007800091328@nat28.tlf.novell.com>
+References: <1343335407-5465-1-git-send-email-konrad.wilk@oracle.com>
+ <1343335407-5465-2-git-send-email-konrad.wilk@oracle.com>
+ <50125F0B0200007800090DFB@nat28.tlf.novell.com>
+ <20120727175408.GG17427@andromeda.dapyr.net>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=US-ASCII
+Content-Transfer-Encoding: 8BIT
+X-Trace: dough.gmane.org 1343631993 24316 80.91.229.3 (30 Jul 2012 07:06:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 07:06:33 +0000 (UTC)
+Cc: "xen-devel" <xen-devel@lists.xen.org>,
+	"Konrad Rzeszutek Wilk" <konrad.wilk@oracle.com>,
+	<linux-kernel@vger.kernel.org>
+To: "Konrad Rzeszutek Wilk" <konrad@darnok.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 09:06:33 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Svk3j-0002pt-OV
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 09:06:32 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754047Ab2G3HGY (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 03:06:24 -0400
+Original-Received: from nat28.tlf.novell.com ([130.57.49.28]:45008 "EHLO
+	nat28.tlf.novell.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753714Ab2G3HGW convert rfc822-to-8bit (ORCPT
+	<rfc822;groupwise-linux-kernel@vger.kernel.org:4:1>);
+	Mon, 30 Jul 2012 03:06:22 -0400
+Original-Received: from EMEA1-MTA by nat28.tlf.novell.com
+	with Novell_GroupWise; Mon, 30 Jul 2012 08:06:20 +0100
+X-Mailer: Novell GroupWise Internet Agent 12.0.0 
+In-Reply-To: <20120727175408.GG17427@andromeda.dapyr.net>
+Content-Disposition: inline
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334913
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334913>
+
+>>> On 27.07.12 at 19:54, Konrad Rzeszutek Wilk <konrad@darnok.org> wrote:
+> On Fri, Jul 27, 2012 at 08:27:39AM +0100, Jan Beulich wrote:
+>> >>> On 26.07.12 at 22:43, Konrad Rzeszutek Wilk <konrad.wilk@oracle.com> wrote:
+>> > +	/* Check if the user supplied the e820_hole parameter
+>> > +	 * which would create a machine looking E820 region. */
+>> > +	for (i = 0; i < e820.nr_map; i++) {
+>> > +		if ((e820.map[i].type == E820_ACPI) ||
+>> > +		    (e820.map[i].type == E820_NVS))
+>> > +			return true;
+>> 
+>> Tying this decision to the presence of ACPI regions in E820 is
+>> problematic for two reasons imo: For one, it precludes cleaning
+>> up this (bogus!) construct where it gets produced (PV DomU-s
+>> really shouldn't ever see such E820 entries, they should get
+>> converted to simple reserved entries, to wipe any notion of
+>> ACPI presence). And second it ties you to running on systems
+>> that actually have ACPI, whereas it is my rudimentary
+>> understanding that systems with e.g. SFI would not have any
+>> ACPI).
+> 
+> Right. The other idea was to check the XenBus for the existence
+> of vpci backend. But at this stage it is not up yet.
+> 
+> Perhaps what I should check for is the existence of two E820_RSV
+> and two E820_RAM regions - and that would be a normal PV guest.
+> Anything that is outside of that scope would be considered
+> a PCI PV guest?
+
+I'd limit this to two RAM and at least one reserved regions (after
+all it could happen that all the reserved ones can be folded into
+one). But beyond this minor detail that's the approach I'd prefer.
+All the ones below look more or less fragile.
+
+Jan
+
+> The other thought I had was to skip this check altogether and
+> either do:
+> 1). initialize SWIOTLB when xen-pcifront start up and detects
+>     that it has devices (so later on initialization - similar to
+>     how IA64 does it) - but I am not sure how the PCI-DMA works
+>     with these late bloomers (especially as one could just make
+>     xen-pcifront be a module).
+> 2). If xen-pcifront starts and does not detect any backends
+>     it calls swiotlb_free. But that also requires the PCI-DMA
+>     to swap in the dma_ops, and I am not entirely sure how
+>     that would work out.
+> 3). Have an "early_init" xen-pcifront components that does a
+>     a quick XenBus init (similar to how hvmloader checks for
+>     DMI overwrites) and if it finds vpci then declare its
+>     time to turn SWIOTLB on.
+> 4). The other thing is to wrap this code with something like
+>     this:
+> 
+> #ifdef CONFIG_SWIOTLB
+> #ifdef CONFIG_XEN_PCI_FRONTEND
+> 	if (.. blah balh) do the check as outlined in 3).
+> #else // PCI_FRONTEND is not present, so we won't need SWIOTLB
+> 	swiotlb = 0;
+> 	iommu = 1;
+> #endif
+> #endif
+> 
+> That would take care of the built-in issues.
+
+
+

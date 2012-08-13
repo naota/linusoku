@@ -1,0 +1,1498 @@
+Path: news.gmane.org!not-for-mail
+From: merez@codeaurora.org
+Newsgroups: gmane.linux.documentation,gmane.linux.kernel.mmc,gmane.linux.ports.arm.msm,gmane.linux.kernel
+Subject: Re: [PATCH v5 1/3] block: Add test-iosched scheduler
+Date: Tue, 31 Jul 2012 07:36:56 -0700 (PDT)
+Lines: 1444
+Approved: news@gmane.org
+Message-ID: <09c3a301ad7ca4fa396c4d00615312c1.squirrel@www.codeaurora.org>
+References: <n> <1343744710-31700-2-git-send-email-merez@codeaurora.org>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=US-ASCII
+Content-Transfer-Encoding: 7BIT
+X-Trace: dough.gmane.org 1343745426 2899 80.91.229.3 (31 Jul 2012 14:37:06 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 14:37:06 +0000 (UTC)
+Cc: linux-mmc@vger.kernel.org, linux-arm-msm@vger.kernel.org,
+	"Maya Erez" <merez@codeaurora.org>,
+	"DOCUMENTATION" <linux-doc@vger.kernel.org>,
+	"open list" <linux-kernel@vger.kernel.org>, axboe@kernel.dk
+To: "Maya Erez" <merez@codeaurora.org>
+Original-X-From: linux-doc-owner@vger.kernel.org Tue Jul 31 16:37:02 2012
+Return-path: <linux-doc-owner@vger.kernel.org>
+Envelope-to: lnx-linux-doc@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-doc-owner@vger.kernel.org>)
+	id 1SwDZE-0006dR-Ax
+	for lnx-linux-doc@plane.gmane.org; Tue, 31 Jul 2012 16:37:01 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754380Ab2GaOg7 (ORCPT <rfc822;lnx-linux-doc@m.gmane.org>);
+	Tue, 31 Jul 2012 10:36:59 -0400
+Original-Received: from wolverine02.qualcomm.com ([199.106.114.251]:43252 "EHLO
+	wolverine02.qualcomm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754304Ab2GaOg5 (ORCPT
+	<rfc822;linux-doc@vger.kernel.org>); Tue, 31 Jul 2012 10:36:57 -0400
+X-IronPort-AV: E=McAfee;i="5400,1158,6788"; a="213990797"
+Original-Received: from pdmz-ns-mip.qualcomm.com (HELO www.codeaurora.org) ([199.106.114.10])
+  by wolverine02.qualcomm.com with ESMTP; 31 Jul 2012 07:36:57 -0700
+Original-Received: from 192.168.218.1 (proxying for 129.46.228.240)
+        (SquirrelMail authenticated user merez)
+        by www.codeaurora.org with HTTP;
+        Tue, 31 Jul 2012 07:36:56 -0700 (PDT)
+In-Reply-To: <1343744710-31700-2-git-send-email-merez@codeaurora.org>
+User-Agent: SquirrelMail/1.4.17
+X-Priority: 3 (Normal)
+Importance: Normal
+Original-Sender: linux-doc-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-doc.vger.kernel.org>
+X-Mailing-List: linux-doc@vger.kernel.org
+Xref: news.gmane.org gmane.linux.documentation:5935 gmane.linux.kernel.mmc:15812 gmane.linux.ports.arm.msm:2903 gmane.linux.kernel:1335783
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335783>
+
+Hi Jens,
+
+Do you have comments on this patch?
+Can we push it to kernel 3.6 version?
+
+Thanks,
+Maya
+On Tue, July 31, 2012 7:25 am, Maya Erez wrote:
+> The test scheduler allows testing a block device by dispatching
+> specific requests according to the test case and declare PASS/FAIL
+> according to the requests completion error code
+>
+> Signed-off-by: Maya Erez <merez@codeaurora.org>
+> ---
+>  Documentation/block/test-iosched.txt |   39 ++
+>  block/Kconfig.iosched                |   11 +
+>  block/Makefile                       |    1 +
+>  block/blk-core.c                     |    3 +-
+>  block/test-iosched.c                 | 1038
+> ++++++++++++++++++++++++++++++++++
+>  include/linux/test-iosched.h         |  233 ++++++++
+>  6 files changed, 1323 insertions(+), 2 deletions(-)
+>  create mode 100644 Documentation/block/test-iosched.txt
+>  create mode 100644 block/test-iosched.c
+>  create mode 100644 include/linux/test-iosched.h
+>
+> diff --git a/Documentation/block/test-iosched.txt
+> b/Documentation/block/test-iosched.txt
+> new file mode 100644
+> index 0000000..75d8134
+> --- /dev/null
+> +++ b/Documentation/block/test-iosched.txt
+> @@ -0,0 +1,39 @@
+> +Test IO scheduler
+> +==================
+> +
+> +The test scheduler allows testing a block device by dispatching
+> +specific requests according to the test case and declare PASS/FAIL
+> +according to the requests completion error code.
+> +
+> +The test IO scheduler implements the no-op scheduler operations, and uses
+> +them in order to dispatch the non-test requests when no test is running.
+> +This will allow to keep a normal FS operation in parallel to the test
+> +capability.
+> +The test IO scheduler keeps two different queues, one for real-world
+> requests
+> +(inserted by the FS) and the other for the test requests.
+> +The test IO scheduler chooses the queue for dispatch requests according
+> to the
+> +test state (IDLE/RUNNING).
+> +
+> +the test IO scheduler is compiled by default as a dynamic module and
+> enabled
+> +only if CONFIG_DEBUG_FS is defined.
+> +
+> +Each block device test utility that would like to use the test-iosched
+> test
+> +services, should register as a blk_dev_test_type and supply an init and
+> exit
+> +callbacks. Those callback are called upon selection (or removal) of the
+> +test-iosched as the active scheduler. From that point the block device
+> test
+> +can start a test and supply its own callbacks for preparing, running,
+> result
+> +checking and cleanup of the test.
+> +
+> +Each test is exposed via debugfs and can be triggered by writing to
+> +the debugfs file. In order to add a new test one should expose a new
+> debugfs
+> +file for the new test.
+> +
+> +Selecting IO schedulers
+> +-----------------------
+> +Refer to Documentation/block/switching-sched.txt for information on
+> +selecting an io scheduler on a per-device basis.
+> +
+> +
+> +May 10 2012, maya Erez <merez@codeaurora.org>
+> +
+> +
+> diff --git a/block/Kconfig.iosched b/block/Kconfig.iosched
+> index 421bef9..af3d6a3 100644
+> --- a/block/Kconfig.iosched
+> +++ b/block/Kconfig.iosched
+> @@ -12,6 +12,17 @@ config IOSCHED_NOOP
+>  	  that do their own scheduling and require only minimal assistance from
+>  	  the kernel.
+>
+> +config IOSCHED_TEST
+> +	tristate "Test I/O scheduler"
+> +	depends on DEBUG_FS
+> +	default m
+> +	---help---
+> +	  The test I/O scheduler is a duplicate of the noop scheduler with
+> +	  addition of test utlity.
+> +	  It allows testing a block device by dispatching specific requests
+> +	  according to the test case and declare PASS/FAIL according to the
+> +	  requests completion error code.
+> +
+>  config IOSCHED_DEADLINE
+>  	tristate "Deadline I/O scheduler"
+>  	default y
+> diff --git a/block/Makefile b/block/Makefile
+> index 39b76ba..436b220 100644
+> --- a/block/Makefile
+> +++ b/block/Makefile
+> @@ -15,6 +15,7 @@ obj-$(CONFIG_BLK_DEV_THROTTLING)	+= blk-throttle.o
+>  obj-$(CONFIG_IOSCHED_NOOP)	+= noop-iosched.o
+>  obj-$(CONFIG_IOSCHED_DEADLINE)	+= deadline-iosched.o
+>  obj-$(CONFIG_IOSCHED_CFQ)	+= cfq-iosched.o
+> +obj-$(CONFIG_IOSCHED_TEST)	+= test-iosched.o
+>
+>  obj-$(CONFIG_BLOCK_COMPAT)	+= compat_ioctl.o
+>  obj-$(CONFIG_BLK_DEV_INTEGRITY)	+= blk-integrity.o
+> diff --git a/block/blk-core.c b/block/blk-core.c
+> index c3b17c3..6fe111e 100644
+> --- a/block/blk-core.c
+> +++ b/block/blk-core.c
+> @@ -1085,8 +1085,6 @@ struct request *blk_get_request(struct request_queue
+> *q, int rw, gfp_t gfp_mask)
+>  {
+>  	struct request *rq;
+>
+> -	BUG_ON(rw != READ && rw != WRITE);
+> -
+>  	spin_lock_irq(q->queue_lock);
+>  	if (gfp_mask & __GFP_WAIT)
+>  		rq = get_request_wait(q, rw, NULL);
+> @@ -1419,6 +1417,7 @@ void init_request_from_bio(struct request *req,
+> struct bio *bio)
+>  	req->ioprio = bio_prio(bio);
+>  	blk_rq_bio_prep(req->q, req, bio);
+>  }
+> +EXPORT_SYMBOL(init_request_from_bio);
+>
+>  void blk_queue_bio(struct request_queue *q, struct bio *bio)
+>  {
+> diff --git a/block/test-iosched.c b/block/test-iosched.c
+> new file mode 100644
+> index 0000000..d3d10d3
+> --- /dev/null
+> +++ b/block/test-iosched.c
+> @@ -0,0 +1,1038 @@
+> +/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+> + *
+> + * This program is free software; you can redistribute it and/or modify
+> + * it under the terms of the GNU General Public License version 2 and
+> + * only version 2 as published by the Free Software Foundation.
+> + *
+> + * This program is distributed in the hope that it will be useful,
+> + * but WITHOUT ANY WARRANTY; without even the implied warranty of
+> + * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+> + * GNU General Public License for more details.
+> + *
+> + * The test scheduler allows to test the block device by dispatching
+> + * specific requests according to the test case and declare PASS/FAIL
+> + * according to the requests completion error code.
+> + * Each test is exposed via debugfs and can be triggered by writing to
+> + * the debugfs file.
+> + *
+> + */
+> +
+> +/* elevator test iosched */
+> +#include <linux/blkdev.h>
+> +#include <linux/elevator.h>
+> +#include <linux/bio.h>
+> +#include <linux/module.h>
+> +#include <linux/slab.h>
+> +#include <linux/init.h>
+> +#include <linux/debugfs.h>
+> +#include <linux/test-iosched.h>
+> +#include <linux/delay.h>
+> +#include "blk.h"
+> +
+> +#define MODULE_NAME "test-iosched"
+> +#define WR_RD_START_REQ_ID 1234
+> +#define UNIQUE_START_REQ_ID 5678
+> +#define TIMEOUT_TIMER_MS 40000
+> +#define TEST_MAX_TESTCASE_ROUNDS 15
+> +
+> +#define test_pr_debug(fmt, args...) pr_debug("%s: "fmt"\n", MODULE_NAME,
+> args)
+> +#define test_pr_info(fmt, args...) pr_info("%s: "fmt"\n", MODULE_NAME,
+> args)
+> +#define test_pr_err(fmt, args...) pr_err("%s: "fmt"\n", MODULE_NAME,
+> args)
+> +
+> +static DEFINE_SPINLOCK(blk_dev_test_list_lock);
+> +static LIST_HEAD(blk_dev_test_list);
+> +static struct test_data *ptd;
+> +
+> +/* Get the request after `test_rq' in the test requests list */
+> +static struct test_request *
+> +latter_test_request(struct request_queue *q,
+> +				 struct test_request *test_rq)
+> +{
+> +	struct test_data *td = q->elevator->elevator_data;
+> +
+> +	if (test_rq->queuelist.next == &td->test_queue)
+> +		return NULL;
+> +	return list_entry(test_rq->queuelist.next, struct test_request,
+> +			  queuelist);
+> +}
+> +
+> +/**
+> + * test_iosched_get_req_queue() - returns the request queue
+> + * served by the scheduler
+> + */
+> +struct request_queue *test_iosched_get_req_queue(void)
+> +{
+> +	if (!ptd)
+> +		return NULL;
+> +
+> +	return ptd->req_q;
+> +}
+> +EXPORT_SYMBOL(test_iosched_get_req_queue);
+> +
+> +/**
+> + * test_iosched_mark_test_completion() - Wakeup the debugfs
+> + * thread, waiting on the test completion
+> + */
+> +void test_iosched_mark_test_completion(void)
+> +{
+> +	if (!ptd)
+> +		return;
+> +
+> +	ptd->test_state = TEST_COMPLETED;
+> +	wake_up(&ptd->wait_q);
+> +}
+> +EXPORT_SYMBOL(test_iosched_mark_test_completion);
+> +
+> +/* Check if all the queued test requests were completed */
+> +static void check_test_completion(void)
+> +{
+> +	struct test_request *test_rq;
+> +	struct request *rq;
+> +
+> +	list_for_each_entry(test_rq, &ptd->test_queue, queuelist) {
+> +		rq = test_rq->rq;
+> +		if (!test_rq->req_completed)
+> +			return;
+> +	}
+> +
+> +	test_pr_info("%s: Test is completed", __func__);
+> +
+> +	test_iosched_mark_test_completion();
+> +}
+> +
+> +/*
+> + * A callback to be called per bio completion.
+> + * Frees the bio memory.
+> + */
+> +static void end_test_bio(struct bio *bio, int err)
+> +{
+> +	if (err)
+> +		clear_bit(BIO_UPTODATE, &bio->bi_flags);
+> +
+> +	bio_put(bio);
+> +}
+> +
+> +/*
+> + * A callback to be called per request completion.
+> + * the request memory is not freed here, will be freed later after the
+> test
+> + * results checking.
+> + */
+> +static void end_test_req(struct request *rq, int err)
+> +{
+> +	struct test_request *test_rq;
+> +
+> +	test_rq = (struct test_request *)rq->elv.priv[0];
+> +	BUG_ON(!test_rq);
+> +
+> +	test_pr_info("%s: request %d completed, err=%d",
+> +	       __func__, test_rq->req_id, err);
+> +
+> +	test_rq->req_completed = true;
+> +	test_rq->req_result = err;
+> +
+> +	check_test_completion();
+> +}
+> +
+> +/**
+> + * test_iosched_add_unique_test_req() - Create and queue a non
+> + * read/write request (such as FLUSH/DISCRAD/SANITIZE).
+> + * @is_err_expcted:	A flag to indicate if this request
+> + *			should succeed or not
+> + * @req_unique:		The type of request to add
+> + * @start_sec:		start address of the first bio
+> + * @nr_sects:		number of sectors in the request
+> + * @end_req_io:		specific completion callback. When not
+> + *			set, the defaulcallback will be used
+> + */
+> +int test_iosched_add_unique_test_req(int is_err_expcted,
+> +			enum req_unique_type req_unique,
+> +			int start_sec, int nr_sects, rq_end_io_fn *end_req_io)
+> +{
+> +	struct bio *bio;
+> +	struct request *rq;
+> +	int rw_flags;
+> +	struct test_request *test_rq;
+> +
+> +	if (!ptd)
+> +		return -ENODEV;
+> +
+> +	bio = bio_alloc(GFP_KERNEL, 0);
+> +	if (!bio) {
+> +		test_pr_err("%s: Failed to allocate a bio", __func__);
+> +		return -ENODEV;
+> +	}
+> +	bio_get(bio);
+> +	bio->bi_end_io = end_test_bio;
+> +
+> +	switch (req_unique) {
+> +	case REQ_UNIQUE_FLUSH:
+> +		bio->bi_rw = WRITE_FLUSH;
+> +		break;
+> +	case REQ_UNIQUE_DISCARD:
+> +		bio->bi_rw = REQ_WRITE | REQ_DISCARD;
+> +		bio->bi_size = nr_sects << 9;
+> +		bio->bi_sector = start_sec;
+> +		break;
+> +	default:
+> +		test_pr_err("%s: Invalid request type %d", __func__,
+> +			    req_unique);
+> +		bio_put(bio);
+> +		return -ENODEV;
+> +	}
+> +
+> +	rw_flags = bio_data_dir(bio);
+> +	if (bio->bi_rw & REQ_SYNC)
+> +		rw_flags |= REQ_SYNC;
+> +
+> +	rq = blk_get_request(ptd->req_q, rw_flags, GFP_KERNEL);
+> +	if (!rq) {
+> +		test_pr_err("%s: Failed to allocate a request", __func__);
+> +		bio_put(bio);
+> +		return -ENODEV;
+> +	}
+> +
+> +	init_request_from_bio(rq, bio);
+> +	if (end_req_io)
+> +		rq->end_io = end_req_io;
+> +	else
+> +		rq->end_io = end_test_req;
+> +
+> +	test_rq = kzalloc(sizeof(struct test_request), GFP_KERNEL);
+> +	if (!test_rq) {
+> +		test_pr_err("%s: Failed to allocate a test request", __func__);
+> +		bio_put(bio);
+> +		blk_put_request(rq);
+> +		return -ENODEV;
+> +	}
+> +	test_rq->req_completed = false;
+> +	test_rq->req_result = -EINVAL;
+> +	test_rq->rq = rq;
+> +	test_rq->is_err_expected = is_err_expcted;
+> +	rq->elv.priv[0] = (void *)test_rq;
+> +	test_rq->req_id = ptd->unique_next_req_id++;
+> +
+> +	test_pr_debug(
+> +		"%s: added request %d to the test requests list, type = %d",
+> +		__func__, test_rq->req_id, req_unique);
+> +
+> +	list_add_tail(&test_rq->queuelist, &ptd->test_queue);
+> +
+> +	return 0;
+> +}
+> +EXPORT_SYMBOL(test_iosched_add_unique_test_req);
+> +
+> +/*
+> + * Get a pattern to be filled in the request data buffer.
+> + * If the pattern used is (-1) the buffer will be filled with sequential
+> + * numbers
+> + */
+> +static void fill_buf_with_pattern(int *buf, int num_bytes, int pattern)
+> +{
+> +	int i = 0;
+> +	int num_of_dwords = num_bytes/sizeof(int);
+> +
+> +	if (pattern == TEST_NO_PATTERN)
+> +		return;
+> +
+> +	/* num_bytes should be aligned to sizeof(int) */
+> +	BUG_ON((num_bytes % sizeof(int)) != 0);
+> +
+> +	if (pattern == TEST_PATTERN_SEQUENTIAL) {
+> +		for (i = 0; i < num_of_dwords; i++)
+> +			buf[i] = i;
+> +	} else {
+> +		for (i = 0; i < num_of_dwords; i++)
+> +			buf[i] = pattern;
+> +	}
+> +}
+> +
+> +/**
+> + * test_iosched_add_wr_rd_test_req() - Create and queue a
+> + * read/write request.
+> + * @is_err_expcted:	A flag to indicate if this request
+> + *			should succeed or not
+> + * @direction:		READ/WRITE
+> + * @start_sec:		start address of the first bio
+> + * @num_bios:		number of BIOs to be allocated for the
+> + *			request
+> + * @pattern:		A pattern, to be written into the write
+> + *			requests data buffer. In case of READ
+> + *			request, the given pattern is kept as
+> + *			the expected pattern. The expected
+> + *			pattern will be compared in the test
+> + *			check result function. If no comparisson
+> + *			is required, set pattern to
+> + *			TEST_NO_PATTERN.
+> + * @end_req_io:		specific completion callback. When not
+> + *			set,the default callback will be used
+> + *
+> + * This function allocates the test request and the block
+> + * request and calls blk_rq_map_kern which allocates the
+> + * required BIO. The allocated test request and the block
+> + * request memory is freed at the end of the test and the
+> + * allocated BIO memory is freed by end_test_bio.
+> + */
+> +int test_iosched_add_wr_rd_test_req(int is_err_expcted,
+> +		      int direction, int start_sec,
+> +		      int num_bios, int pattern, rq_end_io_fn *end_req_io)
+> +{
+> +	struct request *rq = NULL;
+> +	struct test_request *test_rq = NULL;
+> +	int rw_flags = 0;
+> +	int buf_size = 0;
+> +	int ret = 0, i = 0;
+> +	unsigned int *bio_ptr = NULL;
+> +	struct bio *bio = NULL;
+> +
+> +	if (!ptd)
+> +		return -ENODEV;
+> +
+> +	rw_flags = direction;
+> +
+> +	rq = blk_get_request(ptd->req_q, rw_flags, GFP_KERNEL);
+> +	if (!rq) {
+> +		test_pr_err("%s: Failed to allocate a request", __func__);
+> +		return -ENODEV;
+> +	}
+> +
+> +	test_rq = kzalloc(sizeof(struct test_request), GFP_KERNEL);
+> +	if (!test_rq) {
+> +		test_pr_err("%s: Failed to allocate test request", __func__);
+> +		blk_put_request(rq);
+> +		return -ENODEV;
+> +	}
+> +
+> +	buf_size = sizeof(unsigned int) * BIO_U32_SIZE * num_bios;
+> +	test_rq->bios_buffer = kzalloc(buf_size, GFP_KERNEL);
+> +	if (!test_rq->bios_buffer) {
+> +		test_pr_err("%s: Failed to allocate the data buf", __func__);
+> +		goto err;
+> +	}
+> +	test_rq->buf_size = buf_size;
+> +
+> +	if (direction == WRITE)
+> +		fill_buf_with_pattern(test_rq->bios_buffer,
+> +						   buf_size, pattern);
+> +	test_rq->wr_rd_data_pattern = pattern;
+> +
+> +	bio_ptr = test_rq->bios_buffer;
+> +	for (i = 0; i < num_bios; ++i) {
+> +		ret = blk_rq_map_kern(ptd->req_q, rq,
+> +				      (void *)bio_ptr,
+> +				      sizeof(unsigned int)*BIO_U32_SIZE,
+> +				      GFP_KERNEL);
+> +		if (ret) {
+> +			test_pr_err("%s: blk_rq_map_kern returned error %d",
+> +				    __func__, ret);
+> +			goto err;
+> +		}
+> +		bio_ptr += BIO_U32_SIZE;
+> +	}
+> +
+> +	if (end_req_io)
+> +		rq->end_io = end_req_io;
+> +	else
+> +		rq->end_io = end_test_req;
+> +	rq->__sector = start_sec;
+> +	rq->cmd_type |= REQ_TYPE_FS;
+> +
+> +	if (rq->bio) {
+> +		rq->bio->bi_sector = start_sec;
+> +		rq->bio->bi_end_io = end_test_bio;
+> +		bio = rq->bio;
+> +		while ((bio = bio->bi_next) != NULL)
+> +			bio->bi_end_io = end_test_bio;
+> +	}
+> +
+> +	ptd->num_of_write_bios += num_bios;
+> +	test_rq->req_id = ptd->wr_rd_next_req_id++;
+> +
+> +	test_rq->req_completed = false;
+> +	test_rq->req_result = -EINVAL;
+> +	test_rq->rq = rq;
+> +	test_rq->is_err_expected = is_err_expcted;
+> +	rq->elv.priv[0] = (void *)test_rq;
+> +
+> +	test_pr_debug(
+> +		"%s: added request %d to the test requests list, buf_size=%d",
+> +		__func__, test_rq->req_id, buf_size);
+> +
+> +	list_add_tail(&test_rq->queuelist, &ptd->test_queue);
+> +
+> +	return 0;
+> +err:
+> +	blk_put_request(rq);
+> +	kfree(test_rq->bios_buffer);
+> +	return -ENODEV;
+> +}
+> +EXPORT_SYMBOL(test_iosched_add_wr_rd_test_req);
+> +
+> +/* Converts the testcase number into a string */
+> +static char *get_test_case_str(struct test_data *td)
+> +{
+> +	if (td->test_info.get_test_case_str_fn)
+> +		return td->test_info.get_test_case_str_fn(td);
+> +
+> +	return "Unknown testcase";
+> +}
+> +
+> +/*
+> + * Verify that the test request data buffer includes the expected
+> + * pattern
+> + */
+> +static int compare_buffer_to_pattern(struct test_request *test_rq)
+> +{
+> +	int i = 0;
+> +	int num_of_dwords = test_rq->buf_size/sizeof(int);
+> +
+> +	/* num_bytes should be aligned to sizeof(int) */
+> +	BUG_ON((test_rq->buf_size % sizeof(int)) != 0);
+> +	BUG_ON(test_rq->bios_buffer == NULL);
+> +
+> +	if (test_rq->wr_rd_data_pattern == TEST_NO_PATTERN)
+> +		return 0;
+> +
+> +	if (test_rq->wr_rd_data_pattern == TEST_PATTERN_SEQUENTIAL) {
+> +		for (i = 0; i < num_of_dwords; i++) {
+> +			if (test_rq->bios_buffer[i] != i) {
+> +				test_pr_err(
+> +					"%s: wrong pattern 0x%x in index %d",
+> +					__func__, test_rq->bios_buffer[i], i);
+> +				return -EINVAL;
+> +			}
+> +		}
+> +	} else {
+> +		for (i = 0; i < num_of_dwords; i++) {
+> +			if (test_rq->bios_buffer[i] !=
+> +			    test_rq->wr_rd_data_pattern) {
+> +				test_pr_err(
+> +					"%s: wrong pattern 0x%x in index %d",
+> +					__func__, test_rq->bios_buffer[i], i);
+> +				return -EINVAL;
+> +			}
+> +		}
+> +	}
+> +
+> +	return 0;
+> +}
+> +
+> +/*
+> + * Determine if the test passed or failed.
+> + * The function checks the test request completion value and calls
+> + * check_testcase_result for result checking that are specific
+> + * to a test case.
+> + */
+> +static int check_test_result(struct test_data *td)
+> +{
+> +	struct test_request *test_rq;
+> +	struct request *rq;
+> +	int res = 0;
+> +	static int run;
+> +
+> +	list_for_each_entry(test_rq, &ptd->test_queue, queuelist) {
+> +		rq = test_rq->rq;
+> +		if (!test_rq->req_completed) {
+> +			test_pr_err("%s: rq %d not completed", __func__,
+> +				    test_rq->req_id);
+> +			res = -EINVAL;
+> +			goto err;
+> +		}
+> +
+> +		if ((test_rq->req_result < 0) && !test_rq->is_err_expected) {
+> +			test_pr_err(
+> +				"%s: rq %d completed with err, not as expected",
+> +				__func__, test_rq->req_id);
+> +			res = -EINVAL;
+> +			goto err;
+> +		}
+> +		if ((test_rq->req_result == 0) && test_rq->is_err_expected) {
+> +			test_pr_err("%s: rq %d succeeded, not as expected",
+> +				    __func__, test_rq->req_id);
+> +			res = -EINVAL;
+> +			goto err;
+> +		}
+> +		if (rq_data_dir(test_rq->rq) == READ) {
+> +			res = compare_buffer_to_pattern(test_rq);
+> +			if (res) {
+> +				test_pr_err("%s: read pattern not as expected",
+> +					    __func__);
+> +				res = -EINVAL;
+> +				goto err;
+> +			}
+> +		}
+> +	}
+> +
+> +	if (td->test_info.check_test_result_fn) {
+> +		res = td->test_info.check_test_result_fn(td);
+> +		if (res)
+> +			goto err;
+> +	}
+> +
+> +	test_pr_info("%s: %s, run# %03d, PASSED",
+> +			    __func__, get_test_case_str(td), ++run);
+> +	td->test_result = TEST_PASSED;
+> +
+> +	return 0;
+> +err:
+> +	test_pr_err("%s: %s, run# %03d, FAILED",
+> +		    __func__, get_test_case_str(td), ++run);
+> +	td->test_result = TEST_FAILED;
+> +	return res;
+> +}
+> +
+> +/* Create and queue the required requests according to the test case */
+> +static int prepare_test(struct test_data *td)
+> +{
+> +	int ret = 0;
+> +
+> +	if (td->test_info.prepare_test_fn) {
+> +		ret = td->test_info.prepare_test_fn(td);
+> +		return ret;
+> +	}
+> +
+> +	return 0;
+> +}
+> +
+> +/* Run the test */
+> +static int run_test(struct test_data *td)
+> +{
+> +	int ret = 0;
+> +
+> +	if (td->test_info.run_test_fn) {
+> +		ret = td->test_info.run_test_fn(td);
+> +		return ret;
+> +	}
+> +
+> +	/*
+> +	 * Set the next_req pointer to the first request in the test requests
+> +	 * list
+> +	 */
+> +	if (!list_empty(&td->test_queue))
+> +		td->next_req = list_entry(td->test_queue.next,
+> +					  struct test_request, queuelist);
+> +	__blk_run_queue(td->req_q);
+> +
+> +	return 0;
+> +}
+> +
+> +/* Free the allocated test requests, their requests and BIOs buffer */
+> +static void free_test_requests(struct test_data *td)
+> +{
+> +	struct test_request *test_rq;
+> +	struct bio *bio;
+> +
+> +	while (!list_empty(&td->test_queue)) {
+> +		test_rq = list_entry(td->test_queue.next, struct test_request,
+> +				     queuelist);
+> +		list_del_init(&test_rq->queuelist);
+> +		/*
+> +		 * If the request was not completed we need to free its BIOs
+> +		 * and remove it from the packed list
+> +		 */
+> +		if (!test_rq->req_completed) {
+> +			test_pr_info(
+> +				"%s: Freeing memory of an uncompleted request",
+> +				__func__);
+> +			list_del_init(&test_rq->rq->queuelist);
+> +			while ((bio = test_rq->rq->bio) != NULL) {
+> +				test_rq->rq->bio = bio->bi_next;
+> +				bio_put(bio);
+> +			}
+> +		}
+> +		blk_put_request(test_rq->rq);
+> +		kfree(test_rq->bios_buffer);
+> +		kfree(test_rq);
+> +	}
+> +}
+> +
+> +/*
+> + * Do post test operations.
+> + * Free the allocated test requests, their requests and BIOs buffer.
+> + */
+> +static int post_test(struct test_data *td)
+> +{
+> +	int ret = 0;
+> +
+> +	if (td->test_info.post_test_fn)
+> +		ret = td->test_info.post_test_fn(td);
+> +
+> +	ptd->next_req = NULL;
+> +
+> +	free_test_requests(td);
+> +
+> +	ptd->test_info.testcase = 0;
+> +	ptd->test_state = TEST_IDLE;
+> +
+> +	return ret;
+> +}
+> +
+> +/*
+> + * The timer verifies that the test will be completed even if we don't
+> get
+> + * the completion callback for all the requests.
+> + */
+> +static void test_timeout_handler(unsigned long data)
+> +{
+> +	struct test_data *td = (struct test_data *)data;
+> +
+> +	test_pr_info("%s: TIMEOUT timer expired", __func__);
+> +	td->test_state = TEST_COMPLETED;
+> +	wake_up(&td->wait_q);
+> +	return;
+> +}
+> +
+> +static unsigned int get_timeout_msec(struct test_data *td)
+> +{
+> +	if (td->test_info.timeout_msec)
+> +		return td->test_info.timeout_msec;
+> +	else
+> +		return TIMEOUT_TIMER_MS;
+> +}
+> +
+> +/**
+> + * test_iosched_start_test() - Prepares and runs the test.
+> + * @t_info:	the current test testcase and callbacks
+> + *		functions
+> + *
+> + * The function also checks the test result upon test completion
+> + */
+> +int test_iosched_start_test(struct test_info *t_info)
+> +{
+> +	int ret = 0;
+> +	unsigned timeout_msec;
+> +	int counter = 0;
+> +	char *test_name = NULL;
+> +
+> +	if (!ptd)
+> +		return -ENODEV;
+> +
+> +	if (!t_info) {
+> +		ptd->test_result = TEST_FAILED;
+> +		return -EINVAL;
+> +	}
+> +
+> +	do {
+> +		if (ptd->ignore_round)
+> +			/*
+> +			 * We ignored the last run due to FS write requests.
+> +			 * Sleep to allow those requests to be issued
+> +			 */
+> +			msleep(2000);
+> +
+> +		spin_lock(&ptd->lock);
+> +
+> +		if (ptd->test_state != TEST_IDLE) {
+> +			test_pr_info(
+> +				"%s: Another test is running, try again later",
+> +				__func__);
+> +			spin_unlock(&ptd->lock);
+> +			return -EBUSY;
+> +		}
+> +
+> +		if (ptd->start_sector == 0) {
+> +			test_pr_err("%s: Invalid start sector", __func__);
+> +			ptd->test_result = TEST_FAILED;
+> +			spin_unlock(&ptd->lock);
+> +			return -EINVAL;
+> +		}
+> +
+> +		memcpy(&ptd->test_info, t_info, sizeof(struct test_info));
+> +
+> +		ptd->next_req = NULL;
+> +		ptd->test_result = TEST_NO_RESULT;
+> +		ptd->num_of_write_bios = 0;
+> +
+> +		ptd->unique_next_req_id = UNIQUE_START_REQ_ID;
+> +		ptd->wr_rd_next_req_id = WR_RD_START_REQ_ID;
+> +
+> +		ptd->ignore_round = false;
+> +		ptd->fs_wr_reqs_during_test = false;
+> +
+> +		ptd->test_state = TEST_RUNNING;
+> +
+> +		spin_unlock(&ptd->lock);
+> +
+> +		timeout_msec = get_timeout_msec(ptd);
+> +		mod_timer(&ptd->timeout_timer, jiffies +
+> +			  msecs_to_jiffies(timeout_msec));
+> +
+> +		if (ptd->test_info.get_test_case_str_fn)
+> +			test_name = ptd->test_info.get_test_case_str_fn(ptd);
+> +		else
+> +			test_name = "Unknown testcase";
+> +		test_pr_info("%s: Starting test %s\n", __func__, test_name);
+> +
+> +		ret = prepare_test(ptd);
+> +		if (ret) {
+> +			test_pr_err("%s: failed to prepare the test\n",
+> +				    __func__);
+> +			goto error;
+> +		}
+> +
+> +		ret = run_test(ptd);
+> +		if (ret) {
+> +			test_pr_err("%s: failed to run the test\n", __func__);
+> +			goto error;
+> +		}
+> +
+> +		test_pr_info("%s: Waiting for the test completion", __func__);
+> +
+> +		wait_event(ptd->wait_q, ptd->test_state == TEST_COMPLETED);
+> +		del_timer_sync(&ptd->timeout_timer);
+> +
+> +		ret = check_test_result(ptd);
+> +		if (ret) {
+> +			test_pr_err("%s: check_test_result failed\n",
+> +				    __func__);
+> +			goto error;
+> +		}
+> +
+> +		ret = post_test(ptd);
+> +		if (ret) {
+> +			test_pr_err("%s: post_test failed\n", __func__);
+> +			goto error;
+> +		}
+> +
+> +		/*
+> +		 * Wakeup the queue thread to fetch FS requests that might got
+> +		 * postponded due to the test
+> +		 */
+> +		__blk_run_queue(ptd->req_q);
+> +
+> +		if (ptd->ignore_round)
+> +			test_pr_info(
+> +			"%s: Round canceled (Got wr reqs in the middle)",
+> +			__func__);
+> +
+> +		if (++counter == TEST_MAX_TESTCASE_ROUNDS) {
+> +			test_pr_info("%s: Too many rounds, did not succeed...",
+> +			     __func__);
+> +			ptd->test_result = TEST_FAILED;
+> +		}
+> +
+> +	} while ((ptd->ignore_round) && (counter < TEST_MAX_TESTCASE_ROUNDS));
+> +
+> +	if (ptd->test_result == TEST_PASSED)
+> +		return 0;
+> +	else
+> +		return -EINVAL;
+> +
+> +error:
+> +	post_test(ptd);
+> +	ptd->test_result = TEST_FAILED;
+> +	return ret;
+> +}
+> +EXPORT_SYMBOL(test_iosched_start_test);
+> +
+> +/**
+> + * test_iosched_register() - register a block device test
+> + * utility.
+> + * @bdt:	the block device test type to register
+> + */
+> +void test_iosched_register(struct blk_dev_test_type *bdt)
+> +{
+> +	spin_lock(&blk_dev_test_list_lock);
+> +	list_add_tail(&bdt->list, &blk_dev_test_list);
+> +	spin_unlock(&blk_dev_test_list_lock);
+> +}
+> +EXPORT_SYMBOL_GPL(test_iosched_register);
+> +
+> +/**
+> + * test_iosched_unregister() - unregister a block device test
+> + * utility.
+> + * @bdt:	the block device test type to unregister
+> + */
+> +void test_iosched_unregister(struct blk_dev_test_type *bdt)
+> +{
+> +	spin_lock(&blk_dev_test_list_lock);
+> +	list_del_init(&bdt->list);
+> +	spin_unlock(&blk_dev_test_list_lock);
+> +}
+> +EXPORT_SYMBOL_GPL(test_iosched_unregister);
+> +
+> +/**
+> + * test_iosched_set_test_result() - Set the test
+> + * result(PASS/FAIL)
+> + * @test_result:	the test result
+> + */
+> +void test_iosched_set_test_result(int test_result)
+> +{
+> +	if (!ptd)
+> +		return;
+> +
+> +	ptd->test_result = test_result;
+> +}
+> +EXPORT_SYMBOL(test_iosched_set_test_result);
+> +
+> +
+> +/**
+> + * test_iosched_set_ignore_round() - Set the ignore_round flag
+> + * @ignore_round:	A flag to indicate if this test round
+> + * should be ignored and re-run
+> + */
+> +void test_iosched_set_ignore_round(bool ignore_round)
+> +{
+> +	if (!ptd)
+> +		return;
+> +
+> +	ptd->ignore_round = ignore_round;
+> +}
+> +EXPORT_SYMBOL(test_iosched_set_ignore_round);
+> +
+> +/**
+> + * test_iosched_get_debugfs_tests_root() - returns the root
+> + * debugfs directory for the test_iosched tests
+> + */
+> +struct dentry *test_iosched_get_debugfs_tests_root(void)
+> +{
+> +	if (!ptd)
+> +		return NULL;
+> +
+> +	return ptd->debug.debug_tests_root;
+> +}
+> +EXPORT_SYMBOL(test_iosched_get_debugfs_tests_root);
+> +
+> +/**
+> + * test_iosched_get_debugfs_utils_root() - returns the root
+> + * debugfs directory for the test_iosched utils
+> + */
+> +struct dentry *test_iosched_get_debugfs_utils_root(void)
+> +{
+> +	if (!ptd)
+> +		return NULL;
+> +
+> +	return ptd->debug.debug_utils_root;
+> +}
+> +EXPORT_SYMBOL(test_iosched_get_debugfs_utils_root);
+> +
+> +static int test_debugfs_init(struct test_data *td)
+> +{
+> +	td->debug.debug_root = debugfs_create_dir("test-iosched", NULL);
+> +	if (!td->debug.debug_root)
+> +		return -ENOENT;
+> +
+> +	td->debug.debug_tests_root = debugfs_create_dir("tests",
+> +							td->debug.debug_root);
+> +	if (!td->debug.debug_tests_root)
+> +		goto err;
+> +
+> +	td->debug.debug_utils_root = debugfs_create_dir("utils",
+> +							td->debug.debug_root);
+> +	if (!td->debug.debug_utils_root)
+> +		goto err;
+> +
+> +	td->debug.debug_test_result = debugfs_create_u32(
+> +					"test_result",
+> +					S_IRUGO | S_IWUGO,
+> +					td->debug.debug_utils_root,
+> +					&td->test_result);
+> +	if (!td->debug.debug_test_result)
+> +		goto err;
+> +
+> +	td->debug.start_sector = debugfs_create_u32(
+> +					"start_sector",
+> +					S_IRUGO | S_IWUGO,
+> +					td->debug.debug_utils_root,
+> +					&td->start_sector);
+> +	if (!td->debug.start_sector)
+> +		goto err;
+> +
+> +	return 0;
+> +
+> +err:
+> +	debugfs_remove_recursive(td->debug.debug_root);
+> +	return -ENOENT;
+> +}
+> +
+> +static void test_debugfs_cleanup(struct test_data *td)
+> +{
+> +	debugfs_remove_recursive(td->debug.debug_root);
+> +}
+> +
+> +static void print_req(struct request *req)
+> +{
+> +	struct bio *bio;
+> +	struct test_request *test_rq;
+> +
+> +	if (!req)
+> +		return;
+> +
+> +	test_rq = (struct test_request *)req->elv.priv[0];
+> +
+> +	if (test_rq) {
+> +		test_pr_debug("%s: Dispatch request %d: __sector=0x%lx",
+> +		       __func__, test_rq->req_id, (unsigned long)req->__sector);
+> +		test_pr_debug("%s: nr_phys_segments=%d, num_of_sectors=%d",
+> +		       __func__, req->nr_phys_segments, blk_rq_sectors(req));
+> +		bio = req->bio;
+> +		test_pr_debug("%s: bio: bi_size=%d, bi_sector=0x%lx",
+> +			      __func__, bio->bi_size,
+> +			      (unsigned long)bio->bi_sector);
+> +		while ((bio = bio->bi_next) != NULL) {
+> +			test_pr_debug("%s: bio: bi_size=%d, bi_sector=0x%lx",
+> +				      __func__, bio->bi_size,
+> +				      (unsigned long)bio->bi_sector);
+> +		}
+> +	}
+> +}
+> +
+> +static void test_merged_requests(struct request_queue *q,
+> +			 struct request *rq, struct request *next)
+> +{
+> +	list_del_init(&next->queuelist);
+> +}
+> +
+> +/*
+> + * Dispatch a test request in case there is a running test Otherwise,
+> dispatch
+> + * a request that was queued by the FS to keep the card functional.
+> + */
+> +static int test_dispatch_requests(struct request_queue *q, int force)
+> +{
+> +	struct test_data *td = q->elevator->elevator_data;
+> +	struct request *rq = NULL;
+> +
+> +	switch (td->test_state) {
+> +	case TEST_IDLE:
+> +		if (!list_empty(&td->queue)) {
+> +			rq = list_entry(td->queue.next, struct request,
+> +					queuelist);
+> +			list_del_init(&rq->queuelist);
+> +			elv_dispatch_sort(q, rq);
+> +			return 1;
+> +		}
+> +		break;
+> +	case TEST_RUNNING:
+> +		if (td->next_req) {
+> +			rq = td->next_req->rq;
+> +			td->next_req =
+> +				latter_test_request(td->req_q, td->next_req);
+> +			if (!rq)
+> +				return 0;
+> +			print_req(rq);
+> +			elv_dispatch_sort(q, rq);
+> +			return 1;
+> +		}
+> +		break;
+> +	case TEST_COMPLETED:
+> +	default:
+> +		return 0;
+> +	}
+> +
+> +	return 0;
+> +}
+> +
+> +static void test_add_request(struct request_queue *q, struct request *rq)
+> +{
+> +	struct test_data *td = q->elevator->elevator_data;
+> +
+> +	list_add_tail(&rq->queuelist, &td->queue);
+> +
+> +	/*
+> +	 * The write requests can be followed by a FLUSH request that might
+> +	 * cause unexpected results of the test.
+> +	 */
+> +	if ((rq_data_dir(rq) == WRITE) && (td->test_state == TEST_RUNNING)) {
+> +		test_pr_debug("%s: got WRITE req in the middle of the test",
+> +			__func__);
+> +		td->fs_wr_reqs_during_test = true;
+> +	}
+> +}
+> +
+> +static struct request *
+> +test_former_request(struct request_queue *q, struct request *rq)
+> +{
+> +	struct test_data *td = q->elevator->elevator_data;
+> +
+> +	if (rq->queuelist.prev == &td->queue)
+> +		return NULL;
+> +	return list_entry(rq->queuelist.prev, struct request, queuelist);
+> +}
+> +
+> +static struct request *
+> +test_latter_request(struct request_queue *q, struct request *rq)
+> +{
+> +	struct test_data *td = q->elevator->elevator_data;
+> +
+> +	if (rq->queuelist.next == &td->queue)
+> +		return NULL;
+> +	return list_entry(rq->queuelist.next, struct request, queuelist);
+> +}
+> +
+> +static int test_init_queue(struct request_queue *q)
+> +{
+> +	struct blk_dev_test_type *__bdt;
+> +
+> +	ptd = kmalloc_node(sizeof(struct test_data), GFP_KERNEL,
+> +			     q->node);
+> +	if (!ptd) {
+> +		test_pr_err("%s: failed to allocate test data", __func__);
+> +		return -ENODEV;
+> +	}
+> +	memset((void *)ptd, 0, sizeof(struct test_data));
+> +	INIT_LIST_HEAD(&ptd->queue);
+> +	INIT_LIST_HEAD(&ptd->test_queue);
+> +	init_waitqueue_head(&ptd->wait_q);
+> +	ptd->req_q = q;
+> +	q->elevator->elevator_data = ptd;
+> +
+> +	setup_timer(&ptd->timeout_timer, test_timeout_handler,
+> +		    (unsigned long)ptd);
+> +
+> +	spin_lock_init(&ptd->lock);
+> +
+> +	if (test_debugfs_init(ptd)) {
+> +		test_pr_err("%s: Failed to create debugfs files", __func__);
+> +		return -ENODEV;
+> +	}
+> +
+> +	list_for_each_entry(__bdt, &blk_dev_test_list, list)
+> +		__bdt->init_fn();
+> +
+> +	return 0;
+> +}
+> +
+> +static void test_exit_queue(struct elevator_queue *e)
+> +{
+> +	struct test_data *td = e->elevator_data;
+> +	struct blk_dev_test_type *__bdt;
+> +
+> +	BUG_ON(!list_empty(&td->queue));
+> +
+> +	list_for_each_entry(__bdt, &blk_dev_test_list, list)
+> +		__bdt->exit_fn();
+> +
+> +	test_debugfs_cleanup(td);
+> +
+> +	kfree(td);
+> +}
+> +
+> +static struct elevator_type elevator_test_iosched = {
+> +	.ops = {
+> +		.elevator_merge_req_fn = test_merged_requests,
+> +		.elevator_dispatch_fn = test_dispatch_requests,
+> +		.elevator_add_req_fn = test_add_request,
+> +		.elevator_former_req_fn = test_former_request,
+> +		.elevator_latter_req_fn = test_latter_request,
+> +		.elevator_init_fn = test_init_queue,
+> +		.elevator_exit_fn = test_exit_queue,
+> +	},
+> +	.elevator_name = "test-iosched",
+> +	.elevator_owner = THIS_MODULE,
+> +};
+> +
+> +static int __init test_init(void)
+> +{
+> +	elv_register(&elevator_test_iosched);
+> +
+> +	return 0;
+> +}
+> +
+> +static void __exit test_exit(void)
+> +{
+> +	elv_unregister(&elevator_test_iosched);
+> +}
+> +
+> +module_init(test_init);
+> +module_exit(test_exit);
+> +
+> +MODULE_LICENSE("GPL v2");
+> +MODULE_DESCRIPTION("Test IO scheduler");
+> diff --git a/include/linux/test-iosched.h b/include/linux/test-iosched.h
+> new file mode 100644
+> index 0000000..8054409
+> --- /dev/null
+> +++ b/include/linux/test-iosched.h
+> @@ -0,0 +1,233 @@
+> +/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+> + *
+> + * This program is free software; you can redistribute it and/or modify
+> + * it under the terms of the GNU General Public License version 2 and
+> + * only version 2 as published by the Free Software Foundation.
+> + *
+> + * This program is distributed in the hope that it will be useful,
+> + * but WITHOUT ANY WARRANTY; without even the implied warranty of
+> + * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+> + * GNU General Public License for more details.
+> + *
+> + * The test scheduler allows to test the block device by dispatching
+> + * specific requests according to the test case and declare PASS/FAIL
+> + * according to the requests completion error code.
+> + * Each test is exposed via debugfs and can be triggered by writing to
+> + * the debugfs file.
+> + *
+> + */
+> +
+> +#ifndef _LINUX_TEST_IOSCHED_H
+> +#define _LINUX_TEST_IOSCHED_H
+> +
+> +/*
+> + * Patterns definitions for read/write requests data
+> + */
+> +#define TEST_PATTERN_SEQUENTIAL	-1
+> +#define TEST_PATTERN_5A		0x5A5A5A5A
+> +#define TEST_PATTERN_FF		0xFFFFFFFF
+> +#define TEST_NO_PATTERN		0xDEADBEEF
+> +#define BIO_U32_SIZE 1024
+> +
+> +struct test_data;
+> +
+> +typedef int (prepare_test_fn) (struct test_data *);
+> +typedef int (run_test_fn) (struct test_data *);
+> +typedef int (check_test_result_fn) (struct test_data *);
+> +typedef int (post_test_fn) (struct test_data *);
+> +typedef char* (get_test_case_str_fn) (struct test_data *);
+> +typedef void (blk_dev_test_init_fn) (void);
+> +typedef void (blk_dev_test_exit_fn) (void);
+> +
+> +/**
+> + * enum test_state - defines the state of the test
+> + */
+> +enum test_state {
+> +	TEST_IDLE,
+> +	TEST_RUNNING,
+> +	TEST_COMPLETED,
+> +};
+> +
+> +/**
+> + * enum test_results - defines the success orfailure of the test
+> + */
+> +enum test_results {
+> +	TEST_NO_RESULT,
+> +	TEST_FAILED,
+> +	TEST_PASSED,
+> +	TEST_NOT_SUPPORTED,
+> +};
+> +
+> +/**
+> + * enum req_unique_type - defines a unique request type
+> + */
+> +enum req_unique_type {
+> +	REQ_UNIQUE_NONE,
+> +	REQ_UNIQUE_DISCARD,
+> +	REQ_UNIQUE_FLUSH,
+> +};
+> +
+> +/**
+> + * struct test_debug - debugfs directories
+> + * @debug_root:		The test-iosched debugfs root directory
+> + * @debug_utils_root:	test-iosched debugfs utils root
+> + *			directory
+> + * @debug_tests_root:	test-iosched debugfs tests root
+> + *			directory
+> + * @debug_test_result:	Exposes the test result to the user
+> + *			space
+> + * @start_sector:	The start sector for read/write requests
+> + */
+> +struct test_debug {
+> +	struct dentry *debug_root;
+> +	struct dentry *debug_utils_root;
+> +	struct dentry *debug_tests_root;
+> +	struct dentry *debug_test_result;
+> +	struct dentry *start_sector;
+> +};
+> +
+> +/**
+> + * struct test_request - defines a test request
+> + * @queuelist:		The test requests list
+> + * @bios_buffer:	Write/read requests data buffer
+> + * @buf_size:		Write/read requests data buffer size (in
+> + *			bytes)
+> + * @rq:			A block request, to be dispatched
+> + * @req_completed:	A flag to indicate if the request was
+> + *			completed
+> + * @req_result:		Keeps the error code received in the
+> + *			request completion callback
+> + * @is_err_expected:	A flag to indicate if the request should
+> + *			fail
+> + * @wr_rd_data_pattern:	A pattern written to the write data
+> + *			buffer. Can be used in read requests to
+> + *			verify the data
+> + * @req_id:		A unique ID to identify a test request
+> + *			to ease the debugging of the test cases
+> + */
+> +struct test_request {
+> +	struct list_head queuelist;
+> +	unsigned int *bios_buffer;
+> +	int buf_size;
+> +	struct request *rq;
+> +	bool req_completed;
+> +	int req_result;
+> +	int is_err_expected;
+> +	int wr_rd_data_pattern;
+> +	int req_id;
+> +};
+> +
+> +/**
+> + * struct test_info - specific test information
+> + * @testcase:		The current running test case
+> + * @timeout_msec:	Test specific test timeout
+> + * @buf_size:		Write/read requests data buffer size (in
+> + *			bytes)
+> + * @prepare_test_fn:	Test specific test preparation callback
+> + * @run_test_fn:	Test specific test running callback
+> + * @check_test_result_fn: Test specific test result checking
+> + *			callback
+> + * @get_test_case_str_fn: Test specific function to get the test name
+> + * @data:		Test specific private data
+> + */
+> +struct test_info {
+> +	int testcase;
+> +	unsigned timeout_msec;
+> +	prepare_test_fn *prepare_test_fn;
+> +	run_test_fn *run_test_fn;
+> +	check_test_result_fn *check_test_result_fn;
+> +	post_test_fn *post_test_fn;
+> +	get_test_case_str_fn *get_test_case_str_fn;
+> +	void *data;
+> +};
+> +
+> +/**
+> + * struct blk_dev_test_type - identifies block device test
+> + * @list:	list head pointer
+> + * @init_fn:	block device test init callback
+> + * @exit_fn:	block device test exit callback
+> + */
+> +struct blk_dev_test_type {
+> +	struct list_head list;
+> +	blk_dev_test_init_fn *init_fn;
+> +	blk_dev_test_exit_fn *exit_fn;
+> +};
+> +
+> +/**
+> + * struct test_data - global test iosched data
+> + * @queue:		The test IO scheduler requests list
+> + * @test_queue:		The test requests list
+> + * @next_req:		Points to the next request to be
+> + *			dispatched from the test requests list
+> + * @wait_q:		A wait queue for waiting for the test
+> + *			requests completion
+> + * @test_state:		Indicates if there is a running test.
+> + *			Used for dispatch function
+> + * @test_result:	Indicates if the test passed or failed
+> + * @debug:		The test debugfs entries
+> + * @req_q:		The block layer request queue
+> + * @num_of_write_bios:	The number of write BIOs added to the test
+> requests.
+> + *			Used to calcualte the sector number of
+> + *			new BIOs.
+> + * @start_sector:	The address of the first sector that can
+> + *			be accessed by the test
+> + * @timeout_timer:	A timer to verify test completion in
+> + *			case of non-completed requests
+> + * @wr_rd_next_req_id:	A unique ID to identify WRITE/READ
+> + *			request to ease the debugging of the
+> + *			test cases
+> + * @unique_next_req_id:	A unique ID to identify
+> + *			FLUSH/DISCARD/SANITIZE request to ease
+> + *			the debugging of the test cases
+> + * @lock:		A lock to verify running a single test
+> + *			at a time
+> + * @test_info:		A specific test data to be set by the
+> + *			test invokation function
+> + * @ignore_round:	A boolean variable indicating that a
+> + *			test round was disturbed by an external
+> + *			flush request, therefore disqualifying
+> + *			the results
+> + */
+> +struct test_data {
+> +	struct list_head queue;
+> +	struct list_head test_queue;
+> +	struct test_request *next_req;
+> +	wait_queue_head_t wait_q;
+> +	enum test_state test_state;
+> +	enum test_results test_result;
+> +	struct test_debug debug;
+> +	struct request_queue *req_q;
+> +	int num_of_write_bios;
+> +	u32 start_sector;
+> +	struct timer_list timeout_timer;
+> +	int wr_rd_next_req_id;
+> +	int unique_next_req_id;
+> +	spinlock_t lock;
+> +	struct test_info test_info;
+> +	bool fs_wr_reqs_during_test;
+> +	bool ignore_round;
+> +};
+> +
+> +extern int test_iosched_start_test(struct test_info *t_info);
+> +extern void test_iosched_mark_test_completion(void);
+> +extern int test_iosched_add_unique_test_req(int is_err_expcted,
+> +		enum req_unique_type req_unique,
+> +		int start_sec, int nr_sects, rq_end_io_fn *end_req_io);
+> +extern int test_iosched_add_wr_rd_test_req(int is_err_expcted,
+> +	      int direction, int start_sec,
+> +	      int num_bios, int pattern, rq_end_io_fn *end_req_io);
+> +
+> +extern struct dentry *test_iosched_get_debugfs_tests_root(void);
+> +extern struct dentry *test_iosched_get_debugfs_utils_root(void);
+> +
+> +extern struct request_queue *test_iosched_get_req_queue(void);
+> +
+> +extern void test_iosched_set_test_result(int);
+> +
+> +void test_iosched_set_ignore_round(bool ignore_round);
+> +
+> +void test_iosched_register(struct blk_dev_test_type *bdt);
+> +
+> +void test_iosched_unregister(struct blk_dev_test_type *bdt);
+> +
+> +#endif /* _LINUX_TEST_IOSCHED_H */
+> --
+> 1.7.3.3
+> --
+> Sent by a consultant of the Qualcomm Innovation Center, Inc.
+> The Qualcomm Innovation Center, Inc. is a member of the Code Aurora Forum.
+>
+
+
+-- 
+Sent by consultant of Qualcomm Innovation Center, Inc.
+Qualcomm Innovation Center, Inc. is a member of Code Aurora Forum
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-doc" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

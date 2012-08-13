@@ -1,0 +1,123 @@
+Path: news.gmane.org!not-for-mail
+From: Peter Zijlstra <peterz@infradead.org>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [PATCH v2 8/9] rbtree: faster augmented rbtree manipulation
+Date: Mon, 06 Aug 2012 17:38:57 +0200
+Lines: 57
+Approved: news@gmane.org
+Message-ID: <1344267537.27828.93.camel@twins>
+References: <1343946858-8170-1-git-send-email-walken@google.com>
+	 <1343946858-8170-9-git-send-email-walken@google.com>
+	 <1344262669.27828.55.camel@twins>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="ISO-8859-1"
+Content-Transfer-Encoding: quoted-printable
+X-Trace: dough.gmane.org 1344267551 13522 80.91.229.3 (6 Aug 2012 15:39:11 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 15:39:11 +0000 (UTC)
+Cc: riel@redhat.com, daniel.santos@pobox.com, aarcange@redhat.com, 
+	dwmw2@infradead.org, akpm@linux-foundation.org, linux-mm@kvack.org, 
+	linux-kernel@vger.kernel.org, torvalds@linux-foundation.org
+To: Michel Lespinasse <walken@google.com>
+Original-X-From: owner-linux-mm@kvack.org Mon Aug 06 17:39:10 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SyPOf-0008T5-9U
+	for glkm-linux-mm-2@m.gmane.org; Mon, 06 Aug 2012 17:39:09 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id B2BD96B0044; Mon,  6 Aug 2012 11:39:06 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 682D66B005D; Mon,  6 Aug 2012 11:39:06 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id EA79B6B0062; Mon,  6 Aug 2012 11:39:05 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx169.postini.com [74.125.245.169])
+	by kanga.kvack.org (Postfix) with SMTP id 0D39D6B0044
+	for <linux-mm@kvack.org>; Mon,  6 Aug 2012 11:39:04 -0400 (EDT)
+Original-Received: from casper.infradead.org ([85.118.1.10]) (using TLSv1) by na3sys010amx169.postini.com ([74.125.244.10]) with SMTP;
+	Mon, 06 Aug 2012 15:39:05 GMT
+Original-Received: from dhcp-089-099-019-018.chello.nl ([89.99.19.18] helo=twins)
+	by casper.infradead.org with esmtpsa (Exim 4.76 #1 (Red Hat Linux))
+	id 1SyPOW-0003Aj-Q1; Mon, 06 Aug 2012 15:39:00 +0000
+Original-Received: by twins (Postfix, from userid 1000)
+	id 2DE4E83BF765; Mon,  6 Aug 2012 17:38:57 +0200 (CEST)
+In-Reply-To: <1344262669.27828.55.camel@twins>
+X-Mailer: Evolution 3.2.2- 
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:93.6803 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <peterz@infradead.org> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83699 gmane.linux.kernel:1338389
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338389>
+
+On Mon, 2012-08-06 at 16:17 +0200, Peter Zijlstra wrote:
+
+> Why would every user need to replicate the propagate and rotate
+> boilerplate?
+
+So I don't have a tree near that any of this applies to (hence no actual
+patch), but why can't we have something like:
+
+struct rb_augment_callback {
+	const bool (*update)(struct rb_node *node);
+	const int offset;
+	const int size;
+};
+
+#define RB_AUGMENT_CALLBACK(_update, _type, _rb_member, _aug_member)	\
+(struct rb_augment_callback){						\
+	.update =3D _update,						\
+	.offset =3D offsetof(_type, _aug_member) - 			\
+		  offsetof(_type, _rb_member),				\
+	.size   =3D sizeof(((_type *)NULL)->_aug_member),			\
+}
+
+static __always_inline void=20
+augment_copy(struct rb_node *dst, struct rb_node *src,
+	     const rb_augment_callback *ac)
+{
+	memcpy((void *)dst + ac->offset,
+	       (void *)src + ac->offset,
+	       ac->size);
+}=20
+
+static __always_inline void=20
+augment_propagate(struct rb_node *rb, struct rb_node *stop,
+		  const struct rb_augment_callback *ac)
+{
+	while (rb !=3D stop) {
+		if (!ac->update(rb))
+			break;
+		rb =3D rb_parent(rb);
+	}
+}
+
+static __always_inline void
+augment_rotate(struct rb_node *old, struct rb_node *new.
+	       const struct rb_augment_callback *ac)
+{
+	augment_copy(new, old, ac);
+	(void)ac->update(old);
+}
+
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

@@ -1,0 +1,106 @@
+Path: news.gmane.org!not-for-mail
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] uprobes: don't enable/disable signle step if the user did it
+Date: Thu, 26 Jul 2012 17:20:43 +0200
+Lines: 57
+Approved: news@gmane.org
+Message-ID: <1343316043-13475-1-git-send-email-bigeasy@linutronix.de>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343316067 4687 80.91.229.3 (26 Jul 2012 15:21:07 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 15:21:07 +0000 (UTC)
+Cc: Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Ingo Molnar <mingo@redhat.com>,
+	Srikar Dronamraju <srikar@linux.vnet.ibm.com>,
+	Oleg Nesterov <oleg@redhat.com>,
+	Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 17:21:06 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuPs5-0006Ti-CV
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 17:21:01 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752701Ab2GZPUw (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 11:20:52 -0400
+Original-Received: from www.linutronix.de ([62.245.132.108]:45177 "EHLO
+	Galois.linutronix.de" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751814Ab2GZPUu (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 11:20:50 -0400
+Original-Received: from localhost ([127.0.0.1] helo=bazinga.HH.breakpoint.cc)
+	by Galois.linutronix.de with esmtp (Exim 4.72)
+	(envelope-from <bigeasy@linutronix.de>)
+	id 1SuPrs-0004Pa-L7; Thu, 26 Jul 2012 17:20:48 +0200
+X-Mailer: git-send-email 1.7.10.4
+X-Linutronix-Spam-Score: -1.0
+X-Linutronix-Spam-Level: -
+X-Linutronix-Spam-Status: No , -1.0 points, 5.0 required,  ALL_TRUSTED=-1,SHORTCIRCUIT=-0.0001
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333722
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333722>
+
+If someone is using single stepping over uprobe brackpoint then after
+we pass the uprobe single step, single stepping is disabled and the user
+who enebaled them in the first place does not know anything about this.
+
+This patch avoids enabling / disabling the single step mode if it is
+already enabled.
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+---
+ include/linux/uprobes.h |    2 ++
+ kernel/events/uprobes.c |   10 ++++++++--
+ 2 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/include/linux/uprobes.h b/include/linux/uprobes.h
+index efe4b33..1be2d44 100644
+--- a/include/linux/uprobes.h
++++ b/include/linux/uprobes.h
+@@ -44,6 +44,8 @@ struct inode;
+ #define UPROBE_RUN_HANDLER	0x2
+ /* Can skip singlestep */
+ #define UPROBE_SKIP_SSTEP	0x4
++/* user does also singlestep */
++#define UPROBE_USER_SSTEP	0x8
+ 
+ struct uprobe_consumer {
+ 	int (*handler)(struct uprobe_consumer *self, struct pt_regs *regs);
+diff --git a/kernel/events/uprobes.c b/kernel/events/uprobes.c
+index f935327..772eb3a 100644
+--- a/kernel/events/uprobes.c
++++ b/kernel/events/uprobes.c
+@@ -1528,7 +1528,10 @@ static void handle_swbp(struct pt_regs *regs)
+ 
+ 	utask->state = UTASK_SSTEP;
+ 	if (!pre_ssout(uprobe, regs, bp_vaddr)) {
+-		user_enable_single_step(current);
++		if (test_tsk_thread_flag(current, TIF_SINGLESTEP))
++			uprobe->flags |= UPROBE_USER_SSTEP;
++		else
++			user_enable_single_step(current);
+ 		return;
+ 	}
+ 
+@@ -1569,7 +1572,10 @@ static void handle_singlestep(struct uprobe_task *utask, struct pt_regs *regs)
+ 	put_uprobe(uprobe);
+ 	utask->active_uprobe = NULL;
+ 	utask->state = UTASK_RUNNING;
+-	user_disable_single_step(current);
++	if (uprobe->flags & UPROBE_USER_SSTEP)
++		uprobe->flags &= ~UPROBE_USER_SSTEP;
++	else
++		user_disable_single_step(current);
+ 	xol_free_insn_slot(current);
+ 
+ 	spin_lock_irq(&current->sighand->siglock);
+-- 
+1.7.10.4
+

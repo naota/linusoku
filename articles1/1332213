@@ -1,0 +1,123 @@
+Path: news.gmane.org!not-for-mail
+From: Namhyung Kim <namhyung@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 04/12] perf hist: Maintain total periods of group members in the leader
+Date: Tue, 24 Jul 2012 18:01:25 +0900
+Lines: 71
+Approved: news@gmane.org
+Message-ID: <1343120493-23059-5-git-send-email-namhyung@kernel.org>
+References: <1343120493-23059-1-git-send-email-namhyung@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343120937 28788 80.91.229.3 (24 Jul 2012 09:08:57 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 09:08:57 +0000 (UTC)
+Cc: Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Paul Mackerras <paulus@samba.org>,
+	Ingo Molnar <mingo@kernel.org>,
+	LKML <linux-kernel@vger.kernel.org>,
+	Stephane Eranian <eranian@google.com>,
+	Jiri Olsa <jolsa@redhat.com>,
+	Ulrich Drepper <drepper@gmail.com>,
+	Andi Kleen <andi@firstfloor.org>,
+	Namhyung Kim <namhyung.kim@lge.com>
+To: Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 11:08:53 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Stb6o-0002om-1W
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 11:08:50 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753069Ab2GXJHE (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 05:07:04 -0400
+Original-Received: from LGEMRELSE6Q.lge.com ([156.147.1.121]:55515 "EHLO
+	LGEMRELSE6Q.lge.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752916Ab2GXJHA (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 05:07:00 -0400
+X-AuditID: 9c930179-b7bdcae000003d91-ff-500e65b1193e
+Original-Received: from sejong.aot.lge.com ( [10.177.220.181])
+	by LGEMRELSE6Q.lge.com (Symantec Brightmail Gateway) with SMTP id 7A.33.15761.1B56E005; Tue, 24 Jul 2012 18:06:58 +0900 (KST)
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1343120493-23059-1-git-send-email-namhyung@kernel.org>
+X-Brightmail-Tracker: AAAAAA==
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332213
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332213>
+
+From: Namhyung Kim <namhyung.kim@lge.com>
+
+Like group_stats in hist_entry, total periods information also need
+to be known to the leader.
+
+Cc: Stephane Eranian <eranian@google.com>
+Cc: Jiri Olsa <jolsa@redhat.com>
+Signed-off-by: Namhyung Kim <namhyung@kernel.org>
+---
+ tools/perf/util/hist.c |   25 +++++++++++++++++++++++++
+ tools/perf/util/hist.h |    1 +
+ 2 files changed, 26 insertions(+)
+
+diff --git a/tools/perf/util/hist.c b/tools/perf/util/hist.c
+index a8f4c56261a0..5ae71429ba53 100644
+--- a/tools/perf/util/hist.c
++++ b/tools/perf/util/hist.c
+@@ -427,6 +427,28 @@ static void hist_entry__add_group_stat(struct perf_evsel *evsel,
+ 		hist_entry__add_stat(&iter->stat, &he->stat);
+ }
+ 
++static void hists__add_group_stat(struct hists *hists)
++{
++	struct perf_evsel *evsel = hists_2_evsel(hists);
++	struct perf_evsel *leader = evsel->leader;
++	struct hists *leader_hists;
++
++	if (perf_evsel__is_group_leader(evsel))
++		return;
++
++	leader_hists = &leader->hists;
++
++	if (!leader_hists->group_stats) {
++		leader_hists->group_stats = calloc(leader->nr_children,
++						sizeof(struct events_stats));
++		if (!leader_hists->group_stats)
++			return;
++	}
++
++	memcpy(&leader_hists->group_stats[evsel->group_idx],
++	       &hists->stats, sizeof(struct events_stats));
++}
++
+ /*
+  * collapse the histogram
+  */
+@@ -546,6 +568,9 @@ static void __hists__collapse_resort(struct hists *hists, bool threaded)
+ 			hists__apply_filters(hists, n);
+ 		}
+ 	}
++
++	if (symbol_conf.report_group)
++		hists__add_group_stat(hists);
+ }
+ 
+ void hists__collapse_resort(struct hists *hists)
+diff --git a/tools/perf/util/hist.h b/tools/perf/util/hist.h
+index 8594459594d9..5f81ee723c77 100644
+--- a/tools/perf/util/hist.h
++++ b/tools/perf/util/hist.h
+@@ -66,6 +66,7 @@ struct hists {
+ 	const char		*symbol_filter_str;
+ 	pthread_mutex_t		lock;
+ 	struct events_stats	stats;
++	struct events_stats	*group_stats;
+ 	u64			event_stream;
+ 	u16			col_len[HISTC_NR_COLS];
+ };
+-- 
+1.7.10.4
+

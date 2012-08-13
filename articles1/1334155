@@ -1,0 +1,157 @@
+Path: news.gmane.org!not-for-mail
+From: Aaron Lu <aaron.lu@amd.com>
+Newsgroups: gmane.linux.ide,gmane.linux.kernel,gmane.linux.scsi
+Subject: [PATCH v4 6/7] scsi: sr: balance sr disk events block depth
+Date: Fri, 27 Jul 2012 17:00:49 +0800
+Lines: 71
+Approved: news@gmane.org
+Message-ID: <1343379650-2867-7-git-send-email-aaron.lu@amd.com>
+References: <1343379650-2867-1-git-send-email-aaron.lu@amd.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1343379770 13228 80.91.229.3 (27 Jul 2012 09:02:50 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 09:02:50 +0000 (UTC)
+Cc: Jeff Wu <jeff.wu@amd.com>, Lin Ming <minggr@gmail.com>,
+	<linux-kernel@vger.kernel.org>, <linux-pm@vger.kernel.org>,
+	<linux-scsi@vger.kernel.org>, <linux-ide@vger.kernel.org>,
+	Aaron Lu <aaron.lwe@gmail.com>, Aaron Lu <aaron.lu@amd.com>
+To: James Bottomley <James.Bottomley@HansenPartnership.com>,
+	Jeff Garzik <jgarzik@pobox.com>,
+	Alan Stern <stern@rowland.harvard.edu>,
+	Sergei Shtylyov <sshtylyov@mvista.com>,
+	Oliver Neukum <oneukum@suse.de>
+Original-X-From: linux-ide-owner@vger.kernel.org Fri Jul 27 11:02:44 2012
+Return-path: <linux-ide-owner@vger.kernel.org>
+Envelope-to: lnx-linux-ide@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-ide-owner@vger.kernel.org>)
+	id 1SugRU-0003ZC-1X
+	for lnx-linux-ide@plane.gmane.org; Fri, 27 Jul 2012 11:02:40 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752319Ab2G0JCU (ORCPT <rfc822;lnx-linux-ide@m.gmane.org>);
+	Fri, 27 Jul 2012 05:02:20 -0400
+Original-Received: from co1ehsobe003.messaging.microsoft.com ([216.32.180.186]:12497
+	"EHLO co1outboundpool.messaging.microsoft.com" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1752203Ab2G0JCO (ORCPT
+	<rfc822;linux-ide@vger.kernel.org>); Fri, 27 Jul 2012 05:02:14 -0400
+Original-Received: from mail131-co1-R.bigfish.com (10.243.78.229) by
+ CO1EHSOBE002.bigfish.com (10.243.66.65) with Microsoft SMTP Server id
+ 14.1.225.23; Fri, 27 Jul 2012 09:02:13 +0000
+Original-Received: from mail131-co1 (localhost [127.0.0.1])	by
+ mail131-co1-R.bigfish.com (Postfix) with ESMTP id 5D353B0021C;	Fri, 27 Jul
+ 2012 09:02:13 +0000 (UTC)
+X-Forefront-Antispam-Report: CIP:163.181.249.108;KIP:(null);UIP:(null);IPV:NLI;H:ausb3twp01.amd.com;RD:none;EFVD:NLI
+X-SpamScore: 0
+X-BigFish: VPS0(zzzz1202hzz8275bhz2dh668h839hd24he5bhf0ah107ah)
+Original-Received: from mail131-co1 (localhost.localdomain [127.0.0.1]) by mail131-co1
+ (MessageSwitch) id 1343379730841937_24774; Fri, 27 Jul 2012 09:02:10 +0000
+ (UTC)
+Original-Received: from CO1EHSMHS011.bigfish.com (unknown [10.243.78.247])	by
+ mail131-co1.bigfish.com (Postfix) with ESMTP id C018D780044;	Fri, 27 Jul 2012
+ 09:02:10 +0000 (UTC)
+Original-Received: from ausb3twp01.amd.com (163.181.249.108) by
+ CO1EHSMHS011.bigfish.com (10.243.66.21) with Microsoft SMTP Server id
+ 14.1.225.23; Fri, 27 Jul 2012 09:02:10 +0000
+X-WSS-ID: 0M7TAFJ-01-16M-02
+X-M-MSG: 
+Original-Received: from sausexedgep01.amd.com (sausexedgep01-ext.amd.com
+ [163.181.249.72])	(using TLSv1 with cipher AES128-SHA (128/128 bits))	(No
+ client certificate requested)	by ausb3twp01.amd.com (Axway MailGate 3.8.1)
+ with ESMTP id 2031910280A6;	Fri, 27 Jul 2012 04:02:07 -0500 (CDT)
+Original-Received: from sausexhtp01.amd.com (163.181.3.165) by sausexedgep01.amd.com
+ (163.181.36.54) with Microsoft SMTP Server (TLS) id 8.3.192.1; Fri, 27 Jul
+ 2012 04:02:26 -0500
+Original-Received: from sausexmb1.amd.com (163.181.3.156) by sausexhtp01.amd.com
+ (163.181.3.165) with Microsoft SMTP Server id 8.3.213.0; Fri, 27 Jul 2012
+ 04:02:07 -0500
+Original-Received: from storexbh1.amd.com ([10.1.1.17]) by sausexmb1.amd.com with
+ Microsoft SMTPSVC(6.0.3790.3959);	 Fri, 27 Jul 2012 04:02:07 -0500
+Original-Received: from sshaexmb1.amd.com ([10.237.2.11]) by storexbh1.amd.com with
+ Microsoft SMTPSVC(6.0.3790.4675);	 Fri, 27 Jul 2012 05:02:05 -0400
+Original-Received: from aarontestpc.amd.com ([10.237.73.134]) by sshaexmb1.amd.com with
+ Microsoft SMTPSVC(6.0.3790.4675);	 Fri, 27 Jul 2012 17:01:59 +0800
+X-Mailer: git-send-email 1.7.11.3
+In-Reply-To: <1343379650-2867-1-git-send-email-aaron.lu@amd.com>
+X-OriginalArrivalTime: 27 Jul 2012 09:01:59.0377 (UTC) FILETIME=[7AF6A410:01CD6BD6]
+X-OriginatorOrg: amd.com
+Original-Sender: linux-ide-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-ide.vger.kernel.org>
+X-Mailing-List: linux-ide@vger.kernel.org
+Xref: news.gmane.org gmane.linux.ide:52502 gmane.linux.kernel:1334155 gmane.linux.scsi:76653
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334155>
+
+When the ODD is resumed, disk_unblock_events should be called when:
+1 The ODD is runtime resumed;
+2 System is resuming from S3 and the ODD is runtime suspended before S3;
+But not when the system is resuming from S3 and the ODD is runtime
+active before S3.
+
+So seperate the resume calls, one for system resume and one for runtime
+resume to do different things accordingly.
+
+Signed-off-by: Aaron Lu <aaron.lu@amd.com>
+---
+ drivers/scsi/sr.c | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/drivers/scsi/sr.c b/drivers/scsi/sr.c
+index cbc14ea..f0c4aa2 100644
+--- a/drivers/scsi/sr.c
++++ b/drivers/scsi/sr.c
+@@ -82,6 +82,11 @@ static int sr_remove(struct device *);
+ static int sr_done(struct scsi_cmnd *);
+ static int sr_suspend(struct device *, pm_message_t msg);
+ static int sr_resume(struct device *);
++static int sr_runtime_resume(struct device *);
++
++static struct dev_pm_ops sr_pm_ops = {
++	.runtime_resume = sr_runtime_resume,
++};
+ 
+ static struct scsi_driver sr_template = {
+ 	.owner			= THIS_MODULE,
+@@ -91,6 +96,7 @@ static struct scsi_driver sr_template = {
+ 		.remove		= sr_remove,
+ 		.suspend	= sr_suspend,
+ 		.resume		= sr_resume,
++		.pm		= &sr_pm_ops,
+ 	},
+ 	.done			= sr_done,
+ };
+@@ -213,6 +219,23 @@ static int sr_suspend(struct device *dev, pm_message_t msg)
+ static int sr_resume(struct device *dev)
+ {
+ 	struct scsi_cd *cd;
++
++	/*
++	 * If ODD is runtime suspended before system pm, unblock disk
++	 * events now since on system resume we will fully resume it
++	 * and set its runtime status to active.
++	 */
++	if (pm_runtime_suspended(dev)) {
++		cd = dev_get_drvdata(dev);
++		disk_unblock_events(cd->disk);
++	}
++
++	return 0;
++}
++
++static int sr_runtime_resume(struct device *dev)
++{
++	struct scsi_cd *cd;
+ 	struct scsi_sense_hdr sshdr;
+ 
+ 	cd = dev_get_drvdata(dev);
+-- 
+1.7.11.3
+
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ide" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

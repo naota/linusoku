@@ -1,0 +1,129 @@
+Path: news.gmane.org!not-for-mail
+From: James Bottomley <James.Bottomley@HansenPartnership.com>
+Newsgroups: gmane.linux.ports.parisc,gmane.linux.kernel
+Subject: Re: [PATCH v2] parisc: fix personality flag check in copy_thread()
+Date: Thu, 02 Aug 2012 09:47:52 +0100
+Lines: 75
+Approved: news@gmane.org
+Message-ID: <1343897272.5073.5.camel@dabdike.int.hansenpartnership.com>
+References: <alpine.LNX.2.00.1208012155330.14910@pobox.suse.cz>
+	 <alpine.LNX.2.00.1208020911300.14910@pobox.suse.cz>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343897283 7927 80.91.229.3 (2 Aug 2012 08:48:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 2 Aug 2012 08:48:03 +0000 (UTC)
+Cc: Helge Deller <deller@gmx.de>, linux-parisc@vger.kernel.org,
+	linux-kernel@vger.kernel.org
+To: Jiri Kosina <jkosina@suse.cz>
+Original-X-From: linux-parisc-owner@vger.kernel.org Thu Aug 02 10:48:03 2012
+Return-path: <linux-parisc-owner@vger.kernel.org>
+Envelope-to: glpp-linux-parisc@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-parisc-owner@vger.kernel.org>)
+	id 1Swr4Y-0006tF-Ae
+	for glpp-linux-parisc@plane.gmane.org; Thu, 02 Aug 2012 10:47:59 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752433Ab2HBIr5 (ORCPT <rfc822;glpp-linux-parisc@m.gmane.org>);
+	Thu, 2 Aug 2012 04:47:57 -0400
+Original-Received: from bedivere.hansenpartnership.com ([66.63.167.143]:38363 "EHLO
+	bedivere.hansenpartnership.com" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1751735Ab2HBIr4 (ORCPT
+	<rfc822;linux-parisc@vger.kernel.org>);
+	Thu, 2 Aug 2012 04:47:56 -0400
+Original-Received: from localhost (localhost [127.0.0.1])
+	by bedivere.hansenpartnership.com (Postfix) with ESMTP id 43FB58EE0CE;
+	Thu,  2 Aug 2012 01:47:56 -0700 (PDT)
+Original-Received: from bedivere.hansenpartnership.com ([127.0.0.1])
+	by localhost (bedivere.hansenpartnership.com [127.0.0.1]) (amavisd-new, port 10024)
+	with ESMTP id 1a-2uGB4dD0G; Thu,  2 Aug 2012 01:47:56 -0700 (PDT)
+Original-Received: from [153.66.254.224] (accolon.hansenpartnership.com [87.194.65.0])
+	by bedivere.hansenpartnership.com (Postfix) with ESMTPSA id CD8C68EE0A2;
+	Thu,  2 Aug 2012 01:47:54 -0700 (PDT)
+In-Reply-To: <alpine.LNX.2.00.1208020911300.14910@pobox.suse.cz>
+X-Mailer: Evolution 3.2.3 
+Original-Sender: linux-parisc-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-parisc.vger.kernel.org>
+X-Mailing-List: linux-parisc@vger.kernel.org
+Xref: news.gmane.org gmane.linux.ports.parisc:4522 gmane.linux.kernel:1336739
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336739>
+
+On Thu, 2012-08-02 at 09:12 +0200, Jiri Kosina wrote:
+> Directly comparing task_struct->personality against PER_* is not fully
+> correct, as it doesn't take flags potentially stored in top three bytes
+> into account.
+> 
+> Analogically, directly forcefully setting personality to PER_LINUX32 or
+> PER_LINUX discards any flags stored in the top three bytes.
+> 
+> Signed-off-by: Jiri Kosina <jkosina@suse.cz>
+> ---
+> 
+> changed since v1: fix the bit ops to reflect the fact that PER_LINUX is 
+> actually 0
+
+Tell me what you're trying to achieve (or what problem you're trying to
+solve), because personality is notoriously tricky.
+
+Usually personality = <whatever> is desired because if you look at the
+enum for personality, it does set the top three bits in quite a few
+cases.  We actually don't need any of the top 3 byte features ... but I
+think making sure they're zeroed out is the correct thing to do.
+
+In particular, if we ever get around to a 64 bit user space, our
+personality will be PER_LINUX_FDPIC and then we will be setting the top
+three bytes.
+
+James
+
+
+>  arch/parisc/kernel/process.c    |    2 +-
+>  arch/parisc/kernel/sys_parisc.c |    8 ++++----
+>  2 files changed, 5 insertions(+), 5 deletions(-)
+> 
+> diff --git a/arch/parisc/kernel/process.c b/arch/parisc/kernel/process.c
+> index d4b94b3..2c05a92 100644
+> --- a/arch/parisc/kernel/process.c
+> +++ b/arch/parisc/kernel/process.c
+> @@ -309,7 +309,7 @@ copy_thread(unsigned long clone_flags, unsigned long usp,
+>  		cregs->ksp = (unsigned long)stack
+>  			+ (pregs->gr[21] & (THREAD_SIZE - 1));
+>  		cregs->gr[30] = usp;
+> -		if (p->personality == PER_HPUX) {
+> +		if (personality(p->personality) == PER_HPUX) {
+>  #ifdef CONFIG_HPUX
+>  			cregs->kpc = (unsigned long) &hpux_child_return;
+>  #else
+> diff --git a/arch/parisc/kernel/sys_parisc.c b/arch/parisc/kernel/sys_parisc.c
+> index c9b9322..7f9658e 100644
+> --- a/arch/parisc/kernel/sys_parisc.c
+> +++ b/arch/parisc/kernel/sys_parisc.c
+> @@ -225,12 +225,12 @@ long parisc_personality(unsigned long personality)
+>  	long err;
+>  
+>  	if (personality(current->personality) == PER_LINUX32
+> -	    && personality == PER_LINUX)
+> -		personality = PER_LINUX32;
+> +	    && personality(personality) == PER_LINUX)
+> +		personality |= PER_LINUX32;
+>  
+>  	err = sys_personality(personality);
+> -	if (err == PER_LINUX32)
+> -		err = PER_LINUX;
+> +	if (personality(err) == PER_LINUX32)
+> +		err &= ~PER_LINUX32;
+>  
+>  	return err;
+>  }
+> 
+
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-parisc" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

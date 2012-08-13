@@ -1,0 +1,87 @@
+Path: news.gmane.org!not-for-mail
+From: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.xen.devel
+Subject: [PATCH 2/2] xen/swiotlb: If user supplied e820_hole=1 in the guest config, enable SWIOTLB.
+Date: Thu, 26 Jul 2012 16:43:27 -0400
+Lines: 29
+Approved: news@gmane.org
+Message-ID: <1343335407-5465-3-git-send-email-konrad.wilk@oracle.com>
+References: <1343335407-5465-1-git-send-email-konrad.wilk@oracle.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343335967 20350 80.91.229.3 (26 Jul 2012 20:52:47 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 20:52:47 +0000 (UTC)
+Cc: xen-devel@lists.xensource.com,
+	Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 22:52:47 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuV38-00009N-Bo
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 22:52:46 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752764Ab2GZUwX (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 16:52:23 -0400
+Original-Received: from rcsinet15.oracle.com ([148.87.113.117]:27046 "EHLO
+	rcsinet15.oracle.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752338Ab2GZUwV (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 16:52:21 -0400
+Original-Received: from ucsinet22.oracle.com (ucsinet22.oracle.com [156.151.31.94])
+	by rcsinet15.oracle.com (Sentrion-MTA-4.2.2/Sentrion-MTA-4.2.2) with ESMTP id q6QKqIWu019281
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Thu, 26 Jul 2012 20:52:18 GMT
+Original-Received: from acsmt358.oracle.com (acsmt358.oracle.com [141.146.40.158])
+	by ucsinet22.oracle.com (8.14.4+Sun/8.14.4) with ESMTP id q6QKqHiC006166
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Thu, 26 Jul 2012 20:52:17 GMT
+Original-Received: from abhmt120.oracle.com (abhmt120.oracle.com [141.146.116.72])
+	by acsmt358.oracle.com (8.12.11.20060308/8.12.11) with ESMTP id q6QKqHWd003852;
+	Thu, 26 Jul 2012 15:52:17 -0500
+Original-Received: from phenom.dumpdata.com (/209.6.85.33)
+	by default (Oracle Beehive Gateway v4.0)
+	with ESMTP ; Thu, 26 Jul 2012 13:52:16 -0700
+Original-Received: by phenom.dumpdata.com (Postfix, from userid 1000)
+	id 1485D402BE; Thu, 26 Jul 2012 16:43:28 -0400 (EDT)
+X-Mailer: git-send-email 1.7.7.6
+In-Reply-To: <1343335407-5465-1-git-send-email-konrad.wilk@oracle.com>
+X-Source-IP: ucsinet22.oracle.com [156.151.31.94]
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333871 gmane.comp.emulators.xen.devel:135677
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333871>
+
+We can detect that the user is using e820_hole=1 by parsing the E820.
+If it shows regions other than E820_RAM or E820_RESV then the
+user is bent on providing us with a PCI device and forgot
+to do 'iommu=soft'. So lets enable it for him/her.
+
+Signed-off-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+---
+ arch/x86/xen/pci-swiotlb-xen.c |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/arch/x86/xen/pci-swiotlb-xen.c b/arch/x86/xen/pci-swiotlb-xen.c
+index 56f373e..9b1aebb 100644
+--- a/arch/x86/xen/pci-swiotlb-xen.c
++++ b/arch/x86/xen/pci-swiotlb-xen.c
+@@ -74,6 +74,11 @@ int __init pci_xen_swiotlb_detect(void)
+ 	if (xen_pv_domain())
+ 		swiotlb = 0;
+ 
++	/* If it hasn't been activated yet, and it has E820 that looks like
++	 * the user supplied e820_hole=1, then turn it on. */
++	if (xen_pv_domain() && !xen_initial_domain() &&
++	    !xen_swiotlb && e820_has_acpi())
++		xen_swiotlb = 1;
+ 	return xen_swiotlb;
+ }
+ 
+-- 
+1.7.7.6
+

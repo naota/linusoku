@@ -1,0 +1,113 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.file-systems,gmane.linux.nfs
+Subject: [PATCH v5 18/19] vfs: have chdir retry lookup and call once on ESTALE error
+Date: Wed,  8 Aug 2012 09:21:41 -0400
+Lines: 51
+Approved: news@gmane.org
+Message-ID: <1344432102-22312-19-git-send-email-jlayton@redhat.com>
+References: <1344432102-22312-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344432174 31067 80.91.229.3 (8 Aug 2012 13:22:54 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 13:22:54 +0000 (UTC)
+Cc: linux-fsdevel@vger.kernel.org, linux-nfs@vger.kernel.org,
+	linux-kernel@vger.kernel.org, michael.brantley@deshaw.com,
+	hch@infradead.org, miklos@szeredi.hu, pstaubach@exagrid.com
+To: viro@ZenIV.linux.org.uk
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 15:22:53 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sz6Dk-0006FT-UY
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 15:22:45 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1758553Ab2HHNWW (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 09:22:22 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:63544 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1758485Ab2HHNWM (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 09:22:12 -0400
+Original-Received: by mail-gh0-f174.google.com with SMTP id r11so730358ghr.19
+        for <linux-kernel@vger.kernel.org>; Wed, 08 Aug 2012 06:22:12 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:x-gm-message-state;
+        bh=RTYpsByqG7mC0Djn+0L0bBkC7rgAP01yY8OQ4gLs60M=;
+        b=aScZVucKNbwtFq3zLKcmf0huqCW+Cod25D/IUMBj6xj7J9Ifp2Byqz4v2J6w5Xow74
+         BGRmGoqscql+RHCmZuTxLKFWPhfREtQwCMbBNKuQY9Y/p5kZSfCTQH2KTUN+ffqstIGd
+         pmrCSIyUT5h4xZe9jGoZEe+/DFRAbelx136pt8JoFrw443dAEwHJXoeLlMYmyM/l+qib
+         XcnnVfNNQF5NSKquk1cXC0eDLIBOlTa4mSKus+B3eNwNg2KnZqE622Oz8Xak57NZoslD
+         PO8hQ4jvtNPwphwp5cEExL2SlLAKehcex4VbdsrR/Qj/vwl3js4mLS4KcBjE31y3VT3U
+         XyyA==
+Original-Received: by 10.236.76.3 with SMTP id a3mr16471797yhe.86.1344432132438;
+        Wed, 08 Aug 2012 06:22:12 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-069-134-145-027.nc.res.rr.com. [69.134.145.27])
+        by mx.google.com with ESMTPS id l1sm24418002yhm.19.2012.08.08.06.22.11
+        (version=SSLv3 cipher=OTHER);
+        Wed, 08 Aug 2012 06:22:11 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1344432102-22312-1-git-send-email-jlayton@redhat.com>
+X-Gm-Message-State: ALoCoQlnJpWir+6TPqTlWS4B4p2PFcze6PszJEYPIO7Wb58lQj1WJIkSDb2GGYtEQi6WKZsz+crO
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340039 gmane.linux.file-systems:66460 gmane.linux.nfs:51364
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340039>
+
+Signed-off-by: Jeff Layton <jlayton@redhat.com>
+---
+ fs/open.c | 29 ++++++++++++++++++-----------
+ 1 file changed, 18 insertions(+), 11 deletions(-)
+
+diff --git a/fs/open.c b/fs/open.c
+index 147b232..59a7e9d 100644
+--- a/fs/open.c
++++ b/fs/open.c
+@@ -401,20 +401,27 @@ SYSCALL_DEFINE1(chdir, const char __user *, filename)
+ {
+ 	struct path path;
+ 	int error;
++	int lookup_flags = LOOKUP_FOLLOW | LOOKUP_DIRECTORY;
++	unsigned int try = 0;
++	char *name;
+ 
+-	error = user_path_dir(filename, &path);
+-	if (error)
+-		goto out;
+-
+-	error = inode_permission(path.dentry->d_inode, MAY_EXEC | MAY_CHDIR);
+-	if (error)
+-		goto dput_and_out;
++	name = getname_flags(filename, lookup_flags, NULL);
++	if (IS_ERR(name))
++		return PTR_ERR(name);
+ 
+-	set_fs_pwd(current->fs, &path);
++	do {
++		error = kern_path_at(AT_FDCWD, name, lookup_flags, &path);
++		if (error)
++			break;
+ 
+-dput_and_out:
+-	path_put(&path);
+-out:
++		error = inode_permission(path.dentry->d_inode,
++					 MAY_EXEC | MAY_CHDIR);
++		if (!error)
++			set_fs_pwd(current->fs, &path);
++		path_put(&path);
++		lookup_flags |= LOOKUP_REVAL;
++	} while (retry_estale(error, try++));
++	putname(name);
+ 	return error;
+ }
+ 
+-- 
+1.7.11.2
+

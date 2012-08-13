@@ -1,0 +1,108 @@
+Path: news.gmane.org!not-for-mail
+From: Oleg Nesterov <oleg@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH 2/2] x86/uprobes: implement x86 specific
+	arch_uprobe_*_step
+Date: Wed, 1 Aug 2012 15:43:37 +0200
+Lines: 53
+Approved: news@gmane.org
+Message-ID: <20120801134337.GA3923@redhat.com>
+References: <20120730141638.GA5306@redhat.com> <1343735548-18101-1-git-send-email-bigeasy@linutronix.de> <1343735548-18101-2-git-send-email-bigeasy@linutronix.de>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343828828 13640 80.91.229.3 (1 Aug 2012 13:47:08 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 1 Aug 2012 13:47:08 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, ananth@in.ibm.com,
+	a.p.zijlstra@chello.nl, mingo@redhat.com,
+	srikar@linux.vnet.ibm.com, roland@hack.frob.com
+To: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 01 15:47:07 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwZGR-0000DE-OH
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 01 Aug 2012 15:47:04 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754048Ab2HANq4 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 1 Aug 2012 09:46:56 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:29625 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753692Ab2HANqz (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 1 Aug 2012 09:46:55 -0400
+Original-Received: from int-mx12.intmail.prod.int.phx2.redhat.com (int-mx12.intmail.prod.int.phx2.redhat.com [10.5.11.25])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q71DkaqY010876
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Wed, 1 Aug 2012 09:46:36 -0400
+Original-Received: from tranklukator.englab.brq.redhat.com (dhcp-1-232.brq.redhat.com [10.34.1.232])
+	by int-mx12.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with SMTP id q71DkXva022647;
+	Wed, 1 Aug 2012 09:46:34 -0400
+Original-Received: by tranklukator.englab.brq.redhat.com (nbSMTP-1.00) for uid 500
+	oleg@redhat.com; Wed,  1 Aug 2012 15:43:41 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <1343735548-18101-2-git-send-email-bigeasy@linutronix.de>
+User-Agent: Mutt/1.5.18 (2008-05-17)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.25
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336327
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336327>
+
+See my previous emails... and a couple of other nits.
+
+On 07/31, Sebastian Andrzej Siewior wrote:
+>
+> +static int insn_is_popf(const u8 *insn)
+> +{
+> +	/* popf */
+> +	if (insn[0] == 0x9d)
+> +		return 1;
+> +	return 0;
+> +}
+
+I can't believe I am going to blame the naming ;)
+
+But "insn_is_popf" looks confusing, imho. Yes, currently "iret" can't
+be probed, so (afaics) we only need to check "popf". Still I think the
+name should be generic, and the comment should explain that only "popf"
+can be probed. And I think it would be better to pass auprobe, not
+->insn. But this all is cosmetic.
+
+> +void arch_uprobe_enable_step(struct task_struct *child,
+> +		struct arch_uprobe *auprobe)
+> +{
+> +	struct uprobe_task	*utask		= child->utask;
+> +	struct arch_uprobe_task	*autask		= &utask->autask;
+> +	struct pt_regs		*regs		= task_pt_regs(child);
+> +	unsigned long		debugctl;
+> +
+> +	autask->restore_flags = 0;
+> +	if (!(regs->flags & X86_EFLAGS_TF) &&
+> +			!insn_is_popf(auprobe->insn)) {
+> +		autask->restore_flags |= UPROBE_CLEAR_TF;
+
+This looks correct, but
+
+> +		debugctl = get_debugctlmsr();
+> +		if (debugctl & DEBUGCTLMSR_BTF) {
+
+No, I don't think "X86_EFLAGS_TF && !insn_is_popf" is right. I guess
+this mimics "enable_single_step(child) && block" in enable_step(), but
+we can't trust insn_is_popf(), we should check/clear DEBUGCTLMSR_BTF
+unconditionally.
+
+And get_debugctlmsr() is another reason why arch_uprobe_enable_step()
+should not have "struct task_struct *child" argument, otherwise the
+code looks confusing.
+
+However, I am not sure we can trust it. We are in kernel mode,
+DEBUGCTLMSR_BTF can be cleared by kprobes (Ananth, please correct me).
+I think we need to check TIF_BLOCKSTEP.
+
+Oleg.
+

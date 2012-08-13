@@ -1,0 +1,185 @@
+Path: news.gmane.org!not-for-mail
+From: Andres Salomon <dilinger@queued.net>
+Newsgroups: gmane.linux.network,gmane.linux.kernel,gmane.linux.kernel.wireless.general,gmane.linux.drivers.platform.x86.devel
+Subject: [PATCH 9/9] x86: OLPC: move s/r-related EC cmds to EC driver
+Date: Wed, 18 Jul 2012 21:29:20 -0700
+Lines: 125
+Approved: news@gmane.org
+Message-ID: <20120718212920.237566cb@dev.queued.net>
+References: <20120718182144.2d7b0b50@dev.queued.net>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=US-ASCII
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342672189 17828 80.91.229.3 (19 Jul 2012 04:29:49 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 04:29:49 +0000 (UTC)
+Cc: Paul Fox <pgf@laptop.org>, Daniel Drake <dsd@laptop.org>,
+	"Richard A. Smith" <richard@laptop.org>,
+	linux-kernel@vger.kernel.org, libertas-dev@lists.infradead.org,
+	linux-wireless@vger.kernel.org, netdev@vger.kernel.org,
+	platform-driver-x86@vger.kernel.org, devel@driverdev.osuosl.org,
+	Thomas Gleixner <tglx@linutronix.de>,
+	Ingo Molnar <mingo@redhat.com>,
+	"H. Peter Anvin" <hpa@zytor.com>, x86@kernel.org,
+	Dan Williams <dcbw@redhat.com>,
+	"John W. Linville" <linville@tuxdriver.com>,
+	Matthew Garrett <mjg@redhat.com>,
+	Anton Vorontsov <cbou@mail.ru>,
+	David Woodhouse <dwmw2@infradead.org>,
+	Chris Ball <cjb@laptop.org>,
+	Jon Nettleton <jon.nettleton@gmail.com>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+To: Andrew Morton <akpm@linux-foundation.org>
+Original-X-From: netdev-owner@vger.kernel.org Thu Jul 19 06:29:45 2012
+Return-path: <netdev-owner@vger.kernel.org>
+Envelope-to: linux-netdev-2@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <netdev-owner@vger.kernel.org>)
+	id 1SriMy-0003yU-Q1
+	for linux-netdev-2@plane.gmane.org; Thu, 19 Jul 2012 06:29:45 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753067Ab2GSE3l (ORCPT <rfc822;linux-netdev-2@m.gmane.org>);
+	Thu, 19 Jul 2012 00:29:41 -0400
+Original-Received: from lunge.queued.net ([173.255.254.236]:50927 "EHLO
+	lunge.queued.net" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751287Ab2GSE3d (ORCPT
+	<rfc822;netdev@vger.kernel.org>); Thu, 19 Jul 2012 00:29:33 -0400
+Original-Received: from dev.queued.net (c-67-183-65-54.hsd1.wa.comcast.net [67.183.65.54])
+	by lunge.queued.net (Postfix) with ESMTPSA id 9E80828CABE;
+	Wed, 18 Jul 2012 21:29:21 -0700 (PDT)
+In-Reply-To: <20120718182144.2d7b0b50@dev.queued.net>
+X-Mailer: Claws Mail 3.7.6 (GTK+ 2.20.1; i486-pc-linux-gnu)
+Original-Sender: netdev-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <netdev.vger.kernel.org>
+X-Mailing-List: netdev@vger.kernel.org
+Xref: news.gmane.org gmane.linux.network:237651 gmane.linux.kernel:1330155 gmane.linux.kernel.wireless.general:95113 gmane.linux.drivers.platform.x86.devel:3614
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330155>
+
+The new EC driver calls platform-specific suspend and resume hooks; run
+XO-1-specific EC commands from there, rather than deep in s/r code.  If
+we attempt to run EC commands after the new EC driver has suspended, it
+is refused by the ec->suspended checks.
+
+Signed-off-by: Andres Salomon <dilinger@queued.net>
+---
+ arch/x86/platform/olpc/olpc-xo1-pm.c |   15 ------------
+ arch/x86/platform/olpc/olpc.c        |   43
+++++++++++++++++++++++++++++----- 2 files changed, 36 insertions(+), 22
+deletions(-)
+
+diff --git a/arch/x86/platform/olpc/olpc-xo1-pm.c
+b/arch/x86/platform/olpc/olpc-xo1-pm.c index 8054b64..d75582d 100644
+--- a/arch/x86/platform/olpc/olpc-xo1-pm.c
++++ b/arch/x86/platform/olpc/olpc-xo1-pm.c
+@@ -52,16 +52,11 @@ EXPORT_SYMBOL_GPL(olpc_xo1_pm_wakeup_clear);
+ static int xo1_power_state_enter(suspend_state_t pm_state)
+ {
+ 	unsigned long saved_sci_mask;
+-	int r;
+ 
+ 	/* Only STR is supported */
+ 	if (pm_state != PM_SUSPEND_MEM)
+ 		return -EINVAL;
+ 
+-	r = olpc_ec_cmd(EC_SET_SCI_INHIBIT, NULL, 0, NULL, 0);
+-	if (r)
+-		return r;
+-
+ 	/*
+ 	 * Save SCI mask (this gets lost since PM1_EN is used as a
+mask for
+ 	 * wakeup events, which is not necessarily the same event set)
+@@ -77,16 +72,6 @@ static int xo1_power_state_enter(suspend_state_t
+pm_state) /* Restore SCI mask (using dword access to CS5536_PM1_EN) */
+ 	outl(saved_sci_mask, acpi_base + CS5536_PM1_STS);
+ 
+-	/* Tell the EC to stop inhibiting SCIs */
+-	olpc_ec_cmd(EC_SET_SCI_INHIBIT_RELEASE, NULL, 0, NULL, 0);
+-
+-	/*
+-	 * Tell the wireless module to restart USB communication.
+-	 * Must be done twice.
+-	 */
+-	olpc_ec_cmd(EC_WAKE_UP_WLAN, NULL, 0, NULL, 0);
+-	olpc_ec_cmd(EC_WAKE_UP_WLAN, NULL, 0, NULL, 0);
+-
+ 	return 0;
+ }
+ 
+diff --git a/arch/x86/platform/olpc/olpc.c
+b/arch/x86/platform/olpc/olpc.c index ed41b43..2737608 100644
+--- a/arch/x86/platform/olpc/olpc.c
++++ b/arch/x86/platform/olpc/olpc.c
+@@ -263,11 +263,6 @@ int olpc_ec_sci_query(u16 *sci_value)
+ }
+ EXPORT_SYMBOL_GPL(olpc_ec_sci_query);
+ 
+-static int olpc_ec_suspend(struct platform_device *pdev)
+-{
+-	return olpc_ec_mask_write(ec_wakeup_mask);
+-}
+-
+ static bool __init check_ofw_architecture(struct device_node *root)
+ {
+ 	const char *olpc_arch;
+@@ -339,9 +334,40 @@ static int olpc_xo1_ec_probe(struct
+platform_device *pdev) 
+ 	return 0;
+ }
++static int olpc_xo1_ec_suspend(struct platform_device *pdev)
++{
++	olpc_ec_mask_write(ec_wakeup_mask);
++
++	/*
++	 * Squelch SCIs while suspended.  This is a fix for
++	 * <http://dev.laptop.org/ticket/1835>.
++	 */
++	return olpc_ec_cmd(EC_SET_SCI_INHIBIT, NULL, 0, NULL, 0);
++}
++
++static int olpc_xo1_ec_resume(struct platform_device *pdev)
++{
++	/* Tell the EC to stop inhibiting SCIs */
++	olpc_ec_cmd(EC_SET_SCI_INHIBIT_RELEASE, NULL, 0, NULL, 0);
++
++	/*
++	 * Tell the wireless module to restart USB communication.
++	 * Must be done twice.
++	 */
++	olpc_ec_cmd(EC_WAKE_UP_WLAN, NULL, 0, NULL, 0);
++	olpc_ec_cmd(EC_WAKE_UP_WLAN, NULL, 0, NULL, 0);
++
++	return 0;
++}
+ 
+ static struct olpc_ec_driver ec_xo1_driver = {
+-	.suspend = olpc_ec_suspend,
++	.probe = olpc_xo1_ec_probe,
++	.suspend = olpc_xo1_ec_suspend,
++	.resume = olpc_xo1_ec_resume,
++	.ec_cmd = olpc_xo1_ec_cmd,
++};
++
++static struct olpc_ec_driver ec_xo1_5_driver = {
+ 	.probe = olpc_xo1_ec_probe,
+ 	.ec_cmd = olpc_xo1_ec_cmd,
+ };
+@@ -354,7 +380,10 @@ static int __init olpc_init(void)
+ 		return 0;
+ 
+ 	/* register the XO-1 and 1.5-specific EC handler */
+-	olpc_ec_driver_register(&ec_xo1_driver, NULL);
++	if (olpc_platform_info.boardrev <
+olpc_board_pre(0xd0))	/* XO-1 */
++		olpc_ec_driver_register(&ec_xo1_driver, NULL);
++	else
++		olpc_ec_driver_register(&ec_xo1_5_driver, NULL);
+ 	platform_device_register_simple("olpc-ec", -1, NULL, 0);
+ 
+ 	/* assume B1 and above models always have a DCON */
+-- 
+1.7.2.5
+

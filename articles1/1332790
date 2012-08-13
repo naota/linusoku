@@ -1,0 +1,91 @@
+Path: news.gmane.org!not-for-mail
+From: "Jan Beulich" <JBeulich@suse.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] x86: adjust generic_get_mtrr() for 64-bit
+Date: Wed, 25 Jul 2012 08:51:42 +0100
+Lines: 43
+Approved: news@gmane.org
+Message-ID: <500FC1AE020000780009059E@nat28.tlf.novell.com>
+References: <4FF70EFC020000780008E195@nat28.tlf.novell.com>
+ <CAE9FiQUNC2e03k=ECkQQU4732mGL-xidDyauAy0CdWjDg=EG8Q@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=US-ASCII
+Content-Transfer-Encoding: 8BIT
+X-Trace: dough.gmane.org 1343202723 28918 80.91.229.3 (25 Jul 2012 07:52:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 07:52:03 +0000 (UTC)
+Cc: <mingo@elte.hu>, <tglx@linutronix.de>,
+	<linux-kernel@vger.kernel.org>, <hpa@zytor.com>
+To: "Yinghai Lu" <yinghai@kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 09:52:00 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StwO0-0008MF-3J
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 09:52:00 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755853Ab2GYHvw (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 03:51:52 -0400
+Original-Received: from nat28.tlf.novell.com ([130.57.49.28]:46100 "EHLO
+	nat28.tlf.novell.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754857Ab2GYHvv convert rfc822-to-8bit (ORCPT
+	<rfc822;groupwise-linux-kernel@vger.kernel.org:4:1>);
+	Wed, 25 Jul 2012 03:51:51 -0400
+Original-Received: from EMEA1-MTA by nat28.tlf.novell.com
+	with Novell_GroupWise; Wed, 25 Jul 2012 08:51:49 +0100
+X-Mailer: Novell GroupWise Internet Agent 12.0.0 
+In-Reply-To: <CAE9FiQUNC2e03k=ECkQQU4732mGL-xidDyauAy0CdWjDg=EG8Q@mail.gmail.com>
+Content-Disposition: inline
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332790
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332790>
+
+>>> On 06.07.12 at 23:38, Yinghai Lu <yinghai@kernel.org> wrote:
+> On Fri, Jul 6, 2012 at 7:14 AM, Jan Beulich <JBeulich@suse.com> wrote:
+>> Needing to deal with potentially large memory configurations, the
+>> variables here should be "unsigned long" instead of "unsigned int".
+>>
+>> Signed-off-by: Jan Beulich <jbeulich@suse.com>
+>>
+>> ---
+>>  arch/x86/kernel/cpu/mtrr/generic.c |    8 ++++----
+>>  1 file changed, 4 insertions(+), 4 deletions(-)
+>>
+>> --- 3.5-rc5/arch/x86/kernel/cpu/mtrr/generic.c
+>> +++ 3.5-rc5-x86-mtrr-generic-types/arch/x86/kernel/cpu/mtrr/generic.c
+>> @@ -514,8 +514,8 @@ generic_get_free_region(unsigned long ba
+>>  static void generic_get_mtrr(unsigned int reg, unsigned long *base,
+>>                              unsigned long *size, mtrr_type *type)
+>>  {
+>> -       unsigned int mask_lo, mask_hi, base_lo, base_hi;
+>> -       unsigned int tmp, hi;
+>> +       unsigned long mask_lo, mask_hi, base_lo, base_hi, tmp;
+>> +       unsigned int hi;
+> 
+> _lo, _hi means we want it as 32bit.
+> 
+> or we just change them to u32 to make it more clear ?
+
+Actually, as I was about to do the adjustment, this isn't correct:
+Both mask_hi and base_hi get shifted left in some calculations
+there, and hence they would require up-casts to unsigned long
+if their type would remain a 32-bit one. Further, mask_lo gets
+or-ed with size_or_mask, which is u64, the result compared
+with tmp (now unsigned long), and the same result also negated
+so the *size (also unsigned long), so needs to be unsigned long
+itself unless we want to introduce another variable.
+
+That leaves only base_lo as a candidate for remaining 32-bit,
+but for consistency I think it would be better to have them all
+have the same type.
+
+Consequently I think the patch should remain as is.
+
+Jan
+

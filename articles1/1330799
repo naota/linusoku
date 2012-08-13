@@ -1,0 +1,210 @@
+Path: news.gmane.org!not-for-mail
+From: Maxim Patlasov <mpatlasov-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+Newsgroups: gmane.comp.file-systems.fuse.devel,gmane.linux.kernel,gmane.linux.openvz.devel
+Subject: [PATCH 4/4] fuse: re-work fuse_direct_IO()
+Date: Fri, 20 Jul 2012 15:50:55 +0400
+Lines: 141
+Approved: news@gmane.org
+Message-ID: <20120720115052.15517.93074.stgit@maximpc.sw.ru>
+References: <20120720114653.15517.74290.stgit@maximpc.sw.ru>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342785087 24664 80.91.229.3 (20 Jul 2012 11:51:27 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 11:51:27 +0000 (UTC)
+Cc: fuse-devel-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org, linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org,
+	devel-GEFAQzZX7r8dnm+yROfE0A@public.gmane.org
+To: miklos-sUDqSbJrdHQHWmgEVkV9KA@public.gmane.org
+Original-X-From: fuse-devel-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org Fri Jul 20 13:51:25 2012
+Return-path: <fuse-devel-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>
+Envelope-to: gcffd-fuse-devel@m.gmane.org
+Original-Received: from lists.sourceforge.net ([216.34.181.88])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <fuse-devel-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>)
+	id 1SsBjs-0004jq-Mu
+	for gcffd-fuse-devel@m.gmane.org; Fri, 20 Jul 2012 13:51:21 +0200
+Original-Received: from localhost ([127.0.0.1] helo=sfs-ml-1.v29.ch3.sourceforge.com)
+	by sfs-ml-1.v29.ch3.sourceforge.com with esmtp (Exim 4.76)
+	(envelope-from <fuse-devel-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>)
+	id 1SsBjp-0002zX-Pi; Fri, 20 Jul 2012 11:51:17 +0000
+Original-Received: from sog-mx-3.v43.ch3.sourceforge.com ([172.29.43.193]
+	helo=mx.sourceforge.net)
+	by sfs-ml-1.v29.ch3.sourceforge.com with esmtp (Exim 4.76)
+	(envelope-from <mpatlasov-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>) id 1SsBjp-0002zO-3p
+	for fuse-devel-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org; Fri, 20 Jul 2012 11:51:17 +0000
+Received-SPF: neutral (sog-mx-3.v43.ch3.sourceforge.com: 195.214.232.25 is
+	neither permitted nor denied by domain of parallels.com)
+	client-ip=195.214.232.25; envelope-from=mpatlasov-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org;
+	helo=relay.sw.ru; 
+Original-Received: from mailhub.sw.ru ([195.214.232.25] helo=relay.sw.ru)
+	by sog-mx-3.v43.ch3.sourceforge.com with esmtps (TLSv1:AES256-SHA:256)
+	(Exim 4.76) id 1SsBjj-0004HA-E3
+	for fuse-devel-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org; Fri, 20 Jul 2012 11:51:17 +0000
+Original-Received: from maximpc.sw.ru ([10.30.17.2])
+	by relay.sw.ru (8.13.4/8.13.4) with ESMTP id q6KBp3l4020701;
+	Fri, 20 Jul 2012 15:51:04 +0400 (MSK)
+In-Reply-To: <20120720114653.15517.74290.stgit-vWG5eQQidJHciZdyczg/7Q@public.gmane.org>
+User-Agent: StGit/0.15
+X-Spam-Score: 0.7 (/)
+X-Spam-Report: Spam Filtering performed by mx.sourceforge.net.
+	See http://spamassassin.org/tag/ for more details.
+	0.7 SPF_NEUTRAL SPF: sender does not match SPF record (neutral)
+X-Headers-End: 1SsBjj-0004HA-E3
+X-BeenThere: fuse-devel-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org
+X-Mailman-Version: 2.1.9
+Precedence: list
+List-Id: <fuse-devel.lists.sourceforge.net>
+List-Unsubscribe: <https://lists.sourceforge.net/lists/listinfo/fuse-devel>,
+	<mailto:fuse-devel-request-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org?subject=unsubscribe>
+List-Archive: <http://sourceforge.net/mailarchive/forum.php?forum_name=fuse-devel>
+List-Post: <mailto:fuse-devel-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>
+List-Help: <mailto:fuse-devel-request-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org?subject=help>
+List-Subscribe: <https://lists.sourceforge.net/lists/listinfo/fuse-devel>,
+	<mailto:fuse-devel-request-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org?subject=subscribe>
+Errors-To: fuse-devel-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org
+Xref: news.gmane.org gmane.comp.file-systems.fuse.devel:11858 gmane.linux.kernel:1330799 gmane.linux.openvz.devel:1861
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330799>
+
+The patch eliminates fuse_loop_dio() by passing iovec[] transparently
+from fuse_direct_IO() to __fuse_direct_io(). The latter is responsible now
+for processing elements of iovec[]. This allows __fuse_direct_io() to pack
+many iovec-s to each fuse_req, effectively minimizing number of fuse_req-s
+required.
+
+Signed-off-by: Maxim Patlasov <mpatlasov-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+---
+ fs/fuse/file.c |   64 ++++++++++++++++++--------------------------------------
+ 1 files changed, 21 insertions(+), 43 deletions(-)
+
+diff --git a/fs/fuse/file.c b/fs/fuse/file.c
+index 6c8e24f..0355128 100644
+--- a/fs/fuse/file.c
++++ b/fs/fuse/file.c
+@@ -1158,8 +1158,8 @@ ssize_t fuse_direct_io(struct file *file, const char __user *buf,
+ }
+ EXPORT_SYMBOL_GPL(fuse_direct_io);
+ 
+-static ssize_t fuse_direct_read(struct file *file, char __user *buf,
+-				     size_t count, loff_t *ppos)
++static ssize_t __fuse_direct_read(struct file *file, const struct iovec *iov,
++				  unsigned long nr_segs, loff_t *ppos)
+ {
+ 	ssize_t res;
+ 	struct inode *inode = file->f_path.dentry->d_inode;
+@@ -1167,22 +1167,31 @@ static ssize_t fuse_direct_read(struct file *file, char __user *buf,
+ 	if (is_bad_inode(inode))
+ 		return -EIO;
+ 
+-	res = fuse_direct_io(file, buf, count, ppos, 0);
++	res = __fuse_direct_io(file, iov, nr_segs, iov_length(iov, nr_segs),
++			       ppos, 0);
+ 
+ 	fuse_invalidate_attr(inode);
+ 
+ 	return res;
+ }
+ 
+-static ssize_t __fuse_direct_write(struct file *file, const char __user *buf,
+-				   size_t count, loff_t *ppos)
++static ssize_t fuse_direct_read(struct file *file, char __user *buf,
++				     size_t count, loff_t *ppos)
++{
++	struct iovec iov = { .iov_base = (void *)buf, .iov_len = count };
++	return __fuse_direct_read(file, &iov, 1, ppos);
++}
++
++static ssize_t __fuse_direct_write(struct file *file, const struct iovec *iov,
++				   unsigned long nr_segs, loff_t *ppos)
+ {
+ 	struct inode *inode = file->f_path.dentry->d_inode;
++	size_t count = iov_length(iov, nr_segs);
+ 	ssize_t res;
+ 
+ 	res = generic_write_checks(file, ppos, &count, 0);
+ 	if (!res) {
+-		res = fuse_direct_io(file, buf, count, ppos, 1);
++		res = __fuse_direct_io(file, iov, nr_segs, count, ppos, 1);
+ 		if (res > 0)
+ 			fuse_write_update_size(inode, *ppos);
+ 	}
+@@ -1195,6 +1204,7 @@ static ssize_t __fuse_direct_write(struct file *file, const char __user *buf,
+ static ssize_t fuse_direct_write(struct file *file, const char __user *buf,
+ 				 size_t count, loff_t *ppos)
+ {
++	struct iovec iov = { .iov_base = (void *)buf, .iov_len = count };
+ 	struct inode *inode = file->f_path.dentry->d_inode;
+ 	ssize_t res;
+ 
+@@ -1203,7 +1213,7 @@ static ssize_t fuse_direct_write(struct file *file, const char __user *buf,
+ 
+ 	/* Don't allow parallel writes to the same file */
+ 	mutex_lock(&inode->i_mutex);
+-	res = __fuse_direct_write(file, buf, count, ppos);
++	res = __fuse_direct_write(file, &iov, 1, ppos);
+ 	mutex_unlock(&inode->i_mutex);
+ 
+ 	return res;
+@@ -2161,41 +2171,6 @@ int fuse_notify_poll_wakeup(struct fuse_conn *fc,
+ 	return 0;
+ }
+ 
+-static ssize_t fuse_loop_dio(struct file *filp, const struct iovec *iov,
+-			     unsigned long nr_segs, loff_t *ppos, int rw)
+-{
+-	const struct iovec *vector = iov;
+-	ssize_t ret = 0;
+-
+-	while (nr_segs > 0) {
+-		void __user *base;
+-		size_t len;
+-		ssize_t nr;
+-
+-		base = vector->iov_base;
+-		len = vector->iov_len;
+-		vector++;
+-		nr_segs--;
+-
+-		if (rw == WRITE)
+-			nr = __fuse_direct_write(filp, base, len, ppos);
+-		else
+-			nr = fuse_direct_read(filp, base, len, ppos);
+-
+-		if (nr < 0) {
+-			if (!ret)
+-				ret = nr;
+-			break;
+-		}
+-		ret += nr;
+-		if (nr != len)
+-			break;
+-	}
+-
+-	return ret;
+-}
+-
+-
+ static ssize_t
+ fuse_direct_IO(int rw, struct kiocb *iocb, const struct iovec *iov,
+ 			loff_t offset, unsigned long nr_segs)
+@@ -2207,7 +2182,10 @@ fuse_direct_IO(int rw, struct kiocb *iocb, const struct iovec *iov,
+ 	file = iocb->ki_filp;
+ 	pos = offset;
+ 
+-	ret = fuse_loop_dio(file, iov, nr_segs, &pos, rw);
++	if (rw == WRITE)
++		ret = __fuse_direct_write(file, iov, nr_segs, &pos);
++	else
++		ret = __fuse_direct_read(file, iov, nr_segs, &pos);
+ 
+ 	return ret;
+ }
+
+
+------------------------------------------------------------------------------
+Live Security Virtual Conference
+Exclusive live event will cover all the ways today's security and 
+threat landscape has changed and how IT managers can respond. Discussions 
+will include endpoint security, mobile security and the latest in malware 
+threats. http://www.accelacomm.com/jaw/sfrnl04242012/114/50122263/

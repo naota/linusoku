@@ -1,0 +1,140 @@
+Path: news.gmane.org!not-for-mail
+From: Witold Szczeponik <Witold.Szczeponik@gmx.net>
+Newsgroups: gmane.linux.acpi.devel,gmane.linux.kernel
+Subject: [PATCH V3 3/3] PNP: Handle IORESOURCE_BITS in resource allocation
+Date: Sun, 29 Jul 2012 20:49:51 +0200
+Lines: 90
+Approved: news@gmane.org
+Message-ID: <501585CF.2070307@gmx.net>
+References: <50158321.4030007@gmx.net>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343587799 8262 80.91.229.3 (29 Jul 2012 18:49:59 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 29 Jul 2012 18:49:59 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, linux-acpi@vger.kernel.org
+To: bhelgaas@google.com, lenb@kernel.org
+Original-X-From: linux-acpi-owner@vger.kernel.org Sun Jul 29 20:49:59 2012
+Return-path: <linux-acpi-owner@vger.kernel.org>
+Envelope-to: glad-acpi-devel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-acpi-owner@vger.kernel.org>)
+	id 1SvYYu-0006lw-KF
+	for glad-acpi-devel@plane.gmane.org; Sun, 29 Jul 2012 20:49:56 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753384Ab2G2Sty (ORCPT <rfc822;glad-acpi-devel@m.gmane.org>);
+	Sun, 29 Jul 2012 14:49:54 -0400
+Original-Received: from mailout-de.gmx.net ([213.165.64.22]:47875 "HELO
+	mailout-de.gmx.net" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with SMTP id S1753375Ab2G2Sty (ORCPT
+	<rfc822;linux-acpi@vger.kernel.org>); Sun, 29 Jul 2012 14:49:54 -0400
+Original-Received: (qmail invoked by alias); 29 Jul 2012 18:49:52 -0000
+Original-Received: from mnhm-590c28e3.pool.mediaWays.net (EHLO [10.239.1.176]) [89.12.40.227]
+  by mail.gmx.net (mp034) with SMTP; 29 Jul 2012 20:49:52 +0200
+X-Authenticated: #787645
+X-Provags-ID: V01U2FsdGVkX18QP/Ns74MQa/FQrHOR8TUhTp3ieEqaP0C0o4vefH
+	Ek1tdC+MlwK9Ip
+User-Agent: Mozilla/5.0 (X11; Linux i686; rv:14.0) Gecko/20120714 Thunderbird/14.0
+In-Reply-To: <50158321.4030007@gmx.net>
+X-Enigmail-Version: 1.5a1pre
+X-Y-GMX-Trusted: 0
+Original-Sender: linux-acpi-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-acpi.vger.kernel.org>
+X-Mailing-List: linux-acpi@vger.kernel.org
+Xref: news.gmane.org gmane.linux.acpi.devel:54666 gmane.linux.kernel:1334779
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334779>
+
+The patch copies the flags masked by IORESOURCE_BITS from a resource's 
+template.  This is necessary because the resource settings require proper
+IORESOURCE_BITS which are not known during the definition of these resources 
+using the "/sys/bus/pnp/*/*/resources" interface.  (In fact, they should not 
+be set by the user as the resource templates define the proper settings.)
+
+If the patch is not applied, the resource flags are not initialized properly 
+and obscure messages in the kernel log have been seen ("invalid flags").  
+
+The patch is applied against Linux 3.5.x.
+
+
+Signed-off-by: Witold Szczeponik <Witold.Szczeponik@gmx.net>
+Reviewed-by: Bjorn Helgaas <bhelgaas@google.com>
+
+
+Index: linux/drivers/pnp/manager.c
+===================================================================
+--- linux.orig/drivers/pnp/manager.c
++++ linux/drivers/pnp/manager.c
+@@ -18,11 +18,27 @@
+ 
+ DEFINE_MUTEX(pnp_res_mutex);
+ 
++static struct resource *pnp_find_resource(struct pnp_dev *dev,
++					  unsigned char rule,
++					  unsigned long type,
++					  unsigned int bar)
++{
++	struct resource *res = pnp_get_resource(dev, type, bar);
++
++	/* when the resource already exists, set its resource bits from rule */
++	if (res) {
++		res->flags &= ~IORESOURCE_BITS;
++		res->flags |= rule & IORESOURCE_BITS;
++	}
++
++	return res;
++}
++
+ static int pnp_assign_port(struct pnp_dev *dev, struct pnp_port *rule, int idx)
+ {
+ 	struct resource *res, local_res;
+ 
+-	res = pnp_get_resource(dev, IORESOURCE_IO, idx);
++	res = pnp_find_resource(dev, rule->flags, IORESOURCE_IO, idx);
+ 	if (res) {
+ 		pnp_dbg(&dev->dev, "  io %d already set to %#llx-%#llx "
+ 			"flags %#lx\n", idx, (unsigned long long) res->start,
+@@ -65,7 +81,7 @@ static int pnp_assign_mem(struct pnp_dev
+ {
+ 	struct resource *res, local_res;
+ 
+-	res = pnp_get_resource(dev, IORESOURCE_MEM, idx);
++	res = pnp_find_resource(dev, rule->flags, IORESOURCE_MEM, idx);
+ 	if (res) {
+ 		pnp_dbg(&dev->dev, "  mem %d already set to %#llx-%#llx "
+ 			"flags %#lx\n", idx, (unsigned long long) res->start,
+@@ -78,6 +94,7 @@ static int pnp_assign_mem(struct pnp_dev
+ 	res->start = 0;
+ 	res->end = 0;
+ 
++	/* ??? rule->flags restricted to 8 bits, all tests bogus ??? */
+ 	if (!(rule->flags & IORESOURCE_MEM_WRITEABLE))
+ 		res->flags |= IORESOURCE_READONLY;
+ 	if (rule->flags & IORESOURCE_MEM_CACHEABLE)
+@@ -123,7 +140,7 @@ static int pnp_assign_irq(struct pnp_dev
+ 		5, 10, 11, 12, 9, 14, 15, 7, 3, 4, 13, 0, 1, 6, 8, 2
+ 	};
+ 
+-	res = pnp_get_resource(dev, IORESOURCE_IRQ, idx);
++	res = pnp_find_resource(dev, rule->flags, IORESOURCE_IRQ, idx);
+ 	if (res) {
+ 		pnp_dbg(&dev->dev, "  irq %d already set to %d flags %#lx\n",
+ 			idx, (int) res->start, res->flags);
+@@ -182,7 +199,7 @@ static int pnp_assign_dma(struct pnp_dev
+ 		1, 3, 5, 6, 7, 0, 2, 4
+ 	};
+ 
+-	res = pnp_get_resource(dev, IORESOURCE_DMA, idx);
++	res = pnp_find_resource(dev, rule->flags, IORESOURCE_DMA, idx);
+ 	if (res) {
+ 		pnp_dbg(&dev->dev, "  dma %d already set to %d flags %#lx\n",
+ 			idx, (int) res->start, res->flags);
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-acpi" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

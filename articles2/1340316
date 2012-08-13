@@ -1,0 +1,143 @@
+Path: news.gmane.org!not-for-mail
+From: Stephen Warren <swarren@wwwdotorg.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH V2 1/3] regulator: add always set/clear masks to regulator_enable_regmap
+Date: Wed,  8 Aug 2012 15:18:45 -0600
+Lines: 90
+Approved: news@gmane.org
+Message-ID: <1344460727-6243-1-git-send-email-swarren@wwwdotorg.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344460757 14575 80.91.229.3 (8 Aug 2012 21:19:17 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 21:19:17 +0000 (UTC)
+Cc: Laxman Dewangan <ldewangan@nvidia.com>,
+	linux-kernel@vger.kernel.org, Stephen Warren <swarren@nvidia.com>
+To: Mark Brown <broonie@opensource.wolfsonmicro.com>,
+	Liam Girdwood <lrg@ti.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 23:19:16 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzDet-0005JN-EX
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 23:19:15 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030879Ab2HHVTJ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 17:19:09 -0400
+Original-Received: from avon.wwwdotorg.org ([70.85.31.133]:59528 "EHLO
+	avon.wwwdotorg.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753001Ab2HHVTF (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 17:19:05 -0400
+Original-Received: from severn.wwwdotorg.org (unknown [192.168.65.5])
+	(using TLSv1 with cipher ADH-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by avon.wwwdotorg.org (Postfix) with ESMTPS id 8CA17630D;
+	Wed,  8 Aug 2012 15:25:22 -0600 (MDT)
+Original-Received: from localhost.localdomain (searspoint.nvidia.com [216.228.112.21])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by severn.wwwdotorg.org (Postfix) with ESMTPSA id D53CFE40E5;
+	Wed,  8 Aug 2012 15:19:01 -0600 (MDT)
+X-Mailer: git-send-email 1.7.0.4
+X-NVConfidentiality: public
+X-Virus-Scanned: clamav-milter 0.96.5 at avon.wwwdotorg.org
+X-Virus-Status: Clean
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340316
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340316>
+
+From: Stephen Warren <swarren@nvidia.com>
+
+Some regulators need some register bits set or cleared in order to place
+them under software control. Add .en_dis_set_mask and .en_dis_clr_mask
+fields to struct regulator_desc. These can't be part of the existing
+.enable_mask field, whose bits are set when enabled and cleared when
+disabled, since the bits in this field need to be set/cleard irrespective
+of regulator state.
+
+Signed-off-by: Stephen Warren <swarren@nvidia.com>
+---
+v2: New patch
+
+ drivers/regulator/core.c         |   22 +++++++++++++++-------
+ include/linux/regulator/driver.h |    4 ++++
+ 2 files changed, 19 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/regulator/core.c b/drivers/regulator/core.c
+index b28221a..457be22 100644
+--- a/drivers/regulator/core.c
++++ b/drivers/regulator/core.c
+@@ -1762,14 +1762,18 @@ EXPORT_SYMBOL_GPL(regulator_is_enabled_regmap);
+  * @rdev: regulator to operate on
+  *
+  * Regulators that use regmap for their register I/O can set the
+- * enable_reg and enable_mask fields in their descriptor and then use
+- * this as their enable() operation, saving some code.
++ * enable_reg, enable_mask, en_dis_set_mask, and en_dis_clr_mask fields in
++ * their descriptor and then use this as their enable() operation, saving
++ * some code.
+  */
+ int regulator_enable_regmap(struct regulator_dev *rdev)
+ {
+ 	return regmap_update_bits(rdev->regmap, rdev->desc->enable_reg,
+-				  rdev->desc->enable_mask,
+-				  rdev->desc->enable_mask);
++				  rdev->desc->enable_mask |
++				  rdev->desc->en_dis_set_mask |
++				  rdev->desc->en_dis_clr_mask,
++				  rdev->desc->enable_mask |
++				  rdev->desc->en_dis_set_mask);
+ }
+ EXPORT_SYMBOL_GPL(regulator_enable_regmap);
+ 
+@@ -1779,13 +1783,17 @@ EXPORT_SYMBOL_GPL(regulator_enable_regmap);
+  * @rdev: regulator to operate on
+  *
+  * Regulators that use regmap for their register I/O can set the
+- * enable_reg and enable_mask fields in their descriptor and then use
+- * this as their disable() operation, saving some code.
++ * enable_reg, enable_mask, en_dis_set_mask, and en_dis_clr_mask fields in
++ * their descriptor and then use this as their disable() operation, saving
++ * some code.
+  */
+ int regulator_disable_regmap(struct regulator_dev *rdev)
+ {
+ 	return regmap_update_bits(rdev->regmap, rdev->desc->enable_reg,
+-				  rdev->desc->enable_mask, 0);
++				  rdev->desc->enable_mask |
++				  rdev->desc->en_dis_set_mask |
++				  rdev->desc->en_dis_clr_mask,
++				  rdev->desc->en_dis_set_mask);
+ }
+ EXPORT_SYMBOL_GPL(regulator_disable_regmap);
+ 
+diff --git a/include/linux/regulator/driver.h b/include/linux/regulator/driver.h
+index bac4c87..2c40c86 100644
+--- a/include/linux/regulator/driver.h
++++ b/include/linux/regulator/driver.h
+@@ -182,6 +182,8 @@ enum regulator_type {
+  * @vsel_mask: Mask for register bitfield used for selector
+  * @enable_reg: Register for control when using regmap enable/disable ops
+  * @enable_mask: Mask for control when using regmap enable/disable ops
++ * @en_dis_set_mask: Mask to always set when using regmap enable/disable ops
++ * @en_dis_clr_mask: Mask to always clear when using regmap enable/disable ops
+  *
+  * @enable_time: Time taken for initial enable of regulator (in uS).
+  */
+@@ -205,6 +207,8 @@ struct regulator_desc {
+ 	unsigned int vsel_mask;
+ 	unsigned int enable_reg;
+ 	unsigned int enable_mask;
++	unsigned int en_dis_set_mask;
++	unsigned int en_dis_clr_mask;
+ 
+ 	unsigned int enable_time;
+ };
+-- 
+1.7.0.4
+

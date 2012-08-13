@@ -1,0 +1,150 @@
+Path: news.gmane.org!not-for-mail
+From: Ingo Molnar <mingo@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] time: Fix adjustment cleanup bug in timekeeping_adjust()
+Date: Sat, 4 Aug 2012 21:21:14 +0200
+Lines: 83
+Approved: news@gmane.org
+Message-ID: <20120804192114.GA28347@gmail.com>
+References: <201208032318.FGJ64576.tOMVLOFHFQOFJS@I-love.SAKURA.ne.jp>
+ <201208042024.GFG34353.OFtFVQJMLOHFSO@I-love.SAKURA.ne.jp>
+ <201208042110.EFH81212.OSVOLMOtFQHJFF@I-love.SAKURA.ne.jp>
+ <201208042246.HBH81275.FVOOSLtJFMQOFH@I-love.SAKURA.ne.jp>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344108105 3153 80.91.229.3 (4 Aug 2012 19:21:45 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 4 Aug 2012 19:21:45 +0000 (UTC)
+Cc: john.stultz@linaro.org, tglx@linutronix.de, a.p.zijlstra@chello.nl,
+	richardcochran@gmail.com, prarit@redhat.com,
+	linux-kernel@vger.kernel.org
+To: Tetsuo Handa <penguin-kernel@I-love.SAKURA.ne.jp>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Aug 04 21:21:39 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sxjuj-0000v1-2v
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 04 Aug 2012 21:21:29 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754108Ab2HDTVX (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 4 Aug 2012 15:21:23 -0400
+Original-Received: from mail-wi0-f172.google.com ([209.85.212.172]:54671 "EHLO
+	mail-wi0-f172.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754056Ab2HDTVT (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 4 Aug 2012 15:21:19 -0400
+Original-Received: by wibhm11 with SMTP id hm11so529146wib.1
+        for <linux-kernel@vger.kernel.org>; Sat, 04 Aug 2012 12:21:18 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:date:from:to:cc:subject:message-id:references:mime-version
+         :content-type:content-disposition:in-reply-to:user-agent;
+        bh=TaS8Xzfo1romDZBlVwtEZ/565H+/Zrsbp6JYZ0M967I=;
+        b=rUn9WrfCSU03U3RRqZj5btcDSePDyb0Bg9jHxXIBtxXRZPgq1XK8B/vKDy385v9sfR
+         +U4Zi1nmz3a47uvirqpFUgQuQupunWDYsriAZeHJHRCu6kFxUJBJC4fgtxPTlDqslILJ
+         EVD74tbouT8stB38C5c9DDkUXkmra0SIkzd7W38IvmrAiEXxqfezGDDxusnlPnBS0VP4
+         MBvFHAAY5kBD6OOi5Rf5N9SqOgqQLoxkUU/onrCO70rMVfZfrtgD3UxdQ46PRxKOdcuc
+         OL+JjK5PI6T0eimWoTg201vJfzBstH5xy07mqPqMICqXNt6gf4yUkUu138hM4DtmEmbX
+         v6ZQ==
+Original-Received: by 10.180.107.2 with SMTP id gy2mr6069288wib.2.1344108078332;
+        Sat, 04 Aug 2012 12:21:18 -0700 (PDT)
+Original-Received: from gmail.com (54033750.catv.pool.telekom.hu. [84.3.55.80])
+        by mx.google.com with ESMTPS id o2sm7519507wiz.11.2012.08.04.12.21.16
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Sat, 04 Aug 2012 12:21:17 -0700 (PDT)
+Content-Disposition: inline
+In-Reply-To: <201208042246.HBH81275.FVOOSLtJFMQOFH@I-love.SAKURA.ne.jp>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337728
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337728>
+
+
+* Tetsuo Handa <penguin-kernel@I-love.SAKURA.ne.jp> wrote:
+
+> Hello.
+> 
+> Bisected to 2a8c0883 "time: Move xtime_nsec adjustment 
+> underflow handling timekeeping_adjust".
+> 
+> Would you check?
+
+probably caused by this stray return in timekeeping_adjust():
+
+        } else
+                return;
+
+which should really be a proper goto - like the (totally 
+untested!) patch below.
+
+Does this fix the bug for you?
+
+Thanks,
+
+	Ingo
+
+-------------
+
+Subject: time: Fix adjustment cleanup bug in timekeeping_adjust()
+
+Also make the flow more readable by properly balancing curly 
+braces.
+
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+
+
+diff --git a/kernel/time/timekeeping.c b/kernel/time/timekeeping.c
+index 2988bc8..e16af19 100644
+--- a/kernel/time/timekeeping.c
++++ b/kernel/time/timekeeping.c
+@@ -923,20 +923,22 @@ static void timekeeping_adjust(struct timekeeper *tk, s64 offset)
+ 		if (likely(error <= interval))
+ 			adj = 1;
+ 		else
+-			adj = timekeeping_bigadjust(tk, error, &interval,
+-							&offset);
+-	} else if (error < -interval) {
+-		/* See comment above, this is just switched for the negative */
+-		error >>= 2;
+-		if (likely(error >= -interval)) {
+-			adj = -1;
+-			interval = -interval;
+-			offset = -offset;
+-		} else
+-			adj = timekeeping_bigadjust(tk, error, &interval,
+-							&offset);
+-	} else
+-		return;
++			adj = timekeeping_bigadjust(tk, error, &interval, &offset);
++	} else {
++		if (error < -interval) {
++			/* See comment above, this is just switched for the negative */
++			error >>= 2;
++			if (likely(error >= -interval)) {
++				adj = -1;
++				interval = -interval;
++				offset = -offset;
++			} else {
++				adj = timekeeping_bigadjust(tk, error, &interval, &offset);
++			}
++		} else {
++			goto out_adjust;
++		}
++	}
+ 
+ 	if (unlikely(tk->clock->maxadj &&
+ 		(tk->mult + adj > tk->clock->mult + tk->clock->maxadj))) {
+@@ -999,6 +1001,7 @@ static void timekeeping_adjust(struct timekeeper *tk, s64 offset)
+ 	tk->xtime_nsec -= offset;
+ 	tk->ntp_error -= (interval - offset) << tk->ntp_error_shift;
+ 
++out_adjust:
+ 	/*
+ 	 * It may be possible that when we entered this function, xtime_nsec
+ 	 * was very small.  Further, if we're slightly speeding the clocksource

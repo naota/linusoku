@@ -1,0 +1,1228 @@
+Path: news.gmane.org!not-for-mail
+From: Jiri Olsa <jolsa@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 12/13] perf, tool: Support for dwarf cfi unwinding on post processing
+Date: Fri, 27 Jul 2012 14:23:53 +0200
+Lines: 1177
+Approved: news@gmane.org
+Message-ID: <1343391834-10851-13-git-send-email-jolsa@redhat.com>
+References: <1343391834-10851-1-git-send-email-jolsa@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343391947 13295 80.91.229.3 (27 Jul 2012 12:25:47 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 12:25:47 +0000 (UTC)
+Cc: eranian@google.com, gorcunov@openvz.org, tzanussi@gmail.com,
+	mhiramat@redhat.com, robert.richter@amd.com, fche@redhat.com,
+	linux-kernel@vger.kernel.org, masami.hiramatsu.pt@hitachi.com,
+	drepper@gmail.com, asharma@fb.com, benjamin.redelings@nescent.org,
+	Jiri Olsa <jolsa@redhat.com>
+To: acme@redhat.com, a.p.zijlstra@chello.nl, mingo@elte.hu,
+	paulus@samba.org, cjashfor@linux.vnet.ibm.com, fweisbec@gmail.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 14:25:40 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sujbu-0002wb-Jd
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 14:25:39 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752890Ab2G0MZM (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 08:25:12 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:17874 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751316Ab2G0MZH (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 08:25:07 -0400
+Original-Received: from int-mx01.intmail.prod.int.phx2.redhat.com (int-mx01.intmail.prod.int.phx2.redhat.com [10.5.11.11])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6RCOpFX000612
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Fri, 27 Jul 2012 08:24:51 -0400
+Original-Received: from krava.brq.redhat.com (dhcp-1-202.brq.redhat.com [10.34.1.202])
+	by int-mx01.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with ESMTP id q6RCNsdU004181;
+	Fri, 27 Jul 2012 08:24:47 -0400
+In-Reply-To: <1343391834-10851-1-git-send-email-jolsa@redhat.com>
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.11
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334271
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334271>
+
+This brings the support for dwarf cfi unwinding on perf post
+processing. Call frame informations are retrieved and then passed
+to libunwind that requests memory and register content from the
+applications.
+
+Adding unwind object to handle the user stack backtrace based
+on the user register values and user stack dump.
+
+The unwind object access the libunwind via remote interface
+and provides to it all the necessary data to unwind the stack.
+
+The unwind interface provides following function:
+	unwind__get_entries
+
+And callback (specified in above function) to retrieve
+the backtrace entries:
+	typedef int (*unwind_entry_cb_t)(struct unwind_entry *entry,
+					 void *arg);
+
+Signed-off-by: Jiri Olsa <jolsa@redhat.com>
+Original-patch-by: Frederic Weisbecker <fweisbec@gmail.com>
+---
+ tools/perf/Makefile                                |    2 +
+ tools/perf/arch/x86/Makefile                       |    3 +
+ tools/perf/arch/x86/util/unwind.c                  |  111 ++++
+ tools/perf/builtin-report.c                        |   24 +-
+ tools/perf/builtin-script.c                        |   16 +-
+ tools/perf/builtin-top.c                           |    5 +-
+ tools/perf/util/include/linux/compiler.h           |    1 +
+ tools/perf/util/map.h                              |    7 +-
+ .../perf/util/scripting-engines/trace-event-perl.c |    3 +-
+ .../util/scripting-engines/trace-event-python.c    |    3 +-
+ tools/perf/util/session.c                          |   61 ++-
+ tools/perf/util/session.h                          |    3 +-
+ tools/perf/util/trace-event-scripting.c            |    3 +-
+ tools/perf/util/trace-event.h                      |    5 +-
+ tools/perf/util/unwind.c                           |  567 ++++++++++++++++++++
+ tools/perf/util/unwind.h                           |   34 ++
+ 16 files changed, 811 insertions(+), 37 deletions(-)
+ create mode 100644 tools/perf/arch/x86/util/unwind.c
+ create mode 100644 tools/perf/util/unwind.c
+ create mode 100644 tools/perf/util/unwind.h
+
+diff --git a/tools/perf/Makefile b/tools/perf/Makefile
+index a1ee011..52e9e6c 100644
+--- a/tools/perf/Makefile
++++ b/tools/perf/Makefile
+@@ -328,6 +328,7 @@ LIB_H += util/cgroup.h
+ LIB_H += $(TRACE_EVENT_DIR)event-parse.h
+ LIB_H += util/target.h
+ LIB_H += util/perf_regs.h
++LIB_H += util/unwind.h
+ 
+ LIB_OBJS += $(OUTPUT)util/abspath.o
+ LIB_OBJS += $(OUTPUT)util/alias.o
+@@ -514,6 +515,7 @@ else
+ 	EXTLIBS += $(LIBUNWIND_LIBS)
+ 	BASIC_CFLAGS := $(LIBUNWIND_CFLAGS) $(BASIC_CFLAGS)
+ 	BASIC_LDFLAGS := $(LIBUNWIND_LDFLAGS) $(BASIC_LDFLAGS)
++	LIB_OBJS += $(OUTPUT)util/unwind.o
+ endif
+ 
+ ifdef NO_NEWT
+diff --git a/tools/perf/arch/x86/Makefile b/tools/perf/arch/x86/Makefile
+index 744e629..815841c 100644
+--- a/tools/perf/arch/x86/Makefile
++++ b/tools/perf/arch/x86/Makefile
+@@ -2,4 +2,7 @@ ifndef NO_DWARF
+ PERF_HAVE_DWARF_REGS := 1
+ LIB_OBJS += $(OUTPUT)arch/$(ARCH)/util/dwarf-regs.o
+ endif
++ifndef NO_LIBUNWIND
++LIB_OBJS += $(OUTPUT)arch/$(ARCH)/util/unwind.o
++endif
+ LIB_OBJS += $(OUTPUT)arch/$(ARCH)/util/header.o
+diff --git a/tools/perf/arch/x86/util/unwind.c b/tools/perf/arch/x86/util/unwind.c
+new file mode 100644
+index 0000000..78d956e
+--- /dev/null
++++ b/tools/perf/arch/x86/util/unwind.c
+@@ -0,0 +1,111 @@
++
++#include <errno.h>
++#include <libunwind.h>
++#include "perf_regs.h"
++#include "../../util/unwind.h"
++
++#ifdef ARCH_X86_64
++int unwind__arch_reg_id(int regnum)
++{
++	int id;
++
++	switch (regnum) {
++	case UNW_X86_64_RAX:
++		id = PERF_REG_X86_AX;
++		break;
++	case UNW_X86_64_RDX:
++		id = PERF_REG_X86_DX;
++		break;
++	case UNW_X86_64_RCX:
++		id = PERF_REG_X86_CX;
++		break;
++	case UNW_X86_64_RBX:
++		id = PERF_REG_X86_BX;
++		break;
++	case UNW_X86_64_RSI:
++		id = PERF_REG_X86_SI;
++		break;
++	case UNW_X86_64_RDI:
++		id = PERF_REG_X86_DI;
++		break;
++	case UNW_X86_64_RBP:
++		id = PERF_REG_X86_BP;
++		break;
++	case UNW_X86_64_RSP:
++		id = PERF_REG_X86_SP;
++		break;
++	case UNW_X86_64_R8:
++		id = PERF_REG_X86_R8;
++		break;
++	case UNW_X86_64_R9:
++		id = PERF_REG_X86_R9;
++		break;
++	case UNW_X86_64_R10:
++		id = PERF_REG_X86_R10;
++		break;
++	case UNW_X86_64_R11:
++		id = PERF_REG_X86_R11;
++		break;
++	case UNW_X86_64_R12:
++		id = PERF_REG_X86_R12;
++		break;
++	case UNW_X86_64_R13:
++		id = PERF_REG_X86_R13;
++		break;
++	case UNW_X86_64_R14:
++		id = PERF_REG_X86_R14;
++		break;
++	case UNW_X86_64_R15:
++		id = PERF_REG_X86_R15;
++		break;
++	case UNW_X86_64_RIP:
++		id = PERF_REG_X86_IP;
++		break;
++	default:
++		pr_err("unwind: invalid reg id %d\n", regnum);
++		return -EINVAL;
++	}
++
++	return id;
++}
++#else
++int unwind__arch_reg_id(int regnum)
++{
++	int id;
++
++	switch (regnum) {
++	case UNW_X86_EAX:
++		id = PERF_REG_X86_AX;
++		break;
++	case UNW_X86_EDX:
++		id = PERF_REG_X86_DX;
++		break;
++	case UNW_X86_ECX:
++		id = PERF_REG_X86_CX;
++		break;
++	case UNW_X86_EBX:
++		id = PERF_REG_X86_BX;
++		break;
++	case UNW_X86_ESI:
++		id = PERF_REG_X86_SI;
++		break;
++	case UNW_X86_EDI:
++		id = PERF_REG_X86_DI;
++		break;
++	case UNW_X86_EBP:
++		id = PERF_REG_X86_BP;
++		break;
++	case UNW_X86_ESP:
++		id = PERF_REG_X86_SP;
++		break;
++	case UNW_X86_EIP:
++		id = PERF_REG_X86_IP;
++		break;
++	default:
++		pr_err("unwind: invalid reg id %d\n", regnum);
++		return -EINVAL;
++	}
++
++	return id;
++}
++#endif /* ARCH_X86_64 */
+diff --git a/tools/perf/builtin-report.c b/tools/perf/builtin-report.c
+index 69b1c11..37cc80e 100644
+--- a/tools/perf/builtin-report.c
++++ b/tools/perf/builtin-report.c
+@@ -69,8 +69,8 @@ static int perf_report__add_branch_hist_entry(struct perf_tool *tool,
+ 
+ 	if ((sort__has_parent || symbol_conf.use_callchain)
+ 	    && sample->callchain) {
+-		err = machine__resolve_callchain(machine, al->thread,
+-						 sample->callchain, &parent);
++		err = machine__resolve_callchain(rep->session, machine,
++						 al->thread, sample, &parent);
+ 		if (err)
+ 			return err;
+ 	}
+@@ -130,7 +130,8 @@ out:
+ 	return err;
+ }
+ 
+-static int perf_evsel__add_hist_entry(struct perf_evsel *evsel,
++static int perf_evsel__add_hist_entry(struct perf_session *session,
++				      struct perf_evsel *evsel,
+ 				      struct addr_location *al,
+ 				      struct perf_sample *sample,
+ 				      struct machine *machine)
+@@ -140,8 +141,8 @@ static int perf_evsel__add_hist_entry(struct perf_evsel *evsel,
+ 	struct hist_entry *he;
+ 
+ 	if ((sort__has_parent || symbol_conf.use_callchain) && sample->callchain) {
+-		err = machine__resolve_callchain(machine, al->thread,
+-						 sample->callchain, &parent);
++		err = machine__resolve_callchain(session, machine,
++						 al->thread, sample, &parent);
+ 		if (err)
+ 			return err;
+ 	}
+@@ -213,7 +214,8 @@ static int process_sample_event(struct perf_tool *tool,
+ 		if (al.map != NULL)
+ 			al.map->dso->hit = 1;
+ 
+-		if (perf_evsel__add_hist_entry(evsel, &al, sample, machine)) {
++		if (perf_evsel__add_hist_entry(rep->session, evsel, &al,
++					       sample, machine)) {
+ 			pr_debug("problem incrementing symbol period, skipping event\n");
+ 			return -1;
+ 		}
+@@ -396,17 +398,17 @@ static int __cmd_report(struct perf_report *rep)
+ 		desc);
+ 	}
+ 
+-	if (dump_trace) {
+-		perf_session__fprintf_nr_events(session, stdout);
+-		goto out_delete;
+-	}
+-
+ 	if (verbose > 3)
+ 		perf_session__fprintf(session, stdout);
+ 
+ 	if (verbose > 2)
+ 		perf_session__fprintf_dsos(session, stdout);
+ 
++	if (dump_trace) {
++		perf_session__fprintf_nr_events(session, stdout);
++		goto out_delete;
++	}
++
+ 	nr_samples = 0;
+ 	list_for_each_entry(pos, &session->evlist->entries, node) {
+ 		struct hists *hists = &pos->hists;
+diff --git a/tools/perf/builtin-script.c b/tools/perf/builtin-script.c
+index 1e60ab7..79b9cb0 100644
+--- a/tools/perf/builtin-script.c
++++ b/tools/perf/builtin-script.c
+@@ -387,7 +387,8 @@ static void print_sample_addr(union perf_event *event,
+ 	}
+ }
+ 
+-static void print_sample_bts(union perf_event *event,
++static void print_sample_bts(struct perf_session *session,
++			     union perf_event *event,
+ 			     struct perf_sample *sample,
+ 			     struct perf_evsel *evsel,
+ 			     struct machine *machine,
+@@ -401,7 +402,7 @@ static void print_sample_bts(union perf_event *event,
+ 			printf(" ");
+ 		else
+ 			printf("\n");
+-		perf_event__print_ip(event, sample, machine,
++		perf_event__print_ip(session, event, sample, machine,
+ 				     PRINT_FIELD(SYM), PRINT_FIELD(DSO),
+ 				     PRINT_FIELD(SYMOFFSET));
+ 	}
+@@ -415,7 +416,8 @@ static void print_sample_bts(union perf_event *event,
+ 	printf("\n");
+ }
+ 
+-static void process_event(union perf_event *event __unused,
++static void process_event(struct perf_session *session,
++			  union perf_event *event __unused,
+ 			  struct pevent *pevent,
+ 			  struct perf_sample *sample,
+ 			  struct perf_evsel *evsel,
+@@ -430,7 +432,8 @@ static void process_event(union perf_event *event __unused,
+ 	print_sample_start(pevent, sample, thread, evsel);
+ 
+ 	if (is_bts_event(attr)) {
+-		print_sample_bts(event, sample, evsel, machine, thread);
++		print_sample_bts(session, event, sample, evsel,
++				 machine, thread);
+ 		return;
+ 	}
+ 
+@@ -446,7 +449,7 @@ static void process_event(union perf_event *event __unused,
+ 			printf(" ");
+ 		else
+ 			printf("\n");
+-		perf_event__print_ip(event, sample, machine,
++		perf_event__print_ip(session, event, sample, machine,
+ 				     PRINT_FIELD(SYM), PRINT_FIELD(DSO),
+ 				     PRINT_FIELD(SYMOFFSET));
+ 	}
+@@ -537,7 +540,8 @@ static int process_sample_event(struct perf_tool *tool __used,
+ 	if (cpu_list && !test_bit(sample->cpu, cpu_bitmap))
+ 		return 0;
+ 
+-	scripting_ops->process_event(event, scr->session->pevent,
++	scripting_ops->process_event(scr->session, event,
++				     scr->session->pevent,
+ 				     sample, evsel, machine, thread);
+ 
+ 	evsel->hists.stats.total_period += sample->period;
+diff --git a/tools/perf/builtin-top.c b/tools/perf/builtin-top.c
+index 35e86c6..ba91641 100644
+--- a/tools/perf/builtin-top.c
++++ b/tools/perf/builtin-top.c
+@@ -774,8 +774,9 @@ static void perf_event__process_sample(struct perf_tool *tool,
+ 
+ 		if ((sort__has_parent || symbol_conf.use_callchain) &&
+ 		    sample->callchain) {
+-			err = machine__resolve_callchain(machine, al.thread,
+-							 sample->callchain, &parent);
++			err = machine__resolve_callchain(top->session,
++						machine, al.thread,
++						sample, &parent);
+ 			if (err)
+ 				return;
+ 		}
+diff --git a/tools/perf/util/include/linux/compiler.h b/tools/perf/util/include/linux/compiler.h
+index 547628e..2dc8671 100644
+--- a/tools/perf/util/include/linux/compiler.h
++++ b/tools/perf/util/include/linux/compiler.h
+@@ -10,5 +10,6 @@
+ #endif
+ 
+ #define __used		__attribute__((__unused__))
++#define __packed	__attribute__((__packed__))
+ 
+ #endif
+diff --git a/tools/perf/util/map.h b/tools/perf/util/map.h
+index 03a1e9b..42211f7 100644
+--- a/tools/perf/util/map.h
++++ b/tools/perf/util/map.h
+@@ -157,9 +157,12 @@ int machine__init(struct machine *self, const char *root_dir, pid_t pid);
+ void machine__exit(struct machine *self);
+ void machine__delete(struct machine *self);
+ 
+-int machine__resolve_callchain(struct machine *machine,
++struct perf_session;
++struct perf_sample;
++int machine__resolve_callchain(struct perf_session *session,
++			       struct machine *machine,
+ 			       struct thread *thread,
+-			       struct ip_callchain *chain,
++			       struct perf_sample *sample,
+ 			       struct symbol **parent);
+ int maps__set_kallsyms_ref_reloc_sym(struct map **maps, const char *symbol_name,
+ 				     u64 addr);
+diff --git a/tools/perf/util/scripting-engines/trace-event-perl.c b/tools/perf/util/scripting-engines/trace-event-perl.c
+index 02dfa19..5840dd1 100644
+--- a/tools/perf/util/scripting-engines/trace-event-perl.c
++++ b/tools/perf/util/scripting-engines/trace-event-perl.c
+@@ -375,7 +375,8 @@ static void perl_process_event_generic(union perf_event *pevent __unused,
+ 	LEAVE;
+ }
+ 
+-static void perl_process_event(union perf_event *event,
++static void perl_process_event(struct perf_session *session __used,
++			       union perf_event *event,
+ 			       struct pevent *pevent,
+ 			       struct perf_sample *sample,
+ 			       struct perf_evsel *evsel,
+diff --git a/tools/perf/util/scripting-engines/trace-event-python.c b/tools/perf/util/scripting-engines/trace-event-python.c
+index ce4d1b0..e4b3510 100644
+--- a/tools/perf/util/scripting-engines/trace-event-python.c
++++ b/tools/perf/util/scripting-engines/trace-event-python.c
+@@ -214,7 +214,8 @@ struct event_format *find_cache_event(struct pevent *pevent, int type)
+ 	return event;
+ }
+ 
+-static void python_process_event(union perf_event *perf_event __unused,
++static void python_process_event(struct perf_session *session,
++				 union perf_event *perf_event __unused,
+ 				 struct pevent *pevent,
+ 				 struct perf_sample *sample,
+ 				 struct perf_evsel *evsel __unused,
+diff --git a/tools/perf/util/session.c b/tools/perf/util/session.c
+index ed6d8b5..c987ff9 100644
+--- a/tools/perf/util/session.c
++++ b/tools/perf/util/session.c
+@@ -16,6 +16,7 @@
+ #include "cpumap.h"
+ #include "event-parse.h"
+ #include "perf_regs.h"
++#include "unwind.h"
+ 
+ static int perf_session__open(struct perf_session *self, bool force)
+ {
+@@ -292,10 +293,11 @@ struct branch_info *machine__resolve_bstack(struct machine *self,
+ 	return bi;
+ }
+ 
+-int machine__resolve_callchain(struct machine *self,
+-			       struct thread *thread,
+-			       struct ip_callchain *chain,
+-			       struct symbol **parent)
++static int
++resolve_callchain_sample(struct machine *machine,
++			 struct thread *thread,
++			 struct ip_callchain *chain,
++			 struct symbol **parent)
+ {
+ 	u8 cpumode = PERF_RECORD_MISC_USER;
+ 	unsigned int i;
+@@ -320,11 +322,14 @@ int machine__resolve_callchain(struct machine *self,
+ 		if (ip >= PERF_CONTEXT_MAX) {
+ 			switch (ip) {
+ 			case PERF_CONTEXT_HV:
+-				cpumode = PERF_RECORD_MISC_HYPERVISOR;	break;
++				cpumode = PERF_RECORD_MISC_HYPERVISOR;
++				break;
+ 			case PERF_CONTEXT_KERNEL:
+-				cpumode = PERF_RECORD_MISC_KERNEL;	break;
++				cpumode = PERF_RECORD_MISC_KERNEL;
++				break;
+ 			case PERF_CONTEXT_USER:
+-				cpumode = PERF_RECORD_MISC_USER;	break;
++				cpumode = PERF_RECORD_MISC_USER;
++				break;
+ 			default:
+ 				pr_debug("invalid callchain context: "
+ 					 "%"PRId64"\n", (s64) ip);
+@@ -339,7 +344,7 @@ int machine__resolve_callchain(struct machine *self,
+ 		}
+ 
+ 		al.filtered = false;
+-		thread__find_addr_location(thread, self, cpumode,
++		thread__find_addr_location(thread, machine, cpumode,
+ 					   MAP__FUNCTION, ip, &al, NULL);
+ 		if (al.sym != NULL) {
+ 			if (sort__has_parent && !*parent &&
+@@ -358,6 +363,39 @@ int machine__resolve_callchain(struct machine *self,
+ 	return 0;
+ }
+ 
++static int unwind_entry(struct unwind_entry *entry, void *arg)
++{
++	struct callchain_cursor *cursor = arg;
++	return callchain_cursor_append(cursor, entry->ip,
++				       entry->map, entry->sym);
++}
++
++int machine__resolve_callchain(struct perf_session *session,
++			       struct machine *self,
++			       struct thread *thread,
++			       struct perf_sample *sample,
++			       struct symbol **parent)
++{
++	int ret;
++
++	callchain_cursor_reset(&callchain_cursor);
++
++	ret = resolve_callchain_sample(self, thread, sample->callchain,
++				       parent);
++	if (ret)
++		return ret;
++
++	/* Can we do dwarf post unwind? */
++	if (!((session->sample_type & PERF_SAMPLE_REGS_USER) &&
++	      (session->sample_type & PERF_SAMPLE_STACK_USER)))
++		return 0;
++
++	return unwind__get_entries(unwind_entry,
++				   &callchain_cursor,
++				   self, thread,
++				   session->sample_regs_user, sample);
++}
++
+ static int process_event_synth_tracing_data_stub(union perf_event *event __used,
+ 						 struct perf_session *session __used)
+ {
+@@ -1528,7 +1566,8 @@ struct perf_evsel *perf_session__find_first_evtype(struct perf_session *session,
+ 	return NULL;
+ }
+ 
+-void perf_event__print_ip(union perf_event *event, struct perf_sample *sample,
++void perf_event__print_ip(struct perf_session *session,
++			  union perf_event *event, struct perf_sample *sample,
+ 			  struct machine *machine, int print_sym,
+ 			  int print_dso, int print_symoffset)
+ {
+@@ -1544,8 +1583,8 @@ void perf_event__print_ip(union perf_event *event, struct perf_sample *sample,
+ 
+ 	if (symbol_conf.use_callchain && sample->callchain) {
+ 
+-		if (machine__resolve_callchain(machine, al.thread,
+-						sample->callchain, NULL) != 0) {
++		if (machine__resolve_callchain(session, machine,
++					al.thread, sample, NULL) != 0) {
+ 			if (verbose)
+ 				error("Failed to resolve callchain. Skipping\n");
+ 			return;
+diff --git a/tools/perf/util/session.h b/tools/perf/util/session.h
+index 3436064..2ef39df 100644
+--- a/tools/perf/util/session.h
++++ b/tools/perf/util/session.h
+@@ -155,7 +155,8 @@ static inline int perf_session__synthesize_sample(struct perf_session *session,
+ struct perf_evsel *perf_session__find_first_evtype(struct perf_session *session,
+ 					    unsigned int type);
+ 
+-void perf_event__print_ip(union perf_event *event, struct perf_sample *sample,
++void perf_event__print_ip(struct perf_session *session,
++			  union perf_event *event, struct perf_sample *sample,
+ 			  struct machine *machine, int print_sym,
+ 			  int print_dso, int print_symoffset);
+ 
+diff --git a/tools/perf/util/trace-event-scripting.c b/tools/perf/util/trace-event-scripting.c
+index 474aa7a..17b66dd 100644
+--- a/tools/perf/util/trace-event-scripting.c
++++ b/tools/perf/util/trace-event-scripting.c
+@@ -35,7 +35,8 @@ static int stop_script_unsupported(void)
+ 	return 0;
+ }
+ 
+-static void process_event_unsupported(union perf_event *event __unused,
++static void process_event_unsupported(struct perf_session *session __used,
++				      union perf_event *event __unused,
+ 				      struct pevent *pevent __unused,
+ 				      struct perf_sample *sample __unused,
+ 				      struct perf_evsel *evsel __unused,
+diff --git a/tools/perf/util/trace-event.h b/tools/perf/util/trace-event.h
+index 8fef1d6..a3390a1 100644
+--- a/tools/perf/util/trace-event.h
++++ b/tools/perf/util/trace-event.h
+@@ -74,11 +74,14 @@ struct tracing_data *tracing_data_get(struct list_head *pattrs,
+ void tracing_data_put(struct tracing_data *tdata);
+ 
+ 
++struct perf_session;
++
+ struct scripting_ops {
+ 	const char *name;
+ 	int (*start_script) (const char *script, int argc, const char **argv);
+ 	int (*stop_script) (void);
+-	void (*process_event) (union perf_event *event,
++	void (*process_event) (struct perf_session *session,
++			       union perf_event *event,
+ 			       struct pevent *pevent,
+ 			       struct perf_sample *sample,
+ 			       struct perf_evsel *evsel,
+diff --git a/tools/perf/util/unwind.c b/tools/perf/util/unwind.c
+new file mode 100644
+index 0000000..00a42aa
+--- /dev/null
++++ b/tools/perf/util/unwind.c
+@@ -0,0 +1,567 @@
++/*
++ * Post mortem Dwarf CFI based unwinding on top of regs and stack dumps.
++ *
++ * Lots of this code have been borrowed or heavily inspired from parts of
++ * the libunwind 0.99 code which are (amongst other contributors I may have
++ * forgotten):
++ *
++ * Copyright (C) 2002-2007 Hewlett-Packard Co
++ *	Contributed by David Mosberger-Tang <davidm@hpl.hp.com>
++ *
++ * And the bugs have been added by:
++ *
++ * Copyright (C) 2010, Frederic Weisbecker <fweisbec@gmail.com>
++ * Copyright (C) 2012, Jiri Olsa <jolsa@redhat.com>
++ *
++ */
++
++#include <elf.h>
++#include <gelf.h>
++#include <fcntl.h>
++#include <string.h>
++#include <unistd.h>
++#include <sys/mman.h>
++#include <linux/list.h>
++#include <libunwind.h>
++#include <libunwind-ptrace.h>
++#include "thread.h"
++#include "session.h"
++#include "perf_regs.h"
++#include "unwind.h"
++#include "util.h"
++
++extern int
++UNW_OBJ(dwarf_search_unwind_table) (unw_addr_space_t as,
++				    unw_word_t ip,
++				    unw_dyn_info_t *di,
++				    unw_proc_info_t *pi,
++				    int need_unwind_info, void *arg);
++
++#define dwarf_search_unwind_table UNW_OBJ(dwarf_search_unwind_table)
++
++#define DW_EH_PE_FORMAT_MASK	0x0f	/* format of the encoded value */
++#define DW_EH_PE_APPL_MASK	0x70	/* how the value is to be applied */
++
++/* Pointer-encoding formats: */
++#define DW_EH_PE_omit		0xff
++#define DW_EH_PE_ptr		0x00	/* pointer-sized unsigned value */
++#define DW_EH_PE_udata4		0x03	/* unsigned 32-bit value */
++#define DW_EH_PE_udata8		0x04	/* unsigned 64-bit value */
++#define DW_EH_PE_sdata4		0x0b	/* signed 32-bit value */
++#define DW_EH_PE_sdata8		0x0c	/* signed 64-bit value */
++
++/* Pointer-encoding application: */
++#define DW_EH_PE_absptr		0x00	/* absolute value */
++#define DW_EH_PE_pcrel		0x10	/* rel. to addr. of encoded value */
++
++/*
++ * The following are not documented by LSB v1.3, yet they are used by
++ * GCC, presumably they aren't documented by LSB since they aren't
++ * used on Linux:
++ */
++#define DW_EH_PE_funcrel	0x40	/* start-of-procedure-relative */
++#define DW_EH_PE_aligned	0x50	/* aligned pointer */
++
++/* Flags intentionaly not handled, since they're not needed:
++ * #define DW_EH_PE_indirect      0x80
++ * #define DW_EH_PE_uleb128       0x01
++ * #define DW_EH_PE_udata2        0x02
++ * #define DW_EH_PE_sleb128       0x09
++ * #define DW_EH_PE_sdata2        0x0a
++ * #define DW_EH_PE_textrel       0x20
++ * #define DW_EH_PE_datarel       0x30
++ */
++
++struct unwind_info {
++	struct perf_sample	*sample;
++	struct machine		*machine;
++	struct thread		*thread;
++	u64			sample_uregs;
++};
++
++#define dw_read(ptr, type, end) ({	\
++	type *__p = (type *) ptr;	\
++	type  __v;			\
++	if ((__p + 1) > (type *) end)	\
++		return -EINVAL;		\
++	__v = *__p++;			\
++	ptr = (typeof(ptr)) __p;	\
++	__v;				\
++	})
++
++static int __dw_read_encoded_value(u8 **p, u8 *end, u64 *val,
++				   u8 encoding)
++{
++	u8 *cur = *p;
++	*val = 0;
++
++	switch (encoding) {
++	case DW_EH_PE_omit:
++		*val = 0;
++		goto out;
++	case DW_EH_PE_ptr:
++		*val = dw_read(cur, unsigned long, end);
++		goto out;
++	default:
++		break;
++	}
++
++	switch (encoding & DW_EH_PE_APPL_MASK) {
++	case DW_EH_PE_absptr:
++		break;
++	case DW_EH_PE_pcrel:
++		*val = (unsigned long) cur;
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	if ((encoding & 0x07) == 0x00)
++		encoding |= DW_EH_PE_udata4;
++
++	switch (encoding & DW_EH_PE_FORMAT_MASK) {
++	case DW_EH_PE_sdata4:
++		*val += dw_read(cur, s32, end);
++		break;
++	case DW_EH_PE_udata4:
++		*val += dw_read(cur, u32, end);
++		break;
++	case DW_EH_PE_sdata8:
++		*val += dw_read(cur, s64, end);
++		break;
++	case DW_EH_PE_udata8:
++		*val += dw_read(cur, u64, end);
++		break;
++	default:
++		return -EINVAL;
++	}
++
++ out:
++	*p = cur;
++	return 0;
++}
++
++#define dw_read_encoded_value(ptr, end, enc) ({			\
++	u64 __v;						\
++	if (__dw_read_encoded_value(&ptr, end, &__v, enc)) {	\
++		return -EINVAL;                                 \
++	}                                                       \
++	__v;                                                    \
++	})
++
++static Elf_Scn *elf_section_by_name(Elf *elf, GElf_Ehdr *ep,
++				    GElf_Shdr *shp, const char *name)
++{
++	Elf_Scn *sec = NULL;
++
++	while ((sec = elf_nextscn(elf, sec)) != NULL) {
++		char *str;
++
++		gelf_getshdr(sec, shp);
++		str = elf_strptr(elf, ep->e_shstrndx, shp->sh_name);
++		if (!strcmp(name, str))
++			break;
++	}
++
++	return sec;
++}
++
++static u64 elf_section_offset(int fd, const char *name)
++{
++	Elf *elf;
++	GElf_Ehdr ehdr;
++	GElf_Shdr shdr;
++	u64 offset = 0;
++
++	elf = elf_begin(fd, PERF_ELF_C_READ_MMAP, NULL);
++	if (elf == NULL)
++		return 0;
++
++	do {
++		if (gelf_getehdr(elf, &ehdr) == NULL)
++			break;
++
++		if (!elf_section_by_name(elf, &ehdr, &shdr, name))
++			break;
++
++		offset = shdr.sh_offset;
++	} while (0);
++
++	elf_end(elf);
++	return offset;
++}
++
++struct table_entry {
++	u32 start_ip_offset;
++	u32 fde_offset;
++};
++
++struct eh_frame_hdr {
++	unsigned char version;
++	unsigned char eh_frame_ptr_enc;
++	unsigned char fde_count_enc;
++	unsigned char table_enc;
++
++	/*
++	 * The rest of the header is variable-length and consists of the
++	 * following members:
++	 *
++	 *	encoded_t eh_frame_ptr;
++	 *	encoded_t fde_count;
++	 */
++
++	/* A single encoded pointer should not be more than 8 bytes. */
++	u64 enc[2];
++
++	/*
++	 * struct {
++	 *    encoded_t start_ip;
++	 *    encoded_t fde_addr;
++	 * } binary_search_table[fde_count];
++	 */
++	char data[0];
++} __packed;
++
++static int unwind_spec_ehframe(struct dso *dso, struct machine *machine,
++			       u64 offset, u64 *table_data, u64 *segbase,
++			       u64 *fde_count)
++{
++	struct eh_frame_hdr hdr;
++	u8 *enc = (u8 *) &hdr.enc;
++	u8 *end = (u8 *) &hdr.data;
++	ssize_t r;
++
++	r = dso__data_read_offset(dso, machine, offset,
++				  (u8 *) &hdr, sizeof(hdr));
++	if (r != sizeof(hdr))
++		return -EINVAL;
++
++	/* We dont need eh_frame_ptr, just skip it. */
++	dw_read_encoded_value(enc, end, hdr.eh_frame_ptr_enc);
++
++	*fde_count  = dw_read_encoded_value(enc, end, hdr.fde_count_enc);
++	*segbase    = offset;
++	*table_data = (enc - (u8 *) &hdr) + offset;
++	return 0;
++}
++
++static int read_unwind_spec(struct dso *dso, struct machine *machine,
++			    u64 *table_data, u64 *segbase, u64 *fde_count)
++{
++	int ret = -EINVAL, fd;
++	u64 offset;
++
++	fd = dso__data_fd(dso, machine);
++	if (fd < 0)
++		return -EINVAL;
++
++	offset = elf_section_offset(fd, ".eh_frame_hdr");
++	close(fd);
++
++	if (offset)
++		ret = unwind_spec_ehframe(dso, machine, offset,
++					  table_data, segbase,
++					  fde_count);
++
++	/* TODO .debug_frame check if eh_frame_hdr fails */
++	return ret;
++}
++
++static struct map *find_map(unw_word_t ip, struct unwind_info *ui)
++{
++	struct addr_location al;
++
++	thread__find_addr_map(ui->thread, ui->machine, PERF_RECORD_MISC_USER,
++			      MAP__FUNCTION, ip, &al);
++	return al.map;
++}
++
++static int
++find_proc_info(unw_addr_space_t as, unw_word_t ip, unw_proc_info_t *pi,
++	       int need_unwind_info, void *arg)
++{
++	struct unwind_info *ui = arg;
++	struct map *map;
++	unw_dyn_info_t di;
++	u64 table_data, segbase, fde_count;
++
++	map = find_map(ip, ui);
++	if (!map || !map->dso)
++		return -EINVAL;
++
++	pr_debug("unwind: find_proc_info dso %s\n", map->dso->name);
++
++	if (read_unwind_spec(map->dso, ui->machine,
++			     &table_data, &segbase, &fde_count))
++		return -EINVAL;
++
++	memset(&di, 0, sizeof(di));
++	di.format   = UNW_INFO_FORMAT_REMOTE_TABLE;
++	di.start_ip = map->start;
++	di.end_ip   = map->end;
++	di.u.rti.segbase    = map->start + segbase;
++	di.u.rti.table_data = map->start + table_data;
++	di.u.rti.table_len  = fde_count * sizeof(struct table_entry)
++			      / sizeof(unw_word_t);
++	return dwarf_search_unwind_table(as, ip, &di, pi,
++					 need_unwind_info, arg);
++}
++
++static int access_fpreg(unw_addr_space_t __used as, unw_regnum_t __used num,
++			unw_fpreg_t __used *val, int __used __write,
++			void __used *arg)
++{
++	pr_err("unwind: access_fpreg unsupported\n");
++	return -UNW_EINVAL;
++}
++
++static int get_dyn_info_list_addr(unw_addr_space_t __used as,
++				  unw_word_t __used *dil_addr,
++				  void __used *arg)
++{
++	return -UNW_ENOINFO;
++}
++
++static int resume(unw_addr_space_t __used as, unw_cursor_t __used *cu,
++		  void __used *arg)
++{
++	pr_err("unwind: resume unsupported\n");
++	return -UNW_EINVAL;
++}
++
++static int
++get_proc_name(unw_addr_space_t __used as, unw_word_t __used addr,
++		char __used *bufp, size_t __used buf_len,
++		unw_word_t __used *offp, void __used *arg)
++{
++	pr_err("unwind: get_proc_name unsupported\n");
++	return -UNW_EINVAL;
++}
++
++static int access_dso_mem(struct unwind_info *ui, unw_word_t addr,
++			  unw_word_t *data)
++{
++	struct addr_location al;
++	ssize_t size;
++
++	thread__find_addr_map(ui->thread, ui->machine, PERF_RECORD_MISC_USER,
++			      MAP__FUNCTION, addr, &al);
++	if (!al.map) {
++		pr_debug("unwind: no map for %lx\n", (unsigned long)addr);
++		return -1;
++	}
++
++	if (!al.map->dso)
++		return -1;
++
++	size = dso__data_read_addr(al.map->dso, al.map, ui->machine,
++				   addr, (u8 *) data, sizeof(*data));
++
++	return !(size == sizeof(*data));
++}
++
++static int reg_value(unw_word_t *valp, struct regs_dump *regs, int id,
++		     u64 sample_regs)
++{
++	int i, idx = 0;
++
++	if (!(sample_regs & (1 << id)))
++		return -EINVAL;
++
++	for (i = 0; i < id; i++) {
++		if (sample_regs & (1 << i))
++			idx++;
++	}
++
++	*valp = regs->regs[idx];
++	return 0;
++}
++
++static int access_mem(unw_addr_space_t __used as,
++		      unw_word_t addr, unw_word_t *valp,
++		      int __write, void *arg)
++{
++	struct unwind_info *ui = arg;
++	struct stack_dump *stack = &ui->sample->user_stack;
++	unw_word_t start, end;
++	int offset;
++	int ret;
++
++	/* Don't support write, probably not needed. */
++	if (__write || !stack || !ui->sample->user_regs.regs) {
++		*valp = 0;
++		return 0;
++	}
++
++	ret = reg_value(&start, &ui->sample->user_regs, PERF_REG_SP,
++			ui->sample_uregs);
++	if (ret)
++		return ret;
++
++	end = start + stack->size;
++
++	/* Check overflow. */
++	if (addr + sizeof(unw_word_t) < addr)
++		return -EINVAL;
++
++	if (addr < start || addr + sizeof(unw_word_t) >= end) {
++		ret = access_dso_mem(ui, addr, valp);
++		if (ret) {
++			pr_debug("unwind: access_mem %p not inside range %p-%p\n",
++				(void *)addr, (void *)start, (void *)end);
++			*valp = 0;
++			return ret;
++		}
++		return 0;
++	}
++
++	offset = addr - start;
++	*valp  = *(unw_word_t *)&stack->data[offset];
++	pr_debug("unwind: access_mem addr %p, val %lx, offset %d\n",
++		 (void *)addr, (unsigned long)*valp, offset);
++	return 0;
++}
++
++static int access_reg(unw_addr_space_t __used as,
++		      unw_regnum_t regnum, unw_word_t *valp,
++		      int __write, void *arg)
++{
++	struct unwind_info *ui = arg;
++	int id, ret;
++
++	/* Don't support write, I suspect we don't need it. */
++	if (__write) {
++		pr_err("unwind: access_reg w %d\n", regnum);
++		return 0;
++	}
++
++	if (!ui->sample->user_regs.regs) {
++		*valp = 0;
++		return 0;
++	}
++
++	id = unwind__arch_reg_id(regnum);
++	if (id < 0)
++		return -EINVAL;
++
++	ret = reg_value(valp, &ui->sample->user_regs, id, ui->sample_uregs);
++	if (ret) {
++		pr_err("unwind: can't read reg %d\n", regnum);
++		return ret;
++	}
++
++	pr_debug("unwind: reg %d, val %lx\n", regnum, (unsigned long)*valp);
++	return 0;
++}
++
++static void put_unwind_info(unw_addr_space_t __used as,
++			    unw_proc_info_t *pi __used,
++			    void *arg __used)
++{
++	pr_debug("unwind: put_unwind_info called\n");
++}
++
++static int entry(u64 ip, struct thread *thread, struct machine *machine,
++		 unwind_entry_cb_t cb, void *arg)
++{
++	struct unwind_entry e;
++	struct addr_location al;
++
++	thread__find_addr_location(thread, machine,
++				   PERF_RECORD_MISC_USER,
++				   MAP__FUNCTION, ip, &al, NULL);
++
++	e.ip = ip;
++	e.map = al.map;
++	e.sym = al.sym;
++
++	pr_debug("unwind: %s:ip = 0x%" PRIx64 " (0x%" PRIx64 ")\n",
++		 al.sym ? al.sym->name : "''",
++		 ip,
++		 al.map ? al.map->map_ip(al.map, ip) : (u64) 0);
++
++	return cb(&e, arg);
++}
++
++static void display_error(int err)
++{
++	switch (err) {
++	case UNW_EINVAL:
++		pr_err("unwind: Only supports local.\n");
++		break;
++	case UNW_EUNSPEC:
++		pr_err("unwind: Unspecified error.\n");
++		break;
++	case UNW_EBADREG:
++		pr_err("unwind: Register unavailable.\n");
++		break;
++	default:
++		break;
++	}
++}
++
++static unw_accessors_t accessors = {
++	.find_proc_info		= find_proc_info,
++	.put_unwind_info	= put_unwind_info,
++	.get_dyn_info_list_addr	= get_dyn_info_list_addr,
++	.access_mem		= access_mem,
++	.access_reg		= access_reg,
++	.access_fpreg		= access_fpreg,
++	.resume			= resume,
++	.get_proc_name		= get_proc_name,
++};
++
++static int get_entries(struct unwind_info *ui, unwind_entry_cb_t cb,
++		       void *arg)
++{
++	unw_addr_space_t addr_space;
++	unw_cursor_t c;
++	int ret;
++
++	addr_space = unw_create_addr_space(&accessors, 0);
++	if (!addr_space) {
++		pr_err("unwind: Can't create unwind address space.\n");
++		return -ENOMEM;
++	}
++
++	ret = unw_init_remote(&c, addr_space, ui);
++	if (ret)
++		display_error(ret);
++
++	while (!ret && (unw_step(&c) > 0)) {
++		unw_word_t ip;
++
++		unw_get_reg(&c, UNW_REG_IP, &ip);
++		ret = entry(ip, ui->thread, ui->machine, cb, arg);
++	}
++
++	unw_destroy_addr_space(addr_space);
++	return ret;
++}
++
++int unwind__get_entries(unwind_entry_cb_t cb, void *arg,
++			struct machine *machine, struct thread *thread,
++			u64 sample_uregs, struct perf_sample *data)
++{
++	unw_word_t ip;
++	struct unwind_info ui = {
++		.sample       = data,
++		.sample_uregs = sample_uregs,
++		.thread       = thread,
++		.machine      = machine,
++	};
++	int ret;
++
++	if (!data->user_regs.regs)
++		return -EINVAL;
++
++	ret = reg_value(&ip, &data->user_regs, PERF_REG_IP, sample_uregs);
++	if (ret)
++		return ret;
++
++	ret = entry(ip, thread, machine, cb, arg);
++	if (ret)
++		return -ENOMEM;
++
++	return get_entries(&ui, cb, arg);
++}
+diff --git a/tools/perf/util/unwind.h b/tools/perf/util/unwind.h
+new file mode 100644
+index 0000000..919bd6a
+--- /dev/null
++++ b/tools/perf/util/unwind.h
+@@ -0,0 +1,34 @@
++#ifndef __UNWIND_H
++#define __UNWIND_H
++
++#include "types.h"
++#include "event.h"
++#include "symbol.h"
++
++struct unwind_entry {
++	struct map	*map;
++	struct symbol	*sym;
++	u64		ip;
++};
++
++typedef int (*unwind_entry_cb_t)(struct unwind_entry *entry, void *arg);
++
++#ifndef NO_LIBUNWIND_SUPPORT
++int unwind__get_entries(unwind_entry_cb_t cb, void *arg,
++			struct machine *machine,
++			struct thread *thread,
++			u64 sample_uregs,
++			struct perf_sample *data);
++int unwind__arch_reg_id(int regnum);
++#else
++static inline int
++unwind__get_entries(unwind_entry_cb_t cb __used, void *arg __used,
++		    struct machine *machine __used,
++		    struct thread *thread __used,
++		    u64 sample_uregs __used,
++		    struct perf_sample *data __used)
++{
++	return 0;
++}
++#endif /* NO_LIBUNWIND_SUPPORT */
++#endif /* __UNWIND_H */
+-- 
+1.7.7.6
+

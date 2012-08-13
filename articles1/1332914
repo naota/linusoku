@@ -1,0 +1,645 @@
+Path: news.gmane.org!not-for-mail
+From: "Srivatsa S. Bhat" <srivatsa.bhat@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel
+Subject: [RFC PATCH 2/6] notifiers: Convert notifier chain to circular doubly
+ linked-list
+Date: Wed, 25 Jul 2012 17:23:57 +0530
+Lines: 580
+Approved: news@gmane.org
+Message-ID: <20120725115351.3900.16598.stgit@srivatsabhat.in.ibm.com>
+References: <20120725115224.3900.80783.stgit@srivatsabhat.in.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343217288 20725 80.91.229.3 (25 Jul 2012 11:54:48 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 11:54:48 +0000 (UTC)
+Cc: rjw@sisk.pl, srivatsa.bhat@linux.vnet.ibm.com,
+	nikunj@linux.vnet.ibm.com, linux-pm@vger.kernel.org,
+	linux-kernel@vger.kernel.org
+To: tglx@linutronix.de, mingo@kernel.org, peterz@infradead.org,
+	rusty@rustcorp.com.au, paulmck@linux.vnet.ibm.com,
+	namhyung@kernel.org, tj@kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 13:54:44 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su0Aq-0005RE-Kx
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 13:54:41 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756667Ab2GYLyR (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 07:54:17 -0400
+Original-Received: from e23smtp08.au.ibm.com ([202.81.31.141]:51890 "EHLO
+	e23smtp08.au.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756638Ab2GYLyJ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 07:54:09 -0400
+Original-Received: from /spool/local
+	by e23smtp08.au.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <srivatsa.bhat@linux.vnet.ibm.com>;
+	Wed, 25 Jul 2012 21:54:01 +1000
+Original-Received: from d23relay03.au.ibm.com (202.81.31.245)
+	by e23smtp08.au.ibm.com (202.81.31.205) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Wed, 25 Jul 2012 21:53:59 +1000
+Original-Received: from d23av01.au.ibm.com (d23av01.au.ibm.com [9.190.234.96])
+	by d23relay03.au.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6PBs4wA56230122;
+	Wed, 25 Jul 2012 21:54:04 +1000
+Original-Received: from d23av01.au.ibm.com (loopback [127.0.0.1])
+	by d23av01.au.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6PBs3sf002088;
+	Wed, 25 Jul 2012 21:54:04 +1000
+Original-Received: from srivatsabhat.in.ibm.com (srivatsabhat.in.ibm.com [9.124.35.188])
+	by d23av01.au.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6PBs0Gj002055;
+	Wed, 25 Jul 2012 21:54:01 +1000
+In-Reply-To: <20120725115224.3900.80783.stgit@srivatsabhat.in.ibm.com>
+User-Agent: StGIT/0.14.3
+x-cbid: 12072511-5140-0000-0000-000001D0417F
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332914
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332914>
+
+In order to support invoking the notifiers in the reverse order, we need to
+be able to traverse the callback chain in both directions. So convert the
+notifier list into a circular doubly linked list.
+
+Signed-off-by: Srivatsa S. Bhat <srivatsa.bhat@linux.vnet.ibm.com>
+---
+
+ arch/mips/powertv/powertv_setup.c                |    2 
+ arch/um/drivers/mconsole_kern.c                  |    2 
+ arch/um/kernel/um_arch.c                         |    2 
+ drivers/acpi/sleep.c                             |    2 
+ drivers/char/ipmi/ipmi_msghandler.c              |    2 
+ drivers/char/ipmi/ipmi_watchdog.c                |    4 -
+ drivers/firmware/dcdbas.c                        |    2 
+ drivers/md/md.c                                  |    2 
+ drivers/net/ethernet/intel/igb/igb_main.c        |    2 
+ drivers/net/ethernet/intel/ixgbe/ixgbe_main.c    |    2 
+ drivers/net/ethernet/myricom/myri10ge/myri10ge.c |    2 
+ drivers/staging/vt6655/device_main.c             |    2 
+ include/linux/notifier.h                         |   23 +++--
+ kernel/debug/debug_core.c                        |    2 
+ kernel/notifier.c                                |   99 +++++++++++-----------
+ kernel/trace/trace.c                             |    2 
+ mm/page-writeback.c                              |    2 
+ mm/vmstat.c                                      |    4 -
+ 18 files changed, 81 insertions(+), 77 deletions(-)
+
+diff --git a/arch/mips/powertv/powertv_setup.c b/arch/mips/powertv/powertv_setup.c
+index 3933c37..bade798 100644
+--- a/arch/mips/powertv/powertv_setup.c
++++ b/arch/mips/powertv/powertv_setup.c
+@@ -87,7 +87,7 @@ static void register_panic_notifier()
+ {
+ 	static struct notifier_block panic_notifier = {
+ 		.notifier_call = panic_handler,
+-		.next = NULL,
++		.list = LIST_HEAD_INIT(panic_notifier.list),
+ 		.priority	= INT_MAX
+ 	};
+ 	atomic_notifier_chain_register(&panic_notifier_list, &panic_notifier);
+diff --git a/arch/um/drivers/mconsole_kern.c b/arch/um/drivers/mconsole_kern.c
+index 88e466b..dea89210 100644
+--- a/arch/um/drivers/mconsole_kern.c
++++ b/arch/um/drivers/mconsole_kern.c
+@@ -898,7 +898,7 @@ static int notify_panic(struct notifier_block *self, unsigned long unused1,
+ 
+ static struct notifier_block panic_exit_notifier = {
+ 	.notifier_call 		= notify_panic,
+-	.next 			= NULL,
++	.list			= LIST_HEAD_INIT(panic_exit_notifier.list),
+ 	.priority 		= 1
+ };
+ 
+diff --git a/arch/um/kernel/um_arch.c b/arch/um/kernel/um_arch.c
+index 4db8770..fdd2b78 100644
+--- a/arch/um/kernel/um_arch.c
++++ b/arch/um/kernel/um_arch.c
+@@ -243,7 +243,7 @@ static int panic_exit(struct notifier_block *self, unsigned long unused1,
+ 
+ static struct notifier_block panic_exit_notifier = {
+ 	.notifier_call 		= panic_exit,
+-	.next 			= NULL,
++	.list			= LIST_HEAD_INIT(panic_exit_notifier.list),
+ 	.priority 		= 0
+ };
+ 
+diff --git a/drivers/acpi/sleep.c b/drivers/acpi/sleep.c
+index 8856102..2fa6147 100644
+--- a/drivers/acpi/sleep.c
++++ b/drivers/acpi/sleep.c
+@@ -85,7 +85,7 @@ static int tts_notify_reboot(struct notifier_block *this,
+ 
+ static struct notifier_block tts_notifier = {
+ 	.notifier_call	= tts_notify_reboot,
+-	.next		= NULL,
++	.list		= LIST_HEAD_INIT(tts_notifier.list),
+ 	.priority	= 0,
+ };
+ 
+diff --git a/drivers/char/ipmi/ipmi_msghandler.c b/drivers/char/ipmi/ipmi_msghandler.c
+index 2c29942..5a49739 100644
+--- a/drivers/char/ipmi/ipmi_msghandler.c
++++ b/drivers/char/ipmi/ipmi_msghandler.c
+@@ -4473,7 +4473,7 @@ static int panic_event(struct notifier_block *this,
+ 
+ static struct notifier_block panic_block = {
+ 	.notifier_call	= panic_event,
+-	.next		= NULL,
++	.list		= LIST_HEAD_INIT(panic_block.list),
+ 	.priority	= 200	/* priority: INT_MAX >= x >= 0 */
+ };
+ 
+diff --git a/drivers/char/ipmi/ipmi_watchdog.c b/drivers/char/ipmi/ipmi_watchdog.c
+index 7ed356e..e340cc2 100644
+--- a/drivers/char/ipmi/ipmi_watchdog.c
++++ b/drivers/char/ipmi/ipmi_watchdog.c
+@@ -1183,7 +1183,7 @@ static int wdog_reboot_handler(struct notifier_block *this,
+ 
+ static struct notifier_block wdog_reboot_notifier = {
+ 	.notifier_call	= wdog_reboot_handler,
+-	.next		= NULL,
++	.list		= LIST_HEAD_INIT(wdog_reboot_notifier.list),
+ 	.priority	= 0
+ };
+ 
+@@ -1212,7 +1212,7 @@ static int wdog_panic_handler(struct notifier_block *this,
+ 
+ static struct notifier_block wdog_panic_notifier = {
+ 	.notifier_call	= wdog_panic_handler,
+-	.next		= NULL,
++	.list		= LIST_HEAD_INIT(wdog_panic_notifier.list),
+ 	.priority	= 150	/* priority: INT_MAX >= x >= 0 */
+ };
+ 
+diff --git a/drivers/firmware/dcdbas.c b/drivers/firmware/dcdbas.c
+index ea5ac2d..fcd2334 100644
+--- a/drivers/firmware/dcdbas.c
++++ b/drivers/firmware/dcdbas.c
+@@ -505,7 +505,7 @@ static int dcdbas_reboot_notify(struct notifier_block *nb, unsigned long code,
+ 
+ static struct notifier_block dcdbas_reboot_nb = {
+ 	.notifier_call = dcdbas_reboot_notify,
+-	.next = NULL,
++	.list = LIST_HEAD_INIT(dcdbas_reboot_nb.list),
+ 	.priority = INT_MIN
+ };
+ 
+diff --git a/drivers/md/md.c b/drivers/md/md.c
+index a4c219e..166c917 100644
+--- a/drivers/md/md.c
++++ b/drivers/md/md.c
+@@ -8437,7 +8437,7 @@ static int md_notify_reboot(struct notifier_block *this,
+ 
+ static struct notifier_block md_notifier = {
+ 	.notifier_call	= md_notify_reboot,
+-	.next		= NULL,
++	.list		= LIST_HEAD_INIT(md_notifier.list),
+ 	.priority	= INT_MAX, /* before any real devices */
+ };
+ 
+diff --git a/drivers/net/ethernet/intel/igb/igb_main.c b/drivers/net/ethernet/intel/igb/igb_main.c
+index dd3bfe8..8bd87bb 100644
+--- a/drivers/net/ethernet/intel/igb/igb_main.c
++++ b/drivers/net/ethernet/intel/igb/igb_main.c
+@@ -197,7 +197,7 @@ static void igb_shutdown(struct pci_dev *);
+ static int igb_notify_dca(struct notifier_block *, unsigned long, void *);
+ static struct notifier_block dca_notifier = {
+ 	.notifier_call	= igb_notify_dca,
+-	.next		= NULL,
++	.list		= LIST_HEAD_INIT(dca_notifier.list),
+ 	.priority	= 0
+ };
+ #endif
+diff --git a/drivers/net/ethernet/intel/ixgbe/ixgbe_main.c b/drivers/net/ethernet/intel/ixgbe/ixgbe_main.c
+index 18ca3bc..2f460ff 100644
+--- a/drivers/net/ethernet/intel/ixgbe/ixgbe_main.c
++++ b/drivers/net/ethernet/intel/ixgbe/ixgbe_main.c
+@@ -124,7 +124,7 @@ static int ixgbe_notify_dca(struct notifier_block *, unsigned long event,
+ 			    void *p);
+ static struct notifier_block dca_notifier = {
+ 	.notifier_call = ixgbe_notify_dca,
+-	.next          = NULL,
++	.list          = LIST_HEAD_INIT(dca_notifier.list),
+ 	.priority      = 0
+ };
+ #endif
+diff --git a/drivers/net/ethernet/myricom/myri10ge/myri10ge.c b/drivers/net/ethernet/myricom/myri10ge/myri10ge.c
+index 90153fc..9514d81 100644
+--- a/drivers/net/ethernet/myricom/myri10ge/myri10ge.c
++++ b/drivers/net/ethernet/myricom/myri10ge/myri10ge.c
+@@ -4197,7 +4197,7 @@ myri10ge_notify_dca(struct notifier_block *nb, unsigned long event, void *p)
+ 
+ static struct notifier_block myri10ge_dca_notifier = {
+ 	.notifier_call = myri10ge_notify_dca,
+-	.next = NULL,
++	.list = LIST_HEAD_INIT(myri10ge_dca_notifier.list),
+ 	.priority = 0,
+ };
+ #endif				/* CONFIG_MYRI10GE_DCA */
+diff --git a/drivers/staging/vt6655/device_main.c b/drivers/staging/vt6655/device_main.c
+index 3e8283c..c71c2a5 100644
+--- a/drivers/staging/vt6655/device_main.c
++++ b/drivers/staging/vt6655/device_main.c
+@@ -313,7 +313,7 @@ static int viawget_suspend(struct pci_dev *pcid, pm_message_t state);
+ static int viawget_resume(struct pci_dev *pcid);
+ struct notifier_block device_notifier = {
+ 	.notifier_call = device_notify_reboot,
+-	.next = NULL,
++	.list = LIST_HEAD_INIT(device_notifier.list),
+ 	.priority = 0,
+ };
+ #endif
+diff --git a/include/linux/notifier.h b/include/linux/notifier.h
+index d65746e..67f9a3a 100644
+--- a/include/linux/notifier.h
++++ b/include/linux/notifier.h
+@@ -49,40 +49,40 @@
+ 
+ struct notifier_block {
+ 	int (*notifier_call)(struct notifier_block *, unsigned long, void *);
+-	struct notifier_block __rcu *next;
++	struct list_head list;
+ 	int priority;
+ };
+ 
+ struct atomic_notifier_head {
+ 	spinlock_t lock;
+-	struct notifier_block __rcu *head;
++	struct list_head list;
+ };
+ 
+ struct blocking_notifier_head {
+ 	struct rw_semaphore rwsem;
+-	struct notifier_block __rcu *head;
++	struct list_head list;
+ };
+ 
+ struct raw_notifier_head {
+-	struct notifier_block __rcu *head;
++	struct list_head list;
+ };
+ 
+ struct srcu_notifier_head {
+ 	struct mutex mutex;
+ 	struct srcu_struct srcu;
+-	struct notifier_block __rcu *head;
++	struct list_head list;
+ };
+ 
+ #define ATOMIC_INIT_NOTIFIER_HEAD(name) do {	\
+ 		spin_lock_init(&(name)->lock);	\
+-		(name)->head = NULL;		\
++		INIT_LIST_HEAD(&(name)->list);	\
+ 	} while (0)
+ #define BLOCKING_INIT_NOTIFIER_HEAD(name) do {	\
+ 		init_rwsem(&(name)->rwsem);	\
+-		(name)->head = NULL;		\
++		INIT_LIST_HEAD(&(name)->list);	\
+ 	} while (0)
+ #define RAW_INIT_NOTIFIER_HEAD(name) do {	\
+-		(name)->head = NULL;		\
++		 INIT_LIST_HEAD(&(name)->list);	\
+ 	} while (0)
+ 
+ /* srcu_notifier_heads must be initialized and cleaned up dynamically */
+@@ -92,12 +92,13 @@ extern void srcu_init_notifier_head(struct srcu_notifier_head *nh);
+ 
+ #define ATOMIC_NOTIFIER_INIT(name) {				\
+ 		.lock = __SPIN_LOCK_UNLOCKED(name.lock),	\
+-		.head = NULL }
++		.list = LIST_HEAD_INIT(name.list) }
+ #define BLOCKING_NOTIFIER_INIT(name) {				\
+ 		.rwsem = __RWSEM_INITIALIZER((name).rwsem),	\
+-		.head = NULL }
++		.list = LIST_HEAD_INIT(name.list) }
+ #define RAW_NOTIFIER_INIT(name)	{				\
+-		.head = NULL }
++		.list = LIST_HEAD_INIT(name.list) }
++
+ /* srcu_notifier_heads cannot be initialized statically */
+ 
+ #define ATOMIC_NOTIFIER_HEAD(name)				\
+diff --git a/kernel/debug/debug_core.c b/kernel/debug/debug_core.c
+index 0557f24..9ac45ba 100644
+--- a/kernel/debug/debug_core.c
++++ b/kernel/debug/debug_core.c
+@@ -805,7 +805,7 @@ done:
+ 
+ static struct notifier_block dbg_reboot_notifier = {
+ 	.notifier_call		= dbg_notify_reboot,
+-	.next			= NULL,
++	.list			= LIST_HEAD_INIT(dbg_reboot_notifier.list),
+ 	.priority		= INT_MAX,
+ };
+ 
+diff --git a/kernel/notifier.c b/kernel/notifier.c
+index 2d5cc4c..ad6feab 100644
+--- a/kernel/notifier.c
++++ b/kernel/notifier.c
+@@ -18,44 +18,48 @@ BLOCKING_NOTIFIER_HEAD(reboot_notifier_list);
+  *	are layered on top of these, with appropriate locking added.
+  */
+ 
+-static int notifier_chain_register(struct notifier_block **nl,
++static int notifier_chain_register(struct list_head *nl,
+ 		struct notifier_block *n)
+ {
+-	while ((*nl) != NULL) {
+-		if (n->priority > (*nl)->priority)
++	struct notifier_block *cur;
++
++	list_for_each_entry(cur, nl, list) {
++		if (n->priority > cur->priority)
+ 			break;
+-		nl = &((*nl)->next);
+ 	}
+-	n->next = *nl;
+-	rcu_assign_pointer(*nl, n);
++
++	list_add_tail_rcu(&n->list, &cur->list);
+ 	return 0;
+ }
+ 
+-static int notifier_chain_cond_register(struct notifier_block **nl,
++static int notifier_chain_cond_register(struct list_head *nl,
+ 		struct notifier_block *n)
+ {
+-	while ((*nl) != NULL) {
+-		if ((*nl) == n)
++	struct notifier_block *cur;
++
++	list_for_each_entry(cur, nl, list) {
++		if (cur == n)
+ 			return 0;
+-		if (n->priority > (*nl)->priority)
++		if (n->priority > cur->priority)
+ 			break;
+-		nl = &((*nl)->next);
+ 	}
+-	n->next = *nl;
+-	rcu_assign_pointer(*nl, n);
++
++	list_add_tail_rcu(&n->list, &cur->list);
+ 	return 0;
+ }
+ 
+-static int notifier_chain_unregister(struct notifier_block **nl,
++static int notifier_chain_unregister(struct list_head *nl,
+ 		struct notifier_block *n)
+ {
+-	while ((*nl) != NULL) {
+-		if ((*nl) == n) {
+-			rcu_assign_pointer(*nl, n->next);
++	struct notifier_block *cur;
++
++	list_for_each_entry(cur, nl, list) {
++		if (cur == n) {
++			list_del_bidir_rcu(&cur->list);
+ 			return 0;
+ 		}
+-		nl = &((*nl)->next);
+ 	}
++
+ 	return -ENOENT;
+ }
+ 
+@@ -71,22 +75,20 @@ static int notifier_chain_unregister(struct notifier_block **nl,
+  *	@returns:	notifier_call_chain returns the value returned by the
+  *			last notifier function called.
+  */
+-static int __kprobes notifier_call_chain(struct notifier_block **nl,
++static int __kprobes notifier_call_chain(struct list_head *nl,
+ 					unsigned long val, void *v,
+ 					int nr_to_call,	int *nr_calls)
+ {
+ 	int ret = NOTIFY_DONE;
+-	struct notifier_block *nb, *next_nb;
+-
+-	nb = rcu_dereference_raw(*nl);
++	struct notifier_block *nb;
+ 
+-	while (nb && nr_to_call) {
+-		next_nb = rcu_dereference_raw(nb->next);
++	list_for_each_entry_rcu(nb, nl, list) {
++		if (!nr_to_call)
++			break;
+ 
+ #ifdef CONFIG_DEBUG_NOTIFIERS
+ 		if (unlikely(!func_ptr_is_kernel_text(nb->notifier_call))) {
+ 			WARN(1, "Invalid notifier called!");
+-			nb = next_nb;
+ 			continue;
+ 		}
+ #endif
+@@ -97,9 +99,9 @@ static int __kprobes notifier_call_chain(struct notifier_block **nl,
+ 
+ 		if ((ret & NOTIFY_STOP_MASK) == NOTIFY_STOP_MASK)
+ 			break;
+-		nb = next_nb;
+ 		nr_to_call--;
+ 	}
++
+ 	return ret;
+ }
+ 
+@@ -124,7 +126,7 @@ int atomic_notifier_chain_register(struct atomic_notifier_head *nh,
+ 	int ret;
+ 
+ 	spin_lock_irqsave(&nh->lock, flags);
+-	ret = notifier_chain_register(&nh->head, n);
++	ret = notifier_chain_register(&nh->list, n);
+ 	spin_unlock_irqrestore(&nh->lock, flags);
+ 	return ret;
+ }
+@@ -146,7 +148,7 @@ int atomic_notifier_chain_unregister(struct atomic_notifier_head *nh,
+ 	int ret;
+ 
+ 	spin_lock_irqsave(&nh->lock, flags);
+-	ret = notifier_chain_unregister(&nh->head, n);
++	ret = notifier_chain_unregister(&nh->list, n);
+ 	spin_unlock_irqrestore(&nh->lock, flags);
+ 	synchronize_rcu();
+ 	return ret;
+@@ -179,7 +181,7 @@ int __kprobes __atomic_notifier_call_chain(struct atomic_notifier_head *nh,
+ 	int ret;
+ 
+ 	rcu_read_lock();
+-	ret = notifier_call_chain(&nh->head, val, v, nr_to_call, nr_calls);
++	ret = notifier_call_chain(&nh->list, val, v, nr_to_call, nr_calls);
+ 	rcu_read_unlock();
+ 	return ret;
+ }
+@@ -218,10 +220,10 @@ int blocking_notifier_chain_register(struct blocking_notifier_head *nh,
+ 	 * such times we must not call down_write().
+ 	 */
+ 	if (unlikely(system_state == SYSTEM_BOOTING))
+-		return notifier_chain_register(&nh->head, n);
++		return notifier_chain_register(&nh->list, n);
+ 
+ 	down_write(&nh->rwsem);
+-	ret = notifier_chain_register(&nh->head, n);
++	ret = notifier_chain_register(&nh->list, n);
+ 	up_write(&nh->rwsem);
+ 	return ret;
+ }
+@@ -244,7 +246,7 @@ int blocking_notifier_chain_cond_register(struct blocking_notifier_head *nh,
+ 	int ret;
+ 
+ 	down_write(&nh->rwsem);
+-	ret = notifier_chain_cond_register(&nh->head, n);
++	ret = notifier_chain_cond_register(&nh->list, n);
+ 	up_write(&nh->rwsem);
+ 	return ret;
+ }
+@@ -271,10 +273,10 @@ int blocking_notifier_chain_unregister(struct blocking_notifier_head *nh,
+ 	 * such times we must not call down_write().
+ 	 */
+ 	if (unlikely(system_state == SYSTEM_BOOTING))
+-		return notifier_chain_unregister(&nh->head, n);
++		return notifier_chain_unregister(&nh->list, n);
+ 
+ 	down_write(&nh->rwsem);
+-	ret = notifier_chain_unregister(&nh->head, n);
++	ret = notifier_chain_unregister(&nh->list, n);
+ 	up_write(&nh->rwsem);
+ 	return ret;
+ }
+@@ -305,13 +307,14 @@ int __blocking_notifier_call_chain(struct blocking_notifier_head *nh,
+ 	int ret = NOTIFY_DONE;
+ 
+ 	/*
+-	 * We check the head outside the lock, but if this access is
+-	 * racy then it does not matter what the result of the test
+-	 * is, we re-check the list after having taken the lock anyway:
++	 * We check whether the list is empty outside the lock, but if
++	 * this access is racy then it does not matter what the result
++	 * of the test is, we re-check the list after having taken the
++	 * lock anyway.
+ 	 */
+-	if (rcu_dereference_raw(nh->head)) {
++	if (!list_empty(&nh->list)) {
+ 		down_read(&nh->rwsem);
+-		ret = notifier_call_chain(&nh->head, val, v, nr_to_call,
++		ret = notifier_call_chain(&nh->list, val, v, nr_to_call,
+ 					nr_calls);
+ 		up_read(&nh->rwsem);
+ 	}
+@@ -344,7 +347,7 @@ EXPORT_SYMBOL_GPL(blocking_notifier_call_chain);
+ int raw_notifier_chain_register(struct raw_notifier_head *nh,
+ 		struct notifier_block *n)
+ {
+-	return notifier_chain_register(&nh->head, n);
++	return notifier_chain_register(&nh->list, n);
+ }
+ EXPORT_SYMBOL_GPL(raw_notifier_chain_register);
+ 
+@@ -361,7 +364,7 @@ EXPORT_SYMBOL_GPL(raw_notifier_chain_register);
+ int raw_notifier_chain_unregister(struct raw_notifier_head *nh,
+ 		struct notifier_block *n)
+ {
+-	return notifier_chain_unregister(&nh->head, n);
++	return notifier_chain_unregister(&nh->list, n);
+ }
+ EXPORT_SYMBOL_GPL(raw_notifier_chain_unregister);
+ 
+@@ -388,7 +391,7 @@ int __raw_notifier_call_chain(struct raw_notifier_head *nh,
+ 			      unsigned long val, void *v,
+ 			      int nr_to_call, int *nr_calls)
+ {
+-	return notifier_call_chain(&nh->head, val, v, nr_to_call, nr_calls);
++	return notifier_call_chain(&nh->list, val, v, nr_to_call, nr_calls);
+ }
+ EXPORT_SYMBOL_GPL(__raw_notifier_call_chain);
+ 
+@@ -425,10 +428,10 @@ int srcu_notifier_chain_register(struct srcu_notifier_head *nh,
+ 	 * such times we must not call mutex_lock().
+ 	 */
+ 	if (unlikely(system_state == SYSTEM_BOOTING))
+-		return notifier_chain_register(&nh->head, n);
++		return notifier_chain_register(&nh->list, n);
+ 
+ 	mutex_lock(&nh->mutex);
+-	ret = notifier_chain_register(&nh->head, n);
++	ret = notifier_chain_register(&nh->list, n);
+ 	mutex_unlock(&nh->mutex);
+ 	return ret;
+ }
+@@ -455,10 +458,10 @@ int srcu_notifier_chain_unregister(struct srcu_notifier_head *nh,
+ 	 * such times we must not call mutex_lock().
+ 	 */
+ 	if (unlikely(system_state == SYSTEM_BOOTING))
+-		return notifier_chain_unregister(&nh->head, n);
++		return notifier_chain_unregister(&nh->list, n);
+ 
+ 	mutex_lock(&nh->mutex);
+-	ret = notifier_chain_unregister(&nh->head, n);
++	ret = notifier_chain_unregister(&nh->list, n);
+ 	mutex_unlock(&nh->mutex);
+ 	synchronize_srcu(&nh->srcu);
+ 	return ret;
+@@ -491,7 +494,7 @@ int __srcu_notifier_call_chain(struct srcu_notifier_head *nh,
+ 	int idx;
+ 
+ 	idx = srcu_read_lock(&nh->srcu);
+-	ret = notifier_call_chain(&nh->head, val, v, nr_to_call, nr_calls);
++	ret = notifier_call_chain(&nh->list, val, v, nr_to_call, nr_calls);
+ 	srcu_read_unlock(&nh->srcu, idx);
+ 	return ret;
+ }
+@@ -521,7 +524,7 @@ void srcu_init_notifier_head(struct srcu_notifier_head *nh)
+ 	mutex_init(&nh->mutex);
+ 	if (init_srcu_struct(&nh->srcu) < 0)
+ 		BUG();
+-	nh->head = NULL;
++	INIT_LIST_HEAD(&nh->list);
+ }
+ EXPORT_SYMBOL_GPL(srcu_init_notifier_head);
+ 
+diff --git a/kernel/trace/trace.c b/kernel/trace/trace.c
+index a7fa070..9feadb8 100644
+--- a/kernel/trace/trace.c
++++ b/kernel/trace/trace.c
+@@ -4876,7 +4876,7 @@ static int trace_panic_handler(struct notifier_block *this,
+ 
+ static struct notifier_block trace_panic_notifier = {
+ 	.notifier_call  = trace_panic_handler,
+-	.next           = NULL,
++	.list           = LIST_HEAD_INIT(trace_panic_notifier.list),
+ 	.priority       = 150   /* priority: INT_MAX >= x >= 0 */
+ };
+ 
+diff --git a/mm/page-writeback.c b/mm/page-writeback.c
+index 93d8d2f..4135c16 100644
+--- a/mm/page-writeback.c
++++ b/mm/page-writeback.c
+@@ -1583,7 +1583,7 @@ ratelimit_handler(struct notifier_block *self, unsigned long u, void *v)
+ 
+ static struct notifier_block __cpuinitdata ratelimit_nb = {
+ 	.notifier_call	= ratelimit_handler,
+-	.next		= NULL,
++	.list		= LIST_HEAD_INIT(ratelimit_nb.list),
+ };
+ 
+ /*
+diff --git a/mm/vmstat.c b/mm/vmstat.c
+index 1bbbbd9..ad67df0 100644
+--- a/mm/vmstat.c
++++ b/mm/vmstat.c
+@@ -1196,8 +1196,8 @@ static int __cpuinit vmstat_cpuup_callback(struct notifier_block *nfb,
+ 	return NOTIFY_OK;
+ }
+ 
+-static struct notifier_block __cpuinitdata vmstat_notifier =
+-	{ &vmstat_cpuup_callback, NULL, 0 };
++static struct notifier_block __cpuinitdata vmstat_notifier = {
++	&vmstat_cpuup_callback, LIST_HEAD_INIT(vmstat_notifier.list), 0 };
+ #endif
+ 
+ static int __init setup_vmstat(void)
+

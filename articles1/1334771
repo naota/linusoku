@@ -1,0 +1,89 @@
+Path: news.gmane.org!not-for-mail
+From: Oleg Nesterov <oleg@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 07/14] uprobes: fix overflow in
+	vma_address/find_active_uprobe
+Date: Sun, 29 Jul 2012 20:22:33 +0200
+Lines: 34
+Approved: news@gmane.org
+Message-ID: <20120729182233.GA20339@redhat.com>
+References: <20120729182128.GA20269@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343586446 27812 80.91.229.3 (29 Jul 2012 18:27:26 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 29 Jul 2012 18:27:26 +0000 (UTC)
+Cc: Anton Arapov <anton@redhat.com>,
+	Srikar Dronamraju <srikar@linux.vnet.ibm.com>,
+	linux-kernel@vger.kernel.org
+To: Ingo Molnar <mingo@elte.hu>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 29 20:27:26 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvYD5-0007Lo-8m
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 29 Jul 2012 20:27:23 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753499Ab2G2S1Q (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 29 Jul 2012 14:27:16 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:13375 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753364Ab2G2SZb (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 29 Jul 2012 14:25:31 -0400
+Original-Received: from int-mx12.intmail.prod.int.phx2.redhat.com (int-mx12.intmail.prod.int.phx2.redhat.com [10.5.11.25])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6TIPRo9012768
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Sun, 29 Jul 2012 14:25:27 -0400
+Original-Received: from tranklukator.englab.brq.redhat.com (dhcp-1-232.brq.redhat.com [10.34.1.232])
+	by int-mx12.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with SMTP id q6TIPPxn014225;
+	Sun, 29 Jul 2012 14:25:25 -0400
+Original-Received: by tranklukator.englab.brq.redhat.com (nbSMTP-1.00) for uid 500
+	oleg@redhat.com; Sun, 29 Jul 2012 20:22:35 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <20120729182128.GA20269@redhat.com>
+User-Agent: Mutt/1.5.18 (2008-05-17)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.25
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334771
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334771>
+
+vma->vm_pgoff is "unsigned long", it should be promoted to loff_t
+before the multiplication to avoid the overflow.
+
+Signed-off-by: Oleg Nesterov <oleg@redhat.com>
+Acked-by: Srikar Dronamraju <srikar.vnet.ibm.com>
+---
+ kernel/events/uprobes.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/events/uprobes.c b/kernel/events/uprobes.c
+index 47c4e24..6194edb 100644
+--- a/kernel/events/uprobes.c
++++ b/kernel/events/uprobes.c
+@@ -117,7 +117,7 @@ static loff_t vma_address(struct vm_area_struct *vma, loff_t offset)
+ 	loff_t vaddr;
+ 
+ 	vaddr = vma->vm_start + offset;
+-	vaddr -= vma->vm_pgoff << PAGE_SHIFT;
++	vaddr -= (loff_t)vma->vm_pgoff << PAGE_SHIFT;
+ 
+ 	return vaddr;
+ }
+@@ -1450,7 +1450,7 @@ static struct uprobe *find_active_uprobe(unsigned long bp_vaddr, int *is_swbp)
+ 
+ 			inode = vma->vm_file->f_mapping->host;
+ 			offset = bp_vaddr - vma->vm_start;
+-			offset += (vma->vm_pgoff << PAGE_SHIFT);
++			offset += (loff_t)vma->vm_pgoff << PAGE_SHIFT;
+ 			uprobe = find_uprobe(inode, offset);
+ 		}
+ 
+-- 
+1.5.5.1
+

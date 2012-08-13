@@ -1,0 +1,130 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.file-systems,gmane.linux.nfs
+Subject: [PATCH v5 02/19] vfs: add a kern_path_at function
+Date: Wed,  8 Aug 2012 09:21:25 -0400
+Lines: 68
+Approved: news@gmane.org
+Message-ID: <1344432102-22312-3-git-send-email-jlayton@redhat.com>
+References: <1344432102-22312-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344432131 30698 80.91.229.3 (8 Aug 2012 13:22:11 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 13:22:11 +0000 (UTC)
+Cc: linux-fsdevel@vger.kernel.org, linux-nfs@vger.kernel.org,
+	linux-kernel@vger.kernel.org, michael.brantley@deshaw.com,
+	hch@infradead.org, miklos@szeredi.hu, pstaubach@exagrid.com
+To: viro@ZenIV.linux.org.uk
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 15:22:02 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sz6D1-00053t-7Y
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 15:21:59 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1758428Ab2HHNVx (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 09:21:53 -0400
+Original-Received: from mail-yx0-f174.google.com ([209.85.213.174]:58345 "EHLO
+	mail-yx0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1758398Ab2HHNVv (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 09:21:51 -0400
+Original-Received: by yenl2 with SMTP id l2so730657yen.19
+        for <linux-kernel@vger.kernel.org>; Wed, 08 Aug 2012 06:21:50 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:x-gm-message-state;
+        bh=jhQN/Nntrk2cBvNYLZuZ+3akruExFsXP40qrV9SSLZ0=;
+        b=d/nYaECmRNHIj5NQ0wKr3gbvyJmkYkp+XkLIgbHsGh+ljpfWeQ1VORZGaj9EHwt0tu
+         gMdH5r7ifgz1bMsgjZtTvvHaNsQGBeNjsy2U5LvBnJE5hk/fLYAHhIE+ooiidkBM3hCN
+         X9WSacC6NvkI1yK4uDsayWZF8WCVMEfkxct9GOqk7cXdcMvfoJP0OXUrOJGxzoSoQ4hB
+         B8UzlqaAnNJFlaSEtZZnS8f2SKoqDH4NFCH+3nnEWkqGWWApcPPiEEw0s9OmC4I4dXn9
+         h04izXhfW8qnXSVHDrlu2gqFIVHV4SWPZ1p7mnkYoKH0Ohb2x137JH2oag/0yncvcwYG
+         ogtg==
+Original-Received: by 10.236.200.167 with SMTP id z27mr270739yhn.131.1344432110301;
+        Wed, 08 Aug 2012 06:21:50 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-069-134-145-027.nc.res.rr.com. [69.134.145.27])
+        by mx.google.com with ESMTPS id l1sm24418002yhm.19.2012.08.08.06.21.49
+        (version=SSLv3 cipher=OTHER);
+        Wed, 08 Aug 2012 06:21:49 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1344432102-22312-1-git-send-email-jlayton@redhat.com>
+X-Gm-Message-State: ALoCoQnA8Ce2DNfiZouVZ9SW3+6FP7Cv7tDIYCGhxJ99m0wh4ghqAQQIKE6+9f4d7gfAcVF4JtAY
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340034 gmane.linux.file-systems:66455 gmane.linux.nfs:51359
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340034>
+
+This will function like user_path_at, but does not do the getname and
+putname, leaving that to the caller.
+
+Signed-off-by: Jeff Layton <jlayton@redhat.com>
+---
+ fs/namei.c            | 27 +++++++++++++++++++--------
+ include/linux/namei.h |  1 +
+ 2 files changed, 20 insertions(+), 8 deletions(-)
+
+diff --git a/fs/namei.c b/fs/namei.c
+index dc792e5..83a6f46 100644
+--- a/fs/namei.c
++++ b/fs/namei.c
+@@ -2092,20 +2092,31 @@ struct dentry *lookup_one_len(const char *name, struct dentry *base, int len)
+ 	return __lookup_hash(&this, base, 0);
+ }
+ 
++int kern_path_at(int dfd, const char *name, unsigned flags, struct path *path)
++{
++	struct nameidata nd;
++	int err;
++
++	BUG_ON(flags & LOOKUP_PARENT);
++
++	err = do_path_lookup(dfd, name, flags, &nd);
++	if (!err)
++		*path = nd.path;
++
++	return err;
++}
++
+ int user_path_at_empty(int dfd, const char __user *name, unsigned flags,
+ 		 struct path *path, int *empty)
+ {
+-	struct nameidata nd;
+ 	char *tmp = getname_flags(name, flags, empty);
+-	int err = PTR_ERR(tmp);
+-	if (!IS_ERR(tmp)) {
+-
+-		BUG_ON(flags & LOOKUP_PARENT);
++	int err;
+ 
+-		err = do_path_lookup(dfd, tmp, flags, &nd);
++	if (IS_ERR(tmp)) {
++		err = PTR_ERR(tmp);
++	} else {
++		err = kern_path_at(dfd, tmp, flags, path);
+ 		putname(tmp);
+-		if (!err)
+-			*path = nd.path;
+ 	}
+ 	return err;
+ }
+diff --git a/include/linux/namei.h b/include/linux/namei.h
+index 4bf19d8..482f87f 100644
+--- a/include/linux/namei.h
++++ b/include/linux/namei.h
+@@ -55,6 +55,7 @@ enum {LAST_NORM, LAST_ROOT, LAST_DOT, LAST_DOTDOT, LAST_BIND};
+ #define LOOKUP_ROOT		0x2000
+ #define LOOKUP_EMPTY		0x4000
+ 
++extern int kern_path_at(int, const char *, unsigned, struct path *);
+ extern int user_path_at(int, const char __user *, unsigned, struct path *);
+ extern int user_path_at_empty(int, const char __user *, unsigned, struct path *, int *empty);
+ 
+-- 
+1.7.11.2
+

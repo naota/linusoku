@@ -1,0 +1,128 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton@redhat.com>
+Newsgroups: gmane.linux.file-systems,gmane.linux.redhat.security.audit,gmane.linux.kernel
+Subject: [PATCH v5 0/9] audit: overhaul audit_names handling to allow for retrying on path-based syscalls
+Date: Thu, 26 Jul 2012 07:21:04 -0400
+Lines: 69
+Approved: news@gmane.org
+Message-ID: <1343301673-10642-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343301684 8720 80.91.229.3 (26 Jul 2012 11:21:24 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 11:21:24 +0000 (UTC)
+Cc: linux-audit@redhat.com, linux-fsdevel@vger.kernel.org,
+	linux-kernel@vger.kernel.org
+To: eparis@redhat.com, viro@zeniv.linux.org.uk
+Original-X-From: linux-fsdevel-owner@vger.kernel.org Thu Jul 26 13:21:23 2012
+Return-path: <linux-fsdevel-owner@vger.kernel.org>
+Envelope-to: lnx-linux-fsdevel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-fsdevel-owner@vger.kernel.org>)
+	id 1SuM8B-0000VL-CQ
+	for lnx-linux-fsdevel@plane.gmane.org; Thu, 26 Jul 2012 13:21:23 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752249Ab2GZLVV (ORCPT <rfc822;lnx-linux-fsdevel@m.gmane.org>);
+	Thu, 26 Jul 2012 07:21:21 -0400
+Original-Received: from mail-yw0-f46.google.com ([209.85.213.46]:42185 "EHLO
+	mail-yw0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751966Ab2GZLVU (ORCPT
+	<rfc822;linux-fsdevel@vger.kernel.org>);
+	Thu, 26 Jul 2012 07:21:20 -0400
+Original-Received: by yhmm54 with SMTP id m54so1801341yhm.19
+        for <linux-fsdevel@vger.kernel.org>; Thu, 26 Jul 2012 04:21:20 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer
+         :x-gm-message-state;
+        bh=5ng3c5JLya8Nrq73Hl4Q72dYzSDgTtzFkXOWXvy7pyY=;
+        b=GnKJCJ2GDso55BU8xxc9cfMNXxyHf+wxq3bDjeHrvERfCPdSIcpXSvYexxW4Cc8tTR
+         8HHLTgiwNqbCy0b2yo8C6NZIVh1cs+3bkoz3sMKhpaHaQ9rGFXIViecvG/Gd88B0PcE4
+         xwCqdZVUl1SoAOxrQb9tnDOUBzpHOzatqX/vNhXfWvPJW0OMMIZsWrFNU1D3JqvH32X1
+         Z+9nTJIpFSbc/OhemWN8nriqAazSm1UNwB7oO89dyy2dy4KrKmCqGgkoUEpat4OFfzKb
+         U2DARe9UI/kr2I2oC6xjqDqYWD+8MUiCReObQg1jFQJysQm6E9f9w+jXFS4z6RYMnW5z
+         89Uw==
+Original-Received: by 10.236.177.1 with SMTP id c1mr18941114yhm.71.1343301680258;
+        Thu, 26 Jul 2012 04:21:20 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-076-182-054-194.nc.res.rr.com. [76.182.54.194])
+        by mx.google.com with ESMTPS id e24sm41620099yhh.4.2012.07.26.04.21.18
+        (version=SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 04:21:19 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+X-Gm-Message-State: ALoCoQmTLdsuzoGd+/ABO/NSfopwtU68JF0lLm508QfkOWp/G6FY6W6vWdc3SEI3Ruq0N/Q7yO+G
+Original-Sender: linux-fsdevel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-fsdevel.vger.kernel.org>
+X-Mailing-List: linux-fsdevel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.file-systems:66230 gmane.linux.redhat.security.audit:4333 gmane.linux.kernel:1333556
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333556>
+
+This patchset is a minor respin of the series that I posted June 26th.
+The main reason is to deal with some fairly minor merge conflicts that
+have cropped up due to recent changes. This patch also relies on the
+patch that I sent separately yesterday entitled "vfs: don't let do_last
+pass negative dentry to audit_inode".
+
+This series is available via the "audit" branch of my git tree as well:
+
+    git://git.samba.org/jlayton/linux.git audit
+
+The original cover letter text follows:
+
+I recently posted a set of patches to have the kernel retry the lookup
+and call when path-based syscalls would ordinarily return ESTALE. Al
+took a look and pointed out that this would break the fragile logic that
+handles the audit_names for syscall auditing.
+
+This patchset comprises a number of incremental changes that should make
+it ok to retry on a path-based syscall. The main caveat is that the retry
+mustn't redo the getname() on the strings involved.
+
+Unfortunately, we don't have anything that really describes what the
+correct behavior is for this stuff, so I'm shooting here for "no
+discernable difference" on a retry.
+
+This seems to do the right thing in the cases that I've tested; mostly
+the normal case where things succeed or fail for some reason and where
+the syscall is retried after an ESTALE error.
+
+Review is of course appreciated. There are some fixes in here too for
+some subtle bugs in the existing code. Some of these patches may also
+help performance in some cases, but I haven't measured it for that.
+
+I'd like to see this patchset go into 3.6 if at all possible.
+
+Eric Paris (1):
+  audit: make audit_compare_dname_path use parent_len helper
+
+Jeff Layton (8):
+  audit: remove unnecessary NULL ptr checks from do_path_lookup
+  audit: pass in dentry to audit_copy_inode wherever possible
+  audit: reverse arguments to audit_inode_child
+  audit: add a new "type" field to audit_names struct
+  audit: set the name_len in audit_inode for parent lookups
+  audit: remove dirlen argument to audit_compare_dname_path
+  audit: optimize audit_compare_dname_path
+  audit: overhaul __audit_inode_child to accomodate retrying
+
+ fs/btrfs/ioctl.c         |   2 +-
+ fs/namei.c               |  22 ++++-----
+ fs/open.c                |   4 +-
+ fs/xattr.c               |   8 ++--
+ include/linux/audit.h    |  36 ++++++++++-----
+ include/linux/fsnotify.h |   8 ++--
+ ipc/mqueue.c             |   8 ++--
+ kernel/audit.h           |   7 ++-
+ kernel/audit_watch.c     |   3 +-
+ kernel/auditfilter.c     |  65 +++++++++++++++++----------
+ kernel/auditsc.c         | 115 ++++++++++++++++++++++++++++-------------------
+ 11 files changed, 166 insertions(+), 112 deletions(-)
+
+-- 
+1.7.11.2
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

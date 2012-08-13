@@ -1,0 +1,132 @@
+Path: news.gmane.org!not-for-mail
+From: "Srivatsa S. Bhat" <srivatsa.bhat@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel
+Subject: [RFC PATCH 0/6] CPU hotplug: Reverse invocation of notifiers during
+ CPU hotplug
+Date: Wed, 25 Jul 2012 17:23:28 +0530
+Lines: 69
+Approved: news@gmane.org
+Message-ID: <20120725115224.3900.80783.stgit@srivatsabhat.in.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343217255 20449 80.91.229.3 (25 Jul 2012 11:54:15 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 11:54:15 +0000 (UTC)
+Cc: rjw@sisk.pl, srivatsa.bhat@linux.vnet.ibm.com,
+	nikunj@linux.vnet.ibm.com, linux-pm@vger.kernel.org,
+	linux-kernel@vger.kernel.org
+To: tglx@linutronix.de, mingo@kernel.org, peterz@infradead.org,
+	rusty@rustcorp.com.au, paulmck@linux.vnet.ibm.com,
+	namhyung@kernel.org, tj@kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 13:54:12 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su0AN-000573-LC
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 13:54:11 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756637Ab2GYLyF (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 07:54:05 -0400
+Original-Received: from e28smtp03.in.ibm.com ([122.248.162.3]:41838 "EHLO
+	e28smtp03.in.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756487Ab2GYLyB (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 07:54:01 -0400
+Original-Received: from /spool/local
+	by e28smtp03.in.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <srivatsa.bhat@linux.vnet.ibm.com>;
+	Wed, 25 Jul 2012 17:23:58 +0530
+Original-Received: from d28relay03.in.ibm.com (9.184.220.60)
+	by e28smtp03.in.ibm.com (192.168.1.133) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Wed, 25 Jul 2012 17:23:56 +0530
+Original-Received: from d28av04.in.ibm.com (d28av04.in.ibm.com [9.184.220.66])
+	by d28relay03.in.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6PBrtgo9306256;
+	Wed, 25 Jul 2012 17:23:55 +0530
+Original-Received: from d28av04.in.ibm.com (loopback [127.0.0.1])
+	by d28av04.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6PBrjdi022566;
+	Wed, 25 Jul 2012 21:53:53 +1000
+Original-Received: from srivatsabhat.in.ibm.com (srivatsabhat.in.ibm.com [9.124.35.188])
+	by d28av04.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6PBrWVb022061;
+	Wed, 25 Jul 2012 21:53:32 +1000
+User-Agent: StGIT/0.14.3
+x-cbid: 12072511-3864-0000-0000-000003E866A6
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332912
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332912>
+
+Hi,
+
+This patchset implements the approach of invoking the CPU hotplug callbacks
+(notifiers) in one order during CPU online and in the reverse order during CPU
+offline. The rationale behind this is that services for a CPU are started in a
+particular order (perhaps, with implicit dependencies between them) while
+bringing up the CPU, and hence, it makes sense to tear down the services in
+the opposite order, thereby honoring most of the dependencies automatically
+(and also correctly). This is explained in more detail in Patch 6.
+
+Patch 1 adds rcu primitives for traversing a linked list in reverse order.
+Patch 2 converts the notifiers to a circular doubly linked list (in
+preparation for the reverse invocation support).
+Patch 3 adds helpers to invoke notifiers in the reverse order.
+Patches 4 and 5 do the necessary prep work for moving over to the reverse
+invocation model, by adjusting some of the callbacks/priorities as necessary.
+Patch 6 does the final transition and invokes the notifiers in the reverse order
+during CPU offline.
+
+This patchset applies on top of:
+1. Tejun's workqueue CPU hotplug patchset[1] merged with
+2. Thomas Gleixner's park/unpark patchset with Paul McKenney's fixes which
+   are available at [2].
+
+References:
+[1]. git://git.kernel.org/pub/scm/linux/kernel/git/tj/wq.git review-wq-hotplug
+[2]. git://git.kernel.org/pub/scm/linux/kernel/git/paulmck/linux-rcu.git rcu/smp/hotplug
+
+--
+ Srivatsa S. Bhat (6):
+      list, rcu: Introduce rcu version of reverse list traversal
+      notifiers: Convert notifier chain to circular doubly linked-list
+      notifiers: Add support for reverse invocation of notifier chains
+      sched, cpuset: Prepare scheduler and cpuset CPU hotplug callbacks for reverse invocation
+      sched, perf: Prepare migration and perf CPU hotplug callbacks for reverse invocation
+      CPU hotplug: Invoke CPU offline notifiers in reverse order
+
+
+  arch/mips/powertv/powertv_setup.c                |    2 
+ arch/um/drivers/mconsole_kern.c                  |    2 
+ arch/um/kernel/um_arch.c                         |    2 
+ drivers/acpi/sleep.c                             |    2 
+ drivers/char/ipmi/ipmi_msghandler.c              |    2 
+ drivers/char/ipmi/ipmi_watchdog.c                |    4 
+ drivers/firmware/dcdbas.c                        |    2 
+ drivers/md/md.c                                  |    2 
+ drivers/net/ethernet/intel/igb/igb_main.c        |    2 
+ drivers/net/ethernet/intel/ixgbe/ixgbe_main.c    |    2 
+ drivers/net/ethernet/myricom/myri10ge/myri10ge.c |    2 
+ drivers/staging/vt6655/device_main.c             |    2 
+ include/linux/cpu.h                              |   40 +++--
+ include/linux/notifier.h                         |   27 ++-
+ include/linux/rculist.h                          |   46 ++++++
+ kernel/cpu.c                                     |   34 +++-
+ kernel/debug/debug_core.c                        |    2 
+ kernel/notifier.c                                |  179 ++++++++++++++++------
+ kernel/sched/core.c                              |  140 ++++++++++-------
+ kernel/trace/trace.c                             |    2 
+ kernel/workqueue.c                               |   30 +---
+ mm/page-writeback.c                              |    2 
+ mm/vmstat.c                                      |    4 
+ 23 files changed, 357 insertions(+), 175 deletions(-)
+
+
+
+Thanks,
+Srivatsa S. Bhat
+IBM Linux Technology Center
+

@@ -1,0 +1,156 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 32/40] vmscan: promote shared file mapped pages
+Date: Thu, 26 Jul 2012 14:29:50 -0700
+Lines: 83
+Approved: news@gmane.org
+Message-ID: <20120726211414.048342475@linuxfoundation.org>
+References: <20120726211424.GA7709@kroah.com>
+ <20120726211411.164006056@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343338451 11545 80.91.229.3 (26 Jul 2012 21:34:11 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 21:34:11 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	Konstantin Khlebnikov <khlebnikov@openvz.org>,
+	Pekka Enberg <penberg@kernel.org>,
+	Minchan Kim <minchan.kim@gmail.com>,
+	KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>,
+	Wu Fengguang <fengguang.wu@intel.com>,
+	Johannes Weiner <hannes@cmpxchg.org>,
+	Nick Piggin <npiggin@kernel.dk>, Mel Gorman <mel@csn.ul.ie>,
+	Shaohua Li <shaohua.li@intel.com>,
+	Rik van Riel <riel@redhat.com>, Mel Gorman <mgorman@suse.de>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 23:34:07 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuVh5-0007tF-VT
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 23:34:04 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753661Ab2GZVbv (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 17:31:51 -0400
+Original-Received: from mail-yx0-f174.google.com ([209.85.213.174]:58435 "EHLO
+	mail-yx0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753605Ab2GZVbn (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 17:31:43 -0400
+Original-Received: by mail-yx0-f174.google.com with SMTP id l2so2513141yen.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 14:31:43 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=oB51XAH1w3/2nnvl1QwnrhxXtGP1KkaeVXvBp2o3X1g=;
+        b=UUPW3bAKGolKncAiCkYWzMvkZTpdBf05JNNc5Z05MTauSLmyC62/oOLgu/wgpE+/h5
+         zR0Alcjm3VqiQRwzamcwjumoCc7bx3+TWXPVkdzbdC2JXiSQZrAyfuRg2s4JfaAr0KzD
+         VW0l3j0kqgPVRrkXSlE/ONttfHjtLBO+7wSueXAsPYG+mYmz0jn15H+XJoP3f3A3/Kvh
+         VHf+vjDtwlkHdwdMaghdEhDPtzwWOraT7SfDOxD4OI0PxPsxlFY0BTR0cJZ9E8h5iSpI
+         rYCN4rpbk3TjtzM5UfA9E+LdwUuslXyB3Q6AKPyOO0rPV/f3T0EQ2wOMfTJSyTYn90Vz
+         bSXg==
+Original-Received: by 10.66.87.70 with SMTP id v6mr599946paz.14.1343338302488;
+        Thu, 26 Jul 2012 14:31:42 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id qa5sm439148pbb.19.2012.07.26.14.31.39
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 14:31:41 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120726211411.164006056@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQlhs9mEStXU6XHqeGRxsDlD4vn0leNY5vtDe8fi7zm3nrPE0LXh+mvHf57Zb1O0y+8vKBY8
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333949 gmane.linux.kernel.stable:28887
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333949>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Konstantin Khlebnikov <khlebnikov@openvz.org>
+
+commit 34dbc67a644f11ab3475d822d72e25409911e760 upstream.
+
+Stable note: Not tracked in Bugzilla. There were reports of shared
+	mapped pages being unfairly reclaimed in comparison to older kernels.
+	This is being addressed over time. The specific workload being
+	addressed here in described in paragraph four and while paragraph
+	five says it did not help performance as such, it made a difference
+	to major page faults. I'm aware of at least one bug for a large
+	vendor that was due to increased major faults.
+
+Commit 645747462435 ("vmscan: detect mapped file pages used only once")
+greatly decreases lifetime of single-used mapped file pages.
+Unfortunately it also decreases life time of all shared mapped file
+pages.  Because after commit bf3f3bc5e7347 ("mm: don't mark_page_accessed
+in fault path") page-fault handler does not mark page active or even
+referenced.
+
+Thus page_check_references() activates file page only if it was used twice
+while it stays in inactive list, meanwhile it activates anon pages after
+first access.  Inactive list can be small enough, this way reclaimer can
+accidentally throw away any widely used page if it wasn't used twice in
+short period.
+
+After this patch page_check_references() also activate file mapped page at
+first inactive list scan if this page is already used multiple times via
+several ptes.
+
+I found this while trying to fix degragation in rhel6 (~2.6.32) from rhel5
+(~2.6.18).  There a complete mess with >100 web/mail/spam/ftp containers,
+they share all their files but there a lot of anonymous pages: ~500mb
+shared file mapped memory and 15-20Gb non-shared anonymous memory.  In
+this situation major-pagefaults are very costly, because all containers
+share the same page.  In my load kernel created a disproportionate
+pressure on the file memory, compared with the anonymous, they equaled
+only if I raise swappiness up to 150 =)
+
+These patches actually wasn't helped a lot in my problem, but I saw
+noticable (10-20 times) reduce in count and average time of
+major-pagefault in file-mapped areas.
+
+Actually both patches are fixes for commit v2.6.33-5448-g6457474, because
+it was aimed at one scenario (singly used pages), but it breaks the logic
+in other scenarios (shared and/or executable pages)
+
+Signed-off-by: Konstantin Khlebnikov <khlebnikov@openvz.org>
+Acked-by: Pekka Enberg <penberg@kernel.org>
+Acked-by: Minchan Kim <minchan.kim@gmail.com>
+Reviewed-by: KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>
+Cc: Wu Fengguang <fengguang.wu@intel.com>
+Cc: Johannes Weiner <hannes@cmpxchg.org>
+Cc: Nick Piggin <npiggin@kernel.dk>
+Cc: Mel Gorman <mel@csn.ul.ie>
+Cc: Shaohua Li <shaohua.li@intel.com>
+Cc: Rik van Riel <riel@redhat.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+
+---
+ mm/vmscan.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -723,7 +723,7 @@ static enum page_references page_check_r
+ 		 */
+ 		SetPageReferenced(page);
+ 
+-		if (referenced_page)
++		if (referenced_page || referenced_ptes > 1)
+ 			return PAGEREF_ACTIVATE;
+ 
+ 		return PAGEREF_KEEP;
+
+

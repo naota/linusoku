@@ -1,0 +1,182 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 25/41] mm: compaction: make isolate_lru_page() filter-aware again
+Date: Mon, 30 Jul 2012 10:31:24 -0700
+Lines: 113
+Approved: news@gmane.org
+Message-ID: <20120730172903.282607750@linuxfoundation.org>
+References: <20120730172901.306897424@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343669884 26875 80.91.229.3 (30 Jul 2012 17:38:04 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 17:38:04 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Mel Gorman <mgorman@suse.de>,
+	Rik van Riel <riel@redhat.com>,
+	Andrea Arcangeli <aarcange@redhat.com>,
+	Minchan Kim <minchan@kernel.org>,
+	Dave Jones <davej@redhat.com>, Jan Kara <jack@suse.cz>,
+	Andy Isaacson <adi@hexapodia.org>, Nai Xia <nai.xia@gmail.com>,
+	Johannes Weiner <jweiner@redhat.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 19:38:01 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Svtun-0005Wu-Fn
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 19:37:58 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755023Ab2G3RdX (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 13:33:23 -0400
+Original-Received: from mail-gg0-f174.google.com ([209.85.161.174]:49202 "EHLO
+	mail-gg0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754976Ab2G3RdT (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 13:33:19 -0400
+Original-Received: by mail-gg0-f174.google.com with SMTP id u4so5078471ggl.19
+        for <linux-kernel@vger.kernel.org>; Mon, 30 Jul 2012 10:33:19 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=wy+fqaycT30Tdjs2WpYlYqmFgrbOucLXQDWcyoxPSsI=;
+        b=apVB9aWMsgcQmGuvjwpMEMcY67QlkylWg67SEX5LZD6vWELWByoewkCB9kd0D/qS8D
+         C4DeKKGPO+NgroU/5OdEJFRAW6UUtVqv03vLIrWMiSh+i20ZGrOLTw4QAu1ioElVbOB4
+         w8pvo54gDT2hCiUdXSQf6FSd82hQomhNfyYUoqwPh99CKq5sfjOtnFkfcJcLxoJdCKL2
+         4p/gG3CJ4NeijnXWAWt97+YMcfj9qUMulMuk8i39snoI6FnAUgXBmcN8OISQTLBoIxzH
+         ClHF1ZgWDwVBU74T6tFZ9XTrrtMWfP7cR56n+w4fyf4gnv9wyBoseartc1/B0Xvcn+W+
+         8xjw==
+Original-Received: by 10.66.76.196 with SMTP id m4mr26207363paw.61.1343669598726;
+        Mon, 30 Jul 2012 10:33:18 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id qp9sm8302368pbc.9.2012.07.30.10.33.16
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 30 Jul 2012 10:33:17 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120730172901.306897424@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQmj5IzEKyeWrn93Ww7Tsq/oCiTZ4MTSMh5efnnZKQisYfXslBbO8Ud9B2iqvtMZTKApaQHM
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335221 gmane.linux.kernel.stable:28963
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335221>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Mel Gorman <mgorman@suse.de>
+
+commit c82449352854ff09e43062246af86bdeb628f0c3 upstream.
+
+Stable note: Not tracked in Bugzilla. A fix aimed at preserving page aging
+	information by reducing LRU list churning had the side-effect of
+	reducing THP allocation success rates. This was part of a series
+	to restore the success rates while preserving the reclaim fix.
+
+Commit 39deaf85 ("mm: compaction: make isolate_lru_page() filter-aware")
+noted that compaction does not migrate dirty or writeback pages and that
+is was meaningless to pick the page and re-add it to the LRU list.  This
+had to be partially reverted because some dirty pages can be migrated by
+compaction without blocking.
+
+This patch updates "mm: compaction: make isolate_lru_page" by skipping
+over pages that migration has no possibility of migrating to minimise LRU
+disruption.
+
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Reviewed-by: Rik van Riel<riel@redhat.com>
+Cc: Andrea Arcangeli <aarcange@redhat.com>
+Reviewed-by: Minchan Kim <minchan@kernel.org>
+Cc: Dave Jones <davej@redhat.com>
+Cc: Jan Kara <jack@suse.cz>
+Cc: Andy Isaacson <adi@hexapodia.org>
+Cc: Nai Xia <nai.xia@gmail.com>
+Cc: Johannes Weiner <jweiner@redhat.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ include/linux/mmzone.h |    2 ++
+ mm/compaction.c        |    3 +++
+ mm/vmscan.c            |   35 +++++++++++++++++++++++++++++++++--
+ 3 files changed, 38 insertions(+), 2 deletions(-)
+
+--- a/include/linux/mmzone.h
++++ b/include/linux/mmzone.h
+@@ -166,6 +166,8 @@ static inline int is_unevictable_lru(enu
+ #define ISOLATE_CLEAN		((__force isolate_mode_t)0x4)
+ /* Isolate unmapped file */
+ #define ISOLATE_UNMAPPED	((__force isolate_mode_t)0x8)
++/* Isolate for asynchronous migration */
++#define ISOLATE_ASYNC_MIGRATE	((__force isolate_mode_t)0x10)
+ 
+ /* LRU Isolation modes. */
+ typedef unsigned __bitwise__ isolate_mode_t;
+--- a/mm/compaction.c
++++ b/mm/compaction.c
+@@ -371,6 +371,9 @@ static isolate_migrate_t isolate_migrate
+ 			continue;
+ 		}
+ 
++		if (!cc->sync)
++			mode |= ISOLATE_ASYNC_MIGRATE;
++
+ 		/* Try isolate the page */
+ 		if (__isolate_lru_page(page, mode, 0) != 0)
+ 			continue;
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -1045,8 +1045,39 @@ int __isolate_lru_page(struct page *page
+ 
+ 	ret = -EBUSY;
+ 
+-	if ((mode & ISOLATE_CLEAN) && (PageDirty(page) || PageWriteback(page)))
+-		return ret;
++	/*
++	 * To minimise LRU disruption, the caller can indicate that it only
++	 * wants to isolate pages it will be able to operate on without
++	 * blocking - clean pages for the most part.
++	 *
++	 * ISOLATE_CLEAN means that only clean pages should be isolated. This
++	 * is used by reclaim when it is cannot write to backing storage
++	 *
++	 * ISOLATE_ASYNC_MIGRATE is used to indicate that it only wants to pages
++	 * that it is possible to migrate without blocking
++	 */
++	if (mode & (ISOLATE_CLEAN|ISOLATE_ASYNC_MIGRATE)) {
++		/* All the caller can do on PageWriteback is block */
++		if (PageWriteback(page))
++			return ret;
++
++		if (PageDirty(page)) {
++			struct address_space *mapping;
++
++			/* ISOLATE_CLEAN means only clean pages */
++			if (mode & ISOLATE_CLEAN)
++				return ret;
++
++			/*
++			 * Only pages without mappings or that have a
++			 * ->migratepage callback are possible to migrate
++			 * without blocking
++			 */
++			mapping = page_mapping(page);
++			if (mapping && !mapping->a_ops->migratepage)
++				return ret;
++		}
++	}
+ 
+ 	if ((mode & ISOLATE_UNMAPPED) && page_mapped(page))
+ 		return ret;
+
+

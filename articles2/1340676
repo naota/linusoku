@@ -1,0 +1,132 @@
+Path: news.gmane.org!not-for-mail
+From: Glauber Costa <glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+Newsgroups: gmane.linux.kernel.cgroups,gmane.linux.kernel,gmane.linux.kernel.mm,gmane.linux.openvz.devel
+Subject: [PATCH v2 01/11] memcg: Make it possible to use the stock for more than one page.
+Date: Thu,  9 Aug 2012 17:01:09 +0400
+Lines: 82
+Approved: news@gmane.org
+Message-ID: <1344517279-30646-2-git-send-email-glommer@parallels.com>
+References: <1344517279-30646-1-git-send-email-glommer@parallels.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344517295 929 80.91.229.3 (9 Aug 2012 13:01:35 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 13:01:35 +0000 (UTC)
+Cc: <linux-mm-Bw31MaZKKs3YtjvyW6yDsg@public.gmane.org>, <cgroups-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>,
+	<devel-GEFAQzZX7r8dnm+yROfE0A@public.gmane.org>, Michal Hocko <mhocko-AlSwsSmVLrQ@public.gmane.org>,
+	Johannes Weiner <hannes-druUgvl0LCNAfugRpC6u6w@public.gmane.org>,
+	Andrew Morton <akpm-de/tnXTf+JLsfHDXvbKv3WD2FQJk+8+b@public.gmane.org>,
+	<kamezawa.hiroyu-+CUm20s59erQFUHtdCDX3A@public.gmane.org>, Christoph Lameter <cl-vYTEC60ixJUAvxtiuMwx3w@public.gmane.org>,
+	David Rientjes <rientjes-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>,
+	Pekka Enberg <penberg-DgEjT+Ai2ygdnm+yROfE0A@public.gmane.org>,
+	Suleiman Souhlal <suleiman-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>,
+	Glauber Costa <glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+To: <linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Original-X-From: cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org Thu Aug 09 15:01:34 2012
+Return-path: <cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Envelope-to: glkc-cgroups-wOFGN7rlS/M9smdsby/KFg@public.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>)
+	id 1SzSMh-00075i-MF
+	for glkc-cgroups-wOFGN7rlS/M9smdsby/KFg@public.gmane.org; Thu, 09 Aug 2012 15:01:27 +0200
+Original-Received: (majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org) by vger.kernel.org via listexpand
+	id S1758114Ab2HINB0 (ORCPT <rfc822;glkc-cgroups@m.gmane.org>);
+	Thu, 9 Aug 2012 09:01:26 -0400
+Original-Received: from mailhub.sw.ru ([195.214.232.25]:39755 "EHLO relay.sw.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753177Ab2HINBZ (ORCPT <rfc822;cgroups-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>);
+	Thu, 9 Aug 2012 09:01:25 -0400
+Original-Received: from straightjacket.localdomain.ru ([10.30.18.238])
+	by relay.sw.ru (8.13.4/8.13.4) with ESMTP id q79D1LIe011706;
+	Thu, 9 Aug 2012 17:01:23 +0400 (MSK)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1344517279-30646-1-git-send-email-glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+Original-Sender: cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Precedence: bulk
+List-ID: <cgroups.vger.kernel.org>
+X-Mailing-List: cgroups-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Xref: news.gmane.org gmane.linux.kernel.cgroups:3550 gmane.linux.kernel:1340676 gmane.linux.kernel.mm:83903 gmane.linux.openvz.devel:1967
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340676>
+
+From: Suleiman Souhlal <ssouhlal-HZy0K5TPuP5AfugRpC6u6w@public.gmane.org>
+
+We currently have a percpu stock cache scheme that charges one page at a
+time from memcg->res, the user counter. When the kernel memory
+controller comes into play, we'll need to charge more than that.
+
+This is because kernel memory allocations will also draw from the user
+counter, and can be bigger than a single page, as it is the case with
+the stack (usually 2 pages) or some higher order slabs.
+
+[ glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org: added a changelog ]
+
+Signed-off-by: Suleiman Souhlal <suleiman-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>
+Signed-off-by: Glauber Costa <glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+Acked-by: David Rientjes <rientjes-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>
+Acked-by: Kamezawa Hiroyuki <kamezawa.hiroyu-+CUm20s59erQFUHtdCDX3A@public.gmane.org>
+---
+ mm/memcontrol.c | 28 ++++++++++++++++++----------
+ 1 file changed, 18 insertions(+), 10 deletions(-)
+
+diff --git a/mm/memcontrol.c b/mm/memcontrol.c
+index 95162c9..bc7bfa7 100644
+--- a/mm/memcontrol.c
++++ b/mm/memcontrol.c
+@@ -2096,20 +2096,28 @@ struct memcg_stock_pcp {
+ static DEFINE_PER_CPU(struct memcg_stock_pcp, memcg_stock);
+ static DEFINE_MUTEX(percpu_charge_mutex);
+ 
+-/*
+- * Try to consume stocked charge on this cpu. If success, one page is consumed
+- * from local stock and true is returned. If the stock is 0 or charges from a
+- * cgroup which is not current target, returns false. This stock will be
+- * refilled.
++/**
++ * consume_stock: Try to consume stocked charge on this cpu.
++ * @memcg: memcg to consume from.
++ * @nr_pages: how many pages to charge.
++ *
++ * The charges will only happen if @memcg matches the current cpu's memcg
++ * stock, and at least @nr_pages are available in that stock.  Failure to
++ * service an allocation will refill the stock.
++ *
++ * returns true if succesfull, false otherwise.
+  */
+-static bool consume_stock(struct mem_cgroup *memcg)
++static bool consume_stock(struct mem_cgroup *memcg, int nr_pages)
+ {
+ 	struct memcg_stock_pcp *stock;
+ 	bool ret = true;
+ 
++	if (nr_pages > CHARGE_BATCH)
++		return false;
++
+ 	stock = &get_cpu_var(memcg_stock);
+-	if (memcg == stock->cached && stock->nr_pages)
+-		stock->nr_pages--;
++	if (memcg == stock->cached && stock->nr_pages >= nr_pages)
++		stock->nr_pages -= nr_pages;
+ 	else /* need to call res_counter_charge */
+ 		ret = false;
+ 	put_cpu_var(memcg_stock);
+@@ -2408,7 +2416,7 @@ again:
+ 		VM_BUG_ON(css_is_removed(&memcg->css));
+ 		if (mem_cgroup_is_root(memcg))
+ 			goto done;
+-		if (nr_pages == 1 && consume_stock(memcg))
++		if (consume_stock(memcg, nr_pages))
+ 			goto done;
+ 		css_get(&memcg->css);
+ 	} else {
+@@ -2433,7 +2441,7 @@ again:
+ 			rcu_read_unlock();
+ 			goto done;
+ 		}
+-		if (nr_pages == 1 && consume_stock(memcg)) {
++		if (consume_stock(memcg, nr_pages)) {
+ 			/*
+ 			 * It seems dagerous to access memcg without css_get().
+ 			 * But considering how consume_stok works, it's not
+-- 
+1.7.11.2
+

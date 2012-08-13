@@ -1,0 +1,142 @@
+Path: news.gmane.org!not-for-mail
+From: "Srivatsa S. Bhat" <srivatsa.bhat@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel
+Subject: [RFC PATCH 1/6] list,
+ rcu: Introduce rcu version of reverse list traversal
+Date: Wed, 25 Jul 2012 17:23:38 +0530
+Lines: 77
+Approved: news@gmane.org
+Message-ID: <20120725115334.3900.76789.stgit@srivatsabhat.in.ibm.com>
+References: <20120725115224.3900.80783.stgit@srivatsabhat.in.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343217254 20445 80.91.229.3 (25 Jul 2012 11:54:14 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 11:54:14 +0000 (UTC)
+Cc: rjw@sisk.pl, srivatsa.bhat@linux.vnet.ibm.com,
+	nikunj@linux.vnet.ibm.com, linux-pm@vger.kernel.org,
+	linux-kernel@vger.kernel.org
+To: tglx@linutronix.de, mingo@kernel.org, peterz@infradead.org,
+	rusty@rustcorp.com.au, paulmck@linux.vnet.ibm.com,
+	namhyung@kernel.org, tj@kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 13:54:11 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su0AN-000573-5k
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 13:54:11 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756619Ab2GYLx7 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 07:53:59 -0400
+Original-Received: from e23smtp07.au.ibm.com ([202.81.31.140]:60854 "EHLO
+	e23smtp07.au.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756487Ab2GYLx4 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 07:53:56 -0400
+Original-Received: from /spool/local
+	by e23smtp07.au.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <srivatsa.bhat@linux.vnet.ibm.com>;
+	Wed, 25 Jul 2012 21:53:40 +1000
+Original-Received: from d23relay04.au.ibm.com (202.81.31.246)
+	by e23smtp07.au.ibm.com (202.81.31.204) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Wed, 25 Jul 2012 21:53:37 +1000
+Original-Received: from d23av01.au.ibm.com (d23av01.au.ibm.com [9.190.234.96])
+	by d23relay04.au.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6PBjfCb10027390;
+	Wed, 25 Jul 2012 21:45:42 +1000
+Original-Received: from d23av01.au.ibm.com (loopback [127.0.0.1])
+	by d23av01.au.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6PBrnIZ001914;
+	Wed, 25 Jul 2012 21:53:50 +1000
+Original-Received: from srivatsabhat.in.ibm.com (srivatsabhat.in.ibm.com [9.124.35.188])
+	by d23av01.au.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6PBrlwn001872;
+	Wed, 25 Jul 2012 21:53:47 +1000
+In-Reply-To: <20120725115224.3900.80783.stgit@srivatsabhat.in.ibm.com>
+User-Agent: StGIT/0.14.3
+x-cbid: 12072511-0260-0000-0000-000001929C80
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332911
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332911>
+
+Provide a helper to traverse an RCU-protected doubly linked list in the reverse
+order. Also add a corresponding helper to delete entries from the linked list,
+which takes care to see that we don't poison either of the pointers (->prev
+and ->next), since it is legal to run an rcu list-traversal operation (in
+either forward/reverse direction) concurrently.
+
+Signed-off-by: Srivatsa S. Bhat <srivatsa.bhat@linux.vnet.ibm.com>
+---
+
+ include/linux/rculist.h |   46 ++++++++++++++++++++++++++++++++++++++++++++++
+ 1 files changed, 46 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/rculist.h b/include/linux/rculist.h
+index e0f0fab..6f22a13 100644
+--- a/include/linux/rculist.h
++++ b/include/linux/rculist.h
+@@ -118,6 +118,36 @@ static inline void list_del_rcu(struct list_head *entry)
+ }
+ 
+ /**
++ * list_del_bidir_rcu - deletes entry from list without re-initialization.
++ * Useful when one wants to perform bidirectional traversal of the list.
++ *
++ * @entry: the element to delete from the list.
++ *
++ * Note: list_empty() on entry does not return true after this,
++ * the entry is in an undefined state. It is useful for RCU based
++ * lockfree traversal.
++ *
++ * In particular, since we should be able to traverse this list in both
++ * directions, it means that we can not poison either of the pointers
++ * (->prev and ->next) because they may still be used for walking the list.
++ *
++ * The caller must take whatever precautions are necessary (such as holding
++ * appropriate locks) to avoid racing with another list-mutation primitive,
++ * such as list_del_bidir_rcu() or list_add_rcu(), running on this same list.
++ * However, it is perfectly legal to run concurrently with the _rcu
++ * list-traversal primitives, such as list_for_each_entry_rcu() or
++ * list_for_each_entry_reverse_rcu().
++ *
++ * Note that the caller is not permitted to immediately free the newly deleted
++ * entry.  Instead, either synchronize_rcu() or call_rcu() must be used to
++ * defer freeing until an RCU grace period has elapsed.
++ */
++static inline void list_del_bidir_rcu(struct list_head *entry)
++{
++	__list_del_entry(entry);
++}
++
++/**
+  * hlist_del_init_rcu - deletes entry from hash list with re-initialization
+  * @n: the element to delete from the hash list.
+  *
+@@ -286,6 +316,22 @@ static inline void list_splice_init_rcu(struct list_head *list,
+ 		&pos->member != (head); \
+ 		pos = list_entry_rcu(pos->member.next, typeof(*pos), member))
+ 
++/**
++ * list_for_each_entry_reverse_rcu - iterate backwards over rcu list of given
++ * type
++ *
++ * @pos:	the type * to use as a loop cursor.
++ * @head:	the head for your list.
++ * @member:	the name of the list_struct within the struct.
++ *
++ * This list-traversal primitive may safely run concurrently with
++ * the _rcu list-mutation primitives such as list_add_rcu()
++ * as long as the traversal is guarded by rcu_read_lock().
++ */
++#define list_for_each_entry_reverse_rcu(pos, head, member) \
++	for (pos = list_entry_rcu((head)->prev, typeof(*pos), member); \
++		&pos->member != (head); \
++		pos = list_entry_rcu(pos->member.prev, typeof(*pos), member))
+ 
+ /**
+  * list_for_each_continue_rcu
+

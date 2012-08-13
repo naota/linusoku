@@ -1,0 +1,168 @@
+Path: news.gmane.org!not-for-mail
+From: Sasha Levin <levinsasha928@gmail.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel,gmane.linux.network
+Subject: [RFC v3 7/7] net,9p: use new hashtable implementation
+Date: Tue,  7 Aug 2012 02:45:17 +0200
+Lines: 81
+Approved: news@gmane.org
+Message-ID: <1344300317-23189-9-git-send-email-levinsasha928@gmail.com>
+References: <1344300317-23189-1-git-send-email-levinsasha928@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344300339 14434 80.91.229.3 (7 Aug 2012 00:45:39 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 00:45:39 +0000 (UTC)
+Cc: tj@kernel.org,
+	akpm@linux-foundation.org,
+	linux-kernel@vger.kernel.org,
+	linux-mm@kvack.org,
+	paul.gortmaker@windriver.com,
+	davem@davemloft.net,
+	rostedt@goodmis.org,
+	mingo@elte.hu,
+	ebiederm@xmission.com,
+	aarcange@redhat.com,
+	ericvh@gmail.com,
+	netdev@vger.kernel.org,
+	josh@joshtriplett.org,
+	eric.dumazet@gmail.com,
+	mathieu.desnoyers@efficios.com,
+	Sasha Levin <levinsasha928@gmail.com>
+To: torvalds@linux-foundation.org
+Original-X-From: owner-linux-mm@kvack.org Tue Aug 07 02:45:32 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SyXvP-0008Ai-Gu
+	for glkm-linux-mm-2@m.gmane.org; Tue, 07 Aug 2012 02:45:31 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 1E3796B0070; Mon,  6 Aug 2012 20:45:30 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 0B7B76B0071; Mon,  6 Aug 2012 20:45:29 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id C87416B0072; Mon,  6 Aug 2012 20:45:29 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx139.postini.com [74.125.245.139])
+	by kanga.kvack.org (Postfix) with SMTP id E021F6B0070
+	for <linux-mm@kvack.org>; Mon,  6 Aug 2012 20:45:28 -0400 (EDT)
+Original-Received: from mail-bk0-f41.google.com ([209.85.214.41]) (using TLSv1) by na3sys010amx139.postini.com ([74.125.244.10]) with SMTP;
+	Tue, 07 Aug 2012 00:45:29 GMT
+Original-Received: by mail-bk0-f41.google.com with SMTP id jc3so1661806bkc.14
+        for <linux-mm@kvack.org>; Mon, 06 Aug 2012 17:45:28 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=j0rU0PscGE6Nmk4WN+IcGcfp2G9sA0q2ADH/LqKdtik=;
+        b=cT0teG2cGZw3PkJEUQ/o9x4AZcCl+K/Dw1D1wVvVL0vlp/tVbfQAW51pUunwGwzIPQ
+         m69fY5m3HwqNpMTkx1tQ7xsksJsTu2uncaXHGB8NP6xA3eRyDWrwEJ7GTh3niYtrkUxB
+         2hiFVLv9fghcroGyz1FzOCvqIv5qLRcIHxX9134WgQlVyQCKNMWpYkuFRLr+b6+eaQtB
+         T8xRf4Ey6MbDL2KsTk4inH0L33NVTdMMmXMNsgMuT11XVi1kw1Z4AVRsxbBB5v3QSFCU
+         QAvq+WuJxSTWUKynyfyWyCaQT3x0/ZYRomcl0oTd9opwv0LmENuQOHblUo1CbKuFMwVV
+         UDIg==
+Original-Received: by 10.204.13.82 with SMTP id b18mr5017633bka.118.1344300328281;
+        Mon, 06 Aug 2012 17:45:28 -0700 (PDT)
+Original-Received: from localhost.localdomain (95-89-78-76-dynip.superkabel.de. [95.89.78.76])
+        by mx.google.com with ESMTPS id he8sm8120293bkc.3.2012.08.06.17.45.23
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 06 Aug 2012 17:45:27 -0700 (PDT)
+X-Mailer: git-send-email 1.7.8.6
+In-Reply-To: <1344300317-23189-1-git-send-email-levinsasha928@gmail.com>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:40.34949/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 1 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0100) s cv GT3 gt2 gt1 r p m c 
+X-pstn-addresses: from <levinsasha928@gmail.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83740 gmane.linux.kernel:1338657 gmane.linux.network:239311
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338657>
+
+Switch 9p error table to use the new hashtable implementation. This reduces the amount of
+generic unrelated code in 9p.
+
+Signed-off-by: Sasha Levin <levinsasha928@gmail.com>
+---
+ net/9p/error.c |   21 ++++++++++-----------
+ 1 files changed, 10 insertions(+), 11 deletions(-)
+
+diff --git a/net/9p/error.c b/net/9p/error.c
+index 2ab2de7..f712344d 100644
+--- a/net/9p/error.c
++++ b/net/9p/error.c
+@@ -34,7 +34,7 @@
+ #include <linux/jhash.h>
+ #include <linux/errno.h>
+ #include <net/9p/9p.h>
+-
++#include <linux/hashtable.h>
+ /**
+  * struct errormap - map string errors from Plan 9 to Linux numeric ids
+  * @name: string sent over 9P
+@@ -50,8 +50,8 @@ struct errormap {
+ 	struct hlist_node list;
+ };
+ 
+-#define ERRHASHSZ		32
+-static struct hlist_head hash_errmap[ERRHASHSZ];
++#define ERR_HASH_BITS 5
++static DEFINE_HASHTABLE(hash_errmap, ERR_HASH_BITS);
+ 
+ /* FixMe - reduce to a reasonable size */
+ static struct errormap errmap[] = {
+@@ -193,18 +193,17 @@ static struct errormap errmap[] = {
+ int p9_error_init(void)
+ {
+ 	struct errormap *c;
+-	int bucket;
++	u32 hash;
+ 
+ 	/* initialize hash table */
+-	for (bucket = 0; bucket < ERRHASHSZ; bucket++)
+-		INIT_HLIST_HEAD(&hash_errmap[bucket]);
++	hash_init(hash_errmap, ERR_HASH_BITS);
+ 
+ 	/* load initial error map into hash table */
+ 	for (c = errmap; c->name != NULL; c++) {
+ 		c->namelen = strlen(c->name);
+-		bucket = jhash(c->name, c->namelen, 0) % ERRHASHSZ;
++		hash = jhash(c->name, c->namelen, 0);
+ 		INIT_HLIST_NODE(&c->list);
+-		hlist_add_head(&c->list, &hash_errmap[bucket]);
++		hash_add(hash_errmap, ERR_HASH_BITS, &c->list, hash);
+ 	}
+ 
+ 	return 1;
+@@ -223,13 +222,13 @@ int p9_errstr2errno(char *errstr, int len)
+ 	int errno;
+ 	struct hlist_node *p;
+ 	struct errormap *c;
+-	int bucket;
++	u32 hash;
+ 
+ 	errno = 0;
+ 	p = NULL;
+ 	c = NULL;
+-	bucket = jhash(errstr, len, 0) % ERRHASHSZ;
+-	hlist_for_each_entry(c, p, &hash_errmap[bucket], list) {
++	hash = jhash(errstr, len, 0);
++	hash_for_each_possible(hash_errmap, c, ERR_HASH_BITS, p, list, hash) {
+ 		if (c->namelen == len && !memcmp(c->name, errstr, len)) {
+ 			errno = c->val;
+ 			break;
+-- 
+1.7.8.6
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

@@ -1,0 +1,113 @@
+Path: news.gmane.org!not-for-mail
+From: "K. Y. Srinivasan" <kys@microsoft.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.drivers.driver-project.devel,gmane.linux.kernel.virtualization,gmane.linux.network
+Subject: [PATCH 08/17] Tools: hv: Gather subnet information
+Date: Tue, 24 Jul 2012 09:01:32 -0700
+Lines: 64
+Approved: news@gmane.org
+Message-ID: <1343145701-3691-8-git-send-email-kys@microsoft.com>
+References: <1343145672-3641-1-git-send-email-kys@microsoft.com>
+ <1343145701-3691-1-git-send-email-kys@microsoft.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343146686 16846 80.91.229.3 (24 Jul 2012 16:18:06 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 16:18:06 +0000 (UTC)
+Cc: "K. Y. Srinivasan" <kys@microsoft.com>
+To: gregkh@linuxfoundation.org, linux-kernel@vger.kernel.org,
+	devel@linuxdriverproject.org, virtualization@lists.osdl.org,
+	olaf@aepfle.de, apw@canonical.com, netdev@vger.kernel.org,
+	ben@decadent.org.uk
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 18:18:05 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SthoA-0007XG-8j
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 18:18:02 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755675Ab2GXQR5 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 12:17:57 -0400
+Original-Received: from p3plsmtps2ded02.prod.phx3.secureserver.net ([208.109.80.59]:44558
+	"HELO p3plsmtps2ded02-02.prod.phx3.secureserver.net"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with SMTP
+	id S1755785Ab2GXQRz (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 12:17:55 -0400
+Original-Received: (qmail 30195 invoked from network); 24 Jul 2012 16:17:21 -0000
+Original-Received: from unknown (HELO linuxonhyperv.com) (72.167.245.219)
+  by p3plsmtps2ded02-02.prod.phx3.secureserver.net (208.109.80.59) with ESMTP; 24 Jul 2012 16:17:21 -0000
+Original-Received: by linuxonhyperv.com (Postfix, from userid 507)
+	id C0A561901E0; Tue, 24 Jul 2012 09:01:42 -0700 (PDT)
+X-Mailer: git-send-email 1.7.4.1
+In-Reply-To: <1343145701-3691-1-git-send-email-kys@microsoft.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332409 gmane.linux.drivers.driver-project.devel:28964 gmane.linux.kernel.virtualization:16244 gmane.linux.network:238297
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332409>
+
+Now gather sub-net information for the specified interface.
+
+Signed-off-by: K. Y. Srinivasan <kys@microsoft.com>
+Reviewed-by: Haiyang Zhang <haiyangz@microsoft.com>
+---
+ tools/hv/hv_kvp_daemon.c |   31 +++++++++++++++++++++++++++++--
+ 1 files changed, 29 insertions(+), 2 deletions(-)
+
+diff --git a/tools/hv/hv_kvp_daemon.c b/tools/hv/hv_kvp_daemon.c
+index 79eb130..2c24ebf 100644
+--- a/tools/hv/hv_kvp_daemon.c
++++ b/tools/hv/hv_kvp_daemon.c
+@@ -534,6 +534,7 @@ kvp_get_ip_address(int family, char *if_name, int op,
+ 	struct ifaddrs *ifap;
+ 	struct ifaddrs *curp;
+ 	int offset = 0;
++	int sn_offset = 0;
+ 	const char *str;
+ 	int error = 0;
+ 	char *buffer;
+@@ -594,12 +595,38 @@ kvp_get_ip_address(int family, char *if_name, int op,
+ 			 * Gather info other than the IP address.
+ 			 * IP address info will be gathered later.
+ 			 */
+-			if (curp->ifa_addr->sa_family == AF_INET)
++			if (curp->ifa_addr->sa_family == AF_INET) {
+ 				ip_buffer->addr_family |= ADDR_FAMILY_IPV4;
+-			else
++				/*
++				 * Get subnet info.
++				 */
++				error = kvp_process_ip_address(
++							curp->ifa_netmask,
++							AF_INET,
++							(char *)
++							ip_buffer->sub_net,
++							length,
++							&sn_offset);
++				if (error)
++					goto gather_ipaddr;
++			} else {
+ 				ip_buffer->addr_family |= ADDR_FAMILY_IPV6;
++				/*
++				 * Get subnet info.
++				 */
++				error = kvp_process_ip_address(
++							curp->ifa_netmask,
++							AF_INET6,
++							(char *)
++							ip_buffer->sub_net,
++							length,
++							&sn_offset);
++				if (error)
++					goto gather_ipaddr;
++			}
+ 		}
+ 
++gather_ipaddr:
+ 		error = kvp_process_ip_address(curp->ifa_addr,
+ 						curp->ifa_addr->sa_family,
+ 						buffer,
+-- 
+1.7.4.1
+

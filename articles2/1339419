@@ -1,0 +1,114 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 043/122] PM / Sleep: call early resume handlers when suspend_noirq fails
+Date: Tue,  7 Aug 2012 15:25:31 -0700
+Lines: 50
+Approved: news@gmane.org
+Message-ID: <20120807221952.080156413@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344378613 13949 80.91.229.3 (7 Aug 2012 22:30:13 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:30:13 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Colin Cross <ccross@android.com>,
+	"Rafael J. Wysocki" <rjw@sisk.pl>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:30:10 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysHx-0000lk-GD
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:30:09 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932559Ab2HGW3R (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:29:17 -0400
+Original-Received: from mail-gg0-f174.google.com ([209.85.161.174]:47022 "EHLO
+	mail-gg0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S932538Ab2HGW3N (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:29:13 -0400
+Original-Received: by ggnl2 with SMTP id l2so148783ggn.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:29:13 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=Ab23u1AIECKUkXRnWLQLdjZZZGfZGjGSMr6gt1WR/ds=;
+        b=pHSEwqnjkzP1LlKM/QByT/A5ALws8T10qE5QaOsXS4MkKOmEb1BABTFLfx8PTniSS9
+         iWT2rNiVfIGHZgGU1ULj8uby97v8Wg401NsuLpim6GeWcY7uP0Wn7DdW0IeaDZHxZ8ob
+         Lsz564JnLlIdS0N0eYE39v+Pqq0txgKyWYKVhtmZ2MqBrP43IilaQAgLtWO/2MUjnZZD
+         ac7BKtBgHvYyV0zT0njm1BiNu2Jl0U3SeWZkfFu/Fg1coK+yNqMAw9SUuazthzBsf/Ev
+         cc44lpiHLI2iqxp9hdoSR8An7WracjN69j2chDTyzeM8tyNsoXEejQXbPS8g+Jw3P3fH
+         Opvg==
+Original-Received: by 10.66.76.196 with SMTP id m4mr29258441paw.61.1344378552716;
+        Tue, 07 Aug 2012 15:29:12 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id pe8sm8536301pbc.76.2012.08.07.15.29.10
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:29:11 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQkMl8VKDI6kF9kUAR4Zl/X6DcGJkXUx8QoiwtLk7CyA7K71jZ3R9qqq17fRAY/s/OcS9Emz
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339419 gmane.linux.kernel.stable:29258
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339419>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Colin Cross <ccross@android.com>
+
+commit 064b021fbe470ecc9ca10f9f87af48c0fc0865fb upstream.
+
+Commit cf579dfb82550e34de7ccf3ef090d8b834ccd3a9 (PM / Sleep: Introduce
+"late suspend" and "early resume" of devices) introduced a bug where
+suspend_late handlers would be called, but if dpm_suspend_noirq returned
+an error the early_resume handlers would never be called.  All devices
+would end up on the dpm_late_early_list, and would never be resumed
+again.
+
+Fix it by calling dpm_resume_early when dpm_suspend_noirq returns
+an error.
+
+Signed-off-by: Colin Cross <ccross@android.com>
+Signed-off-by: Rafael J. Wysocki <rjw@sisk.pl>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ drivers/base/power/main.c |   10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+--- a/drivers/base/power/main.c
++++ b/drivers/base/power/main.c
+@@ -989,8 +989,16 @@ static int dpm_suspend_late(pm_message_t
+ int dpm_suspend_end(pm_message_t state)
+ {
+ 	int error = dpm_suspend_late(state);
++	if (error)
++		return error;
+ 
+-	return error ? : dpm_suspend_noirq(state);
++	error = dpm_suspend_noirq(state);
++	if (error) {
++		dpm_resume_early(state);
++		return error;
++	}
++
++	return 0;
+ }
+ EXPORT_SYMBOL_GPL(dpm_suspend_end);
+ 
+
+

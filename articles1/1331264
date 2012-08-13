@@ -1,0 +1,212 @@
+Path: news.gmane.org!not-for-mail
+From: Christian Lamparter <chunkeey@googlemail.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.pcmcia.devel
+Subject: [PATCH v2] pcmcia: move unbind/rebind into dev_pm_ops.complete
+Date: Sun, 22 Jul 2012 01:15:20 +0200
+Lines: 135
+Approved: news@gmane.org
+Message-ID: <201207220115.21062.chunkeey@googlemail.com>
+References: <201207100119.25214.chunkeey@googlemail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain;
+  charset="iso-8859-1"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342912577 10383 80.91.229.3 (21 Jul 2012 23:16:17 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 21 Jul 2012 23:16:17 +0000 (UTC)
+Cc: stern@rowland.harvard.edu,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Greg KH <gregkh@linuxfoundation.org>,
+	linux-kernel@vger.kernel.org,
+	Dominik Brodowski <linux@dominikbrodowski.net>,
+	"Rafael J. Wysocki" <rjw@sisk.pl>
+To: linux-pcmcia@lists.infradead.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 22 01:16:14 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsiuD-000290-1j
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 22 Jul 2012 01:16:13 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752137Ab2GUXP2 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 21 Jul 2012 19:15:28 -0400
+Original-Received: from mail-wg0-f42.google.com ([74.125.82.42]:55723 "EHLO
+	mail-wg0-f42.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751808Ab2GUXP0 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 21 Jul 2012 19:15:26 -0400
+Original-Received: by wgbfm10 with SMTP id fm10so1501933wgb.1
+        for <linux-kernel@vger.kernel.org>; Sat, 21 Jul 2012 16:15:25 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=googlemail.com; s=20120113;
+        h=from:to:subject:date:user-agent:cc:references:in-reply-to
+         :mime-version:x-length:x-uid:content-type:content-transfer-encoding
+         :message-id;
+        bh=qaXUo1dMHm1NG99nCr1tD+7PY6ndmbVCUtKvLgk9d+E=;
+        b=Uux8YY12YXWtFhHRi1MdMraYJeexTA3sZfzkKC8abaGm11oAUQdLBJ4b3bec8QaGDZ
+         Sw/C/lwOjGXT0vKfeR/B/1GaI9iNU3zsePWw6ZvKaA2FxVmN7CKjPoyknfifyTEcHo2D
+         HlEYD69Rr8RCaScdSVJLaBtQ9hr0Lv1YjLJ/xNrGehO/sK2lRmbahBLAW8Jf/xgs8rX0
+         IfXIYra5HZGUCf63iKoWjkQj8YpWnZ6+Qoj3VAM4/chzJAWitU3XlsCD412KIDocGWYx
+         T6azVx5aQRrSiYZx3pgXiMogOMF1fvNaDlVpPX5JGzPAXfv8bCYUKHi3+P6BoHTRKh0f
+         4ztQ==
+Original-Received: by 10.180.86.106 with SMTP id o10mr17479754wiz.22.1342912525436;
+        Sat, 21 Jul 2012 16:15:25 -0700 (PDT)
+Original-Received: from debian64.localnet (p5B2E7705.dip.t-dialin.net. [91.46.119.5])
+        by mx.google.com with ESMTPS id h9sm7294696wiz.1.2012.07.21.16.15.23
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Sat, 21 Jul 2012 16:15:24 -0700 (PDT)
+Original-Received: from localhost
+	([127.0.0.1] helo=debian64.localnet ident=chuck)
+	by debian64.localnet with esmtps (TLS1.0:DHE_RSA_AES_256_CBC_SHA1:256)
+	(Exim 4.80)
+	(envelope-from <chunkeey@googlemail.com>)
+	id 1SsitN-0008Cy-PX; Sun, 22 Jul 2012 01:15:21 +0200
+User-Agent: KMail/1.13.7 (Linux/3.5.0-rc7-wl; KDE/4.8.4; x86_64; ; )
+In-Reply-To: <201207100119.25214.chunkeey@googlemail.com>
+X-Length: 5279
+X-UID: 93
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331264 gmane.linux.kernel.pcmcia.devel:4130
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331264>
+
+This patch moves the device rebind procedures
+for cardbus devices from the pm.resume into the
+pm.complete callback.
+
+The reasons for moving the code is:"
+[...] The PM code needs to send suspend and resume
+messages to every device in the right order, and it
+can't do that if new devices are being added at the
+same time. [...]
+
+However the situation really isn't quite that rigid.
+In particular, adding new children during a resume
+callback shouldn't cause much of problem because
+the children don't need to be resumed anyway (since
+they were never suspended).  On the other hand, if
+you do it you will get a dev_warn() from the PM
+core, something like 'parent should not be sleeping'.
+
+Still, it is considered bad form and should be avoided
+if possible."
+
+(Alan Stern's full comment about the topic can
+be found here: <https://lkml.org/lkml/2012/7/10/254>)
+
+Cc: Dominik Brodowski <linux@dominikbrodowski.net>
+Signed-off-by: Christian Lamparter <chunkeey@googlemail.com>
+---
+I think I left everyone enough of a chance to
+reply and/or file complains.
+
+The change from v1 is mainly the updated change log
+and I hope it now sufficiently explains why a patch
+like this is needed (Of course, if any of you have
+an alternative suggestion, then please let's hear it!).
+
+Note: It would be nice to know what the patch
+does for older (not cardbus) cards in the
+suspend/resume case. So, if you got a machine
+and the hardware, please let us/me know if it
+works or causes crash/boom and bangs.
+
+PS: I'm not on the pcmcia/kernel list, so please
+keep my address in the 'CC' at all times.
+
+Regards,
+	Christian
+---
+diff --git a/drivers/pcmcia/cs.c b/drivers/pcmcia/cs.c
+index 673c14e..18fb100 100644
+--- a/drivers/pcmcia/cs.c
++++ b/drivers/pcmcia/cs.c
+@@ -484,7 +484,7 @@ static int socket_early_resume(struct pcmcia_socket *skt)
+ 
+ static int socket_late_resume(struct pcmcia_socket *skt)
+ {
+-	int ret;
++	int ret = 0;
+ 
+ 	mutex_lock(&skt->ops_mutex);
+ 	skt->state &= ~SOCKET_SUSPEND;
+@@ -511,19 +511,31 @@ static int socket_late_resume(struct pcmcia_socket *skt)
+ 		return socket_insert(skt);
+ 	}
+ 
++	if (!(skt->state & SOCKET_CARDBUS) && (skt->callback))
++		ret = skt->callback->early_resume(skt);
++	return ret;
++}
++
++/*
++ * Finalize the resume. In case of a cardbus socket, we have
++ * to rebind the devices as we can't be certain that it has been
++ * replaced, or not.
++ */
++static int socket_complete_resume(struct pcmcia_socket *skt)
++{
++	int ret = 0;
+ #ifdef CONFIG_CARDBUS
+ 	if (skt->state & SOCKET_CARDBUS) {
+ 		/* We can't be sure the CardBus card is the same
+ 		 * as the one previously inserted. Therefore, remove
+ 		 * and re-add... */
+ 		cb_free(skt);
+-		cb_alloc(skt);
+-		return 0;
++		ret = cb_alloc(skt);
++		if (ret)
++			cb_free(skt);
+ 	}
+ #endif
+-	if (!(skt->state & SOCKET_CARDBUS) && (skt->callback))
+-		skt->callback->early_resume(skt);
+-	return 0;
++	return ret;
+ }
+ 
+ /*
+@@ -533,11 +545,15 @@ static int socket_late_resume(struct pcmcia_socket *skt)
+  */
+ static int socket_resume(struct pcmcia_socket *skt)
+ {
++	int err;
+ 	if (!(skt->state & SOCKET_SUSPEND))
+ 		return -EBUSY;
+ 
+ 	socket_early_resume(skt);
+-	return socket_late_resume(skt);
++	err = socket_late_resume(skt);
++	if (!err)
++		err = socket_complete_resume(skt);
++	return err;
+ }
+ 
+ static void socket_remove(struct pcmcia_socket *skt)
+@@ -848,6 +864,12 @@ static int __used pcmcia_socket_dev_resume(struct device *dev)
+ 	return __pcmcia_pm_op(dev, socket_late_resume);
+ }
+ 
++static void __used pcmcia_socket_dev_complete(struct device *dev)
++{
++	WARN(__pcmcia_pm_op(dev, socket_complete_resume),
++		"failed to complete resume");
++}
++
+ static const struct dev_pm_ops pcmcia_socket_pm_ops = {
+ 	/* dev_resume may be called with IRQs enabled */
+ 	SET_SYSTEM_SLEEP_PM_OPS(NULL,
+@@ -862,6 +884,7 @@ static const struct dev_pm_ops pcmcia_socket_pm_ops = {
+ 	.resume_noirq = pcmcia_socket_dev_resume_noirq,
+ 	.thaw_noirq = pcmcia_socket_dev_resume_noirq,
+ 	.restore_noirq = pcmcia_socket_dev_resume_noirq,
++	.complete = pcmcia_socket_dev_complete,
+ };
+ 
+ #define PCMCIA_SOCKET_CLASS_PM_OPS (&pcmcia_socket_pm_ops)

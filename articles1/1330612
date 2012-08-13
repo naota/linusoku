@@ -1,0 +1,117 @@
+Path: news.gmane.org!not-for-mail
+From: Marcelo Tosatti <mtosatti@redhat.com>
+Newsgroups: gmane.comp.emulators.kvm.devel,gmane.linux.kernel
+Subject: Re: [PATCH 2/9] KVM: x86: simplify read_emulated
+Date: Thu, 19 Jul 2012 20:58:28 -0300
+Lines: 59
+Approved: news@gmane.org
+Message-ID: <20120719235828.GA7121@amt.cnet>
+References: <50056DB8.7080702@linux.vnet.ibm.com>
+ <50056DE6.6020801@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1342745374 10677 80.91.229.3 (20 Jul 2012 00:49:34 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 00:49:34 +0000 (UTC)
+Cc: Avi Kivity <avi@redhat.com>, LKML <linux-kernel@vger.kernel.org>,
+	KVM <kvm@vger.kernel.org>
+To: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Original-X-From: kvm-owner@vger.kernel.org Fri Jul 20 02:49:34 2012
+Return-path: <kvm-owner@vger.kernel.org>
+Envelope-to: gcekd-kvm-devel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <kvm-owner@vger.kernel.org>)
+	id 1Ss1PR-00051o-Gt
+	for gcekd-kvm-devel@plane.gmane.org; Fri, 20 Jul 2012 02:49:33 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752795Ab2GTAtX (ORCPT <rfc822;gcekd-kvm-devel@m.gmane.org>);
+	Thu, 19 Jul 2012 20:49:23 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:28503 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752750Ab2GTAsd (ORCPT <rfc822;kvm@vger.kernel.org>);
+	Thu, 19 Jul 2012 20:48:33 -0400
+Original-Received: from int-mx10.intmail.prod.int.phx2.redhat.com (int-mx10.intmail.prod.int.phx2.redhat.com [10.5.11.23])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6K0mVhL031603
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Thu, 19 Jul 2012 20:48:31 -0400
+Original-Received: from amt.cnet (vpn1-4-248.ams2.redhat.com [10.36.4.248])
+	by int-mx10.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6K0mS9i028601;
+	Thu, 19 Jul 2012 20:48:30 -0400
+Original-Received: from amt.cnet (amt.cnet [127.0.0.1])
+	by amt.cnet (Postfix) with ESMTP id ECE91652099;
+	Thu, 19 Jul 2012 20:58:31 -0300 (BRT)
+Original-Received: (from marcelo@localhost)
+	by amt.cnet (8.14.5/8.14.5/Submit) id q6JNwSHI007579;
+	Thu, 19 Jul 2012 20:58:28 -0300
+Content-Disposition: inline
+In-Reply-To: <50056DE6.6020801@linux.vnet.ibm.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.23
+Original-Sender: kvm-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <kvm.vger.kernel.org>
+X-Mailing-List: kvm@vger.kernel.org
+Xref: news.gmane.org gmane.comp.emulators.kvm.devel:94747 gmane.linux.kernel:1330612
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330612>
+
+On Tue, Jul 17, 2012 at 09:51:34PM +0800, Xiao Guangrong wrote:
+> No need split mmio read region into 8-bits pieces since we do it in
+> emulator_read_write_onepage
+> 
+> Signed-off-by: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+> ---
+>  arch/x86/kvm/emulate.c |   29 ++++++++++++-----------------
+>  1 files changed, 12 insertions(+), 17 deletions(-)
+> 
+> diff --git a/arch/x86/kvm/emulate.c b/arch/x86/kvm/emulate.c
+> index 97d9a99..2d1916b 100644
+> --- a/arch/x86/kvm/emulate.c
+> +++ b/arch/x86/kvm/emulate.c
+> @@ -1166,24 +1166,19 @@ static int read_emulated(struct x86_emulate_ctxt *ctxt,
+>  	int rc;
+>  	struct read_cache *mc = &ctxt->mem_read;
+> 
+> -	while (size) {
+> -		int n = min(size, 8u);
+> -		size -= n;
+> -		if (mc->pos < mc->end)
+> -			goto read_cached;
+> -
+> -		rc = ctxt->ops->read_emulated(ctxt, addr, mc->data + mc->end, n,
+> -					      &ctxt->exception);
+> -		if (rc != X86EMUL_CONTINUE)
+> -			return rc;
+> -		mc->end += n;
+> +	if (mc->pos < mc->end)
+> +		goto read_cached;
+> 
+> -	read_cached:
+> -		memcpy(dest, mc->data + mc->pos, n);
+> -		mc->pos += n;
+> -		dest += n;
+> -		addr += n;
+> -	}
+> +	rc = ctxt->ops->read_emulated(ctxt, addr, mc->data + mc->end, size,
+> +				      &ctxt->exception);
+> +	if (rc != X86EMUL_CONTINUE)
+> +		return rc;
+> +
+> +	mc->end += size;
+> +
+> +read_cached:
+> +	memcpy(dest, mc->data + mc->pos, size);
+
+What prevents read_emulated(size > 8) call, with
+mc->pos == (mc->end - 8) now?
+
+> +	mc->pos += size;
+>  	return X86EMUL_CONTINUE;
+>  }
+
+--
+To unsubscribe from this list: send the line "unsubscribe kvm" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

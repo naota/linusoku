@@ -1,0 +1,141 @@
+Path: news.gmane.org!not-for-mail
+From: Nicolas Pitre <nico@fluxnic.net>
+Newsgroups: gmane.linux.ports.arm.kernel,gmane.linux.kernel
+Subject: Re: RFC: mutex: hung tasks on SMP platforms with
+ asm-generic/mutex-xchg.h
+Date: Thu, 09 Aug 2012 12:57:33 -0400 (EDT)
+Lines: 68
+Approved: news@gmane.org
+Message-ID: <alpine.LFD.2.02.1208091243080.5231@xanadu.home>
+References: <20120807115647.GA12828@mudshark.cambridge.arm.com>
+ <alpine.LFD.2.02.1208090029460.5231@xanadu.home>
+ <20120809144953.GC18486@mudshark.cambridge.arm.com>
+ <alpine.LFD.2.02.1208091201380.5231@xanadu.home>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344531495 28570 80.91.229.3 (9 Aug 2012 16:58:15 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 16:58:15 +0000 (UTC)
+Cc: Chris Mason <chris.mason@fusionio.com>,
+ Peter Zijlstra <a.p.zijlstra@chello.nl>, Arnd Bergmann <arnd@arndb.de>,
+ "linux-kernel@vger.kernel.org" <linux-kernel@vger.kernel.org>,
+ Ingo Molnar <mingo@elte.hu>, Thomas Gleixner <tglx@linutronix.de>,
+ "linux-arm-kernel@lists.infradead.org" <linux-arm-kernel@lists.infradead.org>
+To: Will Deacon <will.deacon@arm.com>
+Original-X-From: linux-arm-kernel-bounces+linux-arm-kernel=m.gmane.org@lists.infradead.org Thu Aug 09 18:58:11 2012
+Return-path: <linux-arm-kernel-bounces+linux-arm-kernel=m.gmane.org@lists.infradead.org>
+Envelope-to: linux-arm-kernel@m.gmane.org
+Original-Received: from merlin.infradead.org ([205.233.59.134])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-arm-kernel-bounces+linux-arm-kernel=m.gmane.org@lists.infradead.org>)
+	id 1SzW3l-0001SA-9b
+	for linux-arm-kernel@m.gmane.org; Thu, 09 Aug 2012 18:58:09 +0200
+Original-Received: from localhost ([::1] helo=merlin.infradead.org)
+	by merlin.infradead.org with esmtp (Exim 4.76 #1 (Red Hat Linux))
+	id 1SzW3G-0005gp-81; Thu, 09 Aug 2012 16:57:38 +0000
+Original-Received: from relais.videotron.ca ([24.201.245.36])
+ by merlin.infradead.org with esmtp (Exim 4.76 #1 (Red Hat Linux))
+ id 1SzW3D-0005gS-4W
+ for linux-arm-kernel@lists.infradead.org; Thu, 09 Aug 2012 16:57:35 +0000
+Original-Received: from xanadu.home ([24.201.196.149]) by VL-VM-MR004.ip.videotron.ca
+ (Oracle Communications Messaging Exchange Server 7u4-22.01 64bit (built Apr 21
+ 2011)) with ESMTP id <0M8H007LJZ3XO170@VL-VM-MR004.ip.videotron.ca> for
+ linux-arm-kernel@lists.infradead.org; Thu, 09 Aug 2012 12:57:34 -0400 (EDT)
+In-reply-to: <alpine.LFD.2.02.1208091201380.5231@xanadu.home>
+User-Agent: Alpine 2.02 (LFD 1266 2009-07-14)
+X-Spam-Note: CRM114 invocation failed
+X-Spam-Score: -1.9 (-)
+X-Spam-Report: SpamAssassin version 3.3.2 on merlin.infradead.org summary:
+ Content analysis details:   (-1.9 points)
+ pts rule name              description
+ ---- ---------------------- --------------------------------------------------
+ -0.0 RCVD_IN_DNSWL_NONE     RBL: Sender listed at http://www.dnswl.org/, no
+ trust [24.201.245.36 listed in list.dnswl.org]
+ -1.9 BAYES_00               BODY: Bayes spam probability is 0 to 1%
+ [score: 0.0000]
+X-BeenThere: linux-arm-kernel@lists.infradead.org
+X-Mailman-Version: 2.1.14
+Precedence: list
+List-Id: <linux-arm-kernel.lists.infradead.org>
+List-Unsubscribe: <http://lists.infradead.org/mailman/options/linux-arm-kernel>, 
+ <mailto:linux-arm-kernel-request@lists.infradead.org?subject=unsubscribe>
+List-Archive: <http://lists.infradead.org/pipermail/linux-arm-kernel/>
+List-Post: <mailto:linux-arm-kernel@lists.infradead.org>
+List-Help: <mailto:linux-arm-kernel-request@lists.infradead.org?subject=help>
+List-Subscribe: <http://lists.infradead.org/mailman/listinfo/linux-arm-kernel>, 
+ <mailto:linux-arm-kernel-request@lists.infradead.org?subject=subscribe>
+Original-Sender: linux-arm-kernel-bounces@lists.infradead.org
+Errors-To: linux-arm-kernel-bounces+linux-arm-kernel=m.gmane.org@lists.infradead.org
+Xref: news.gmane.org gmane.linux.ports.arm.kernel:181230 gmane.linux.kernel:1340872
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340872>
+
+On Thu, 9 Aug 2012, Nicolas Pitre wrote:
+
+> On Thu, 9 Aug 2012, Will Deacon wrote:
+> 
+> > I think we could actually fix this entirely in mutex-xchg.h by doing
+> > something in fastpath_lock similar to what we do for trylock:
+> > 
+> > 
+> > diff --git a/include/asm-generic/mutex-xchg.h b/include/asm-generic/mutex-xchg.h
+> > index 580a6d3..c082e99 100644
+> > --- a/include/asm-generic/mutex-xchg.h
+> > +++ b/include/asm-generic/mutex-xchg.h
+> > @@ -25,8 +25,19 @@
+> >  static inline void
+> >  __mutex_fastpath_lock(atomic_t *count, void (*fail_fn)(atomic_t *))
+> >  {
+> > -       if (unlikely(atomic_xchg(count, 0) != 1))
+> > -               fail_fn(count);
+> > +       int prev = atomic_xchg(count, 0);
+> > +
+> > +       if (unlikely(prev != 1)) {
+> > +               if (prev < 0)
+> > +                       /*
+> > +                        * The lock was contended, so we need to restore
+> > +                        * its original state to ensure that any waiting
+> > +                        * tasks are woken up by the unlock slow path.
+> > +                        */
+> > +                       prev = atomic_xchg(count, prev);
+> > +               if (prev != 1)
+> > +                       fail_fn(count);
+> > +       }
+> >  }
+> > 
+> > What do you reckon?
+> 
+> Yes, that looks fine.  I'd remove that if (prev < 0) entirely though.  
+> We'll just swap a 0 for a 0 if the count wasn't < 0, or a 0 for a 1 if 
+> the mutex just got unlocked which is also fine.  This is especially 
+> beneficial when a native xchg processor instruction is used.
+
+In fact, this suggestion isn't entirely correct either. The inner xchg 
+in this case should be -1 and not 'count'.  If 'count' is 0 and the 
+mutex becomes contended in the small window between the two xchg's then 
+the contention mark would be lost again.
+
+In other words, I think this should look like this:
+
+diff --git a/include/asm-generic/mutex-xchg.h b/include/asm-generic/mutex-xchg.h
+index 580a6d35c7..44a66c99c8 100644
+--- a/include/asm-generic/mutex-xchg.h
++++ b/include/asm-generic/mutex-xchg.h
+@@ -25,8 +25,11 @@
+ static inline void
+ __mutex_fastpath_lock(atomic_t *count, void (*fail_fn)(atomic_t *))
+ {
+-	if (unlikely(atomic_xchg(count, 0) != 1))
+-		fail_fn(count);
++	if (unlikely(atomic_xchg(count, 0) != 1)) {
++		/* Mark lock contention explicitly */
++		if (likely(atomic_xchg(count, -1) != 1))
++			fail_fn(count);
++	}
+ }
+ 
+ /**
+
+
+Nicolas

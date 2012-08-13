@@ -1,0 +1,169 @@
+Path: news.gmane.org!not-for-mail
+From: Axel Lin <axel.lin@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH RFT 2/2] gpio: gpio-pch: Use spinlock for register access
+ protection
+Date: Sun, 29 Jul 2012 10:55:54 +0800
+Lines: 103
+Approved: news@gmane.org
+Message-ID: <1343530554.5373.3.camel@phoenix>
+References: <1343530482.5373.2.camel@phoenix>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343530581 11327 80.91.229.3 (29 Jul 2012 02:56:21 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 29 Jul 2012 02:56:21 +0000 (UTC)
+Cc: Feng Tang <feng.tang@intel.com>,
+	Tomoya MORINAGA <tomoya.rohm@gmail.com>,
+	Grant Likely <grant.likely@secretlab.ca>,
+	Linus Walleij <linus.walleij@linaro.org>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 29 04:56:21 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvJg3-0004mu-Vj
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 29 Jul 2012 04:56:20 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753175Ab2G2C4D (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 28 Jul 2012 22:56:03 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:57953 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753165Ab2G2C4A (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 28 Jul 2012 22:56:00 -0400
+Original-Received: by pbbrp8 with SMTP id rp8so7566255pbb.19
+        for <linux-kernel@vger.kernel.org>; Sat, 28 Jul 2012 19:56:00 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=message-id:subject:from:to:cc:date:in-reply-to:references
+         :content-type:x-mailer:content-transfer-encoding:mime-version;
+        bh=hXgMSwnOegaGjjaYvTUcEWh/NnG5dV5Zaw8ZiJxXLVo=;
+        b=z6EIjBC3a6RbnzlogO9eISwQJsr7gAycNrfyS9m8JVi6rfYgGmOUmHD9ynVRF27xqK
+         +vbvSJ1mEotMZPBFdR5+qtykRafRmmNGEmJB0JACP0xsXzQpRAUY8xa2jqQ61fqjVnqe
+         QWe9IZst+B+LIubXgEv3T/vVghqCrqgvwhx4r8zowcvXSJDjt4fhmwdDjg8wNntkz39G
+         rzZJVUcnEB6u6sB+X8abnq6AGWMpJLwOl9brY7by6+0kDLZpbhxKSXLcpzkIl1kisQef
+         YEOcEGelvLKidTwQbuxLA8Mr2EdR85uY0k0vRJ4zV0B6Svs/JVE3gZrVftWDrFZwAzVZ
+         nfKw==
+Original-Received: by 10.68.190.168 with SMTP id gr8mr24681937pbc.157.1343530560472;
+        Sat, 28 Jul 2012 19:56:00 -0700 (PDT)
+Original-Received: from [111.249.206.207] (111-249-206-207.dynamic.hinet.net. [111.249.206.207])
+        by mx.google.com with ESMTPS id mn9sm5010500pbc.39.2012.07.28.19.55.57
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Sat, 28 Jul 2012 19:55:59 -0700 (PDT)
+In-Reply-To: <1343530482.5373.2.camel@phoenix>
+X-Mailer: Evolution 3.2.3-0ubuntu6 
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334689
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334689>
+
+gpio_chip.can_sleep is 0, but current code uses mutex in pch_gpio_set
+pch_gpio_get and pch_gpio_direction_input functions.
+Thus those functions are not callable from interrupt context.
+This patch converts mutex into spinlock.
+
+Signed-off-by: Axel Lin <axel.lin@gmail.com>
+---
+ drivers/gpio/gpio-pch.c |   22 ++++++++++------------
+ 1 file changed, 10 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/gpio/gpio-pch.c b/drivers/gpio/gpio-pch.c
+index 139ad3e..4ad0c4f 100644
+--- a/drivers/gpio/gpio-pch.c
++++ b/drivers/gpio/gpio-pch.c
+@@ -92,9 +92,7 @@ struct pch_gpio_reg_data {
+  * @lock:			Used for register access protection
+  * @irq_base:		Save base of IRQ number for interrupt
+  * @ioh:		IOH ID
+- * @spinlock:		Used for register access protection in
+- *				interrupt context pch_irq_mask,
+- *				pch_irq_unmask and pch_irq_type;
++ * @spinlock:		Used for register access protection
+  */
+ struct pch_gpio {
+ 	void __iomem *base;
+@@ -102,7 +100,6 @@ struct pch_gpio {
+ 	struct device *dev;
+ 	struct gpio_chip gpio;
+ 	struct pch_gpio_reg_data pch_gpio_reg;
+-	struct mutex lock;
+ 	int irq_base;
+ 	enum pch_type_t ioh;
+ 	spinlock_t spinlock;
+@@ -112,8 +109,9 @@ static void pch_gpio_set(struct gpio_chip *gpio, unsigned nr, int val)
+ {
+ 	u32 reg_val;
+ 	struct pch_gpio *chip =	container_of(gpio, struct pch_gpio, gpio);
++	unsigned long flags;
+ 
+-	mutex_lock(&chip->lock);
++	spin_lock_irqsave(&chip->spinlock, flags);
+ 	reg_val = ioread32(&chip->reg->po);
+ 	if (val)
+ 		reg_val |= (1 << nr);
+@@ -121,7 +119,7 @@ static void pch_gpio_set(struct gpio_chip *gpio, unsigned nr, int val)
+ 		reg_val &= ~(1 << nr);
+ 
+ 	iowrite32(reg_val, &chip->reg->po);
+-	mutex_unlock(&chip->lock);
++	spin_unlock_irqrestore(&chip->spinlock, flags);
+ }
+ 
+ static int pch_gpio_get(struct gpio_chip *gpio, unsigned nr)
+@@ -137,8 +135,9 @@ static int pch_gpio_direction_output(struct gpio_chip *gpio, unsigned nr,
+ 	struct pch_gpio *chip =	container_of(gpio, struct pch_gpio, gpio);
+ 	u32 pm;
+ 	u32 reg_val;
++	unsigned long flags;
+ 
+-	mutex_lock(&chip->lock);
++	spin_lock_irqsave(&chip->spinlock, flags);
+ 	pm = ioread32(&chip->reg->pm) & ((1 << gpio_pins[chip->ioh]) - 1);
+ 	pm |= (1 << nr);
+ 	iowrite32(pm, &chip->reg->pm);
+@@ -149,8 +148,7 @@ static int pch_gpio_direction_output(struct gpio_chip *gpio, unsigned nr,
+ 	else
+ 		reg_val &= ~(1 << nr);
+ 	iowrite32(reg_val, &chip->reg->po);
+-
+-	mutex_unlock(&chip->lock);
++	spin_unlock_irqrestore(&chip->spinlock, flags);
+ 
+ 	return 0;
+ }
+@@ -159,12 +157,13 @@ static int pch_gpio_direction_input(struct gpio_chip *gpio, unsigned nr)
+ {
+ 	struct pch_gpio *chip =	container_of(gpio, struct pch_gpio, gpio);
+ 	u32 pm;
++	unsigned long flags;
+ 
+-	mutex_lock(&chip->lock);
++	spin_lock_irqsave(&chip->spinlock, flags);
+ 	pm = ioread32(&chip->reg->pm) & ((1 << gpio_pins[chip->ioh]) - 1);
+ 	pm &= ~(1 << nr);
+ 	iowrite32(pm, &chip->reg->pm);
+-	mutex_unlock(&chip->lock);
++	spin_unlock_irqrestore(&chip->spinlock, flags);
+ 
+ 	return 0;
+ }
+@@ -387,7 +386,6 @@ static int __devinit pch_gpio_probe(struct pci_dev *pdev,
+ 
+ 	chip->reg = chip->base;
+ 	pci_set_drvdata(pdev, chip);
+-	mutex_init(&chip->lock);
+ 	spin_lock_init(&chip->spinlock);
+ 	pch_gpio_setup(chip);
+ 	ret = gpiochip_add(&chip->gpio);
+-- 
+1.7.9.5
+
+
+

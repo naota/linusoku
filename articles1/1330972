@@ -1,0 +1,118 @@
+Path: news.gmane.org!not-for-mail
+From: H Hartley Sweeten <hartleys@visionengravers.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 5/5] staging: comedi: rtd520: ioremap'ed addresses are resource_size_t
+Date: Fri, 20 Jul 2012 10:33:08 -0700
+Lines: 64
+Approved: news@gmane.org
+Message-ID: <201207201033.09096.hartleys@visionengravers.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342805617 5311 80.91.229.3 (20 Jul 2012 17:33:37 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 17:33:37 +0000 (UTC)
+Cc: <devel@driverdev.osuosl.org>, <abbotti@mev.co.uk>,
+	<gregkh@linuxfoundation.org>
+To: Linux Kernel <linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 19:33:35 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsH54-00030t-3x
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 19:33:34 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753534Ab2GTRd0 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 13:33:26 -0400
+Original-Received: from mail209.messagelabs.com ([216.82.255.3]:40942 "EHLO
+	mail209.messagelabs.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753101Ab2GTRdY (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 13:33:24 -0400
+X-Env-Sender: hartleys@visionengravers.com
+X-Msg-Ref: server-12.tower-209.messagelabs.com!1342805573!9229819!21
+X-Originating-IP: [216.166.12.178]
+X-StarScan-Version: 6.5.10; banners=-,-,-
+X-VirusChecked: Checked
+Original-Received: (qmail 9012 invoked from network); 20 Jul 2012 17:33:24 -0000
+Original-Received: from out001.collaborationhost.net (HELO out001.collaborationhost.net) (216.166.12.178)
+  by server-12.tower-209.messagelabs.com with RC4-SHA encrypted SMTP; 20 Jul 2012 17:33:24 -0000
+Original-Received: from etch.local (10.2.3.210) by smtp.collaborationhost.net
+ (10.2.0.191) with Microsoft SMTP Server (TLS) id 8.3.213.0; Fri, 20 Jul 2012
+ 12:33:17 -0500
+User-Agent: KMail/1.9.9
+Content-Disposition: inline
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330972
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330972>
+
+As mentioned by Ian Abbott, the pci address passed to ioremap
+should be a resource_size_t not an unsigned long. Use a local
+variable of that type to hold the pci_resource_start() that is
+passed to ioremp().
+
+Set the dev->iobase to a dummy non-zero value so that the "detach"
+can use it as a flag to know that comedi_pci_disable() needs to
+be called.
+
+Signed-off-by: H Hartley Sweeten <hsweeten@visionengravers.com>
+Reported-by: Ian Abbott <abbotti@mev.co.uk>
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/staging/comedi/drivers/rtd520.c | 26 ++++++++++----------------
+ 1 file changed, 10 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/staging/comedi/drivers/rtd520.c b/drivers/staging/comedi/drivers/rtd520.c
+index 112fdc3..5aa8be1 100644
+--- a/drivers/staging/comedi/drivers/rtd520.c
++++ b/drivers/staging/comedi/drivers/rtd520.c
+@@ -1619,9 +1619,8 @@ static int rtd_attach(struct comedi_device *dev, struct comedi_devconfig *it)
+ 	struct rtdPrivate *devpriv;
+ 	struct pci_dev *pcidev;
+ 	struct comedi_subdevice *s;
++	resource_size_t pci_base;
+ 	int ret;
+-	resource_size_t physLas1;	/* data area */
+-	resource_size_t physLcfg;	/* PLX9080 */
+ #ifdef USE_DMA
+ 	int index;
+ #endif
+@@ -1655,20 +1654,15 @@ static int rtd_attach(struct comedi_device *dev, struct comedi_devconfig *it)
+ 		printk(KERN_INFO "Failed to enable PCI device and request regions.\n");
+ 		return ret;
+ 	}
+-
+-	/*
+-	 * Initialize base addresses
+-	 */
+-	/* Get the physical address from PCI config */
+-	dev->iobase = pci_resource_start(pcidev, LAS0_PCIINDEX);
+-	physLas1 = pci_resource_start(pcidev, LAS1_PCIINDEX);
+-	physLcfg = pci_resource_start(pcidev, LCFG_PCIINDEX);
+-	/* Now have the kernel map this into memory */
+-	/* ASSUME page aligned */
+-	devpriv->las0 = ioremap_nocache(dev->iobase, LAS0_PCISIZE);
+-	devpriv->las1 = ioremap_nocache(physLas1, LAS1_PCISIZE);
+-	devpriv->lcfg = ioremap_nocache(physLcfg, LCFG_PCISIZE);
+-
++	dev->iobase = 1;	/* the "detach" needs this */
++
++	/* Initialize the base addresses */
++	pci_base = pci_resource_start(pcidev, LAS0_PCIINDEX);
++	devpriv->las0 = ioremap_nocache(pci_base, LAS0_PCISIZE);
++	pci_base = pci_resource_start(pcidev, LAS1_PCIINDEX);
++	devpriv->las1 = ioremap_nocache(pci_base, LAS1_PCISIZE);
++	pci_base = pci_resource_start(pcidev, LCFG_PCIINDEX);
++	devpriv->lcfg = ioremap_nocache(pci_base, LCFG_PCISIZE);
+ 	if (!devpriv->las0 || !devpriv->las1 || !devpriv->lcfg)
+ 		return -ENOMEM;
+ 
+-- 
+1.7.11
+

@@ -1,0 +1,85 @@
+Path: news.gmane.org!not-for-mail
+From: Denis Yefremov <yefremov.denis@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: drivers/misc/apds990x.c: might_sleep operation in interrupt handler
+Date: Tue, 31 Jul 2012 21:44:22 +0400
+Lines: 30
+Approved: news@gmane.org
+Message-ID: <CADKZ3FK6+w6=XunA5n3o0VBKTSyNncNJDJj1Q_BFSbYMb6hmuQ@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1343756673 4073 80.91.229.3 (31 Jul 2012 17:44:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 17:44:33 +0000 (UTC)
+Cc: Axel Lin <axel.lin@gmail.com>, Arnd Bergmann <arnd@arndb.de>,
+	linux-kernel@vger.kernel.org, ldv-project@ispras.ru
+To: Greg Kroah-Hartman <gregkh@suse.de>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 19:44:32 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwGUi-0007eH-4x
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 19:44:32 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753720Ab2GaRoZ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 13:44:25 -0400
+Original-Received: from mail-we0-f174.google.com ([74.125.82.174]:58385 "EHLO
+	mail-we0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752654Ab2GaRoY (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 13:44:24 -0400
+Original-Received: by weyx8 with SMTP id x8so4519506wey.19
+        for <linux-kernel@vger.kernel.org>; Tue, 31 Jul 2012 10:44:23 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=mime-version:date:message-id:subject:from:to:cc:content-type;
+        bh=UN6hHpj3mvqG3IGsZxaX5r8O9fBlsjc0oz5APxLyWLg=;
+        b=EpwWFQfrcW0Mq+RYZtjPesfs6MtlKZ/KmIa7O/eL6o3TVLjKqw7JNJIMLLh+5wZo4z
+         wBYiiBi25NN4l4ytcm9CSYdPOLSLo5eiN75J8nAuGD0usaWKkHU2f3sjePrmgEweaBh0
+         CXGpCJVlZaQ7il7JlC67Mfz4o9LXj0xNVErKXs4xJLbsTJiouXj4laFnuPBx7EAYnYOA
+         NQ6Et6ojCJwKDuKcwGPAZGzzGm5UTyXE7R41RVvX9npcEo0t0N6QRxoc8DkxSEwZg5GI
+         PWcHLyj0HKYUukfG4NtOMdLTA/psr5XzqIWJ64gGyAa20Cu/z3BzZ4Zkxl98VtsS6WeZ
+         Js0w==
+Original-Received: by 10.180.95.193 with SMTP id dm1mr4153296wib.10.1343756662928; Tue,
+ 31 Jul 2012 10:44:22 -0700 (PDT)
+Original-Received: by 10.223.133.136 with HTTP; Tue, 31 Jul 2012 10:44:22 -0700 (PDT)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335908
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335908>
+
+Interrupt handler apds990x_irq in APDS990x sensor driver
+invokes mutex_lock  that is might sleep operation.
+
+Found by Linux Driver Verification project (linuxtesting.org)
+within my participation in the GSoC 2012 program.
+
+
+static irqreturn_t apds990x_irq(int irq, void *data)
+{
+        struct apds990x_chip *chip = data;
+        u8 status;
+
+        apds990x_read_byte(chip, APDS990X_STATUS, &status);
+        apds990x_ack_int(chip, status);
+
+        mutex_lock(&chip->mutex);
+...
+}
+
+static int __devinit apds990x_probe(struct i2c_client *client,
+                                const struct i2c_device_id *id)
+{
+...
+        err = request_threaded_irq(client->irq, NULL,
+                                apds990x_irq,
+                                IRQF_TRIGGER_FALLING | IRQF_TRIGGER_LOW |
+                                IRQF_ONESHOT,
+                                "apds990x", chip);
+...
+}

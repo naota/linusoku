@@ -1,0 +1,121 @@
+Path: news.gmane.org!not-for-mail
+From: Glauber Costa <glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+Newsgroups: gmane.linux.kernel.cgroups,gmane.linux.kernel,gmane.linux.kernel.mm,gmane.linux.openvz.devel
+Subject: [PATCH v2 11/11] protect architectures where THREAD_SIZE >= PAGE_SIZE against fork bombs
+Date: Thu,  9 Aug 2012 17:01:19 +0400
+Lines: 70
+Approved: news@gmane.org
+Message-ID: <1344517279-30646-12-git-send-email-glommer@parallels.com>
+References: <1344517279-30646-1-git-send-email-glommer@parallels.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344517302 978 80.91.229.3 (9 Aug 2012 13:01:42 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 13:01:42 +0000 (UTC)
+Cc: <linux-mm-Bw31MaZKKs3YtjvyW6yDsg@public.gmane.org>, <cgroups-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>,
+	<devel-GEFAQzZX7r8dnm+yROfE0A@public.gmane.org>, Michal Hocko <mhocko-AlSwsSmVLrQ@public.gmane.org>,
+	Johannes Weiner <hannes-druUgvl0LCNAfugRpC6u6w@public.gmane.org>,
+	Andrew Morton <akpm-de/tnXTf+JLsfHDXvbKv3WD2FQJk+8+b@public.gmane.org>,
+	<kamezawa.hiroyu-+CUm20s59erQFUHtdCDX3A@public.gmane.org>, Christoph Lameter <cl-vYTEC60ixJUAvxtiuMwx3w@public.gmane.org>,
+	David Rientjes <rientjes-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>,
+	Pekka Enberg <penberg-DgEjT+Ai2ygdnm+yROfE0A@public.gmane.org>,
+	Glauber Costa <glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>,
+	Pekka Enberg <penberg-bbCR+/B0CizivPeTLB3BmA@public.gmane.org>,
+	Suleiman Souhlal <suleiman-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>
+To: <linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Original-X-From: cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org Thu Aug 09 15:01:38 2012
+Return-path: <cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Envelope-to: glkc-cgroups-wOFGN7rlS/M9smdsby/KFg@public.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>)
+	id 1SzSMm-00075i-Mb
+	for glkc-cgroups-wOFGN7rlS/M9smdsby/KFg@public.gmane.org; Thu, 09 Aug 2012 15:01:33 +0200
+Original-Received: (majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org) by vger.kernel.org via listexpand
+	id S1758112Ab2HINBb (ORCPT <rfc822;glkc-cgroups@m.gmane.org>);
+	Thu, 9 Aug 2012 09:01:31 -0400
+Original-Received: from mailhub.sw.ru ([195.214.232.25]:5805 "EHLO relay.sw.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753177Ab2HINB0 (ORCPT <rfc822;cgroups-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>);
+	Thu, 9 Aug 2012 09:01:26 -0400
+Original-Received: from straightjacket.localdomain.ru ([10.30.18.238])
+	by relay.sw.ru (8.13.4/8.13.4) with ESMTP id q79D1LIo011706;
+	Thu, 9 Aug 2012 17:01:25 +0400 (MSK)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1344517279-30646-1-git-send-email-glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+Original-Sender: cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Precedence: bulk
+List-ID: <cgroups.vger.kernel.org>
+X-Mailing-List: cgroups-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Xref: news.gmane.org gmane.linux.kernel.cgroups:3555 gmane.linux.kernel:1340681 gmane.linux.kernel.mm:83908 gmane.linux.openvz.devel:1972
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340681>
+
+Because those architectures will draw their stacks directly from the
+page allocator, rather than the slab cache, we can directly pass
+__GFP_KMEMCG flag, and issue the corresponding free_pages.
+
+This code path is taken when the architecture doesn't define
+CONFIG_ARCH_THREAD_INFO_ALLOCATOR (only ia64 seems to), and has
+THREAD_SIZE >= PAGE_SIZE. Luckily, most - if not all - of the remaining
+architectures fall in this category.
+
+This will guarantee that every stack page is accounted to the memcg the
+process currently lives on, and will have the allocations to fail if
+they go over limit.
+
+For the time being, I am defining a new variant of THREADINFO_GFP, not
+to mess with the other path. Once the slab is also tracked by memcg, we
+can get rid of that flag.
+
+Tested to successfully protect against :(){ :|:& };:
+
+Signed-off-by: Glauber Costa <glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+Acked-by: Frederic Weisbecker <fweisbec-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org>
+CC: Christoph Lameter <cl-vYTEC60ixJUAvxtiuMwx3w@public.gmane.org>
+CC: Pekka Enberg <penberg-bbCR+/B0CizivPeTLB3BmA@public.gmane.org>
+CC: Michal Hocko <mhocko-AlSwsSmVLrQ@public.gmane.org>
+CC: Kamezawa Hiroyuki <kamezawa.hiroyu-+CUm20s59erQFUHtdCDX3A@public.gmane.org>
+CC: Johannes Weiner <hannes-druUgvl0LCNAfugRpC6u6w@public.gmane.org>
+CC: Suleiman Souhlal <suleiman-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>
+---
+ include/linux/thread_info.h | 2 ++
+ kernel/fork.c               | 4 ++--
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/include/linux/thread_info.h b/include/linux/thread_info.h
+index ccc1899..e7e0473 100644
+--- a/include/linux/thread_info.h
++++ b/include/linux/thread_info.h
+@@ -61,6 +61,8 @@ extern long do_no_restart_syscall(struct restart_block *parm);
+ # define THREADINFO_GFP		(GFP_KERNEL | __GFP_NOTRACK)
+ #endif
+ 
++#define THREADINFO_GFP_ACCOUNTED (THREADINFO_GFP | __GFP_KMEMCG)
++
+ /*
+  * flag set/clear/test wrappers
+  * - pass TIF_xxxx constants to these functions
+diff --git a/kernel/fork.c b/kernel/fork.c
+index dc3ff16..b0b90c3 100644
+--- a/kernel/fork.c
++++ b/kernel/fork.c
+@@ -142,7 +142,7 @@ void __weak arch_release_thread_info(struct thread_info *ti) { }
+ static struct thread_info *alloc_thread_info_node(struct task_struct *tsk,
+ 						  int node)
+ {
+-	struct page *page = alloc_pages_node(node, THREADINFO_GFP,
++	struct page *page = alloc_pages_node(node, THREADINFO_GFP_ACCOUNTED,
+ 					     THREAD_SIZE_ORDER);
+ 
+ 	return page ? page_address(page) : NULL;
+@@ -151,7 +151,7 @@ static struct thread_info *alloc_thread_info_node(struct task_struct *tsk,
+ static inline void free_thread_info(struct thread_info *ti)
+ {
+ 	arch_release_thread_info(ti);
+-	free_pages((unsigned long)ti, THREAD_SIZE_ORDER);
++	free_accounted_pages((unsigned long)ti, THREAD_SIZE_ORDER);
+ }
+ # else
+ static struct kmem_cache *thread_info_cache;
+-- 
+1.7.11.2
+

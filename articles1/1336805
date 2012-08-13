@@ -1,0 +1,367 @@
+Path: news.gmane.org!not-for-mail
+From: Ludwig Nussel <ludwig.nussel@suse.de>
+Newsgroups: gmane.comp.file-systems.ext4,gmane.linux.kernel,gmane.linux.file-systems,gmane.linux.documentation
+Subject: =?UTF-8?q?=5BPATCH=203/3=5D=20implement=20uid=20and=20gid=20mount=20options=20for=20ext4?=
+Date: Thu,  2 Aug 2012 13:54:03 +0200
+Lines: 310
+Approved: news@gmane.org
+Message-ID: <1343908443-17369-4-git-send-email-ludwig.nussel@suse.de>
+References: <1343908443-17369-1-git-send-email-ludwig.nussel@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: QUOTED-PRINTABLE
+X-Trace: dough.gmane.org 1343908535 32571 80.91.229.3 (2 Aug 2012 11:55:35 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 2 Aug 2012 11:55:35 +0000 (UTC)
+Cc: Ludwig Nussel <ludwig.nussel@suse.de>,
+	linux-fsdevel@vger.kernel.org,
+	Jan Kara <jack@suse.cz> (maintainer:EXT2 FILE SYSTEM),
+	Rob Landley <rob@landley.net> (maintainer:DOCUMENTATION),
+	Andrew Morton <akpm@linux-foundation.org> (maintainer:EXT3 FILE
+	SYSTEM),
+	Andreas Dilger <adilger.kernel@dilger.ca> (maintainer:EXT3 FILE
+	SYSTEM),
+	"Theodore Ts'o" <tytso@mit.edu> (maintainer:EXT4 FILE SYSTEM),
+	linux-ext4@vger.kernel.org (open list:EXT2 FILE SYSTEM),
+	linux-doc@vger.kernel.org (open list:DOCUMENTATION)
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-ext4-owner@vger.kernel.org Thu Aug 02 13:55:34 2012
+Return-path: <linux-ext4-owner@vger.kernel.org>
+Envelope-to: gcfe-linux-ext4@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-ext4-owner@vger.kernel.org>)
+	id 1Swu01-0003e0-Qu
+	for gcfe-linux-ext4@plane.gmane.org; Thu, 02 Aug 2012 13:55:30 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753830Ab2HBLzF convert rfc822-to-quoted-printable (ORCPT
+	<rfc822;gcfe-linux-ext4@m.gmane.org>); Thu, 2 Aug 2012 07:55:05 -0400
+Original-Received: from cantor2.suse.de ([195.135.220.15]:59508 "EHLO mx2.suse.de"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753867Ab2HBLyJ (ORCPT <rfc822;linux-ext4@vger.kernel.org>);
+	Thu, 2 Aug 2012 07:54:09 -0400
+Original-Received: from relay1.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 07593A30ED;
+	Thu,  2 Aug 2012 13:54:08 +0200 (CEST)
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1343908443-17369-1-git-send-email-ludwig.nussel@suse.de>
+Original-Sender: linux-ext4-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-ext4.vger.kernel.org>
+X-Mailing-List: linux-ext4@vger.kernel.org
+Xref: news.gmane.org gmane.comp.file-systems.ext4:33660 gmane.linux.kernel:1336805 gmane.linux.file-systems:66388 gmane.linux.documentation:5981
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336805>
+
+Signed-off-by: Ludwig Nussel <ludwig.nussel@suse.de>
+---
+ Documentation/filesystems/ext4.txt |    9 ++++
+ fs/ext4/ext4.h                     |    4 ++
+ fs/ext4/inode.c                    |   52 +++++++++++++++------
+ fs/ext4/super.c                    |   87 ++++++++++++++++++++++++++++=
++++++++-
+ 4 Dateien ge=C3=A4ndert, 137 Zeilen hinzugef=C3=BCgt(+), 15 Zeilen ent=
+fernt(-)
+
+diff --git a/Documentation/filesystems/ext4.txt b/Documentation/filesys=
+tems/ext4.txt
+index 1b7f9ac..b388ab5 100644
+--- a/Documentation/filesystems/ext4.txt
++++ b/Documentation/filesystems/ext4.txt
+@@ -245,6 +245,15 @@ resgid=3Dn		The group ID which may use the reserve=
+d blocks.
+=20
+ resuid=3Dn		The user ID which may use the reserved blocks.
+=20
++uid=3Dn[:m]		Make all files appear to belong to uid n.
++			Useful for e.g. removable media with fstab
++			options 'user,uid=3Duseruid'. The optional second
++			uid m is actually written to the file system.
++
++gid=3Dn[:m]		Make all files appear to belong to gid n.
++			The optional second gid m is actually written to
++			the file system.
++
+ sb=3Dn			Use alternate superblock at this location.
+=20
+ quota			These options are ignored by the filesystem. They
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index c3411d4..070e3ad 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1177,6 +1177,10 @@ struct ext4_sb_info {
+ 	ext4_fsblk_t s_sb_block;
+ 	kuid_t s_resuid;
+ 	kgid_t s_resgid;
++	kuid_t s_uid;          /* make all files appear to belong to this uid=
+ */
++	kuid_t s_diskuid;      /* write this uid to disk (if s_uid !=3D 0) */
++	kgid_t s_gid;          /* make all files appear to belong to this gid=
+ */
++	kgid_t s_diskgid;      /* write this gid to disk (if s_gid !=3D 0) */
+ 	unsigned short s_mount_state;
+ 	unsigned short s_pad;
+ 	int s_addr_per_block_bits;
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 6324f74..b02ec15 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -3838,8 +3838,14 @@ struct inode *ext4_iget(struct super_block *sb, =
+unsigned long ino)
+ 		i_uid |=3D le16_to_cpu(raw_inode->i_uid_high) << 16;
+ 		i_gid |=3D le16_to_cpu(raw_inode->i_gid_high) << 16;
+ 	}
+-	i_uid_write(inode, i_uid);
+-	i_gid_write(inode, i_gid);
++	if (uid_valid(EXT4_SB(sb)->s_uid))
++		inode->i_uid =3D EXT4_SB(sb)->s_uid;
++	else
++		i_uid_write(inode, i_uid);
++	if (gid_valid(EXT4_SB(sb)->s_gid))
++		inode->i_gid =3D EXT4_SB(sb)->s_gid;
++	else
++		i_gid_write(inode, i_gid);
+ 	set_nlink(inode, le16_to_cpu(raw_inode->i_links_count));
+=20
+ 	ext4_clear_state_flags(ei);	/* Only relevant on 32-bit archs */
+@@ -4054,6 +4060,10 @@ static int ext4_do_update_inode(handle_t *handle=
+,
+ 	int err =3D 0, rc, block;
+ 	uid_t i_uid;
+ 	gid_t i_gid;
++	__le16 uid_low;
++	__le16 gid_low;
++	__le16 uid_high;
++	__le16 gid_high;
+=20
+ 	/* For fields not not tracking in the in-memory inode,
+ 	 * initialise them to zero for new inodes. */
+@@ -4064,28 +4074,42 @@ static int ext4_do_update_inode(handle_t *handl=
+e,
+ 	raw_inode->i_mode =3D cpu_to_le16(inode->i_mode);
+ 	i_uid =3D i_uid_read(inode);
+ 	i_gid =3D i_gid_read(inode);
++	if (uid_valid(EXT4_SB(inode->i_sb)->s_uid))
++		i_uid =3D from_kuid(&init_user_ns, EXT4_SB(inode->i_sb)->s_diskuid);
++	if (gid_valid(EXT4_SB(inode->i_sb)->s_gid))
++		i_gid =3D from_kgid(&init_user_ns, EXT4_SB(inode->i_sb)->s_diskgid);
+ 	if (!(test_opt(inode->i_sb, NO_UID32))) {
+-		raw_inode->i_uid_low =3D cpu_to_le16(low_16_bits(i_uid));
+-		raw_inode->i_gid_low =3D cpu_to_le16(low_16_bits(i_gid));
++		uid_low =3D cpu_to_le16(low_16_bits(i_uid));
++		gid_low =3D cpu_to_le16(low_16_bits(i_gid));
+ /*
+  * Fix up interoperability with old kernels. Otherwise, old inodes get
+  * re-used with the upper 16 bits of the uid/gid intact
+  */
+ 		if (!ei->i_dtime) {
+-			raw_inode->i_uid_high =3D
+-				cpu_to_le16(high_16_bits(i_uid));
+-			raw_inode->i_gid_high =3D
+-				cpu_to_le16(high_16_bits(i_gid));
++			uid_high =3D cpu_to_le16(high_16_bits(i_uid));
++			gid_high =3D cpu_to_le16(high_16_bits(i_gid));
+ 		} else {
+-			raw_inode->i_uid_high =3D 0;
+-			raw_inode->i_gid_high =3D 0;
++			uid_high =3D 0;
++			gid_high =3D 0;
+ 		}
+ 	} else {
+-		raw_inode->i_uid_low =3D cpu_to_le16(fs_high2lowuid(i_uid));
+-		raw_inode->i_gid_low =3D cpu_to_le16(fs_high2lowgid(i_gid));
+-		raw_inode->i_uid_high =3D 0;
+-		raw_inode->i_gid_high =3D 0;
++		uid_low =3D cpu_to_le16(fs_high2lowuid(i_uid));
++		gid_low =3D cpu_to_le16(fs_high2lowgid(i_gid));
++		uid_high =3D 0;
++		gid_high =3D 0;
++	}
++	/* don't mangle uid/gid of existing files if override is active */
++	if (!uid_valid(EXT4_SB(inode->i_sb)->s_uid) ||
++			ext4_test_inode_state(inode, EXT4_STATE_NEW)) {
++		raw_inode->i_uid_high =3D uid_high;
++		raw_inode->i_uid_low =3D uid_low;
+ 	}
++	if (!gid_valid(EXT4_SB(inode->i_sb)->s_gid) ||
++			ext4_test_inode_state(inode, EXT4_STATE_NEW)) {
++		raw_inode->i_gid_high =3D gid_high;
++		raw_inode->i_gid_low =3D gid_low;
++	}
++
+ 	raw_inode->i_links_count =3D cpu_to_le16(inode->i_nlink);
+=20
+ 	EXT4_INODE_SET_XTIME(i_ctime, inode, raw_inode);
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index d76ec82..927c020 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1229,6 +1229,7 @@ enum {
+ 	Opt_inode_readahead_blks, Opt_journal_ioprio,
+ 	Opt_dioread_nolock, Opt_dioread_lock,
+ 	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
++	Opt_uid, Opt_diskuid, Opt_gid, Opt_diskgid,
+ };
+=20
+ static const match_table_t tokens =3D {
+@@ -1307,6 +1308,10 @@ static const match_table_t tokens =3D {
+ 	{Opt_removed, "reservation"},	/* mount option from ext2/3 */
+ 	{Opt_removed, "noreservation"}, /* mount option from ext2/3 */
+ 	{Opt_removed, "journal=3D%u"},	/* mount option from ext2/3 */
++	{Opt_uid, "uid=3D%u"},
++	{Opt_diskuid, "uid=3D%u:%u"},
++	{Opt_gid, "gid=3D%u"},
++	{Opt_diskgid, "gid=3D%u:%u"},
+ 	{Opt_err, NULL},
+ };
+=20
+@@ -1553,6 +1558,54 @@ static int handle_mount_opt(struct super_block *=
+sb, char *opt, int token,
+ 			return -1;
+ 		*journal_ioprio =3D IOPRIO_PRIO_VALUE(IOPRIO_CLASS_BE, arg);
+ 		return 1;
++	case Opt_uid:
++		uid =3D make_kuid(current_user_ns(), arg);
++		if (!uid_valid(uid)) {
++			ext4_msg(sb, KERN_ERR, "Invalid uid value %d", arg);
++			return -1;
++		}
++		sbi->s_uid =3D sbi->s_diskuid =3D uid;
++		return 1;
++	case Opt_diskuid:
++		uid =3D make_kuid(current_user_ns(), arg);
++		if (!uid_valid(uid)) {
++			ext4_msg(sb, KERN_ERR, "Invalid uid value %d", arg);
++			return -1;
++		}
++		sbi->s_uid =3D uid;
++		if (match_int(&args[1], &arg))
++			return -1;
++		uid =3D make_kuid(current_user_ns(), arg);
++		if (!uid_valid(uid)) {
++			ext4_msg(sb, KERN_ERR, "Invalid uid value %d", arg);
++			return -1;
++		}
++		sbi->s_diskuid =3D uid;
++		return 1;
++	case Opt_gid:
++		gid =3D make_kgid(current_user_ns(), arg);
++		if (!gid_valid(gid)) {
++			ext4_msg(sb, KERN_ERR, "Invalid gid value %d", arg);
++			return -1;
++		}
++		sbi->s_gid =3D sbi->s_diskgid =3D gid;
++		return 1;
++	case Opt_diskgid:
++		gid =3D make_kgid(current_user_ns(), arg);
++		if (!gid_valid(gid)) {
++			ext4_msg(sb, KERN_ERR, "Invalid gid value %d", arg);
++			return -1;
++		}
++		sbi->s_gid =3D gid;
++		if (match_int(&args[1], &arg))
++			return -1;
++		gid =3D make_kgid(current_user_ns(), arg);
++		if (!gid_valid(gid)) {
++			ext4_msg(sb, KERN_ERR, "Invalid gid value %d", arg);
++			return -1;
++		}
++		sbi->s_diskgid =3D gid;
++		return 1;
+ 	}
+=20
+ 	for (m =3D ext4_mount_opts; m->token !=3D Opt_err; m++) {
+@@ -1768,7 +1821,7 @@ static int _ext4_show_options(struct seq_file *se=
+q, struct super_block *sb,
+ 	char sep =3D nodefs ? '\n' : ',';
+=20
+ #define SEQ_OPTS_PUTS(str) seq_printf(seq, "%c" str, sep)
+-#define SEQ_OPTS_PRINT(str, arg) seq_printf(seq, "%c" str, sep, arg)
++#define SEQ_OPTS_PRINT(str, args...) seq_printf(seq, "%c" str, sep, ##=
+args)
+=20
+ 	if (sbi->s_sb_block !=3D 1)
+ 		SEQ_OPTS_PRINT("sb=3D%llu", sbi->s_sb_block);
+@@ -1795,6 +1848,22 @@ static int _ext4_show_options(struct seq_file *s=
+eq, struct super_block *sb,
+ 	    le16_to_cpu(es->s_def_resgid) !=3D EXT4_DEF_RESGID)
+ 		SEQ_OPTS_PRINT("resgid=3D%u",
+ 				from_kgid_munged(&init_user_ns, sbi->s_resgid));
++	if (uid_valid(sbi->s_uid)) {
++		if (!uid_eq(sbi->s_uid, sbi->s_diskuid))
++			SEQ_OPTS_PRINT("uid=3D%u:%u",
++				from_kuid_munged(&init_user_ns, sbi->s_uid),
++				from_kuid_munged(&init_user_ns, sbi->s_diskuid));
++		else
++			SEQ_OPTS_PRINT("uid=3D%u", from_kuid_munged(&init_user_ns, sbi->s_u=
+id));
++	}
++	if (gid_valid(sbi->s_gid)) {
++		if (!gid_eq(sbi->s_gid, sbi->s_diskgid))
++			SEQ_OPTS_PRINT("gid=3D%u:%u",
++				from_kgid_munged(&init_user_ns, sbi->s_gid),
++				from_kgid_munged(&init_user_ns, sbi->s_diskgid));
++		else
++			SEQ_OPTS_PRINT("gid=3D%u", from_kgid_munged(&init_user_ns, sbi->s_g=
+id));
++	}
+ 	def_errors =3D nodefs ? -1 : le16_to_cpu(es->s_errors);
+ 	if (test_opt(sb, ERRORS_RO) && def_errors !=3D EXT4_ERRORS_RO)
+ 		SEQ_OPTS_PUTS("errors=3Dremount-ro");
+@@ -3243,6 +3312,10 @@ static int ext4_fill_super(struct super_block *s=
+b, void *data, int silent)
+ 	sbi->s_mount_opt =3D 0;
+ 	sbi->s_resuid =3D make_kuid(&init_user_ns, EXT4_DEF_RESUID);
+ 	sbi->s_resgid =3D make_kgid(&init_user_ns, EXT4_DEF_RESGID);
++	sbi->s_uid =3D INVALID_UID;
++	sbi->s_gid =3D INVALID_GID;
++	sbi->s_diskuid =3D INVALID_UID;
++	sbi->s_diskgid =3D INVALID_GID;
+ 	sbi->s_inode_readahead_blks =3D EXT4_DEF_INODE_READAHEAD_BLKS;
+ 	sbi->s_sb_block =3D sb_block;
+ 	if (sb->s_bdev->bd_part)
+@@ -4535,6 +4608,10 @@ struct ext4_mount_options {
+ 	unsigned long s_mount_opt2;
+ 	kuid_t s_resuid;
+ 	kgid_t s_resgid;
++	kuid_t s_uid;
++	kuid_t s_diskuid;
++	kgid_t s_gid;
++	kgid_t s_diskgid;
+ 	unsigned long s_commit_interval;
+ 	u32 s_min_batch_time, s_max_batch_time;
+ #ifdef CONFIG_QUOTA
+@@ -4565,6 +4642,10 @@ static int ext4_remount(struct super_block *sb, =
+int *flags, char *data)
+ 	old_opts.s_mount_opt2 =3D sbi->s_mount_opt2;
+ 	old_opts.s_resuid =3D sbi->s_resuid;
+ 	old_opts.s_resgid =3D sbi->s_resgid;
++	old_opts.s_uid =3D sbi->s_uid;
++	old_opts.s_diskuid =3D sbi->s_diskuid;
++	old_opts.s_gid =3D sbi->s_gid;
++	old_opts.s_diskgid =3D sbi->s_diskgid;
+ 	old_opts.s_commit_interval =3D sbi->s_commit_interval;
+ 	old_opts.s_min_batch_time =3D sbi->s_min_batch_time;
+ 	old_opts.s_max_batch_time =3D sbi->s_max_batch_time;
+@@ -4732,6 +4813,10 @@ restore_opts:
+ 	sbi->s_mount_opt2 =3D old_opts.s_mount_opt2;
+ 	sbi->s_resuid =3D old_opts.s_resuid;
+ 	sbi->s_resgid =3D old_opts.s_resgid;
++	sbi->s_uid =3D old_opts.s_uid;
++	sbi->s_diskuid =3D old_opts.s_diskuid;
++	sbi->s_gid =3D old_opts.s_gid;
++	sbi->s_diskgid =3D old_opts.s_diskgid;
+ 	sbi->s_commit_interval =3D old_opts.s_commit_interval;
+ 	sbi->s_min_batch_time =3D old_opts.s_min_batch_time;
+ 	sbi->s_max_batch_time =3D old_opts.s_max_batch_time;
+--=20
+1.7.10.4
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" i=
+n
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

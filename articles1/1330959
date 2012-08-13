@@ -1,0 +1,100 @@
+Path: news.gmane.org!not-for-mail
+From: Tejun Heo <tj@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCHSET] workqueue: reimplement CPU hotplug to keep idle
+ workers
+Date: Fri, 20 Jul 2012 10:08:02 -0700
+Lines: 33
+Approved: news@gmane.org
+Message-ID: <20120720170802.GF32763@google.com>
+References: <1342545149-3515-1-git-send-email-tj@kernel.org>
+ <1342802391.2583.11.camel@twins>
+ <20120720165213.GD32763@google.com>
+ <1342803700.2583.29.camel@twins>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1342804099 25333 80.91.229.3 (20 Jul 2012 17:08:19 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 17:08:19 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, torvalds@linux-foundation.org,
+	tglx@linutronix.de, linux-pm@vger.kernel.org
+To: Peter Zijlstra <peterz@infradead.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 19:08:18 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsGgb-0005Mc-Jo
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 19:08:17 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753327Ab2GTRII (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 13:08:08 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:33761 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753168Ab2GTRIG (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 13:08:06 -0400
+Original-Received: by pbbrp8 with SMTP id rp8so6426680pbb.19
+        for <multiple recipients>; Fri, 20 Jul 2012 10:08:06 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:date:from:to:cc:subject:message-id:references:mime-version
+         :content-type:content-disposition:in-reply-to:user-agent;
+        bh=gpYZkQ4eiffynbqOuihVvbz0FRY4utjGEfceyKNobXE=;
+        b=TX0tMjZrhzWo2R1SheIpaI+hgmJ2O6FZY98FAG0EwEaRnoJcxj4cEgEhPTfQCDAd4w
+         ZanadtYG6//36O5xa6O63yyUfDkcutZclfQKYpEEhjcoH9pWUKohZkIWP5yMVwk1DBlb
+         9f4WLP12S53xwysXN85+Si65nQTKndcKUnrHIKq4GalcnbiHgxPEByZSsmzorIFyR6T9
+         5Eaa2343DdT3lDd81H3LFYeqslh8+pGV1JYx/N0aqb2PbOGk/UFWAmEOlUrimXR0xgx4
+         GEggnWuQw3DQdEHRj8AcWpu9r5KLbt2KkPWi+ZKiwCg/sXvo5DOouuB3xYKOM256zA6C
+         QGXw==
+Original-Received: by 10.68.132.166 with SMTP id ov6mr15697314pbb.24.1342804086270;
+        Fri, 20 Jul 2012 10:08:06 -0700 (PDT)
+Original-Received: from google.com (wtj.mtv.corp.google.com [172.18.110.84])
+        by mx.google.com with ESMTPS id qd10sm4304287pbb.38.2012.07.20.10.08.04
+        (version=SSLv3 cipher=OTHER);
+        Fri, 20 Jul 2012 10:08:05 -0700 (PDT)
+Content-Disposition: inline
+In-Reply-To: <1342803700.2583.29.camel@twins>
+User-Agent: Mutt/1.5.20 (2009-06-14)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330959
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330959>
+
+Hello, Peter.
+
+On Fri, Jul 20, 2012 at 07:01:40PM +0200, Peter Zijlstra wrote:
+> On Fri, 2012-07-20 at 09:52 -0700, Tejun Heo wrote:
+> > Ooh, yeah, I agree.  That's next on the wq to-do list.  The problem is
+> > that queue_work() is implemented in terms of queue_work_on().  
+> 
+> But that's trivial to fix, both could use __queue_work() without too
+> much bother, right?
+
+Hmmm?  Not really.  We need to keep count of the ones which reqested
+fixed binding - ie. the ones which explicitly used queue_work_on() -
+and then flush on wq CPU_DOWN.  Then, we need to audit the current
+users which are using queue_work{_on}() + explicit FLUSH on CPU_DOWN
+and convert them.
+
+> > The assumption was that they should flush during CPU_DOWN but it
+> > probably will be much better to require users which need CPU affinity
+> > to always use queue_work_on() - instead of implicit local affinity
+> > from queue_work() - and flush them automatically from wq callback.
+> 
+> Right, and when you create this new mode, which you need to know to
+> flush on DOWN, you can simply put a BUG_ON in queue_work_on() when this
+> mode is set.
+
+BUG_ON() on queue_work_on()?  Do you mean if the target CPU is down?
+If so, yeah, I'd probably go with WARN_ON_ONCE() but we should whine
+on it.
+
+Thanks.
+
+-- 
+tejun

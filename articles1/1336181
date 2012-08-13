@@ -1,0 +1,100 @@
+Path: news.gmane.org!not-for-mail
+From: Thomas Gleixner <tglx@linutronix.de>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH 1/2] [RFC] time: Fix problem with large timespecs &
+ ktime_get_update_offsets
+Date: Wed, 1 Aug 2012 08:52:42 +0200 (CEST)
+Lines: 45
+Approved: news@gmane.org
+Message-ID: <alpine.LFD.2.02.1208010850510.32033@ionos>
+References: <1343716548-38742-1-git-send-email-john.stultz@linaro.org> <1343716548-38742-2-git-send-email-john.stultz@linaro.org>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: TEXT/PLAIN; charset=US-ASCII
+X-Trace: dough.gmane.org 1343803974 11121 80.91.229.3 (1 Aug 2012 06:52:54 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 1 Aug 2012 06:52:54 +0000 (UTC)
+Cc: linux-kernel <linux-kernel@vger.kernel.org>,
+	Ingo Molnar <mingo@kernel.org>,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Prarit Bhargava <prarit@redhat.com>,
+	Zhouping Liu <zliu@redhat.com>, CAI Qian <caiqian@redhat.com>
+To: John Stultz <john.stultz@linaro.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 01 08:52:53 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwSnd-0005NW-CW
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 01 Aug 2012 08:52:53 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754144Ab2HAGwq (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 1 Aug 2012 02:52:46 -0400
+Original-Received: from www.linutronix.de ([62.245.132.108]:48297 "EHLO
+	Galois.linutronix.de" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753826Ab2HAGwo (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 1 Aug 2012 02:52:44 -0400
+Original-Received: from localhost ([127.0.0.1])
+	by Galois.linutronix.de with esmtps (TLS1.0:DHE_RSA_AES_256_CBC_SHA1:32)
+	(Exim 4.72)
+	(envelope-from <tglx@linutronix.de>)
+	id 1SwSnT-0007uF-P1; Wed, 01 Aug 2012 08:52:43 +0200
+In-Reply-To: <1343716548-38742-2-git-send-email-john.stultz@linaro.org>
+User-Agent: Alpine 2.02 (LFD 1266 2009-07-14)
+X-Linutronix-Spam-Score: -1.0
+X-Linutronix-Spam-Level: -
+X-Linutronix-Spam-Status: No , -1.0 points, 5.0 required,  ALL_TRUSTED=-1,SHORTCIRCUIT=-0.0001
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336181
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336181>
+
+On Tue, 31 Jul 2012, John Stultz wrote:
+> There's currently a slight difference in ktime_get_update_offsets()
+> vs ktime_get() which can result in boot time crashes when booting
+> with insane CMOS clock values larger then ~2264.
+> 
+> ktime_get() does basically the following:
+>         return timespec_to_ktime(timespec_add(xtime, wall_to_monotonic))
+> 
+> Where as ktime_get_update_offsets does approximately:
+>         return ktime_sub(timespec_to_ktime(xtime), realtime_offset);
+> 
+> The problem is, at boot we set xtime = year 8200 and
+> wall_to_monotonic = year -8200,  ktime_get adds both values, mostly
+> nulling the difference out (leaving only how long the system has been
+> up), then converts that relatively small value to a ktime_t properly
+> without losing any information.
+> 
+> ktime_get_update_offsets however, since it converts xtime (again set
+> to some value greater then year 8200), to a ktime, it gets clamped at
+> KTIME_MAX, then we subtract realtime_offset, which is _also_ clamped
+> at KTIME_MAX, resulting in us always returning almost[1] zero. This
+> causes us to stop expiring timers.
+> 
+> Now, one of the reasons Thomas and I changed the logic was that using
+> the precalculated realtime_offset was slightly more efficient then
+> re-adding xtime and wall_to_monotonic's components separately. But
+> how valuable this unmeasured slight efficiency is vs extra
+> robustness for crazy time values is questionable.
+> 
+> So switch back to the ktime_get implementation for
+> ktime_get_update_offsets
+
+NAK.
+
+You're papering over the real problem: Using crap values without
+sanity checking them in the first place.
+
+All your patch does is papering over the problem. Heck, year 8200 is
+obvious bullshit, so we can detect and reject it.
+
+Thanks,
+
+	tglx
+
+ 

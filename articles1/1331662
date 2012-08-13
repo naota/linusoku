@@ -1,0 +1,71 @@
+Path: news.gmane.org!not-for-mail
+From: Steven Whitehouse <swhiteho@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.cluster.redhat.cluster.devel
+Subject: [PATCH 14/16] GFS2: kernel panic with small gfs2 filesystems - 1 RG
+Date: Mon, 23 Jul 2012 09:01:04 +0100
+Lines: 24
+Approved: news@gmane.org
+Message-ID: <1343030466-3053-15-git-send-email-swhiteho@redhat.com>
+References: <1343030466-3053-1-git-send-email-swhiteho@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343032040 1246 80.91.229.3 (23 Jul 2012 08:27:20 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 08:27:20 +0000 (UTC)
+Cc: Abhijith Das <adas@redhat.com>,
+	Steven Whitehouse <swhiteho@redhat.com>
+To: linux-kernel@vger.kernel.org, cluster-devel@redhat.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 10:27:19 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StDz0-0006h9-Kn
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 10:27:14 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754153Ab2GWI0e (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 04:26:34 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:19722 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754121Ab2GWI0a (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 04:26:30 -0400
+Original-Received: from int-mx01.intmail.prod.int.phx2.redhat.com (int-mx01.intmail.prod.int.phx2.redhat.com [10.5.11.11])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6N8QUli019966
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK)
+	for <linux-kernel@vger.kernel.org>; Mon, 23 Jul 2012 04:26:30 -0400
+Original-Received: from chywoon.redhat.com (vpn1-5-152.ams2.redhat.com [10.36.5.152])
+	by int-mx01.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with ESMTP id q6N8Px9l016610;
+	Mon, 23 Jul 2012 04:26:24 -0400
+In-Reply-To: <1343030466-3053-1-git-send-email-swhiteho@redhat.com>
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.11
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331662 gmane.linux.cluster.redhat.cluster.devel:7192
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331662>
+
+From: Abhijith Das <adas@redhat.com>
+
+In the unlikely setup where there's only one resource group in the gfs2
+filesystem, gfs2_rgrpd_get_next() returns a NULL rgd that is not dealt with
+properly, causing a kernel NULL ptr dereference. This patch fixes this issue.
+
+Signed-off-by: Abhi Das <adas@redhat.com>
+Signed-off-by: Steven Whitehouse <swhiteho@redhat.com>
+
+diff --git a/fs/gfs2/rgrp.c b/fs/gfs2/rgrp.c
+index e53d0a1..fb70792 100644
+--- a/fs/gfs2/rgrp.c
++++ b/fs/gfs2/rgrp.c
+@@ -1276,6 +1276,7 @@ int gfs2_inplace_reserve(struct gfs2_inode *ip, u32 requested)
+ 			/* fall through */
+ 		case GLR_TRYFAILED:
+ 			rgd = gfs2_rgrpd_get_next(rgd);
++			rgd = rgd ? : begin; /* if NULL, wrap */
+ 			if (rgd != begin) /* If we didn't wrap */
+ 				break;
+ 
+-- 
+1.7.4
+

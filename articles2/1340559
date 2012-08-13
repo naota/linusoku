@@ -1,0 +1,114 @@
+Path: news.gmane.org!not-for-mail
+From: ibrahem.batta@gmail.com
+Newsgroups: gmane.linux.kernel,gmane.linux.network.general
+Subject: Re: recv(...,MSG_TRUNC)
+Date: Thu, 9 Aug 2012 01:17:11 -0700 (PDT)
+Lines: 58
+Approved: news@gmane.org
+Message-ID: <251e1b72-9ffb-497e-962d-d711a0958c57@googlegroups.com>
+References: <fa.hi9ib1v.1d6a50s@ifi.uio.no> <fa.lacg30v.3h8di4@ifi.uio.no>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1344502774 9226 80.91.229.3 (9 Aug 2012 08:59:34 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 08:59:34 +0000 (UTC)
+Cc: Alan.Cox@linux.org, linux-net@vger.kernel.org,
+	linux-kernel@vger.kernel.org,
+	Samuel Thibault <samuel.thibault@fnac.net>
+To: fa.linux.kernel@googlegroups.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 09 10:59:34 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzOab-0001oZ-Rq
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 09 Aug 2012 10:59:34 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757069Ab2HII7Y (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 04:59:24 -0400
+Original-Received: from mail-qc0-f184.google.com ([209.85.216.184]:54967 "EHLO
+	mail-qc0-f184.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756878Ab2HII7W (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 04:59:22 -0400
+X-Greylist: delayed 1863 seconds by postgrey-1.27 at vger.kernel.org; Thu, 09 Aug 2012 04:59:22 EDT
+Original-Received: by qcsv15 with SMTP id v15so223737qcs.1
+        for <multiple recipients>; Thu, 09 Aug 2012 01:59:21 -0700 (PDT)
+Original-Received: by 10.52.99.73 with SMTP id eo9mr1613080vdb.10.1344500231165; Thu,
+ 09 Aug 2012 01:17:11 -0700 (PDT)
+Original-Path: glegroupsg2000goo.googlegroups.com!not-for-mail
+Original-Newsgroups: fa.linux.kernel
+In-Reply-To: <fa.lacg30v.3h8di4@ifi.uio.no>
+Complaints-To: groups-abuse@google.com
+Injection-Info: glegroupsg2000goo.googlegroups.com; posting-host=82.213.2.186; posting-account=S59YrgoAAAC02Kx9mcoQE5h5ezYi4goP
+Original-NNTP-Posting-Host: 82.213.2.186
+User-Agent: G2/1.0
+X-Google-Web-Client: true
+X-Google-IP: 82.213.2.186
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340559 gmane.linux.network.general:14995
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340559>
+
+On Saturday, June 29, 2002 10:40:18 PM UTC+3, Samuel Thibault wrote:
+> (Previous mail seemed to be garbaged by mime attachment)
+> 
+> Hello,
+> 
+> man recv says, about flags :
+> 
+>        MSG_TRUNC
+>               Return  the real length of the packet, even when it
+>               was longer than the passed buffer. Only  valid  for
+>               packet sockets.
+> 
+> But it is neither implemented in ipv4/udp.c, nor in ipv6/udp.c, although
+> it is in tcp.c, for instance !
+> 
+> By searching with google, I could read old manpages where it didn't exist,
+> but I find it very useful, especially in conjunction with MSG_PEEK, for
+> trying to read a packet with a little buffer, and then really get it with
+> an appropriate buffer.
+> 
+> So here's a patch which cures 2.4.18, and also works on 2.5 kernels.
+> 
+> Best regards,
+> 
+> Samuel Thibault
+> 
+> diff -urN linux-2.4.18/net/ipv4/udp.c linux-2.4.18-cor/net/ipv4/udp.c
+> --- linux-2.4.18/net/ipv4/udp.c	Mon Jun 10 23:34:59 2002
+> +++ linux-2.4.18-cor/net/ipv4/udp.c	Mon Jun 10 23:35:31 2002
+> @@ -680,7 +680,7 @@
+>    	}
+>  	if (sk->protinfo.af_inet.cmsg_flags)
+>  		ip_cmsg_recv(msg, skb);
+> -	err = copied;
+> +	err = (flags&MSG_TRUNC) ? skb->len - sizeof(struct udphdr) : copied;
+> 
+>  out_free:
+>    	skb_free_datagram(sk, skb);
+> diff -urN linux-2.4.18/net/ipv6/udp.c linux-2.4.18-cor/net/ipv6/udp.c
+> --- linux-2.4.18/net/ipv6/udp.c	Mon Jun 10 23:35:07 2002
+> +++ linux-2.4.18-cor/net/ipv6/udp.c	Mon Jun 10 23:35:36 2002
+> @@ -432,7 +432,7 @@
+>  			}
+>  		}
+>    	}
+> -	err = copied;
+> +	err = (flags&MSG_TRUNC) ? skb->len - sizeof(struct udphdr) : copied;
+> 
+>  out_free:
+>  	skb_free_datagram(sk, skb);
+> 
+> -
+> To unsubscribe from this list: send the line "unsubscribe linux-kernel" in
+> the body of a message to majordomo@vger.kernel.org
+> More majordomo info at  http://vger.kernel.org/majordomo-info.html
+> Please read the FAQ at  http://www.tux.org/lkml/
+
+man i want to see full example about receivefrom and MSG_TRUNC flag please 

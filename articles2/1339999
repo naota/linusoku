@@ -1,0 +1,82 @@
+Path: news.gmane.org!not-for-mail
+From: Alexey Khoroshilov <khoroshilov@ispras.ru>
+Newsgroups: gmane.linux.kernel,gmane.linux.usb.general
+Subject: [PATCH] wusb: Fix potential memory leak in wusb_dev_sec_add()
+Date: Wed,  8 Aug 2012 16:49:48 +0400
+Lines: 40
+Approved: news@gmane.org
+Message-ID: <1344430188-23921-1-git-send-email-khoroshilov@ispras.ru>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344430276 14048 80.91.229.3 (8 Aug 2012 12:51:16 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 12:51:16 +0000 (UTC)
+Cc: Alexey Khoroshilov <khoroshilov@ispras.ru>,
+	linux-usb@vger.kernel.org, linux-kernel@vger.kernel.org,
+	ldv-project@ispras.ru
+To: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 14:51:15 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sz5jA-0002l8-MP
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 14:51:09 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1758125Ab2HHMvA (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 08:51:00 -0400
+Original-Received: from mail.ispras.ru ([83.149.199.43]:43451 "EHLO mail.ispras.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753590Ab2HHMu6 (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 08:50:58 -0400
+Original-Received: from parliament.intra.ispras.ru (unknown [83.149.199.44])
+	by mail.ispras.ru (Postfix) with ESMTP id A7A3D24F7BB;
+	Wed,  8 Aug 2012 16:50:57 +0400 (MSK)
+X-Mailer: git-send-email 1.7.9.5
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339999 gmane.linux.usb.general:69110
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339999>
+
+Do not leak memory by updating pointer with potentially NULL realloc return value.
+
+Found by Linux Driver Verification project (linuxtesting.org).
+
+Signed-off-by: Alexey Khoroshilov <khoroshilov@ispras.ru>
+---
+ drivers/usb/wusbcore/security.c |    7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/usb/wusbcore/security.c b/drivers/usb/wusbcore/security.c
+index fa810a8..dd88441 100644
+--- a/drivers/usb/wusbcore/security.c
++++ b/drivers/usb/wusbcore/security.c
+@@ -202,7 +202,7 @@ int wusb_dev_sec_add(struct wusbhc *wusbhc,
+ {
+ 	int result, bytes, secd_size;
+ 	struct device *dev = &usb_dev->dev;
+-	struct usb_security_descriptor *secd;
++	struct usb_security_descriptor *secd, *new_secd;
+ 	const struct usb_encryption_descriptor *etd, *ccm1_etd = NULL;
+ 	const void *itr, *top;
+ 	char buf[64];
+@@ -221,11 +221,12 @@ int wusb_dev_sec_add(struct wusbhc *wusbhc,
+ 		goto out;
+ 	}
+ 	secd_size = le16_to_cpu(secd->wTotalLength);
+-	secd = krealloc(secd, secd_size, GFP_KERNEL);
+-	if (secd == NULL) {
++	new_secd = krealloc(secd, secd_size, GFP_KERNEL);
++	if (new_secd == NULL) {
+ 		dev_err(dev, "Can't allocate space for security descriptors\n");
+ 		goto out;
+ 	}
++	secd = new_secd;
+ 	result = usb_get_descriptor(usb_dev, USB_DT_SECURITY,
+ 				    0, secd, secd_size);
+ 	if (result < secd_size) {
+-- 
+1.7.9.5
+

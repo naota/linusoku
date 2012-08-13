@@ -1,0 +1,135 @@
+Path: news.gmane.org!not-for-mail
+From: Julia Lawall <Julia.Lawall-L2FTfq7BK8M@public.gmane.org>
+Newsgroups: gmane.linux.usb.general,gmane.linux.kernel.janitors,gmane.linux.kernel
+Subject: [PATCH 1/9] drivers/usb/host/ehci-atmel.c: use devm_ functions
+Date: Sun, 29 Jul 2012 21:46:05 +0200
+Lines: 90
+Approved: news@gmane.org
+Message-ID: <1343591173-2819-2-git-send-email-Julia.Lawall@lip6.fr>
+References: <1343591173-2819-1-git-send-email-Julia.Lawall@lip6.fr>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343591245 2138 80.91.229.3 (29 Jul 2012 19:47:25 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 29 Jul 2012 19:47:25 +0000 (UTC)
+Cc: kernel-janitors-u79uwXL29TY76Z2rM5mHXA@public.gmane.org,
+	Greg Kroah-Hartman <gregkh-hQyY1W1yCW8ekmWlsbkhG0B+6BGkLq7r@public.gmane.org>,
+	linux-usb-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+To: Alan Stern <stern-nwvwT67g6+6dFdvTe/nMLpVzexx5G7lz@public.gmane.org>
+Original-X-From: linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org Sun Jul 29 21:47:24 2012
+Return-path: <linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Envelope-to: glug-linux-usb-wOFGN7rlS/M9smdsby/KFg@public.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>)
+	id 1SvZSV-0008BH-CF
+	for glug-linux-usb-wOFGN7rlS/M9smdsby/KFg@public.gmane.org; Sun, 29 Jul 2012 21:47:23 +0200
+Original-Received: (majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org) by vger.kernel.org via listexpand
+	id S1753466Ab2G2TqY (ORCPT <rfc822;glug-linux-usb@m.gmane.org>);
+	Sun, 29 Jul 2012 15:46:24 -0400
+Original-Received: from mail1-relais-roc.national.inria.fr ([192.134.164.82]:7066 "EHLO
+	mail1-relais-roc.national.inria.fr" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1753359Ab2G2TqX (ORCPT
+	<rfc822;linux-usb-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>); Sun, 29 Jul 2012 15:46:23 -0400
+X-IronPort-AV: E=Sophos;i="4.77,675,1336341600"; 
+   d="scan'208";a="168487761"
+Original-Received: from palace.lip6.fr (HELO localhost.localdomain) ([132.227.105.202])
+  by mail1-relais-roc.national.inria.fr with ESMTP/TLS/DHE-RSA-AES256-SHA; 29 Jul 2012 21:46:21 +0200
+X-Mailer: git-send-email 1.7.8.6
+In-Reply-To: <1343591173-2819-1-git-send-email-Julia.Lawall-L2FTfq7BK8M@public.gmane.org>
+Original-Sender: linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Precedence: bulk
+List-ID: <linux-usb.vger.kernel.org>
+X-Mailing-List: linux-usb-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Xref: news.gmane.org gmane.linux.usb.general:68465 gmane.linux.kernel.janitors:25223 gmane.linux.kernel:1334786
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334786>
+
+From: Julia Lawall <Julia.Lawall-L2FTfq7BK8M@public.gmane.org>
+
+The various devm_ functions allocate memory that is released when a driver
+detaches.  This patch uses these functions for data that is allocated in
+the probe function of a platform device and is only freed in the remove
+function.
+
+Signed-off-by: Julia Lawall <Julia.Lawall-L2FTfq7BK8M@public.gmane.org>
+
+---
+Not compiled.
+
+ drivers/usb/host/ehci-atmel.c |   30 ++++++------------------------
+ 1 file changed, 6 insertions(+), 24 deletions(-)
+
+diff --git a/drivers/usb/host/ehci-atmel.c b/drivers/usb/host/ehci-atmel.c
+index a47e2cf..411bb74 100644
+--- a/drivers/usb/host/ehci-atmel.c
++++ b/drivers/usb/host/ehci-atmel.c
+@@ -150,31 +150,24 @@ static int __devinit ehci_atmel_drv_probe(struct platform_device *pdev)
+ 	hcd->rsrc_start = res->start;
+ 	hcd->rsrc_len = resource_size(res);
+ 
+-	if (!request_mem_region(hcd->rsrc_start, hcd->rsrc_len,
+-				driver->description)) {
+-		dev_dbg(&pdev->dev, "controller already in use\n");
+-		retval = -EBUSY;
+-		goto fail_request_resource;
+-	}
+-
+-	hcd->regs = ioremap_nocache(hcd->rsrc_start, hcd->rsrc_len);
++	hcd->regs = devm_request_and_ioremap(&pdev->dev, res);
+ 	if (hcd->regs == NULL) {
+ 		dev_dbg(&pdev->dev, "error mapping memory\n");
+ 		retval = -EFAULT;
+-		goto fail_ioremap;
++		goto fail_request_resource;
+ 	}
+ 
+-	iclk = clk_get(&pdev->dev, "ehci_clk");
++	iclk = devm_clk_get(&pdev->dev, "ehci_clk");
+ 	if (IS_ERR(iclk)) {
+ 		dev_err(&pdev->dev, "Error getting interface clock\n");
+ 		retval = -ENOENT;
+-		goto fail_get_iclk;
++		goto fail_request_resource;
+ 	}
+-	fclk = clk_get(&pdev->dev, "uhpck");
++	fclk = devm_clk_get(&pdev->dev, "uhpck");
+ 	if (IS_ERR(fclk)) {
+ 		dev_err(&pdev->dev, "Error getting function clock\n");
+ 		retval = -ENOENT;
+-		goto fail_get_fclk;
++		goto fail_request_resource;
+ 	}
+ 
+ 	atmel_start_ehci(pdev);
+@@ -187,13 +180,6 @@ static int __devinit ehci_atmel_drv_probe(struct platform_device *pdev)
+ 
+ fail_add_hcd:
+ 	atmel_stop_ehci(pdev);
+-	clk_put(fclk);
+-fail_get_fclk:
+-	clk_put(iclk);
+-fail_get_iclk:
+-	iounmap(hcd->regs);
+-fail_ioremap:
+-	release_mem_region(hcd->rsrc_start, hcd->rsrc_len);
+ fail_request_resource:
+ 	usb_put_hcd(hcd);
+ fail_create_hcd:
+@@ -209,13 +195,9 @@ static int __devexit ehci_atmel_drv_remove(struct platform_device *pdev)
+ 
+ 	ehci_shutdown(hcd);
+ 	usb_remove_hcd(hcd);
+-	iounmap(hcd->regs);
+-	release_mem_region(hcd->rsrc_start, hcd->rsrc_len);
+ 	usb_put_hcd(hcd);
+ 
+ 	atmel_stop_ehci(pdev);
+-	clk_put(fclk);
+-	clk_put(iclk);
+ 	fclk = iclk = NULL;
+ 
+ 	return 0;
+--
+To unsubscribe from this list: send the line "unsubscribe linux-usb" in
+the body of a message to majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

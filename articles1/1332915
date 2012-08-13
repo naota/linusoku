@@ -1,0 +1,196 @@
+Path: news.gmane.org!not-for-mail
+From: "Srivatsa S. Bhat" <srivatsa.bhat@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel
+Subject: [RFC PATCH 3/6] notifiers: Add support for reverse invocation of
+ notifier chains
+Date: Wed, 25 Jul 2012 17:24:10 +0530
+Lines: 131
+Approved: news@gmane.org
+Message-ID: <20120725115405.3900.21667.stgit@srivatsabhat.in.ibm.com>
+References: <20120725115224.3900.80783.stgit@srivatsabhat.in.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343217288 20731 80.91.229.3 (25 Jul 2012 11:54:48 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 11:54:48 +0000 (UTC)
+Cc: rjw@sisk.pl, srivatsa.bhat@linux.vnet.ibm.com,
+	nikunj@linux.vnet.ibm.com, linux-pm@vger.kernel.org,
+	linux-kernel@vger.kernel.org
+To: tglx@linutronix.de, mingo@kernel.org, peterz@infradead.org,
+	rusty@rustcorp.com.au, paulmck@linux.vnet.ibm.com,
+	namhyung@kernel.org, tj@kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 13:54:45 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su0Ar-0005RE-FL
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 13:54:41 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932863Ab2GYLyX (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 07:54:23 -0400
+Original-Received: from e28smtp07.in.ibm.com ([122.248.162.7]:37963 "EHLO
+	e28smtp07.in.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756569Ab2GYLyU (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 07:54:20 -0400
+Original-Received: from /spool/local
+	by e28smtp07.in.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <srivatsa.bhat@linux.vnet.ibm.com>;
+	Wed, 25 Jul 2012 17:24:17 +0530
+Original-Received: from d28relay02.in.ibm.com (9.184.220.59)
+	by e28smtp07.in.ibm.com (192.168.1.137) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Wed, 25 Jul 2012 17:24:15 +0530
+Original-Received: from d28av05.in.ibm.com (d28av05.in.ibm.com [9.184.220.67])
+	by d28relay02.in.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6PBsEgv20775074;
+	Wed, 25 Jul 2012 17:24:14 +0530
+Original-Received: from d28av05.in.ibm.com (loopback [127.0.0.1])
+	by d28av05.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6PBsDdC006441;
+	Wed, 25 Jul 2012 21:54:14 +1000
+Original-Received: from srivatsabhat.in.ibm.com (srivatsabhat.in.ibm.com [9.124.35.188])
+	by d28av05.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6PBsDIR006437;
+	Wed, 25 Jul 2012 21:54:13 +1000
+In-Reply-To: <20120725115224.3900.80783.stgit@srivatsabhat.in.ibm.com>
+User-Agent: StGIT/0.14.3
+x-cbid: 12072511-8878-0000-0000-000003614CA7
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332915
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332915>
+
+In certain scenarios, it is useful to be able to invoke notifiers in the
+reverse order. One such example is CPU hotplug, where we would like to
+invoke the notifiers in one order during CPU online and in the reverse
+order during CPU offline. So add support for reverse invocation of
+notifier chains.
+
+Signed-off-by: Srivatsa S. Bhat <srivatsa.bhat@linux.vnet.ibm.com>
+---
+
+ include/linux/notifier.h |    4 ++
+ kernel/notifier.c        |   82 ++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 86 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/notifier.h b/include/linux/notifier.h
+index 67f9a3a..4626d17 100644
+--- a/include/linux/notifier.h
++++ b/include/linux/notifier.h
+@@ -145,8 +145,12 @@ extern int __blocking_notifier_call_chain(struct blocking_notifier_head *nh,
+ 	unsigned long val, void *v, int nr_to_call, int *nr_calls);
+ extern int raw_notifier_call_chain(struct raw_notifier_head *nh,
+ 		unsigned long val, void *v);
++extern int raw_notifier_call_chain_reverse(struct raw_notifier_head *nh,
++		unsigned long val, void *v);
+ extern int __raw_notifier_call_chain(struct raw_notifier_head *nh,
+ 	unsigned long val, void *v, int nr_to_call, int *nr_calls);
++extern int __raw_notifier_call_chain_reverse(struct raw_notifier_head *nh,
++	unsigned long val, void *v, int nr_to_call, int *nr_calls);
+ extern int srcu_notifier_call_chain(struct srcu_notifier_head *nh,
+ 		unsigned long val, void *v);
+ extern int __srcu_notifier_call_chain(struct srcu_notifier_head *nh,
+diff --git a/kernel/notifier.c b/kernel/notifier.c
+index ad6feab..536f32c 100644
+--- a/kernel/notifier.c
++++ b/kernel/notifier.c
+@@ -105,6 +105,50 @@ static int __kprobes notifier_call_chain(struct list_head *nl,
+ 	return ret;
+ }
+ 
++/**
++ * notifier_call_chain_reverse - Informs the registered notifiers about an
++ * event, by invoking the notifiers in the reverse order.
++ *
++ *	@nl:		Pointer to head of the blocking notifier chain
++ *	@val:		Value passed unmodified to notifier function
++ *	@v:		Pointer passed unmodified to notifier function
++ *	@nr_to_call:	Number of notifier functions to be called. Don't care
++ *			value of this parameter is -1.
++ *	@nr_calls:	Records the number of notifications sent. Don't care
++ *			value of this field is NULL.
++ *	@returns:	notifier_call_chain_reverse returns the value returned
++ *			by the last notifier function called.
++ */
++static int __kprobes notifier_call_chain_reverse(struct list_head *nl,
++					unsigned long val, void *v,
++					int nr_to_call,	int *nr_calls)
++{
++	int ret = NOTIFY_DONE;
++	struct notifier_block *nb;
++
++	list_for_each_entry_reverse_rcu(nb, nl, list) {
++		if (!nr_to_call)
++			break;
++
++#ifdef CONFIG_DEBUG_NOTIFIERS
++		if (unlikely(!func_ptr_is_kernel_text(nb->notifier_call))) {
++			WARN(1, "Invalid notifier called!");
++			continue;
++		}
++#endif
++		ret = nb->notifier_call(nb, val, v);
++
++		if (nr_calls)
++			(*nr_calls)++;
++
++		if ((ret & NOTIFY_STOP_MASK) == NOTIFY_STOP_MASK)
++			break;
++		nr_to_call--;
++	}
++
++	return ret;
++}
++
+ /*
+  *	Atomic notifier chain routines.  Registration and unregistration
+  *	use a spinlock, and call_chain is synchronized by RCU (no locks).
+@@ -402,6 +446,44 @@ int raw_notifier_call_chain(struct raw_notifier_head *nh,
+ }
+ EXPORT_SYMBOL_GPL(raw_notifier_call_chain);
+ 
++
++/**
++ *	__raw_notifier_call_chain_reverse - Call functions in a raw notifier
++ *	chain in the reverse order
++ *
++ *	@nh: Pointer to head of the raw notifier chain
++ *	@val: Value passed unmodified to notifier function
++ *	@v: Pointer passed unmodified to notifier function
++ *	@nr_to_call: See comment for notifier_call_chain_reverse.
++ *	@nr_calls: See comment for notifier_call_chain_reverse
++ *
++ *	Calls each function in a notifier chain in turn, in the reverse order.
++ *	The functions run in an undefined context.
++ *	All locking must be provided by the caller.
++ *
++ *	If the return value of the notifier can be and'ed
++ *	with %NOTIFY_STOP_MASK then __raw_notifier_call_chain_reverse()
++ *	will return immediately, with the return value of
++ *	the notifier function which halted execution.
++ *	Otherwise the return value is the return value
++ *	of the last notifier function called.
++ */
++int __raw_notifier_call_chain_reverse(struct raw_notifier_head *nh,
++			      unsigned long val, void *v,
++			      int nr_to_call, int *nr_calls)
++{
++	return notifier_call_chain_reverse(&nh->list, val, v,
++						nr_to_call, nr_calls);
++}
++EXPORT_SYMBOL_GPL(__raw_notifier_call_chain_reverse);
++
++int raw_notifier_call_chain_reverse(struct raw_notifier_head *nh,
++		unsigned long val, void *v)
++{
++	return __raw_notifier_call_chain_reverse(nh, val, v, -1, NULL);
++}
++EXPORT_SYMBOL_GPL(raw_notifier_call_chain_reverse);
++
+ /*
+  *	SRCU notifier chain routines.    Registration and unregistration
+  *	use a mutex, and call_chain is synchronized by SRCU (no locks).
+

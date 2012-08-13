@@ -1,0 +1,161 @@
+Path: news.gmane.org!not-for-mail
+From: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.xen.devel
+Subject: [PATCH 5/5] xen/pcifront: Use Xen-SWIOTLB when initting if required.
+Date: Tue, 31 Jul 2012 10:00:23 -0400
+Lines: 102
+Approved: news@gmane.org
+Message-ID: <1343743223-30092-6-git-send-email-konrad.wilk@oracle.com>
+References: <1343743223-30092-1-git-send-email-konrad.wilk@oracle.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343743800 20635 80.91.229.3 (31 Jul 2012 14:10:00 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 14:10:00 +0000 (UTC)
+Cc: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+To: fujita.tomonori@lab.ntt.co.jp, xen-devel@lists.xensource.com,
+	linux-kernel@vger.kernel.org, stefano.stabellini@eu.citrix.com,
+	JBeulich@suse.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 16:10:00 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwD94-0002QF-Ay
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 16:09:58 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754043Ab2GaOJp (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 10:09:45 -0400
+Original-Received: from rcsinet15.oracle.com ([148.87.113.117]:32352 "EHLO
+	rcsinet15.oracle.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753131Ab2GaOJo (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 10:09:44 -0400
+Original-Received: from ucsinet22.oracle.com (ucsinet22.oracle.com [156.151.31.94])
+	by rcsinet15.oracle.com (Sentrion-MTA-4.2.2/Sentrion-MTA-4.2.2) with ESMTP id q6VE9V1S021205
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Tue, 31 Jul 2012 14:09:32 GMT
+Original-Received: from acsmt358.oracle.com (acsmt358.oracle.com [141.146.40.158])
+	by ucsinet22.oracle.com (8.14.4+Sun/8.14.4) with ESMTP id q6VE9UNJ018355
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Tue, 31 Jul 2012 14:09:31 GMT
+Original-Received: from abhmt110.oracle.com (abhmt110.oracle.com [141.146.116.62])
+	by acsmt358.oracle.com (8.12.11.20060308/8.12.11) with ESMTP id q6VE9TX4021713;
+	Tue, 31 Jul 2012 09:09:29 -0500
+Original-Received: from phenom.dumpdata.com (/209.6.85.33)
+	by default (Oracle Beehive Gateway v4.0)
+	with ESMTP ; Tue, 31 Jul 2012 07:09:29 -0700
+Original-Received: by phenom.dumpdata.com (Postfix, from userid 1000)
+	id 77595402D4; Tue, 31 Jul 2012 10:00:28 -0400 (EDT)
+X-Mailer: git-send-email 1.7.7.6
+In-Reply-To: <1343743223-30092-1-git-send-email-konrad.wilk@oracle.com>
+X-Source-IP: ucsinet22.oracle.com [156.151.31.94]
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335749 gmane.comp.emulators.xen.devel:135963
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335749>
+
+We piggyback on "xen/swiotlb: Use the swiotlb_late_init_with_tbl to init
+Xen-SWIOTLB late when PV PCI is used." functionality to start up
+the Xen-SWIOTLB if we are hot-plugged. This allows us to bypass
+the need to supply 'iommu=soft' on the Linux command line (mostly).
+With this patch, if a user forgot 'iommu=soft' on the command line,
+and hotplug a PCI device they will get:
+
+pcifront pci-0: Installing PCI frontend
+Warning: only able to allocate 4 MB for software IO TLB
+software IO TLB [mem 0x2a000000-0x2a3fffff] (4MB) mapped at [ffff88002a000000-ffff88002a3fffff]
+pcifront pci-0: Creating PCI Frontend Bus 0000:00
+pcifront pci-0: PCI host bridge to bus 0000:00
+pci_bus 0000:00: root bus resource [io  0x0000-0xffff]
+pci_bus 0000:00: root bus resource [mem 0x00000000-0xfffffffff]
+pci 0000:00:00.0: [8086:10d3] type 00 class 0x020000
+pci 0000:00:00.0: reg 10: [mem 0xfe5c0000-0xfe5dffff]
+pci 0000:00:00.0: reg 14: [mem 0xfe500000-0xfe57ffff]
+pci 0000:00:00.0: reg 18: [io  0xe000-0xe01f]
+pci 0000:00:00.0: reg 1c: [mem 0xfe5e0000-0xfe5e3fff]
+pcifront pci-0: claiming resource 0000:00:00.0/0
+pcifront pci-0: claiming resource 0000:00:00.0/1
+pcifront pci-0: claiming resource 0000:00:00.0/2
+pcifront pci-0: claiming resource 0000:00:00.0/3
+e1000e: Intel(R) PRO/1000 Network Driver - 2.0.0-k
+e1000e: Copyright(c) 1999 - 2012 Intel Corporation.
+e1000e 0000:00:00.0: Disabling ASPM L0s L1
+e1000e 0000:00:00.0: enabling device (0000 -> 0002)
+e1000e 0000:00:00.0: Xen PCI mapped GSI16 to IRQ34
+e1000e 0000:00:00.0: (unregistered net_device): Interrupt Throttling Rate (ints/sec) set to dynamic conservative mode
+e1000e 0000:00:00.0: eth0: (PCI Express:2.5GT/s:Width x1) 00:1b:21:ab:c6:13
+e1000e 0000:00:00.0: eth0: Intel(R) PRO/1000 Network Connection
+e1000e 0000:00:00.0: eth0: MAC: 3, PHY: 8, PBA No: E46981-005
+
+The "Warning only" will go away if one supplies 'iommu=soft' instead
+as we have a higher chance of being able to allocate large swaths of
+memory.
+
+Signed-off-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+---
+ drivers/pci/xen-pcifront.c |   14 ++++++++++----
+ 1 files changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/pci/xen-pcifront.c b/drivers/pci/xen-pcifront.c
+index d6cc62c..ca92801 100644
+--- a/drivers/pci/xen-pcifront.c
++++ b/drivers/pci/xen-pcifront.c
+@@ -21,6 +21,7 @@
+ #include <linux/bitops.h>
+ #include <linux/time.h>
+ 
++#include <asm/xen/swiotlb-xen.h>
+ #define INVALID_GRANT_REF (0)
+ #define INVALID_EVTCHN    (-1)
+ 
+@@ -668,7 +669,7 @@ static irqreturn_t pcifront_handler_aer(int irq, void *dev)
+ 	schedule_pcifront_aer_op(pdev);
+ 	return IRQ_HANDLED;
+ }
+-static int pcifront_connect(struct pcifront_device *pdev)
++static int pcifront_connect_and_init_dma(struct pcifront_device *pdev)
+ {
+ 	int err = 0;
+ 
+@@ -681,9 +682,13 @@ static int pcifront_connect(struct pcifront_device *pdev)
+ 		dev_err(&pdev->xdev->dev, "PCI frontend already installed!\n");
+ 		err = -EEXIST;
+ 	}
+-
+ 	spin_unlock(&pcifront_dev_lock);
+ 
++	if (!err && !swiotlb_nr_tbl()) {
++		err = pci_xen_swiotlb_init_late();
++		if (err)
++			dev_err(&pdev->xdev->dev, "Could not setup SWIOTLB!\n");
++	}
+ 	return err;
+ }
+ 
+@@ -699,6 +704,7 @@ static void pcifront_disconnect(struct pcifront_device *pdev)
+ 
+ 	spin_unlock(&pcifront_dev_lock);
+ }
++
+ static struct pcifront_device *alloc_pdev(struct xenbus_device *xdev)
+ {
+ 	struct pcifront_device *pdev;
+@@ -842,10 +848,10 @@ static int __devinit pcifront_try_connect(struct pcifront_device *pdev)
+ 	    XenbusStateInitialised)
+ 		goto out;
+ 
+-	err = pcifront_connect(pdev);
++	err = pcifront_connect_and_init_dma(pdev);
+ 	if (err) {
+ 		xenbus_dev_fatal(pdev->xdev, err,
+-				 "Error connecting PCI Frontend");
++				 "Error setting up PCI Frontend");
+ 		goto out;
+ 	}
+ 
+-- 
+1.7.7.6
+

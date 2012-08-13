@@ -1,0 +1,115 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton@redhat.com>
+Newsgroups: gmane.linux.file-systems,gmane.linux.nfs,gmane.linux.kernel
+Subject: [PATCH v5 01/19] vfs: add a retry_estale helper function to handle retries on ESTALE
+Date: Wed,  8 Aug 2012 09:21:24 -0400
+Lines: 53
+Approved: news@gmane.org
+Message-ID: <1344432102-22312-2-git-send-email-jlayton@redhat.com>
+References: <1344432102-22312-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344432526 1881 80.91.229.3 (8 Aug 2012 13:28:46 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 13:28:46 +0000 (UTC)
+Cc: linux-fsdevel@vger.kernel.org, linux-nfs@vger.kernel.org,
+	linux-kernel@vger.kernel.org, michael.brantley@deshaw.com,
+	hch@infradead.org, miklos@szeredi.hu, pstaubach@exagrid.com
+To: viro@ZenIV.linux.org.uk
+Original-X-From: linux-fsdevel-owner@vger.kernel.org Wed Aug 08 15:28:43 2012
+Return-path: <linux-fsdevel-owner@vger.kernel.org>
+Envelope-to: lnx-linux-fsdevel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-fsdevel-owner@vger.kernel.org>)
+	id 1Sz6JV-0007ar-VH
+	for lnx-linux-fsdevel@plane.gmane.org; Wed, 08 Aug 2012 15:28:42 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1758362Ab2HHN2j (ORCPT <rfc822;lnx-linux-fsdevel@m.gmane.org>);
+	Wed, 8 Aug 2012 09:28:39 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:63871 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1758375Ab2HHNVt (ORCPT
+	<rfc822;linux-fsdevel@vger.kernel.org>);
+	Wed, 8 Aug 2012 09:21:49 -0400
+Original-Received: by ghrr11 with SMTP id r11so730361ghr.19
+        for <linux-fsdevel@vger.kernel.org>; Wed, 08 Aug 2012 06:21:49 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:x-gm-message-state;
+        bh=sy9Uvz7l8X8JEbX9C408arheo12tchdpsSan7/9uiKA=;
+        b=cndU5oZW4Atp6yMDoWBCiyzK61/1rVgW3gDXacbSet7l0/uNSHo64yt1ksDHr5+nhE
+         XiVKO45/J3QuGXj5b7cfUhlpGo9HyZ3FVRKrxZ2x4b6wdc7iipQWKcujcJETg/msuR3p
+         n29YTaFBuDVCxPZFUz1ifN2AHfJysxl2v+q0wP8xpbqYEEBBCsUAG1a3BT1xRCv3D0b1
+         kRRi8oUWHoAauMMaa3+ZRbT75J2+DlRRrnCaIKxg7UHkNYnSrc3RTYnN8FwLq4B/Eypz
+         nIIwouxek+ZGZfKpjxrCJ3+D1mvLZJvRivnvTMR9vRXcAF3zWLOfVEs8j4oSvxWgHRcO
+         exsQ==
+Original-Received: by 10.236.77.39 with SMTP id c27mr16527868yhe.99.1344432109045;
+        Wed, 08 Aug 2012 06:21:49 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-069-134-145-027.nc.res.rr.com. [69.134.145.27])
+        by mx.google.com with ESMTPS id l1sm24418002yhm.19.2012.08.08.06.21.47
+        (version=SSLv3 cipher=OTHER);
+        Wed, 08 Aug 2012 06:21:48 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1344432102-22312-1-git-send-email-jlayton@redhat.com>
+X-Gm-Message-State: ALoCoQnV0HxHPrkDfllrTrVpQP4yom+Mo5Ec6D3Q7OJtMPDA3qUX8XpcEFgSBV5uXWpGFVvFj5BA
+Original-Sender: linux-fsdevel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-fsdevel.vger.kernel.org>
+X-Mailing-List: linux-fsdevel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.file-systems:66474 gmane.linux.nfs:51378 gmane.linux.kernel:1340057
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340057>
+
+This function is expected to be called from path-based syscalls to help
+them decide whether to try the lookup and call again in the event that
+they got an -ESTALE return back on an earier try.
+
+Currently, we only retry the call once on an ESTALE error, but in the
+event that we decide that that's not enough in the future, we should be
+able to change the logic in this helper without too much effort.
+
+Signed-off-by: Jeff Layton <jlayton@redhat.com>
+---
+ include/linux/fs.h | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/include/linux/fs.h b/include/linux/fs.h
+index aa11047..b776a97 100644
+--- a/include/linux/fs.h
++++ b/include/linux/fs.h
+@@ -2211,6 +2211,27 @@ extern int finish_open(struct file *file, struct dentry *dentry,
+ 			int *opened);
+ extern int finish_no_open(struct file *file, struct dentry *dentry);
+ 
++/**
++ * retry_estale - determine whether the caller should retry an operation
++ *
++ * @error: the error we'll be returning
++ * @try: number of retries already performed
++ *
++ * Check to see if the error code was -ESTALE, and then determine whether
++ * to retry the call based on the number of retries so far. Currently, we only
++ * retry the call once.
++ *
++ * Returns true if the caller should try again.
++ */
++static inline bool
++retry_estale(const long error, const unsigned int try)
++{
++	if (likely(error != -ESTALE))
++		return false;
++
++	return !try;
++}
++
+ /* fs/ioctl.c */
+ 
+ extern int ioctl_preallocate(struct file *filp, void __user *argp);
+-- 
+1.7.11.2
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

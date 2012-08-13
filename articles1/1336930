@@ -1,0 +1,87 @@
+Path: news.gmane.org!not-for-mail
+From: chpoph <chpoph@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: In function cpu_stop_cpu_callback, BUG_ON(stopper->thread ||
+ stopper->enabled || !list_empty(&stopper->works)) is triggered while
+ restarting sometimes.
+Date: Fri, 3 Aug 2012 01:13:03 +0800
+Lines: 32
+Approved: news@gmane.org
+Message-ID: <CAM16m2koNcqMNMSW9r8bjS4SLBzNzh8P03npe0f6d3qr9ifzcA@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1343927596 6989 80.91.229.3 (2 Aug 2012 17:13:16 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 2 Aug 2012 17:13:16 +0000 (UTC)
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 02 19:13:17 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwyxY-0000XD-JV
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 02 Aug 2012 19:13:16 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754697Ab2HBRNH (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 2 Aug 2012 13:13:07 -0400
+Original-Received: from mail-wi0-f178.google.com ([209.85.212.178]:47491 "EHLO
+	mail-wi0-f178.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754513Ab2HBRNE (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 2 Aug 2012 13:13:04 -0400
+Original-Received: by wibhr14 with SMTP id hr14so5343051wib.1
+        for <linux-kernel@vger.kernel.org>; Thu, 02 Aug 2012 10:13:03 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=mime-version:date:message-id:subject:from:to:content-type;
+        bh=Wpm6D4mTnLJc0SautCLpFrHJk0lX8cYNyfRubKeh9eE=;
+        b=LSaxE1HXSHTqBK20pp2jmRUGfcTAQDFje7yFIY0Nl/QBVVwbcvKwLOPp5WPxZZaLND
+         Brsn7fDnAbRY/ccrptdOLAs0O5Bpf0UyH7biQiRyqw/2wykOFmVnOcqe3edKK4V5vwx1
+         XpmBCs1CesFbPAt9a8aN0Y+h2nZwjV3gl0BwePRec2XBoBzDBpIGFxE8c2M2fFKEZ1AW
+         m4h3lqIEuN4GRY8U9eVcTFvT0WazIAfzfTdmXi0GRYGBJmGz/Ea/4xuyXCOKSlaFVRXS
+         84+p5RyPFJDEL/recdN4OkFotlHR0uIsXpmaaC7I/Udy62BQzmmp7khyiBpy0ASBEVCq
+         t/bw==
+Original-Received: by 10.180.20.11 with SMTP id j11mr6306655wie.12.1343927583270; Thu,
+ 02 Aug 2012 10:13:03 -0700 (PDT)
+Original-Received: by 10.216.239.11 with HTTP; Thu, 2 Aug 2012 10:13:03 -0700 (PDT)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336930
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336930>
+
+In function cpu_stop_cpu_callback, BUG_ON(stopper->thread ||
+stopper->enabled || !list_empty(&stopper->works)) is triggered
+sometimes.
+/* manage stopper for a cpu, mostly lifted from sched migration thread mgmt */
+static int __cpuinit cpu_stop_cpu_callback(struct notifier_block *nfb,
+                                           unsigned long action, void *hcpu)
+{
+        ..................................
+        switch (action & ~CPU_TASKS_FROZEN) {
+        case CPU_UP_PREPARE:
+                BUG_ON(stopper->thread || stopper->enabled ||
+                       !list_empty(&stopper->works));
+         .................................
+}
+
+Before actually hardware restarting, machine_restart(cmd) will be called.
+
+void machine_restart(char *cmd)
+{
+        machine_shutdown();
+        arm_pm_restart(reboot_mode, cmd);
+        ......................
+}
+
+after machine_shutdown(), all other cpus are set offline only by
+settting the cpumask. if userspace software which regulators cpu are
+running before arm_pm_restart(), it may set set another cpu online and
+cpu_up(cpu) is called. At this situation, BUG_ON(stopper->thread ||
+stopper->enabled || !list_empty(&stopper->works)) is triggered in
+cpu_stop_cpu_callback.
+
+Is it needed to preempt disable before calling machine_shutdown()?

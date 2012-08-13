@@ -1,0 +1,107 @@
+Path: news.gmane.org!not-for-mail
+From: Ming Lei <ming.lei@canonical.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.usb.general
+Subject: Re: [RFC PATCH 00/13] firmware loader: introduce cache/uncache firmware
+Date: Thu, 26 Jul 2012 10:29:43 +0800
+Lines: 45
+Approved: news@gmane.org
+Message-ID: <CACVXFVPF3C9ksNSP5KMNsZg2qYWf+SQ4HLw-cb0abgC-wuunUQ@mail.gmail.com>
+References: <1343149213-10160-1-git-send-email-ming.lei@canonical.com>
+	<CA+55aFzKu6xhTPmKPTg+p36Su0GkZgzGWpnvhpsFXJzhp=R16w@mail.gmail.com>
+	<CACVXFVMeRQ-Fwk03uVg5LOH193PF+AyCoAAxmXDpqjeZXi7nxw@mail.gmail.com>
+	<CA+55aFypmnk8S4JkLui1Z7JxKae=-k88K-wEP9xDwrf1LOX-Vw@mail.gmail.com>
+	<CACVXFVOiXRiqRsE46_xmOzK_dExNvkBaJVwjiZ9adhwqRRwY+g@mail.gmail.com>
+	<CA+55aFxF_nSEZGp8h4oXhusJgQ+dvjNL2eMurJMaJFQMPCbu9g@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1343269830 12909 80.91.229.3 (26 Jul 2012 02:30:30 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 02:30:30 +0000 (UTC)
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	"Rafael J. Wysocki" <rjw@sisk.pl>,
+	Borislav Petkov <borislav.petkov@amd.com>,
+	linux-kernel@vger.kernel.org, Matthew Garrett <mjg@redhat.com>,
+	linux-usb <linux-usb@vger.kernel.org>,
+	Alan Stern <stern@rowland.harvard.edu>,
+	Oliver Neukum <oneukum@suse.de>
+To: Linus Torvalds <torvalds@linux-foundation.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 04:30:28 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuDqN-0002an-O0
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 04:30:28 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752581Ab2GZC3r (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 22:29:47 -0400
+Original-Received: from youngberry.canonical.com ([91.189.89.112]:32781 "EHLO
+	youngberry.canonical.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751924Ab2GZC3q (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 22:29:46 -0400
+Original-Received: from mail-ob0-f174.google.com ([209.85.214.174])
+	by youngberry.canonical.com with esmtpsa (TLS1.0:RSA_ARCFOUR_SHA1:16)
+	(Exim 4.71)
+	(envelope-from <ming.lei@canonical.com>)
+	id 1SuDpg-0005AT-JN; Thu, 26 Jul 2012 02:29:44 +0000
+Original-Received: by obbuo13 with SMTP id uo13so1989563obb.19
+        for <multiple recipients>; Wed, 25 Jul 2012 19:29:43 -0700 (PDT)
+Original-Received: by 10.182.51.65 with SMTP id i1mr10589347obo.45.1343269783234; Wed,
+ 25 Jul 2012 19:29:43 -0700 (PDT)
+Original-Received: by 10.182.15.101 with HTTP; Wed, 25 Jul 2012 19:29:43 -0700 (PDT)
+In-Reply-To: <CA+55aFxF_nSEZGp8h4oXhusJgQ+dvjNL2eMurJMaJFQMPCbu9g@mail.gmail.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333375 gmane.linux.usb.general:68284
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333375>
+
+On Thu, Jul 26, 2012 at 1:23 AM, Linus Torvalds
+<torvalds@linux-foundation.org> wrote:
+>
+> So *if* the only problem wrt the USB hub code comes from this area,
+
+IMO,  USB hub code may not be the only one because both device_add and
+device_del can just be run in process context, so any hotplug bus
+may have this kind of problem since the devices in the bus may be
+unplugged and plugged again during suspend or experience power loss
+, then the bus driver may take similar handling policy as USB.
+
+> then I think the solution might be as simple as just moving the
+> "usermodehelper_enable()" up a few lines, with a comment. Something
+> like the *untested* and whitespace-damaged thing below..
+>
+> Rafael? Who has one of those isight things and has seen the warning to test?
+
+I fake one USB device disconnect in reset_resume path and looks the patch
+is good: the device driver can request firmware successfully in its .probe().
+
+>
+>                Linus
+>
+> ---
+> diff --git a/kernel/power/process.c b/kernel/power/process.c
+> index 19db29f67558..5bf50e488196 100644
+> --- a/kernel/power/process.c
+> +++ b/kernel/power/process.c
+> @@ -181,6 +181,12 @@ void thaw_processes(void)
+>         pm_freezing = false;
+>         pm_nosig_freezing = false;
+>
+> +       /*
+> +        * User mode helper are available again (or will be,
+> +        * modulo scheduling)
+> +        */
+> +       usermodehelper_enable();
+
+This may wake up tasks earlier than before, not sure if it might have
+side effects.
+
+
+Thanks,
+--
+Ming Lei

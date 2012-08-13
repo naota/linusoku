@@ -1,0 +1,218 @@
+Path: news.gmane.org!not-for-mail
+From: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.kvm.devel
+Subject: [PATCH v2 09/10] KVM: do not release the error page
+Date: Fri, 03 Aug 2012 15:42:52 +0800
+Lines: 157
+Approved: news@gmane.org
+Message-ID: <501B80FC.2010304@linux.vnet.ibm.com>
+References: <501B7F94.7090308@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343979820 15053 80.91.229.3 (3 Aug 2012 07:43:40 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 07:43:40 +0000 (UTC)
+Cc: Avi Kivity <avi@redhat.com>, Marcelo Tosatti <mtosatti@redhat.com>,
+	LKML <linux-kernel@vger.kernel.org>, KVM <kvm@vger.kernel.org>
+To: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 09:43:40 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxCXp-0004Zx-Vf
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 09:43:38 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752724Ab2HCHna (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 03:43:30 -0400
+Original-Received: from e28smtp08.in.ibm.com ([122.248.162.8]:42002 "EHLO
+	e28smtp08.in.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751991Ab2HCHn1 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 03:43:27 -0400
+Original-Received: from /spool/local
+	by e28smtp08.in.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <xiaoguangrong@linux.vnet.ibm.com>;
+	Fri, 3 Aug 2012 13:13:25 +0530
+Original-Received: from d28relay05.in.ibm.com (9.184.220.62)
+	by e28smtp08.in.ibm.com (192.168.1.138) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Fri, 3 Aug 2012 13:12:56 +0530
+Original-Received: from d28av04.in.ibm.com (d28av04.in.ibm.com [9.184.220.66])
+	by d28relay05.in.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q737gt1M27394268;
+	Fri, 3 Aug 2012 13:12:55 +0530
+Original-Received: from d28av04.in.ibm.com (loopback [127.0.0.1])
+	by d28av04.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q737gt4I022383;
+	Fri, 3 Aug 2012 17:42:55 +1000
+Original-Received: from localhost.localdomain ([9.123.236.99])
+	by d28av04.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q737gr6u022355;
+	Fri, 3 Aug 2012 17:42:53 +1000
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:14.0) Gecko/20120717 Thunderbird/14.0
+In-Reply-To: <501B7F94.7090308@linux.vnet.ibm.com>
+x-cbid: 12080307-2000-0000-0000-00000895C03C
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337148 gmane.comp.emulators.kvm.devel:95516
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337148>
+
+After commit a2766325cf9f9, the error page is replaced by the
+error code, it need not be released anymore
+
+[ The patch has been compiling tested for powerpc ]
+
+Signed-off-by: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+---
+ arch/powerpc/kvm/44x_tlb.c   |    1 -
+ arch/powerpc/kvm/book3s_pr.c |    4 +---
+ arch/x86/kvm/svm.c           |    1 -
+ arch/x86/kvm/vmx.c           |    5 ++---
+ arch/x86/kvm/x86.c           |    9 +++------
+ include/linux/kvm_host.h     |    2 +-
+ virt/kvm/async_pf.c          |    4 ++--
+ virt/kvm/kvm_main.c          |    5 +++--
+ 8 files changed, 12 insertions(+), 19 deletions(-)
+
+diff --git a/arch/powerpc/kvm/44x_tlb.c b/arch/powerpc/kvm/44x_tlb.c
+index 33aa715..5dd3ab4 100644
+--- a/arch/powerpc/kvm/44x_tlb.c
++++ b/arch/powerpc/kvm/44x_tlb.c
+@@ -319,7 +319,6 @@ void kvmppc_mmu_map(struct kvm_vcpu *vcpu, u64 gvaddr, gpa_t gpaddr,
+ 	if (is_error_page(new_page)) {
+ 		printk(KERN_ERR "Couldn't get guest page for gfn %llx!\n",
+ 			(unsigned long long)gfn);
+-		kvm_release_page_clean(new_page);
+ 		return;
+ 	}
+ 	hpaddr = page_to_phys(new_page);
+diff --git a/arch/powerpc/kvm/book3s_pr.c b/arch/powerpc/kvm/book3s_pr.c
+index a1baec3..05c28f5 100644
+--- a/arch/powerpc/kvm/book3s_pr.c
++++ b/arch/powerpc/kvm/book3s_pr.c
+@@ -242,10 +242,8 @@ static void kvmppc_patch_dcbz(struct kvm_vcpu *vcpu, struct kvmppc_pte *pte)
+ 	int i;
+
+ 	hpage = gfn_to_page(vcpu->kvm, pte->raddr >> PAGE_SHIFT);
+-	if (is_error_page(hpage)) {
+-		kvm_release_page_clean(hpage);
++	if (is_error_page(hpage))
+ 		return;
+-	}
+
+ 	hpage_offset = pte->raddr & ~PAGE_MASK;
+ 	hpage_offset &= ~0xFFFULL;
+diff --git a/arch/x86/kvm/svm.c b/arch/x86/kvm/svm.c
+index 687d0c3..31be4a5 100644
+--- a/arch/x86/kvm/svm.c
++++ b/arch/x86/kvm/svm.c
+@@ -2105,7 +2105,6 @@ static void *nested_svm_map(struct vcpu_svm *svm, u64 gpa, struct page **_page)
+ 	return kmap(page);
+
+ error:
+-	kvm_release_page_clean(page);
+ 	kvm_inject_gp(&svm->vcpu, 0);
+
+ 	return NULL;
+diff --git a/arch/x86/kvm/vmx.c b/arch/x86/kvm/vmx.c
+index 2300e53..4b6e809 100644
+--- a/arch/x86/kvm/vmx.c
++++ b/arch/x86/kvm/vmx.c
+@@ -596,10 +596,9 @@ static inline struct vmcs12 *get_vmcs12(struct kvm_vcpu *vcpu)
+ static struct page *nested_get_page(struct kvm_vcpu *vcpu, gpa_t addr)
+ {
+ 	struct page *page = gfn_to_page(vcpu->kvm, addr >> PAGE_SHIFT);
+-	if (is_error_page(page)) {
+-		kvm_release_page_clean(page);
++	if (is_error_page(page))
+ 		return NULL;
+-	}
++
+ 	return page;
+ }
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index b6379e5..3c94d80 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -1635,10 +1635,9 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, u32 msr, u64 data)
+ 		vcpu->arch.time_page =
+ 				gfn_to_page(vcpu->kvm, data >> PAGE_SHIFT);
+
+-		if (is_error_page(vcpu->arch.time_page)) {
+-			kvm_release_page_clean(vcpu->arch.time_page);
++		if (is_error_page(vcpu->arch.time_page))
+ 			vcpu->arch.time_page = NULL;
+-		}
++
+ 		break;
+ 	}
+ 	case MSR_KVM_ASYNC_PF_EN:
+@@ -3941,10 +3940,8 @@ static int emulator_cmpxchg_emulated(struct x86_emulate_ctxt *ctxt,
+ 		goto emul_write;
+
+ 	page = gfn_to_page(vcpu->kvm, gpa >> PAGE_SHIFT);
+-	if (is_error_page(page)) {
+-		kvm_release_page_clean(page);
++	if (is_error_page(page))
+ 		goto emul_write;
+-	}
+
+ 	kaddr = kmap_atomic(page);
+ 	kaddr += offset_in_page(gpa);
+diff --git a/include/linux/kvm_host.h b/include/linux/kvm_host.h
+index 0aebe7a..a8989fc 100644
+--- a/include/linux/kvm_host.h
++++ b/include/linux/kvm_host.h
+@@ -458,7 +458,7 @@ pfn_t gfn_to_pfn(struct kvm *kvm, gfn_t gfn);
+ pfn_t gfn_to_pfn_prot(struct kvm *kvm, gfn_t gfn, bool write_fault,
+ 		      bool *writable);
+ pfn_t gfn_to_pfn_memslot(struct kvm_memory_slot *slot, gfn_t gfn);
+-void kvm_release_pfn_dirty(pfn_t);
++void kvm_release_pfn_dirty(pfn_t pfn);
+ void kvm_release_pfn_clean(pfn_t pfn);
+ void kvm_set_pfn_dirty(pfn_t pfn);
+ void kvm_set_pfn_accessed(pfn_t pfn);
+diff --git a/virt/kvm/async_pf.c b/virt/kvm/async_pf.c
+index 56f5533..ea475cd 100644
+--- a/virt/kvm/async_pf.c
++++ b/virt/kvm/async_pf.c
+@@ -111,7 +111,7 @@ void kvm_clear_async_pf_completion_queue(struct kvm_vcpu *vcpu)
+ 			list_entry(vcpu->async_pf.done.next,
+ 				   typeof(*work), link);
+ 		list_del(&work->link);
+-		if (work->page)
++		if (!is_error_page(work->page))
+ 			kvm_release_page_clean(work->page);
+ 		kmem_cache_free(async_pf_cache, work);
+ 	}
+@@ -138,7 +138,7 @@ void kvm_check_async_pf_completion(struct kvm_vcpu *vcpu)
+
+ 		list_del(&work->queue);
+ 		vcpu->async_pf.queued--;
+-		if (work->page)
++		if (!is_error_page(work->page))
+ 			kvm_release_page_clean(work->page);
+ 		kmem_cache_free(async_pf_cache, work);
+ 	}
+diff --git a/virt/kvm/kvm_main.c b/virt/kvm/kvm_main.c
+index bd175f7..798ba5a 100644
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -1195,8 +1195,9 @@ EXPORT_SYMBOL_GPL(gfn_to_page);
+
+ void kvm_release_page_clean(struct page *page)
+ {
+-	if (!is_error_page(page))
+-		kvm_release_pfn_clean(page_to_pfn(page));
++	WARN_ON(is_error_page(page));
++
++	kvm_release_pfn_clean(page_to_pfn(page));
+ }
+ EXPORT_SYMBOL_GPL(kvm_release_page_clean);
+
+-- 
+1.7.7.6
+

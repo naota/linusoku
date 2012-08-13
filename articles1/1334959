@@ -1,0 +1,105 @@
+Path: news.gmane.org!not-for-mail
+From: Feng Tang <feng.79.tang@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [Regression][Bisected] tick_broadcast_mask is not restored after a
+ CPU is offline/onlined
+Date: Mon, 30 Jul 2012 16:43:44 +0800
+Lines: 48
+Approved: news@gmane.org
+Message-ID: <CA++bM2sg1Wj2y=9_9Hpz2-LBPJgz6_GA0Zh6JAH+zPsvKmuHuw@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1343637843 1845 80.91.229.3 (30 Jul 2012 08:44:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 08:44:03 +0000 (UTC)
+To: linux-kernel@vger.kernel.org,
+	"Paul E.McKenney" <paul.mckenney@linaro.org>,
+	Len Brown <len.brown@intel.com>,
+	"Rafael J.Wysocki" <rjw@sisk.pl>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 10:44:03 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Svla5-0000Su-Or
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 10:44:02 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754173Ab2G3Inr (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 04:43:47 -0400
+Original-Received: from mail-gg0-f174.google.com ([209.85.161.174]:62172 "EHLO
+	mail-gg0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752022Ab2G3Inp (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 04:43:45 -0400
+Original-Received: by gglu4 with SMTP id u4so4525124ggl.19
+        for <linux-kernel@vger.kernel.org>; Mon, 30 Jul 2012 01:43:44 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=mime-version:date:message-id:subject:from:to:content-type;
+        bh=4CfpNp1KjEAVPE17drT58zM2yOeQlz1RvABoZcauXF4=;
+        b=t9Kpl8H5vSoYYel9R5Xy3AUO1Fx8sLjpN4l+qJ6ZpIuc0w0I+Md625hvrZcM7AqL/6
+         RQxt5c7vIaydxBtKRWXrx+F4ZsFnPf3mHyBR/40ia17Pm/hShENnJn5+fp718+siZwdv
+         lWPI6OR1HXczlpOCtaNhTWY+Dakjc/1iGg9SD6IMS4F1ZuY1j/Wan+3zNBZtGAs7NsiE
+         co4YltEyR96OA4HNNkTDL8oDfzMiOTXml2xTsKafF2IhuEEeq/7csf9IWboh291BfaqQ
+         qUZ2t8nTRsA0zhLodWO8ZswPc1ybe5EGb/HsN1Nxe4IObIUZSEfuYZu2OUUMp7uCjiCx
+         L8tQ==
+Original-Received: by 10.50.220.136 with SMTP id pw8mr7828629igc.1.1343637824152; Mon,
+ 30 Jul 2012 01:43:44 -0700 (PDT)
+Original-Received: by 10.231.19.10 with HTTP; Mon, 30 Jul 2012 01:43:44 -0700 (PDT)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334959
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334959>
+
+Hi All,
+
+[seems the email from my intel email address didn't hit the list,
+resend with gmail, sorry for the noise]
+
+When I debugged a suspend/resume bug, I found that tick_broadcast_mask is not
+restored for a CPU after it is offline/onlined since kernel 3.4, while it's
+fine for 3.3.
+
+Further check show it is caused by the commit 9505626d7bfe
+   ACPI: Fix unprotected smp_processor_id() in acpi_processor_cst_has_changed()
+	
+    The acpi_processor_cst_has_changed() function is invoked from a
+    CPU_ONLINE or CPU_DEAD function, which might well execute on CPU 0
+    even though the CPU being hotplugged is some other CPU.  In addition,
+    acpi_processor_cst_has_changed() invokes smp_processor_id() without
+    protection, resulting in splats when onlining CPUs.
+
+    This commit therefore changes the smp_processor_id() to pr->id, as is
+    used elsewhere in the code, for example, in acpi_processor_add().
+
+    Signed-off-by: Paul E. McKenney <paul.mckenney@linaro.org>
+
+diff --git a/drivers/acpi/processor_idle.c b/drivers/acpi/processor_idle.c
+index 0e8e2de..9e57b06 100644
+--- a/drivers/acpi/processor_idle.c
++++ b/drivers/acpi/processor_idle.c
+@@ -1159,8 +1159,7 @@ int acpi_processor_cst_has_changed(struct
+acpi_processor *pr)
+         * to make the code that updates C-States be called once.
+         */
+
+-       if (smp_processor_id() == 0 &&
+-                       cpuidle_get_driver() == &acpi_idle_driver) {
++       if (pr->id == 0 && cpuidle_get_driver() == &acpi_idle_driver) {
+
+                cpuidle_pause_and_lock();
+                /* Protect against cpu-hotplug */
+
+The root cause is acpi_processor_cst_has_changed() will also be called when
+cpu_up() is run on cpu 0 to boot up other cpu, this commit will prevent the
+following code be run for that cpu, which triggers some side effect like the
+broadcast_mask is not restored.
+
+I raise this problem up and I don't if revert is a good solution here.
+
+Thanks,
+Feng

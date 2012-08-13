@@ -1,0 +1,108 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 35/40] mm: test PageSwapBacked in lumpy reclaim
+Date: Thu, 26 Jul 2012 14:29:53 -0700
+Lines: 42
+Approved: news@gmane.org
+Message-ID: <20120726211414.357340299@linuxfoundation.org>
+References: <20120726211424.GA7709@kroah.com>
+ <20120726211411.164006056@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343338374 10811 80.91.229.3 (26 Jul 2012 21:32:54 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 21:32:54 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Hugh Dickins <hughd@google.com>,
+	KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>,
+	Minchan Kim <minchan@kernel.org>, Mel Gorman <mgorman@suse.de>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 23:32:51 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuVfq-0006sC-I1
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 23:32:46 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753761Ab2GZVcK (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 17:32:10 -0400
+Original-Received: from mail-yw0-f46.google.com ([209.85.213.46]:55921 "EHLO
+	mail-yw0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753711Ab2GZVcH (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 17:32:07 -0400
+Original-Received: by mail-yw0-f46.google.com with SMTP id m54so2517418yhm.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 14:32:07 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=DCI+vdhuy1Z0LJYeCKuDXVRuIpI5iqPfObEcTzhc7No=;
+        b=WFa7bScv4OEFxk5zncIu49fvkZhXP1jj7eBt5dEVjUBoVLeAgtB2BmlX+ukXDgXGRj
+         FDGZu/C0B5V1gx032ORhYqTg2bzlqFMGaZbWaLKdZmPvDFTmRVV1c5U3DxA23PEbQl0U
+         BA1YysI6aQVpGP+GvaaCcKhxzpl7KXrwVE13zT0NRm4b1JFuIHlQfjSpldm6zyMNYIkk
+         DHJuEBm1XZLIEu9+hzS9mR7JLjCJYtTmxAvYrnQrJgseTU2OLhhNZp3Zizc6Xp4M/RLJ
+         pE5iKBSIaxPsvquujiJGAEijoqmN1nadZ2Q90fRhDltufyA2YMSgXtYKgCZsgGJ8SFfa
+         n4eQ==
+Original-Received: by 10.66.89.228 with SMTP id br4mr639779pab.6.1343338327167;
+        Thu, 26 Jul 2012 14:32:07 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id pe2sm430180pbc.59.2012.07.26.14.32.04
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 14:32:06 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120726211411.164006056@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQmORfYBhiLucipNpqhZTKTFU9MEPw5Jl0HoIvoXHbw5Xkrmb9S596izV/wBFwqPMOeEyyUf
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333941 gmane.linux.kernel.stable:28879
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333941>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Hugh Dickins <hughd@google.com>
+
+commit 043bcbe5ec51e0478ef2b44acef17193e01d7f70 upstream.
+
+Stable note: Not tracked in Bugzilla. There were reports of shared
+	mapped pages being unfairly reclaimed in comparison to older kernels.
+	This is being addressed over time. Even though the subject
+	refers to lumpy reclaim, it impacts compaction as well.
+
+Lumpy reclaim does well to stop at a PageAnon when there's no swap, but
+better is to stop at any PageSwapBacked, which includes shmem/tmpfs too.
+
+Signed-off-by: Hugh Dickins <hughd@google.com>
+Reviewed-by: KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>
+Reviewed-by: Minchan Kim <minchan@kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+
+---
+ mm/vmscan.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -1199,7 +1199,7 @@ static unsigned long isolate_lru_pages(u
+ 			 * anon page which don't already have a swap slot is
+ 			 * pointless.
+ 			 */
+-			if (nr_swap_pages <= 0 && PageAnon(cursor_page) &&
++			if (nr_swap_pages <= 0 && PageSwapBacked(cursor_page) &&
+ 			    !PageSwapCache(cursor_page))
+ 				break;
+ 
+
+

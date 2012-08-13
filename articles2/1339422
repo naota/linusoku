@@ -1,0 +1,104 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 040/122] batman-adv: fix skb->data assignment
+Date: Tue,  7 Aug 2012 15:25:28 -0700
+Lines: 40
+Approved: news@gmane.org
+Message-ID: <20120807221951.826510164@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344378613 13945 80.91.229.3 (7 Aug 2012 22:30:13 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:30:13 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Antonio Quartulli <ordex@autistici.org>,
+	Sven Eckelmann <sven@narfation.org>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:30:09 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysHw-0000lk-VT
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:30:09 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932537Ab2HGW3M (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:29:12 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:64363 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S932522Ab2HGW3G (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:29:06 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so346923pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:29:06 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=OSA+izctIdvRkd3PmTkckZ39jnfrbRfdbmMPz0FLQvM=;
+        b=UFpMM8zJoCowNvHQUeXA3bnl722lbe85pSRsrVkETLF1wUPEHB83nNgVcStbMqRm7x
+         X3BRvxvrKazUvFINxK/gaPjdwgu/YYYJGaCxEcW0Qks8pQnZfJUS++8a3Bs8Yt68UplD
+         QYIax9dLtgp1gOj2tV45gQNP4BZEqZZHymOQBIdWtWLPvZ9rE1teQLunKjjKF/Wdrbhz
+         NKJLxH4xUzeMMClVFVOub/WEJ+SWTWchPK6eVlLbb0WdjHrvu4jpTDBNDOdisEWrsTaT
+         cY5Ycxq8HJ2WXbcrWLKO/I60W/V+DKrGAL9IXVoYAht17Y+aJoqbEZCNtZevPPGMFfzW
+         EFPA==
+Original-Received: by 10.68.221.10 with SMTP id qa10mr31092102pbc.154.1344378546507;
+        Tue, 07 Aug 2012 15:29:06 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id nv6sm11957230pbc.42.2012.08.07.15.29.04
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:29:05 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQl7ydxUSmIS+JSlmXF9RJnq/mJpDTyC6w8JmIaCfG8x9QMd4T5Xmn0HB8rNNb39NbPPWHj7
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339422 gmane.linux.kernel.stable:29261
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339422>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Antonio Quartulli <ordex@autistici.org>
+
+commit d2b6cc8e460494251442a877fcbc150faa175b4f upstream.
+
+skb_linearize(skb) possibly rearranges the skb internal data and then changes
+the skb->data pointer value. For this reason any other pointer in the code that
+was assigned skb->data before invoking skb_linearise(skb) must be re-assigned.
+
+In the current tt_query message handling code this is not done and therefore, in
+case of skb linearization, the pointer used to handle the packet header ends up
+in pointing to poisoned memory. The packet is then dropped but the
+translation-table mechanism is corrupted.
+
+Signed-off-by: Antonio Quartulli <ordex@autistici.org>
+Signed-off-by: Sven Eckelmann <sven@narfation.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ net/batman-adv/routing.c |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/net/batman-adv/routing.c
++++ b/net/batman-adv/routing.c
+@@ -626,6 +626,8 @@ int recv_tt_query(struct sk_buff *skb, s
+ 			if (unlikely(skb_headlen(skb) <
+ 				     sizeof(struct tt_query_packet) + tt_len))
+ 				goto out;
++			/* skb_linearize() possibly changed skb->data */
++			tt_query = (struct tt_query_packet *)skb->data;
+ 
+ 			handle_tt_response(bat_priv, tt_query);
+ 		} else {
+
+

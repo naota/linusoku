@@ -1,0 +1,109 @@
+Path: news.gmane.org!not-for-mail
+From: Jaeden Amero <jaeden.amero@ni.com>
+Newsgroups: gmane.linux.serial,gmane.linux.kernel
+Subject: [PATCH] n_tty: Don't lose characters when PARMRK is enabled
+Date: Thu, 26 Jul 2012 17:12:31 -0500
+Lines: 53
+Approved: news@gmane.org
+Message-ID: <1343340751-1942-1-git-send-email-jaeden.amero@ni.com>
+References: <y>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343344735 7171 80.91.229.3 (26 Jul 2012 23:18:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 23:18:55 +0000 (UTC)
+Cc: linux-serial@vger.kernel.org, linux-kernel@vger.kernel.org,
+	Jaeden Amero <jaeden.amero@ni.com>
+To: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Original-X-From: linux-serial-owner@vger.kernel.org Fri Jul 27 01:18:55 2012
+Return-path: <linux-serial-owner@vger.kernel.org>
+Envelope-to: lnx-linux-serial@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-serial-owner@vger.kernel.org>)
+	id 1SuXKW-0002FT-20
+	for lnx-linux-serial@plane.gmane.org; Fri, 27 Jul 2012 01:18:52 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753065Ab2GZXSu (ORCPT <rfc822;lnx-linux-serial@m.gmane.org>);
+	Thu, 26 Jul 2012 19:18:50 -0400
+Original-Received: from mailserver6.natinst.com ([130.164.80.6]:50981 "EHLO
+	spamkiller06.natinst.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753043Ab2GZXSt (ORCPT
+	<rfc822;linux-serial@vger.kernel.org>);
+	Thu, 26 Jul 2012 19:18:49 -0400
+X-Greylist: delayed 4143 seconds by postgrey-1.27 at vger.kernel.org; Thu, 26 Jul 2012 19:18:49 EDT
+Original-Received: from mailserv59-us.natinst.com (nb-hsrp-1338.natinst.com [130.164.19.133])
+	by spamkiller06.natinst.com (8.14.4/8.14.4) with ESMTP id q6QM9jDu031106;
+	Thu, 26 Jul 2012 17:09:45 -0500
+Original-Received: from white.natinst.com ([130.164.14.197])
+          by mailserv59-us.natinst.com (Lotus Domino Release 8.5.2FP3)
+          with ESMTP id 2012072617094548-545008 ;
+          Thu, 26 Jul 2012 17:09:45 -0500 
+X-Mailer: git-send-email 1.7.11.1
+In-Reply-To: <y>
+X-MIMETrack: Itemize by SMTP Server on MailServ59-US/AUS/H/NIC(Release 8.5.2FP3|July 10, 2011) at
+ 07/26/2012 05:09:45 PM,
+	Serialize by Router on MailServ59-US/AUS/H/NIC(Release 8.5.2FP3|July 10, 2011) at
+ 07/26/2012 05:09:45 PM,
+	Serialize complete at 07/26/2012 05:09:45 PM
+X-Proofpoint-Virus-Version: vendor=fsecure engine=2.50.10432:5.7.7855,1.0.260,0.0.0000
+ definitions=2012-07-26_06:2012-07-26,2012-07-26,1970-01-01 signatures=0
+Original-Sender: linux-serial-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-serial.vger.kernel.org>
+X-Mailing-List: linux-serial@vger.kernel.org
+Xref: news.gmane.org gmane.linux.serial:8249 gmane.linux.kernel:1334010
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334010>
+
+When PARMRK is set and large transfers of characters that will get
+marked are being received, n_tty could drop data silently (i.e.
+without reporting any error to the client). This is because
+characters have the potential to take up to three bytes in the line
+discipline (when they get marked with parity or framing errors), but
+the amount of free space reported to tty_buffer flush_to_ldisc (via
+tty->receive_room) is based on the pre-marked data size.
+
+With this patch, the n_tty layer will no longer assume that each byte
+will only take up one byte in the line discipline. Instead, it will
+make an overly conservative estimate that each byte will take up
+three bytes in the line discipline when PARMRK is set.
+
+Signed-off-by: Jaeden Amero <jaeden.amero@ni.com>
+---
+ drivers/tty/n_tty.c | 14 ++++++++++++--
+ 1 file changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/tty/n_tty.c b/drivers/tty/n_tty.c
+index 101790c..5299cda 100644
+--- a/drivers/tty/n_tty.c
++++ b/drivers/tty/n_tty.c
+@@ -92,10 +92,20 @@ static inline int tty_put_user(struct tty_struct *tty, unsigned char x,
+ 
+ static void n_tty_set_room(struct tty_struct *tty)
+ {
+-	/* tty->read_cnt is not read locked ? */
+-	int	left = N_TTY_BUF_SIZE - tty->read_cnt - 1;
++	int left;
+ 	int old_left;
+ 
++	/* tty->read_cnt is not read locked ? */
++	if (I_PARMRK(tty))
++	{
++		/* Multiply read_cnt by 3, since each byte might take up to
++		 * three times as many spaces when PARMRK is set (depending on
++		 * its flags, e.g. parity error). */
++		left = N_TTY_BUF_SIZE - tty->read_cnt * 3 - 1;
++	}
++	else
++		left = N_TTY_BUF_SIZE - tty->read_cnt - 1;
++
+ 	/*
+ 	 * If we are doing input canonicalization, and there are no
+ 	 * pending newlines, let characters through without limit, so
+-- 
+1.7.11.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-serial" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

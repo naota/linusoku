@@ -1,0 +1,105 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 36/49] USB: kaweth.c: use GFP_ATOMIC under spin_lock
+Date: Tue,  7 Aug 2012 15:44:54 -0700
+Lines: 41
+Approved: news@gmane.org
+Message-ID: <20120807222030.097459736@linuxfoundation.org>
+References: <20120807222026.848194739@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344379878 23184 80.91.229.3 (7 Aug 2012 22:51:18 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:51:18 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Dan Carpenter <dan.carpenter@oracle.com>,
+	"David S. Miller" <davem@davemloft.net>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:51:16 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyscK-0000sd-9N
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:51:12 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1031287Ab2HGWrZ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:47:25 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:36543 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1031257Ab2HGWrT (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:47:19 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so368884pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:47:18 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=kI9SG68B4F9Dx1kDZZqI7K4eKaj9lV3VaYxHx/aExmU=;
+        b=kkH/CgIHyQ6E9odhbrp/fla7VJMWYH62OZFxLTUzyTt7CyHjs9mtwW/6CyGAM6uXGc
+         ukmXxombhk5i3p01+XwpDk4n5F1gG40PIFXyq0Q0Zflg06LLK4+PFf4lxIzR0cxFq1st
+         ZLZpmuqfp7HJZSGjGFuL22PSVENzYoQsL+n1dMRorH3pUzj82qFgS5ibsd7Eoa3t+XP/
+         FIpc8mvPCD96t9zTBcMYH+3hF9oRNU1hc2hKuYRuA+c3S5t3vTvlyK+zvoFODUNXziqx
+         l867p/4Q6iHW0+n1WpuHakfgPkRZpswkFEA6xKLBAw567KpTZTDX6Ngd464xuOs38nG4
+         +EyA==
+Original-Received: by 10.68.218.162 with SMTP id ph2mr16091738pbc.21.1344379638719;
+        Tue, 07 Aug 2012 15:47:18 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id wf7sm8562443pbc.34.2012.08.07.15.47.16
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:47:17 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222026.848194739@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQmipwCqTMBIef7+XHG/0qZEgx7OHMWlPysuPJdVNId7yGtq95yh9W0/hCJcMcDLrwOgHLo6
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339565 gmane.linux.kernel.stable:29399
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339565>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+
+From: Dan Carpenter <dan.carpenter@oracle.com>
+
+[ Upstream commit e4c7f259c5be99dcfc3d98f913590663b0305bf8 ]
+
+The problem is that we call this with a spin lock held.  The call tree
+is:
+	kaweth_start_xmit() holds kaweth->device_lock.
+	-> kaweth_async_set_rx_mode()
+	   -> kaweth_control()
+	      -> kaweth_internal_control_msg()
+
+The kaweth_internal_control_msg() function is only called from
+kaweth_control() which used GFP_ATOMIC for its allocations.
+
+Signed-off-by: Dan Carpenter <dan.carpenter@oracle.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/net/usb/kaweth.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/net/usb/kaweth.c
++++ b/drivers/net/usb/kaweth.c
+@@ -1308,7 +1308,7 @@ static int kaweth_internal_control_msg(s
+         int retv;
+         int length = 0; /* shut up GCC */
+ 
+-        urb = usb_alloc_urb(0, GFP_NOIO);
++	urb = usb_alloc_urb(0, GFP_ATOMIC);
+         if (!urb)
+                 return -ENOMEM;
+ 
+
+

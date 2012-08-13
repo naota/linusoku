@@ -1,0 +1,139 @@
+Path: news.gmane.org!not-for-mail
+From: George Spelvin <linux@horizon.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 2/4] lib: vsprintf: Optimize division by 10000
+Date: Fri,  3 Aug 2012 01:21:09 -0400
+Lines: 98
+Approved: news@gmane.org
+Message-ID: <1343971271-13355-2-git-send-email-linux@horizon.com>
+References: <1343971271-13355-1-git-send-email-linux@horizon.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343971299 23875 80.91.229.3 (3 Aug 2012 05:21:39 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 05:21:39 +0000 (UTC)
+Cc: hughd@google.com, linux-kernel@vger.kernel.org, linux@horizon.com
+To: vda.linux@googlemail.com, mina86@mina86.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 07:21:39 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxAKP-0002jF-IM
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 07:21:37 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751833Ab2HCFVQ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 01:21:16 -0400
+Original-Received: from science.horizon.com ([71.41.210.146]:14839 "HELO
+	science.horizon.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with SMTP id S1751122Ab2HCFVN (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 01:21:13 -0400
+Original-Received: (qmail 13396 invoked by uid 1000); 3 Aug 2012 01:21:11 -0400
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1343971271-13355-1-git-send-email-linux@horizon.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337089
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337089>
+
+The same multiply-by-inverse technique can be used to
+convert division by 10000 to a 32x32->64-bit multiply.
+
+Signed-off-by: George Spelvin <linux@horizon.com>
+---
+ lib/vsprintf.c |   60 +++++++++++++++++++++++++++++++-------------------------
+ 1 file changed, 33 insertions(+), 27 deletions(-)
+
+This is something of an RFC, I haven't benchmarked the helper
+function.  But it sure cleans up the code!
+
+diff --git a/lib/vsprintf.c b/lib/vsprintf.c
+index 2f32fe8..a8e7392 100644
+--- a/lib/vsprintf.c
++++ b/lib/vsprintf.c
+@@ -245,17 +245,32 @@ char *put_dec(char *buf, unsigned long long n)
+ 
+ /* See comment in put_dec_full9 for choice of constants */
+ static noinline_for_stack
+-char *put_dec_full4(char *buf, unsigned q)
++void put_dec_full4(char *buf, unsigned q)
+ {
+ 	unsigned r;
+ 	r      = (q * 0xccd) >> 15;
+-	*buf++ = (q - 10 * r) + '0';
++	buf[0] = (q - 10 * r) + '0';
+ 	q      = (r * 0xcd) >> 11;
+-	*buf++ = (r - 10 * q)  + '0';
++	buf[1] = (r - 10 * q)  + '0';
+ 	r      = (q * 0xcd) >> 11;
+-	*buf++ = (q - 10 * r)  + '0';
+-	*buf++ = r + '0';
+-	return buf;
++	buf[2] = (q - 10 * r)  + '0';
++	buf[3] = r + '0';
++}
++
++/*
++ * Call put_dec_full4 on x % 10000, return x / 10000.
++ * The approximation x/10000 == (x * 0x346DC5D7) >> 43
++ * holds for all x < 1,128,869,999.  The largest value this
++ * helper will ever be asked to convert is 1,125,520,955.
++ * (d1 in the put_dec code, assuming n is all-ones).
++ */
++static
++unsigned put_dec_helper4(char *buf, unsigned x)
++{
++        uint32_t q = (x * (uint64_t)0x346DC5D7) >> 43;
++
++        put_dec_full4(buf, x - q * 10000);
++        return q;
+ }
+ 
+ /* Based on code by Douglas W. Jones found at
+@@ -277,28 +292,19 @@ char *put_dec(char *buf, unsigned long long n)
+ 	d3  = (h >> 16); /* implicit "& 0xffff" */
+ 
+ 	q   = 656 * d3 + 7296 * d2 + 5536 * d1 + ((uint32_t)n & 0xffff);
++	q = put_dec_helper4(buf, q);
++
++	q += 7671 * d3 + 9496 * d2 + 6 * d1;
++	q = put_dec_helper4(buf+4, q);
++
++	q += 4749 * d3 + 42 * d2;
++	q = put_dec_helper4(buf+8, q);
+ 
+-	buf = put_dec_full4(buf, q % 10000);
+-	q   = q / 10000;
+-
+-	d1  = q + 7671 * d3 + 9496 * d2 + 6 * d1;
+-	buf = put_dec_full4(buf, d1 % 10000);
+-	q   = d1 / 10000;
+-
+-	d2  = q + 4749 * d3 + 42 * d2;
+-	buf = put_dec_full4(buf, d2 % 10000);
+-	q   = d2 / 10000;
+-
+-	d3  = q + 281 * d3;
+-	if (!d3)
+-		goto done;
+-	buf = put_dec_full4(buf, d3 % 10000);
+-	q   = d3 / 10000;
+-	if (!q)
+-		goto done;
+-	buf = put_dec_full4(buf, q);
+- done:
+-	while (buf[-1] == '0')
++	q += 281 * d3;
++	buf += 12;
++	if (q)
++		buf = put_dec_trunc8(buf, q);
++	else while (buf[-1] == '0')
+ 		--buf;
+ 
+ 	return buf;
+-- 
+1.7.10.4
+

@@ -1,0 +1,110 @@
+Path: news.gmane.org!not-for-mail
+From: Paolo Bonzini <pbonzini@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.scsi
+Subject: performance improvements for the sglist API (Re: [PATCH] scsi: virtio-scsi:
+ Fix address translation failure of HighMem pages used by sg list)
+Date: Wed, 25 Jul 2012 17:09:43 +0200
+Lines: 57
+Approved: news@gmane.org
+Message-ID: <50100C37.1060408@redhat.com>
+References: <1343204966-23560-1-git-send-email-senwang@linux.vnet.ibm.com> <500FB1DE.1000100@redhat.com> <500FBAE8.2050107@panasas.com> <500FBF37.50603@redhat.com> <500FE7D2.7070101@panasas.com> <500FEB63.3000709@redhat.com> <500FF412.3090600@panasas.com> <500FF656.6000203@redhat.com> <5010047D.6070807@panasas.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343229291 29972 80.91.229.3 (25 Jul 2012 15:14:51 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 15:14:51 +0000 (UTC)
+Cc: Wang Sen <senwang@linux.vnet.ibm.com>, linux-scsi@vger.kernel.org,
+	JBottomley@parallels.com, stefanha@linux.vnet.ibm.com,
+	mc@linux.vnet.ibm.com, linux-kernel@vger.kernel.org
+To: Boaz Harrosh <bharrosh@panasas.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 17:14:49 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su3IU-00078U-9f
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 17:14:46 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030296Ab2GYPOi (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 11:14:38 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:12104 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S933467Ab2GYPKx (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 11:10:53 -0400
+Original-Received: from int-mx01.intmail.prod.int.phx2.redhat.com (int-mx01.intmail.prod.int.phx2.redhat.com [10.5.11.11])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6PF9niV005102
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Wed, 25 Jul 2012 11:09:49 -0400
+Original-Received: from yakj.usersys.redhat.com (ovpn-112-21.ams2.redhat.com [10.36.112.21])
+	by int-mx01.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with ESMTP id q6PF9irD011741;
+	Wed, 25 Jul 2012 11:09:46 -0400
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120615 Thunderbird/13.0.1
+In-Reply-To: <5010047D.6070807@panasas.com>
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.11
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333069 gmane.linux.scsi:76551
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333069>
+
+Il 25/07/2012 16:36, Boaz Harrosh ha scritto:
+>> > 
+>> > I did test the patch with value-assignment.
+>> > 
+> 
+> Still you should use the sg_set_page()!!
+> 1. It is not allowed to directly manipulate sg entries. One should always
+>    use the proper accessor. Even if open coding does work and is not a bug
+>    it should not be used anyway!
+> 2. Future code that will support chaining will need to do as I say so why
+>    change it then, again?
+
+Future code that will support chaining will not copy anything at all.
+
+Also, and more important, note that I am _not_ calling sg_init_table
+before the loop, only once in the driver initialization.  That's because
+memset in sg_init_table is an absolute performance killer, especially if
+you have to do it in a critical section; and I'm not making this up, see
+blk_rq_map_sg:
+
+                          * If the driver previously mapped a shorter
+                          * list, we could see a termination bit
+                          * prematurely unless it fully inits the sg
+                          * table on each mapping. We KNOW that there
+                          * must be more entries here or the driver
+                          * would be buggy, so force clear the
+                          * termination bit to avoid doing a full
+                          * sg_init_table() in drivers for each command.
+                          */
+                          sg->page_link &= ~0x02;
+                          sg = sg_next(sg);
+
+So let's instead fix the API so that I (and blk-merge.c) can touch
+memory just once.  For example you could add __sg_set_page and
+__sg_set_buf, basically the equivalent of
+
+    memset(sg, 0, sizeof(*sg));
+    sg_set_{page,buf}(sg, page, len, offset);
+
+Calling these functions would be fine if you later add a manual call to
+sg_mark_end, again the same as blk-merge.c does.  See the attached
+untested/uncompiled patch.
+
+And value assignment would be the same as a
+
+    __sg_set_page(sg, sg_page(page), sg->length, sg->offset);
+
+> Please don't change two things in one patch. The fix is for high-pages
+> please fix only that here. You can blasphemy open-code the sg manipulation
+> in a separate patch.
+
+The blasphemy is already there (the scatterlist that is handed to virtio
+won't have the right end-of-chain marker).  If anything,
+value-assignment is trading a subtle blasphemy for a blatant one.
+That's already an improvement, but let's just fix the API instead.
+
+Paolo

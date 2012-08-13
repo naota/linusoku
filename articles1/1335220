@@ -1,0 +1,177 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: =?UTF-8?q?=5B=2026/41=5D=20kswapd=3A=20avoid=20unnecessary=20rebalance=20after=20an=20unsuccessful=20balancing?=
+Date: Mon, 30 Jul 2012 10:31:25 -0700
+Lines: 104
+Approved: news@gmane.org
+Message-ID: <20120730172903.363724120@linuxfoundation.org>
+References: <20120730172901.306897424@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: QUOTED-PRINTABLE
+X-Trace: dough.gmane.org 1343669864 26733 80.91.229.3 (30 Jul 2012 17:37:44 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 17:37:44 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Alex Shi <alex.shi@intel.com>,
+	Tim Chen <tim.c.chen@linux.intel.com>,
+	Mel Gorman <mgorman@suse.de>,
+	=?UTF-8?q?P=C3=A1draig=20Brady?= <P@draigBrady.com>,
+	Rik van Riel <riel@redhat.com>,
+	KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 19:37:42 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvtuX-0005Lj-Fd
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 19:37:42 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755044Ab2G3Rd0 convert rfc822-to-quoted-printable (ORCPT
+	<rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 13:33:26 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:47764 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754992Ab2G3RdW (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 13:33:22 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so10147948pbb.19
+        for <linux-kernel@vger.kernel.org>; Mon, 30 Jul 2012 10:33:21 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:mime-version:content-type:content-transfer-encoding
+         :x-gm-message-state;
+        bh=lxllY3r6bL9iZ6/wrwrGeck6MLiEa7RFdOEwlrbF/fQ=;
+        b=EL68XiFNc+3vXHe0v+9Njc0mm397waF7OFEfjZjAiKe4gLCMo7D86w0vksv4l+7J2o
+         3e8XAW+lj7lacRSY1ODtA/JmVPCluoJl4JdZ7aAHbJyodrTJRDFstYHSy5gbnUfrVi5j
+         GDUH4Yhl49+YvGFZadKqiXmHM6IiaODdKICJnIgxEwMvB2wP0MIJlX1c+y/lU0m6O80O
+         W1NVzD+2RzoEh4DQxr2oKhkGl4I9OpPNnYo1H9uFQqzL8s8G11tayGRcPh+2RxUALfdk
+         OXNXyvZwin8uqxaMKWQ8BNGB3rcwhFLwzVZvnSCXCVa3QEMYL83kGjrKPqmHKFGpwiqD
+         X3HA==
+Original-Received: by 10.68.236.102 with SMTP id ut6mr36628932pbc.113.1343669601882;
+        Mon, 30 Jul 2012 10:33:21 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id ku7sm8297136pbc.31.2012.07.30.10.33.19
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 30 Jul 2012 10:33:20 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120730172901.306897424@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQnwZkYFW1UoJTcAQ+GAz51eYHRneCKE8XuZMocprr6YG7lvqpiYE3ue/MnDZG7Vr0MajYP7
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335220 gmane.linux.kernel.stable:28962
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335220>
+
+=46rom: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me k=
+now.
+
+------------------
+
+=46rom: Alex Shi <alex.shi@intel.com>
+
+commit d2ebd0f6b89567eb93ead4e2ca0cbe03021f344b upstream.
+
+Stable note: Fixes https://bugzilla.redhat.com/show_bug.cgi?id=3D712019=
+=2E  This
+	patch reduces kswapd CPU usage.
+
+In commit 215ddd66 ("mm: vmscan: only read new_classzone_idx from pgdat
+when reclaiming successfully") , Mel Gorman said kswapd is better to sl=
+eep
+after a unsuccessful balancing if there is tighter reclaim request pend=
+ing
+in the balancing.  But in the following scenario, kswapd do something t=
+hat
+is not matched our expectation.  The patch fixes this issue.
+
+1, Read pgdat request A (classzone_idx, order =3D 3)
+2, balance_pgdat()
+3, During pgdat, a new pgdat request B (classzone_idx, order =3D 5) is =
+placed
+4, balance_pgdat() returns but failed since returned order =3D 0
+5, pgdat of request A assigned to balance_pgdat(), and do balancing aga=
+in.
+   While the expectation behavior of kswapd should try to sleep.
+
+Signed-off-by: Alex Shi <alex.shi@intel.com>
+Reviewed-by: Tim Chen <tim.c.chen@linux.intel.com>
+Acked-by: Mel Gorman <mgorman@suse.de>
+Tested-by: P=C3=A1draig Brady <P@draigBrady.com>
+Cc: Rik van Riel <riel@redhat.com>
+Cc: KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ mm/vmscan.c |   14 +++++++++++---
+ 1 file changed, 11 insertions(+), 3 deletions(-)
+
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -2844,7 +2844,9 @@ static void kswapd_try_to_sleep(pg_data_
+ static int kswapd(void *p)
+ {
+ 	unsigned long order, new_order;
++	unsigned balanced_order;
+ 	int classzone_idx, new_classzone_idx;
++	int balanced_classzone_idx;
+ 	pg_data_t *pgdat =3D (pg_data_t*)p;
+ 	struct task_struct *tsk =3D current;
+=20
+@@ -2875,7 +2877,9 @@ static int kswapd(void *p)
+ 	set_freezable();
+=20
+ 	order =3D new_order =3D 0;
++	balanced_order =3D 0;
+ 	classzone_idx =3D new_classzone_idx =3D pgdat->nr_zones - 1;
++	balanced_classzone_idx =3D classzone_idx;
+ 	for ( ; ; ) {
+ 		int ret;
+=20
+@@ -2884,7 +2888,8 @@ static int kswapd(void *p)
+ 		 * new request of a similar or harder type will succeed soon
+ 		 * so consider going to sleep on the basis we reclaimed at
+ 		 */
+-		if (classzone_idx >=3D new_classzone_idx && order =3D=3D new_order) =
+{
++		if (balanced_classzone_idx >=3D new_classzone_idx &&
++					balanced_order =3D=3D new_order) {
+ 			new_order =3D pgdat->kswapd_max_order;
+ 			new_classzone_idx =3D pgdat->classzone_idx;
+ 			pgdat->kswapd_max_order =3D  0;
+@@ -2899,7 +2904,8 @@ static int kswapd(void *p)
+ 			order =3D new_order;
+ 			classzone_idx =3D new_classzone_idx;
+ 		} else {
+-			kswapd_try_to_sleep(pgdat, order, classzone_idx);
++			kswapd_try_to_sleep(pgdat, balanced_order,
++						balanced_classzone_idx);
+ 			order =3D pgdat->kswapd_max_order;
+ 			classzone_idx =3D pgdat->classzone_idx;
+ 			pgdat->kswapd_max_order =3D 0;
+@@ -2916,7 +2922,9 @@ static int kswapd(void *p)
+ 		 */
+ 		if (!ret) {
+ 			trace_mm_vmscan_kswapd_wake(pgdat->node_id, order);
+-			order =3D balance_pgdat(pgdat, order, &classzone_idx);
++			balanced_classzone_idx =3D classzone_idx;
++			balanced_order =3D balance_pgdat(pgdat, order,
++						&balanced_classzone_idx);
+ 		}
+ 	}
+ 	return 0;
+
+

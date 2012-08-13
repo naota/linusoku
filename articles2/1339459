@@ -1,0 +1,125 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 106/122] net: fix rtnetlink IFF_PROMISC and IFF_ALLMULTI handling
+Date: Tue,  7 Aug 2012 15:26:34 -0700
+Lines: 60
+Approved: news@gmane.org
+Message-ID: <20120807221959.307047294@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344378821 15410 80.91.229.3 (7 Aug 2012 22:33:41 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:33:41 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Max Matveev <makc@redhat.com>,
+	Jiri Benc <jbenc@redhat.com>,
+	"David S. Miller" <davem@davemloft.net>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:33:38 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysLC-0004aE-So
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:33:31 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030388Ab2HGWcj (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:32:39 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:52951 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030290Ab2HGWcd (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:32:33 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so353110pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:32:33 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=uYceTueyQktsAUIcWuM0qDbA0fh3T1Uqyf9OF0xMB8c=;
+        b=bzsMbVKT93bSXXsBMc7iUMH1zn+jtw6BJp+C/YzR8rzIErX+631Ah18+8t7JqiQZKS
+         xsbCfWdqNMUnPDXDkuPNPUFg2vJmC5FYU1Qkc8IOEU39tnmwznSYWi30Hu4mU1BGXr7W
+         vFLv6DzIvu5l6p4e4aPRLOStuvVnVrNS6cNFcrbBxAvFnTQqiALpD2WAEecHczf3wHts
+         WdRXMsc4hj2tinqMw6EplUYPT2GsJsQUL2MUvtgHgPv7shMzgP5/g3dd3PsKJyUH34AI
+         xWsu50Z+NwuT1TWBnw7Zdl83LI220KkVyg+bQIvDmVuJr3rnt8T9PIM22cSPoWQEaX1I
+         FWuw==
+Original-Received: by 10.66.77.168 with SMTP id t8mr29187822paw.28.1344378753521;
+        Tue, 07 Aug 2012 15:32:33 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id rg5sm3594424pbc.61.2012.08.07.15.32.31
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:32:32 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQlIB3QB5Xrc+zX7ZjpFUT2AOOUDQemyyAH22ZBGpJ28CD236qBpGmnV1c1dPi+7iHyG9T+Y
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339459 gmane.linux.kernel.stable:29298
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339459>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+
+From: Jiri Benc <jbenc@redhat.com>
+
+[ Upstream commit b1beb681cba5358f62e6187340660ade226a5fcc ]
+
+When device flags are set using rtnetlink, IFF_PROMISC and IFF_ALLMULTI
+flags are handled specially. Function dev_change_flags sets IFF_PROMISC and
+IFF_ALLMULTI bits in dev->gflags according to the passed value but
+do_setlink passes a result of rtnl_dev_combine_flags which takes those bits
+from dev->flags.
+
+This can be easily trigerred by doing:
+
+tcpdump -i eth0 &
+ip l s up eth0
+
+ip sets IFF_UP flag in ifi_flags and ifi_change, which is combined with
+IFF_PROMISC by rtnl_dev_combine_flags, causing __dev_change_flags to set
+IFF_PROMISC in gflags.
+
+Reported-by: Max Matveev <makc@redhat.com>
+Signed-off-by: Jiri Benc <jbenc@redhat.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ net/core/rtnetlink.c |    8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+--- a/net/core/rtnetlink.c
++++ b/net/core/rtnetlink.c
+@@ -674,6 +674,12 @@ static void set_operstate(struct net_dev
+ 	}
+ }
+ 
++static unsigned int rtnl_dev_get_flags(const struct net_device *dev)
++{
++	return (dev->flags & ~(IFF_PROMISC | IFF_ALLMULTI)) |
++	       (dev->gflags & (IFF_PROMISC | IFF_ALLMULTI));
++}
++
+ static unsigned int rtnl_dev_combine_flags(const struct net_device *dev,
+ 					   const struct ifinfomsg *ifm)
+ {
+@@ -682,7 +688,7 @@ static unsigned int rtnl_dev_combine_fla
+ 	/* bugwards compatibility: ifi_change == 0 is treated as ~0 */
+ 	if (ifm->ifi_change)
+ 		flags = (flags & ifm->ifi_change) |
+-			(dev->flags & ~ifm->ifi_change);
++			(rtnl_dev_get_flags(dev) & ~ifm->ifi_change);
+ 
+ 	return flags;
+ }
+
+

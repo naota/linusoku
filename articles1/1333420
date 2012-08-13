@@ -1,0 +1,90 @@
+Path: news.gmane.org!not-for-mail
+From: Alex Shi <alex.shi@intel.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 2/2] sched: fix a logical error in select_task_rq_fair
+Date: Thu, 26 Jul 2012 13:27:26 +0800
+Lines: 43
+Approved: news@gmane.org
+Message-ID: <1343280446-24019-2-git-send-email-alex.shi@intel.com>
+References: <1343280446-24019-1-git-send-email-alex.shi@intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343280455 12505 80.91.229.3 (26 Jul 2012 05:27:35 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 05:27:35 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, suresh.b.siddha@intel.com,
+	alex.shi@intel.com
+To: mingo@redhat.com, peterz@infradead.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 07:27:34 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuGbl-0001eB-Ah
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 07:27:33 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751693Ab2GZF1T (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 01:27:19 -0400
+Original-Received: from mga14.intel.com ([143.182.124.37]:36914 "EHLO mga14.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751345Ab2GZF1Q (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 01:27:16 -0400
+Original-Received: from azsmga002.ch.intel.com ([10.2.17.35])
+  by azsmga102.ch.intel.com with ESMTP; 25 Jul 2012 22:27:15 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="127018856"
+Original-Received: from debian.sh.intel.com ([10.239.13.3])
+  by AZSMGA002.ch.intel.com with ESMTP; 25 Jul 2012 22:27:14 -0700
+X-Mailer: git-send-email 1.7.5.4
+In-Reply-To: <1343280446-24019-1-git-send-email-alex.shi@intel.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333420
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333420>
+
+If find_idlest_cpu() return '-1', and sd->child is NULL. The function
+select_task_rq_fair will return -1. That is not the function's purpose.
+
+The patch introduced a latest_cpu as temporay varible to store
+find_idlest_cpu() return value, and let new_cpu to store the latest
+workable cpu. If find_idlest_cpu() doesn't find idlest cpu, we still
+have a latest workable cpu.
+
+Signed-off-by: Alex Shi <alex.shi@intel.com>
+---
+ kernel/sched/fair.c |    9 +++++++--
+ 1 files changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 8a1db69..7e4bab48 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -2730,6 +2730,7 @@ select_task_rq_fair(struct task_struct *p, int sd_flag, int wake_flags)
+ 		int load_idx = sd->forkexec_idx;
+ 		struct sched_group *group;
+ 		int weight;
++		int latest_cpu;
+ 
+ 		if (!(sd->flags & sd_flag)) {
+ 			sd = sd->child;
+@@ -2745,8 +2746,12 @@ select_task_rq_fair(struct task_struct *p, int sd_flag, int wake_flags)
+ 			continue;
+ 		}
+ 
+-		new_cpu = find_idlest_cpu(group, p, cpu);
+-		if (new_cpu == -1 || new_cpu == cpu) {
++		latest_cpu = find_idlest_cpu(group, p, cpu);
++
++		if (latest_cpu != -1)
++			new_cpu = latest_cpu;
++
++		if (latest_cpu == -1 || latest_cpu == cpu) {
+ 			/* Now try balancing at a lower domain level of cpu */
+ 			sd = sd->child;
+ 			continue;
+-- 
+1.7.5.4
+

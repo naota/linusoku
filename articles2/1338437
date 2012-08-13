@@ -1,0 +1,97 @@
+Path: news.gmane.org!not-for-mail
+From: Borislav Petkov <bp@amd64.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH v1 2/4] x86, CPU: Push TLB detection CPUID check down
+Date: Mon,  6 Aug 2012 19:00:37 +0200
+Lines: 43
+Approved: news@gmane.org
+Message-ID: <1344272439-29080-3-git-send-email-bp@amd64.org>
+References: <1344272439-29080-1-git-send-email-bp@amd64.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344272488 27305 80.91.229.3 (6 Aug 2012 17:01:28 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 17:01:28 +0000 (UTC)
+Cc: Alex Shi <alex.shi@intel.com>, X86-ML <x86@kernel.org>,
+	LKML <linux-kernel@vger.kernel.org>,
+	Borislav Petkov <borislav.petkov@amd.com>
+To: "H. Peter Anvin" <hpa@zytor.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Aug 06 19:01:26 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyQgG-00082k-2o
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 06 Aug 2012 19:01:24 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756804Ab2HFRBN (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 13:01:13 -0400
+Original-Received: from mail.x86-64.org ([217.9.48.20]:57559 "EHLO mail.x86-64.org"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1756718Ab2HFRAn (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 13:00:43 -0400
+Original-Received: from localhost (localhost [127.0.0.1])
+	by mail.x86-64.org (Postfix) with ESMTP id 942551405BF;
+	Mon,  6 Aug 2012 19:00:42 +0200 (CEST)
+X-Virus-Scanned: Nedap ESD1 at etzel.amd.com
+Original-Received: from mail.x86-64.org ([127.0.0.1])
+	by localhost (www.amd64.org [127.0.0.1]) (amavisd-new, port 10024)
+	with ESMTP id u7aQd8aZU7Oj; Mon,  6 Aug 2012 19:00:42 +0200 (CEST)
+Original-Received: from gwo.osrc.amd.com (gwo.osrc.amd.com [10.97.0.252])
+	by mail.x86-64.org (Postfix) with ESMTP;
+	Mon,  6 Aug 2012 19:00:42 +0200 (CEST)
+Original-Received: from aftab.osrc.amd.com (aftab.osrc.amd.com [165.204.15.109])
+	by gwo.osrc.amd.com (Postfix) with ESMTP id 4B77D49C6A1;
+	Mon,  6 Aug 2012 18:00:42 +0100 (BST)
+X-Mailer: git-send-email 1.7.11.rc1
+In-Reply-To: <1344272439-29080-1-git-send-email-bp@amd64.org>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338437
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338437>
+
+From: Borislav Petkov <borislav.petkov@amd.com>
+
+Push the max CPUID leaf check into the ->detect_tlb function and remove
+general test case from the generic path.
+
+Signed-off-by: Borislav Petkov <borislav.petkov@amd.com>
+---
+ arch/x86/kernel/cpu/common.c | 3 +--
+ arch/x86/kernel/cpu/intel.c  | 4 ++++
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/arch/x86/kernel/cpu/common.c b/arch/x86/kernel/cpu/common.c
+index d239977f361f..080f4a737e3e 100644
+--- a/arch/x86/kernel/cpu/common.c
++++ b/arch/x86/kernel/cpu/common.c
+@@ -940,8 +940,7 @@ void __init identify_boot_cpu(void)
+ #else
+ 	vgetcpu_set_mode();
+ #endif
+-	if (boot_cpu_data.cpuid_level >= 2)
+-		cpu_detect_tlb(&boot_cpu_data);
++	cpu_detect_tlb(&boot_cpu_data);
+ }
+ 
+ void __cpuinit identify_secondary_cpu(struct cpuinfo_x86 *c)
+diff --git a/arch/x86/kernel/cpu/intel.c b/arch/x86/kernel/cpu/intel.c
+index 0a4ce2980a5a..198e019a531a 100644
+--- a/arch/x86/kernel/cpu/intel.c
++++ b/arch/x86/kernel/cpu/intel.c
+@@ -648,6 +648,10 @@ static void __cpuinit intel_detect_tlb(struct cpuinfo_x86 *c)
+ 	int i, j, n;
+ 	unsigned int regs[4];
+ 	unsigned char *desc = (unsigned char *)regs;
++
++	if (c->cpuid_level < 2)
++		return;
++
+ 	/* Number of times to iterate */
+ 	n = cpuid_eax(2) & 0xFF;
+ 
+-- 
+1.7.11.rc1
+

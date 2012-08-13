@@ -1,0 +1,81 @@
+Path: news.gmane.org!not-for-mail
+From: Pavel Andrianov <andrianov@ispras.ru>
+Newsgroups: gmane.linux.kernel,gmane.linux.scsi
+Subject: [PATCH] scsi_megaraid: addition spin_lock in megaraid_abort()
+Date: Thu, 26 Jul 2012 15:40:15 +0400
+Lines: 37
+Approved: news@gmane.org
+Message-ID: <1343302815-13064-1-git-send-email-andrianov@ispras.ru>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343304014 28118 80.91.229.3 (26 Jul 2012 12:00:14 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 12:00:14 +0000 (UTC)
+Cc: Pavel Andrianov <andrianov@ispras.ru>,
+	"James E.J. Bottomley" <JBottomley@parallels.com>,
+	linux-scsi@vger.kernel.org, linux-kernel@vger.kernel.org,
+	ldv-project@ispras.ru
+To: Neela Syam Kolli <megaraidlinux@lsi.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 14:00:13 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuMjl-0003CQ-Gc
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 14:00:13 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752793Ab2GZL77 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 07:59:59 -0400
+Original-Received: from smtp.ispras.ru ([83.149.198.202]:47085 "EHLO smtp.ispras.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752344Ab2GZL74 (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 07:59:56 -0400
+X-Greylist: delayed 1144 seconds by postgrey-1.27 at vger.kernel.org; Thu, 26 Jul 2012 07:59:56 EDT
+Original-Received: from alpha-P5K-E.intra.ispras.ru (unknown [83.149.198.253])
+	by smtp.ispras.ru (Postfix) with ESMTP id 53BFF5D4034;
+	Thu, 26 Jul 2012 15:06:22 +0400 (MSD)
+X-Mailer: git-send-email 1.7.4.1
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333602 gmane.linux.scsi:76623
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333602>
+
+In function megaraid_abort() there are calls to megaraid_abort_and_reset()
+and mega_rundoneq() which access shared data (like pending_list) without
+synchronization.In function megaraid_reset() the same calls were done with
+spin_lock held. So, the patch adds spin_lock_irq and spin_unlock_irq to
+megaraid_abort().
+
+Found by Linux Driver Verification project (linuxtesting.org)
+
+Signed-off-by: Pavel Andrianov <andrianov@ispras.ru>
+---
+ drivers/scsi/megaraid.c |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/scsi/megaraid.c b/drivers/scsi/megaraid.c
+index 4d39a9f..7572d86 100644
+--- a/drivers/scsi/megaraid.c
++++ b/drivers/scsi/megaraid.c
+@@ -1898,6 +1898,8 @@ megaraid_abort(Scsi_Cmnd *cmd)
+ 
+ 	adapter = (adapter_t *)cmd->device->host->hostdata;
+ 
++	spin_lock_irq(&adapter->lock);
++
+ 	rval =  megaraid_abort_and_reset(adapter, cmd, SCB_ABORT);
+ 
+ 	/*
+@@ -1905,6 +1907,7 @@ megaraid_abort(Scsi_Cmnd *cmd)
+ 	 * to be communicated over to the mid layer.
+ 	 */
+ 	mega_rundoneq(adapter);
++	spin_unlock_irq(&adapter->lock);
+ 
+ 	return rval;
+ }
+-- 
+1.7.4.1
+

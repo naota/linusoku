@@ -1,0 +1,77 @@
+Path: news.gmane.org!not-for-mail
+From: Fengguang Wu <fengguang.wu@intel.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.file-systems.btrfs
+Subject: [PATCH] btrfs: fix second lock in btrfs_delete_delayed_items()
+Date: Sat, 4 Aug 2012 15:45:02 +0800
+Lines: 24
+Approved: news@gmane.org
+Message-ID: <20120804074502.GB13700@localhost>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344066363 20621 80.91.229.3 (4 Aug 2012 07:46:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 4 Aug 2012 07:46:03 +0000 (UTC)
+Cc: Chris Mason <chris.mason@fusionio.com>,
+	BTRFS FILE SYSTEM <linux-btrfs@vger.kernel.org>,
+	LKML <linux-kernel@vger.kernel.org>
+To: Josef Bacik <jbacik@fusionio.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Aug 04 09:46:02 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxZ3h-00041p-C7
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 04 Aug 2012 09:46:01 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753577Ab2HDHpP (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 4 Aug 2012 03:45:15 -0400
+Original-Received: from mga11.intel.com ([192.55.52.93]:60649 "EHLO mga11.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1750695Ab2HDHpJ (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 4 Aug 2012 03:45:09 -0400
+Original-Received: from fmsmga001.fm.intel.com ([10.253.24.23])
+  by fmsmga102.fm.intel.com with ESMTP; 04 Aug 2012 00:45:09 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="193141061"
+Original-Received: from unknown (HELO wfg-t420.sh.intel.com) ([10.255.20.172])
+  by fmsmga001.fm.intel.com with ESMTP; 04 Aug 2012 00:45:06 -0700
+Original-Received: from wfg by wfg-t420.sh.intel.com with local (Exim 4.77)
+	(envelope-from <fengguang.wu@intel.com>)
+	id 1SxZ2k-0003i7-7Y; Sat, 04 Aug 2012 15:45:02 +0800
+Content-Disposition: inline
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337623 gmane.comp.file-systems.btrfs:19054
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337623>
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337623>
+
+Fix a real bug caught by coccinelle.
+
+fs/btrfs/delayed-inode.c:1013:1-11: second lock on line 1013
+
+Signed-off-by: Fengguang Wu <fengguang.wu@intel.com>
+---
+ fs/btrfs/delayed-inode.c |    5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+--- linux.orig/fs/btrfs/delayed-inode.c	2012-08-03 15:36:21.763560787 +0800
++++ linux/fs/btrfs/delayed-inode.c	2012-08-04 15:37:33.370210331 +0800
+@@ -1028,9 +1028,10 @@ do_again:
+ 		btrfs_release_delayed_item(prev);
+ 		ret = 0;
+ 		btrfs_release_path(path);
+-		if (curr)
++		if (curr) {
++			mutex_unlock(&node->mutex);
+ 			goto do_again;
+-		else
++		} else
+ 			goto delete_fail;
+ 	}
+ 

@@ -1,0 +1,111 @@
+Path: news.gmane.org!not-for-mail
+From: Scott Liu <scott.liu@emc.com.tw>
+Newsgroups: gmane.linux.kernel.input,gmane.linux.kernel
+Subject: [patch v2 1/1] HID:hid-multitouch: Add ELAN prouction request when resume
+Date: Thu,  9 Aug 2012 17:22:44 +0800
+Lines: 66
+Approved: news@gmane.org
+Message-ID: <1344504164-2337-1-git-send-email-scott.liu@emc.com.tw>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344504106 20143 80.91.229.3 (9 Aug 2012 09:21:46 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 09:21:46 +0000 (UTC)
+Cc: Scott Liu <scott.liu@emc.com.tw>
+To: "benjamin.tissoires" <benjamin.tissoires@gmail.com>,
+	Dmitry Torokhov <dmitry.torokhov@gmail.com>,
+	Jiri Kosina <jkosina@suse.cz>, linux-input@vger.kernel.org,
+	linux-kernel@vger.kernel.org, eleghost@gmail.com
+Original-X-From: linux-input-owner@vger.kernel.org Thu Aug 09 11:21:45 2012
+Return-path: <linux-input-owner@vger.kernel.org>
+Envelope-to: glki-linux-input-2@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-input-owner@vger.kernel.org>)
+	id 1SzOw4-00063Q-7N
+	for glki-linux-input-2@plane.gmane.org; Thu, 09 Aug 2012 11:21:44 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754645Ab2HIJVm (ORCPT <rfc822;glki-linux-input-2@m.gmane.org>);
+	Thu, 9 Aug 2012 05:21:42 -0400
+Original-Received: from emcscan.emc.com.tw ([192.72.220.5]:44161 "EHLO
+	emcscan.emc.com.tw" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752421Ab2HIJVl (ORCPT
+	<rfc822;linux-input@vger.kernel.org>); Thu, 9 Aug 2012 05:21:41 -0400
+Original-Received: from unknown (HELO emc.com.tw) ([192.168.10.1])
+  by emcscan.emc.com.tw with ESMTP; 09 Aug 2012 17:21:39 +0800
+Original-Received: from localhost ([192.168.131.101])
+	by emc.com.tw (8.13.7+Sun/8.13.7) with ESMTP id q799Lbsm003165;
+	Thu, 9 Aug 2012 17:21:37 +0800 (CST)
+X-Mailer: git-send-email 1.7.9.5
+Original-Sender: linux-input-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-input.vger.kernel.org>
+X-Mailing-List: linux-input@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel.input:26250 gmane.linux.kernel:1340581
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340581>
+
+Some of ELAN's production need to with set_idle commmand when reusme.
+
+Signed-off-by: Scott Liu <scott.liu@emc.com.tw>
+---
+ drivers/hid/hid-ids.h        |    3 +++
+ drivers/hid/hid-multitouch.c |   20 ++++++++++++++++++++
+ 2 files changed, 23 insertions(+)
+
+diff --git a/drivers/hid/hid-ids.h b/drivers/hid/hid-ids.h
+index 41c34f2..a4d810c 100644
+--- a/drivers/hid/hid-ids.h
++++ b/drivers/hid/hid-ids.h
+@@ -829,4 +829,7 @@
+ #define USB_VENDOR_ID_PRIMAX	0x0461
+ #define USB_DEVICE_ID_PRIMAX_KEYBOARD	0x4e05
+ 
++#define USB_VENDOR_ID_ELAN  0x04f3
++#define USB_DEVICE_ID_ELAN_MOCCA    0x000a
++
+ #endif
+diff --git a/drivers/hid/hid-multitouch.c b/drivers/hid/hid-multitouch.c
+index 59c8b5c..b06b7d3 100644
+--- a/drivers/hid/hid-multitouch.c
++++ b/drivers/hid/hid-multitouch.c
+@@ -767,6 +767,25 @@ static int mt_reset_resume(struct hid_device *hdev)
+ 	mt_set_input_mode(hdev);
+ 	return 0;
+ }
++
++static int mt_resume(struct hid_device *hdev)
++{
++	if (hdev->vendor == USB_VENDOR_ID_ELAN &&
++		hdev->product == USB_DEVICE_ID_ELAN_MOCCA) {
++
++		struct usb_interface *intf = to_usb_interface(hdev->dev.parent);
++		struct usb_host_interface *interface = intf->cur_altsetting;
++		struct usb_device *dev = hid_to_usb_dev(hdev);
++
++		usb_control_msg(dev, usb_sndctrlpipe(dev, 0),
++						HID_REQ_SET_IDLE, USB_TYPE_CLASS | USB_RECIP_INTERFACE,
++						0, interface->desc.bInterfaceNumber,
++						NULL, 0, USB_CTRL_SET_TIMEOUT);
++    }
++
++    return 0;
++}
++
+ #endif
+ 
+ static void mt_remove(struct hid_device *hdev)
+@@ -1092,6 +1111,7 @@ static struct hid_driver mt_driver = {
+ 	.event = mt_event,
+ #ifdef CONFIG_PM
+ 	.reset_resume = mt_reset_resume,
++	.resume = mt_resume,
+ #endif
+ };
+ 
+-- 
+1.7.9.5
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-input" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

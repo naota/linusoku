@@ -1,0 +1,498 @@
+Path: news.gmane.org!not-for-mail
+From: Alex Williamson <alex.williamson@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.kvm.devel
+Subject: Re: [PATCH v7 2/2] kvm: KVM_EOIFD, an eventfd for EOIs
+Date: Mon, 30 Jul 2012 18:26:31 -0600
+Lines: 445
+Approved: news@gmane.org
+Message-ID: <1343694391.8073.227.camel@ul30vt>
+References: <20120724203628.21081.56884.stgit@bling.home>
+	 <20120724204320.21081.32333.stgit@bling.home>
+	 <20120729145452.GD14278@redhat.com> <1343665330.8073.108.camel@ul30vt>
+	 <20120731000100.GA17612@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343694416 21736 80.91.229.3 (31 Jul 2012 00:26:56 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 00:26:56 +0000 (UTC)
+Cc: avi@redhat.com, gleb@redhat.com, kvm@vger.kernel.org,
+	linux-kernel@vger.kernel.org, jan.kiszka@siemens.com
+To: "Michael S. Tsirkin" <mst@redhat.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 02:26:55 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sw0IX-0004Ze-VH
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 02:26:54 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753672Ab2GaA0j (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 20:26:39 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:37137 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752747Ab2GaA0h (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 20:26:37 -0400
+Original-Received: from int-mx12.intmail.prod.int.phx2.redhat.com (int-mx12.intmail.prod.int.phx2.redhat.com [10.5.11.25])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6V0QXO7032569
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Mon, 30 Jul 2012 20:26:35 -0400
+Original-Received: from [10.3.113.9] ([10.3.113.9])
+	by int-mx12.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6V0QWv3003534;
+	Mon, 30 Jul 2012 20:26:32 -0400
+In-Reply-To: <20120731000100.GA17612@redhat.com>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.25
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335354 gmane.comp.emulators.kvm.devel:95282
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335354>
+
+On Tue, 2012-07-31 at 03:01 +0300, Michael S. Tsirkin wrote:
+> On Mon, Jul 30, 2012 at 10:22:10AM -0600, Alex Williamson wrote:
+> > On Sun, 2012-07-29 at 17:54 +0300, Michael S. Tsirkin wrote:
+> > > On Tue, Jul 24, 2012 at 02:43:22PM -0600, Alex Williamson wrote:
+> > > > This new ioctl enables an eventfd to be triggered when an EOI is
+> > > > written for a specified irqchip pin.  The first user of this will
+> > > > be external device assignment through VFIO, using a level irqfd
+> > > > for asserting a PCI INTx interrupt and this interface for de-assert
+> > > > and notification once the interrupt is serviced.
+> > > > 
+> > > > Here we make use of the reference counting of the _irq_source
+> > > > object allowing us to share it with an irqfd and cleanup regardless
+> > > > of the release order.
+> > > > 
+> > > > Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+> > > 
+> > > > ---
+> > > > 
+> > > >  Documentation/virtual/kvm/api.txt |   21 ++
+> > > >  arch/x86/kvm/x86.c                |    2 
+> > > >  include/linux/kvm.h               |   15 ++
+> > > >  include/linux/kvm_host.h          |   13 +
+> > > >  virt/kvm/eventfd.c                |  336 +++++++++++++++++++++++++++++++++++++
+> > > >  virt/kvm/kvm_main.c               |   11 +
+> > > >  6 files changed, 398 insertions(+)
+> > > > 
+> > > > diff --git a/Documentation/virtual/kvm/api.txt b/Documentation/virtual/kvm/api.txt
+> > > > index 3911e62..8cd6b36 100644
+> > > > --- a/Documentation/virtual/kvm/api.txt
+> > > > +++ b/Documentation/virtual/kvm/api.txt
+> > > > @@ -1989,6 +1989,27 @@ return the hash table order in the parameter.  (If the guest is using
+> > > >  the virtualized real-mode area (VRMA) facility, the kernel will
+> > > >  re-create the VMRA HPTEs on the next KVM_RUN of any vcpu.)
+> > > >  
+> > > > +4.77 KVM_EOIFD
+> > > > +
+> > > > +Capability: KVM_CAP_EOIFD
+> > > > +Architectures: x86
+> > > > +Type: vm ioctl
+> > > > +Parameters: struct kvm_eoifd (in)
+> > > > +Returns: 0 on success, < 0 on error
+> > > > +
+> > > > +KVM_EOIFD allows userspace to receive interrupt EOI notification
+> > > > +through an eventfd.
+> > > 
+> > > I thought about it some more, and I think it should be renamed to an
+> > > interrupt ack notification than eoi notification.
+> > > For example, consider userspace that uses threaded interrupts.
+> > > Currently what will happen is each interrupt will be injected
+> > > twice, since on eoi device is still asserting it.
+> > 
+> > I don't follow, why is userspace writing an eoi to the ioapic if it
+> > hasn't handled the interrupt
+> 
+> It has handled it - it disabled the hardware interrupt.
+
+So it's not injected twice, it's held pending at the ioapic the second
+time, just like hardware.  Maybe there's a future optimization there,
+but I don't think it's appropriate at this time.
+
+> > and why wouldn't the same happen on bare
+> > metal?
+> 
+> on bare metal level does not matter as long as interrupt
+> is disabled.
+> 
+> > > One fix would be to delay event until interrupt is re-enabled.
+> > > Now I am not asking you to fix this immediately,
+> > > but I think we should make the interface generic by
+> > > saying we report an ack to userspace and not specifically EOI.
+> > 
+> > Using the word "delay" in the context of interrupt delivery raises all
+> > sorts of red flags for me, but I really don't understand your argument.
+> 
+> I am saying it's an "ack" of interrupt userspace cares about.
+> The fact it is done by EOI is an implementation detail.
+
+The implementation is how an EOI is generated on an ioapic, not that an
+EOI exists.  How do I read a hardware spec and figure out what "ack of
+interrupt" means?
+
+> > > >  kvm_eoifd.fd specifies the eventfd used for
+> > > > +notification.  KVM_EOIFD_FLAG_DEASSIGN is used to de-assign an eoifd
+> > > > +once assigned.  KVM_EOIFD also requires additional bits set in
+> > > > +kvm_eoifd.flags to bind to the proper interrupt line.  The
+> > > > +KVM_EOIFD_FLAG_LEVEL_IRQFD indicates that kvm_eoifd.key is provided
+> > > > +and is a key from a level triggered interrupt (configured from
+> > > > +KVM_IRQFD using KVM_IRQFD_FLAG_LEVEL).  The EOI notification is bound
+> > > > +to the same GSI and irqchip input as the irqfd.  Both kvm_eoifd.key
+> > > > +and KVM_EOIFD_FLAG_LEVEL_IRQFD must be specified on assignment and
+> > > > +de-assignment of KVM_EOIFD.  A level irqfd may only be bound to a
+> > > > +single eoifd.  KVM_CAP_EOIFD_LEVEL_IRQFD indicates support of
+> > > > +KVM_EOIFD_FLAG_LEVEL_IRQFD.
+> > > >  
+> > > 
+> > > Hmm returning the key means we'll need to keep refcounting for source
+> > > IDs around forever. I liked passing the fd better: make implementation
+> > > match interface and not the other way around.
+> > 
+> > False, a source ID has a finite lifecycle.  The fd approach was broken.
+> > Holding the irqfd context imposed too many dependencies between eoifd
+> > and irqfd necessitating things like one interface disabling another.  I
+> > thoroughly disagree with that approach.
+> 
+> You keep saying this but it is still true: once irqfd
+> is closed eoifd does not get any more interrupts.
+
+How does that matter?
+
+> > > >  5. The kvm_run structure
+> > > >  ------------------------
+> > > > diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+> > > > index 9ded39d..8f3164e 100644
+> > > > --- a/arch/x86/kvm/x86.c
+> > > > +++ b/arch/x86/kvm/x86.c
+> > > > @@ -2171,6 +2171,8 @@ int kvm_dev_ioctl_check_extension(long ext)
+> > > >  	case KVM_CAP_PCI_2_3:
+> > > >  	case KVM_CAP_KVMCLOCK_CTRL:
+> > > >  	case KVM_CAP_IRQFD_LEVEL:
+> > > > +	case KVM_CAP_EOIFD:
+> > > > +	case KVM_CAP_EOIFD_LEVEL_IRQFD:
+> > > >  		r = 1;
+> > > >  		break;
+> > > >  	case KVM_CAP_COALESCED_MMIO:
+> > > > diff --git a/include/linux/kvm.h b/include/linux/kvm.h
+> > > > index b2e6e4f..effb916 100644
+> > > > --- a/include/linux/kvm.h
+> > > > +++ b/include/linux/kvm.h
+> > > > @@ -619,6 +619,8 @@ struct kvm_ppc_smmu_info {
+> > > >  #define KVM_CAP_S390_COW 79
+> > > >  #define KVM_CAP_PPC_ALLOC_HTAB 80
+> > > >  #define KVM_CAP_IRQFD_LEVEL 81
+> > > > +#define KVM_CAP_EOIFD 82
+> > > > +#define KVM_CAP_EOIFD_LEVEL_IRQFD 83
+> > > >  
+> > > >  #ifdef KVM_CAP_IRQ_ROUTING
+> > > >  
+> > > > @@ -694,6 +696,17 @@ struct kvm_irqfd {
+> > > >  	__u8  pad[20];
+> > > >  };
+> > > >  
+> > > > +#define KVM_EOIFD_FLAG_DEASSIGN (1 << 0)
+> > > > +/* Available with KVM_CAP_EOIFD_LEVEL_IRQFD */
+> > > > +#define KVM_EOIFD_FLAG_LEVEL_IRQFD (1 << 1)
+> > > > +
+> > > > +struct kvm_eoifd {
+> > > > +	__u32 fd;
+> > > > +	__u32 flags;
+> > > > +	__u32 key;
+> > > > +	__u8 pad[20];
+> > > > +};
+> > > > +
+> > > >  struct kvm_clock_data {
+> > > >  	__u64 clock;
+> > > >  	__u32 flags;
+> > > > @@ -834,6 +847,8 @@ struct kvm_s390_ucas_mapping {
+> > > >  #define KVM_PPC_GET_SMMU_INFO	  _IOR(KVMIO,  0xa6, struct kvm_ppc_smmu_info)
+> > > >  /* Available with KVM_CAP_PPC_ALLOC_HTAB */
+> > > >  #define KVM_PPC_ALLOCATE_HTAB	  _IOWR(KVMIO, 0xa7, __u32)
+> > > > +/* Available with KVM_CAP_EOIFD */
+> > > > +#define KVM_EOIFD                 _IOW(KVMIO,  0xa8, struct kvm_eoifd)
+> > > >  
+> > > >  /*
+> > > >   * ioctls for vcpu fds
+> > > > diff --git a/include/linux/kvm_host.h b/include/linux/kvm_host.h
+> > > > index c73f071..01e72a6 100644
+> > > > --- a/include/linux/kvm_host.h
+> > > > +++ b/include/linux/kvm_host.h
+> > > > @@ -289,6 +289,10 @@ struct kvm {
+> > > >  		struct mutex lock;
+> > > >  		struct list_head items;
+> > > >  	} irqsources;
+> > > > +	struct {
+> > > > +		spinlock_t lock;
+> > > > +		struct list_head items;
+> > > > +	} eoifds;
+> > > >  #endif
+> > > >  	struct kvm_vm_stat stat;
+> > > >  	struct kvm_arch arch;
+> > > > @@ -832,6 +836,8 @@ int kvm_irqfd(struct kvm *kvm, struct kvm_irqfd *args);
+> > > >  void kvm_irqfd_release(struct kvm *kvm);
+> > > >  void kvm_irq_routing_update(struct kvm *, struct kvm_irq_routing_table *);
+> > > >  int kvm_ioeventfd(struct kvm *kvm, struct kvm_ioeventfd *args);
+> > > > +int kvm_eoifd(struct kvm *kvm, struct kvm_eoifd *args);
+> > > > +void kvm_eoifd_release(struct kvm *kvm);
+> > > >  
+> > > >  #else
+> > > >  
+> > > > @@ -857,6 +863,13 @@ static inline int kvm_ioeventfd(struct kvm *kvm, struct kvm_ioeventfd *args)
+> > > >  	return -ENOSYS;
+> > > >  }
+> > > >  
+> > > > +static inline int kvm_eoifd(struct kvm *kvm, struct kvm_eoifd *args)
+> > > > +{
+> > > > +	return -ENOSYS;
+> > > > +}
+> > > > +
+> > > > +static inline void kvm_eoifd_release(struct kvm *kvm) {}
+> > > > +
+> > > >  #endif /* CONFIG_HAVE_KVM_EVENTFD */
+> > > >  
+> > > >  #ifdef CONFIG_KVM_APIC_ARCHITECTURE
+> > > > diff --git a/virt/kvm/eventfd.c b/virt/kvm/eventfd.c
+> > > > index 878cb52..3aa2d62 100644
+> > > > --- a/virt/kvm/eventfd.c
+> > > > +++ b/virt/kvm/eventfd.c
+> > > > @@ -95,6 +95,25 @@ static struct _irq_source *_irq_source_alloc(struct kvm *kvm, int gsi)
+> > > >  	return source;
+> > > >  }
+> > > >  
+> > > > +static struct _irq_source *_irq_source_get_from_key(struct kvm *kvm, int key)
+> > > > +{
+> > > > +	struct _irq_source *tmp, *source = ERR_PTR(-ENOENT);
+> > > > +
+> > > > +	mutex_lock(&kvm->irqsources.lock);
+> > > > +
+> > > > +	list_for_each_entry(tmp, &kvm->irqsources.items, list) {
+> > > > +		if (tmp->id == key) {
+> > > > +			source = tmp;
+> > > > +			kref_get(&source->kref);
+> > > > +			break;
+> > > > +		}
+> > > > +	}
+> > > > +
+> > > > +	mutex_unlock(&kvm->irqsources.lock);
+> > > > +
+> > > > +	return source;
+> > > > +}
+> > > > +
+> > > >  /*
+> > > >   * --------------------------------------------------------------------
+> > > >   * irqfd: Allows an fd to be used to inject an interrupt to the guest
+> > > > @@ -406,6 +425,8 @@ kvm_eventfd_init(struct kvm *kvm)
+> > > >  	INIT_LIST_HEAD(&kvm->ioeventfds);
+> > > >  	mutex_init(&kvm->irqsources.lock);
+> > > >  	INIT_LIST_HEAD(&kvm->irqsources.items);
+> > > > +	spin_lock_init(&kvm->eoifds.lock);
+> > > > +	INIT_LIST_HEAD(&kvm->eoifds.items);
+> > > >  }
+> > > >  
+> > > >  /*
+> > > > @@ -772,3 +793,318 @@ kvm_ioeventfd(struct kvm *kvm, struct kvm_ioeventfd *args)
+> > > >  
+> > > >  	return kvm_assign_ioeventfd(kvm, args);
+> > > >  }
+> > > > +
+> > > > +/*
+> > > > + * --------------------------------------------------------------------
+> > > > + *  eoifd: Translate KVM APIC/IOAPIC EOI into eventfd signal.
+> > > > + *
+> > > > + *  userspace can register with an eventfd for receiving
+> > > > + *  notification when an EOI occurs.
+> > > > + * --------------------------------------------------------------------
+> > > > + */
+> > > > +
+> > > > +struct _eoifd {
+> > > > +	/* eventfd triggered on EOI */
+> > > > +	struct eventfd_ctx *eventfd;
+> > > > +	/* irq source ID de-asserted on EOI */
+> > > > +	struct _irq_source *source;
+> > > > +	wait_queue_t wait;
+> > > > +	/* EOI notification from KVM */
+> > > > +	struct kvm_irq_ack_notifier notifier;
+> > > > +	struct list_head list;
+> > > > +	poll_table pt;
+> > > > +	struct work_struct shutdown;
+> > > > +};
+> > > > +
+> > > > +/* Called under eoifds.lock */
+> > > > +static void eoifd_shutdown(struct work_struct *work)
+> > > > +{
+> > > > +	struct _eoifd *eoifd = container_of(work, struct _eoifd, shutdown);
+> > > > +	struct kvm *kvm = eoifd->source->kvm;
+> > > > +	u64 cnt;
+> > > > +
+> > > > +	/*
+> > > > +	 * Stop EOI signaling
+> > > > +	 */
+> > > > +	kvm_unregister_irq_ack_notifier(kvm, &eoifd->notifier);
+> > > > +
+> > > > +	/*
+> > > > +	 * Synchronize with the wait-queue and unhook ourselves to prevent
+> > > > +	 * further events.
+> > > > +	 */
+> > > > +	eventfd_ctx_remove_wait_queue(eoifd->eventfd, &eoifd->wait, &cnt);
+> > > > +
+> > > > +	/*
+> > > > +	 * Release resources
+> > > > +	 */
+> > > > +	eventfd_ctx_put(eoifd->eventfd);
+> > > > +	_irq_source_put(eoifd->source);
+> > > > +	kfree(eoifd);
+> > > > +}
+> > > > +
+> > > > +/* assumes kvm->eoifds.lock is held */
+> > > > +static bool eoifd_is_active(struct _eoifd *eoifd)
+> > > > +{
+> > > > +	return list_empty(&eoifd->list) ? false : true;
+> > > > +}
+> > > > +
+> > > > +/*
+> > > > + * Mark the eoifd as inactive and schedule it for removal
+> > > > + *
+> > > > + * assumes kvm->eoifds.lock is held
+> > > > + */
+> > > > +static void eoifd_deactivate(struct _eoifd *eoifd)
+> > > > +{
+> > > > +	BUG_ON(!eoifd_is_active(eoifd));
+> > > > +
+> > > > +	list_del_init(&eoifd->list);
+> > > > +
+> > > > +	queue_work(irqfd_cleanup_wq, &eoifd->shutdown);
+> > > > +}
+> > > > +
+> > > > +/*
+> > > > + * Called with wqh->lock held and interrupts disabled
+> > > > + */
+> > > > +static int eoifd_wakeup(wait_queue_t *wait, unsigned mode, int sync, void *key)
+> > > > +{
+> > > > +	unsigned long flags = (unsigned long)key;
+> > > > +
+> > > > +	if (unlikely(flags & POLLHUP)) {
+> > > > +		/* The eventfd is closing, detach from KVM */
+> > > > +		struct _eoifd *eoifd = container_of(wait, struct _eoifd, wait);
+> > > > +		struct kvm *kvm = eoifd->source->kvm;
+> > > > +		unsigned long flags;
+> > > > +
+> > > > +		spin_lock_irqsave(&kvm->eoifds.lock, flags);
+> > > > +
+> > > > +		/*
+> > > > +		 * We must check if someone deactivated the eoifd before
+> > > > +		 * we could acquire the eoifds.lock since the item is
+> > > > +		 * deactivated from the KVM side before it is unhooked from
+> > > > +		 * the wait-queue.  If it is already deactivated, we can
+> > > > +		 * simply return knowing the other side will cleanup for us.
+> > > > +		 * We cannot race against the eoifd going away since the
+> > > > +		 * other side is required to acquire wqh->lock, which we hold
+> > > > +		 */
+> > > > +		if (eoifd_is_active(eoifd))
+> > > > +			eoifd_deactivate(eoifd);
+> > > > +
+> > > > +		spin_unlock_irqrestore(&kvm->eoifds.lock, flags);
+> > > > +	}
+> > > > +
+> > > > +	return 0;
+> > > > +}
+> > > 
+> > > Looks like there is a bug here: if I close irqfd, then close eoifd,
+> > > the key is not immediately released so an attempt to create
+> > > an irqfd can fail to get the source id.
+> > 
+> > Both irqfd and eoifd use the same workqueue for releasing objects and
+> > both flush on assign.
+> > 
+> > > Maybe we should simply document that userspace should deassign
+> > > eoifd before closing it? This is what we do for ioeventfd.
+> > > If we do this, the whole polling code can go away completely.
+> > 
+> > You're again ignoring the close problem.  We cannot document around an
+> > impossible requirement that fds are always deassigned before close.
+> 
+> Well userspace can easily call a deassign ioctl. Why is it so important
+> that deassign is not required?
+
+Because everything allocated through a file descriptor, specific to that
+file descriptor, should be freed when the file descriptor is closed.
+That's what people expect.
+
+> > IMHO ioeventfd is broken here and I don't wish to emulate it's behavior.
+> 
+> So fix ioeventfd first. Making eoifd and ioeventfd behave differently does not
+> make sense they are very similar.
+
+One at a time.  eoifd and ioeventfd have different requirements.
+ioeventfd is just wasting memory, eoifd can potentially exhaust irq
+source IDs.  Besides, you still defend ioeventfd as correct.
+
+> > > > +
+> > > > +static void eoifd_ptable_queue_proc(struct file *file, wait_queue_head_t *wqh,
+> > > > +				    poll_table *pt)
+> > > > +{
+> > > > +	struct _eoifd *eoifd = container_of(pt, struct _eoifd, pt);
+> > > > +	add_wait_queue(wqh, &eoifd->wait);
+> > > > +}
+> > > > +
+> > > > +/*
+> > > > + * This function is called as the kvm VM fd is being released. Shutdown all
+> > > > + * eoifds that still remain open
+> > > > + */
+> > > > +void kvm_eoifd_release(struct kvm *kvm)
+> > > > +{
+> > > > +	struct _eoifd *tmp, *eoifd;
+> > > > +
+> > > > +	spin_lock_irq(&kvm->eoifds.lock);
+> > > > +
+> > > > +	list_for_each_entry_safe(eoifd, tmp, &kvm->eoifds.items, list)
+> > > > +		eoifd_deactivate(eoifd);
+> > > > +
+> > > > +	spin_unlock_irq(&kvm->eoifds.lock);
+> > > > +
+> > > > +	flush_workqueue(irqfd_cleanup_wq);
+> > > > +}
+> > > > +
+> > > > +static void eoifd_event(struct kvm_irq_ack_notifier *notifier)
+> > > > +{
+> > > > +	struct _eoifd *eoifd;
+> > > > +
+> > > > +	eoifd = container_of(notifier, struct _eoifd, notifier);
+> > > > +
+> > > > +	if (unlikely(!eoifd->source))
+> > > > +		return;
+> > > > +
+> > > > +	/*
+> > > > +	 * De-assert and send EOI, user needs to re-assert if
+> > > > +	 * device still requires service.
+> > > > +	 */
+> > > 
+> > > I'm not sure why did you drop filtering by source id.
+> > > This means userspace gets events even if it did not send an interrupt.
+> > > So
+> > > 1. Should be documented that you can get spurious events 
+> > > 2. when an interrupt is shared with an emulated device,
+> > >    and said device uses EOI, this will not
+> > >    perform well as we will wake up userspace on each EOI.
+> > > 3. Just sharing interrupt with virtio means we are polling
+> > >    assigned device on each virtio interrupt.
+> > 
+> > Didn't we just agree after v5 that filtering requires a spinlock around
+> > around calling kvm_irq_set or at least a new interface to setting irqs
+> > that allows us to see the current assertion state and that neither of
+> > those seem to be worth the effort for level irqs?  That's why I dropped
+> > it.  Interrupts always have to support spurious events.  The comment
+> > immediately above indicates this.  Legacy interrupts, especially shared
+> > legacy interrupts should not be our primary performance path.  VFIO has
+> > a very efficient path for handling spurious EOIs.
+> 
+> But it will not help that vfio does this efficiently if userspace
+> is woken up. You need to make it efficient for userspace consumers.
+> Otherwise it's a vfio specific interface.
+
+Does this effect the design of this interface or is this a potential
+future optimization?
+
+
+

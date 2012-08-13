@@ -1,0 +1,82 @@
+Path: news.gmane.org!not-for-mail
+From: Paolo Bonzini <pbonzini@redhat.com>
+Newsgroups: gmane.comp.file-systems.ext4,gmane.linux.kernel
+Subject: ext4fs error "ext4_mb_generate_buddy:741:group 16, 8160 clusters
+ in bitmap, 4064 in gd" (with repro)
+Date: Thu, 09 Aug 2012 12:00:09 +0200
+Lines: 32
+Approved: news@gmane.org
+Message-ID: <50238A29.3060808@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-15
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344506424 10552 80.91.229.3 (9 Aug 2012 10:00:24 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 10:00:24 +0000 (UTC)
+To: tytso@mit.edu,
+	"Linux Kernel Mailinlinux-ext4@vger.kernel.orgg List" 
+	<linux-kernel@vger.kernel.org>, linux-ext4@vger.kernel.org
+Original-X-From: linux-ext4-owner@vger.kernel.org Thu Aug 09 12:00:24 2012
+Return-path: <linux-ext4-owner@vger.kernel.org>
+Envelope-to: gcfe-linux-ext4@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-ext4-owner@vger.kernel.org>)
+	id 1SzPXS-0005Hd-O9
+	for gcfe-linux-ext4@plane.gmane.org; Thu, 09 Aug 2012 12:00:23 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755702Ab2HIKAR (ORCPT <rfc822;gcfe-linux-ext4@m.gmane.org>);
+	Thu, 9 Aug 2012 06:00:17 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:32265 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1757479Ab2HIKAQ (ORCPT <rfc822;linux-ext4@vger.kernel.org>);
+	Thu, 9 Aug 2012 06:00:16 -0400
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q79A0EPd031016
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Thu, 9 Aug 2012 06:00:14 -0400
+Original-Received: from yakj.usersys.redhat.com (ovpn-112-16.ams2.redhat.com [10.36.112.16])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q79A09e2027928;
+	Thu, 9 Aug 2012 06:00:12 -0400
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120615 Thunderbird/13.0.1
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Original-Sender: linux-ext4-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-ext4.vger.kernel.org>
+X-Mailing-List: linux-ext4@vger.kernel.org
+Xref: news.gmane.org gmane.comp.file-systems.ext4:33721 gmane.linux.kernel:1340604
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340604>
+
+Here is how to reproduce it.  It happens during fstrim.  I found other
+occurrences of the error in the mailing list, but they were not related
+to trim so they may be something different.
+
+modprobe scsi_debug dev_size_mb=256 lbpws=1
+dd if=/dev/zero of=/dev/sdb bs=1M      
+fdisk /dev/sdb
+ >> create a new partition accepting all defaults
+fdisk -lu /dev/sdb|tail -1
+ >> should show: /dev/sdb1     57      524285      262114+  83  Linux
+
+mkfs.ext4 /dev/sdb1
+mkdir test
+mount /dev/sdb1 test
+fstrim ./test
+
+Here is the output in dmesg:
+
+[140934.644166] EXT4-fs (sdb1): mounted filesystem with ordered data mode. Opts: (null)
+[140941.562060] EXT4-fs error (device sdb1): ext4_mb_generate_buddy:741: group 16, 8160 clusters in bitmap, 4064 in gd
+[140941.603066] EXT4-fs error (device sdb1): ext4_mb_generate_buddy:741: group 25, 8192 clusters in bitmap, 7934 in gd
+[140941.613060] EXT4-fs error (device sdb1): ext4_mb_generate_buddy:741: group 27, 8192 clusters in bitmap, 7934 in gd
+[140941.634074] EXT4-fs error (device sdb1): ext4_mb_generate_buddy:741: group 31, 8192 clusters in bitmap, 8159 in gd
+
+Hope this helps,
+
+Paolo
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ext4" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

@@ -1,0 +1,171 @@
+Path: news.gmane.org!not-for-mail
+From: "Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH, RFC 5/6] mm: make clear_huge_page cache clear only around the fault address
+Date: Fri, 20 Jul 2012 15:50:21 +0300
+Lines: 91
+Approved: news@gmane.org
+Message-ID: <1342788622-10290-6-git-send-email-kirill.shutemov@linux.intel.com>
+References: <1342788622-10290-1-git-send-email-kirill.shutemov@linux.intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342788570 21128 80.91.229.3 (20 Jul 2012 12:49:30 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 12:49:30 +0000 (UTC)
+Cc: Thomas Gleixner <tglx@linutronix.de>,
+	Ingo Molnar <mingo@redhat.com>,
+	"H. Peter Anvin" <hpa@zytor.com>,
+	x86@kernel.org,
+	Andi Kleen <ak@linux.intel.com>,
+	"Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>,
+	Tim Chen <tim.c.chen@linux.intel.com>,
+	Alex Shi <alex.shu@intel.com>,
+	Jan Beulich <jbeulich@novell.com>,
+	Robert Richter <robert.richter@amd.com>,
+	Andy Lutomirski <luto@amacapital.net>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Andrea Arcangeli <aarcange@redhat.com>,
+	Johannes Weiner <hannes@cmpxchg.org>,
+	Hugh Dickins <hughd@google.com>,
+	KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>,
+	Mel Gorman <mgorman@suse.de>,
+	linux-kernel@vger.kernel.org
+To: linux-mm@kvack.org
+Original-X-From: owner-linux-mm@kvack.org Fri Jul 20 14:49:25 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SsCe1-0001mA-JT
+	for glkm-linux-mm-2@m.gmane.org; Fri, 20 Jul 2012 14:49:21 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 873D46B0072; Fri, 20 Jul 2012 08:49:20 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 76BE16B0073; Fri, 20 Jul 2012 08:49:20 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 439976B0074; Fri, 20 Jul 2012 08:49:20 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx114.postini.com [74.125.245.114])
+	by kanga.kvack.org (Postfix) with SMTP id BC8FC6B0073
+	for <linux-mm@kvack.org>; Fri, 20 Jul 2012 08:49:19 -0400 (EDT)
+Original-Received: from mga02.intel.com ([134.134.136.20]) by na3sys010amx114.postini.com ([74.125.244.10]) with SMTP;
+	Fri, 20 Jul 2012 12:49:19 GMT
+Original-Received: from orsmga002.jf.intel.com ([10.7.209.21])
+  by orsmga101.jf.intel.com with ESMTP; 20 Jul 2012 05:48:53 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.67,351,1309762800"; 
+   d="scan'208";a="174742096"
+Original-Received: from blue.fi.intel.com ([10.237.72.50])
+  by orsmga002.jf.intel.com with ESMTP; 20 Jul 2012 05:48:48 -0700
+Original-Received: by blue.fi.intel.com (Postfix, from userid 1000)
+	id 8F027E0088; Fri, 20 Jul 2012 15:50:32 +0300 (EEST)
+X-Mailer: git-send-email 1.7.10
+In-Reply-To: <1342788622-10290-1-git-send-email-kirill.shutemov@linux.intel.com>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:45.23146/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0005) s cv gt3 GT2 gt1 r p m c 
+X-pstn-addresses: from <kirill.shutemov@linux.intel.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82777 gmane.linux.kernel:1330835
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330835>
+
+From: Andi Kleen <ak@linux.intel.com>
+
+Clearing a 2MB huge page will typically blow away several levels
+of CPU caches. To avoid this only cache clear the 4K area
+around the fault address and use a cache avoiding clears
+for the rest of the 2MB area.
+
+TBD add numbers
+
+Signed-off-by: Andi Kleen <ak@linux.intel.com>
+Signed-off-by: Kirill A. Shutemov <kirill.shutemov@linux.intel.com>
+---
+ mm/memory.c |   30 +++++++++++++++++++++++++++---
+ 1 files changed, 27 insertions(+), 3 deletions(-)
+
+diff --git a/mm/memory.c b/mm/memory.c
+index c356ead..b4740cf 100644
+--- a/mm/memory.c
++++ b/mm/memory.c
+@@ -3957,18 +3957,35 @@ EXPORT_SYMBOL(might_fault);
+ #endif
+ 
+ #if defined(CONFIG_TRANSPARENT_HUGEPAGE) || defined(CONFIG_HUGETLBFS)
++
++#ifndef ARCH_HAS_USER_NOCACHE
++#define ARCH_HAS_USER_NOCACHE 0
++#endif
++
++#if ARCH_HAS_USER_NOCACHE == 0
++#define clear_user_highpage_nocache clear_user_highpage
++#endif
++
+ static void clear_gigantic_page(struct page *page,
+ 				unsigned long addr,
+ 				unsigned int pages_per_huge_page)
+ {
+ 	int i;
+ 	struct page *p = page;
++	unsigned long vaddr;
++	unsigned long haddr = addr & HPAGE_PMD_MASK;
++	int target = (addr - haddr) >> PAGE_SHIFT;
+ 
+ 	might_sleep();
++	vaddr = haddr;
+ 	for (i = 0; i < pages_per_huge_page;
+ 	     i++, p = mem_map_next(p, page, i)) {
+ 		cond_resched();
+-		clear_user_highpage(p, addr + i * PAGE_SIZE);
++		vaddr = haddr + i*PAGE_SIZE;
++		if (!ARCH_HAS_USER_NOCACHE  || i == target)
++			clear_user_highpage(p, vaddr);
++		else
++			clear_user_highpage_nocache(p, vaddr);
+ 	}
+ }
+ void clear_huge_page(struct page *page,
+@@ -3976,16 +3993,23 @@ void clear_huge_page(struct page *page,
+ {
+ 	int i;
+ 	unsigned long haddr = addr & HPAGE_PMD_MASK;
++	unsigned long vaddr;
++	int target = (addr - haddr) >> PAGE_SHIFT;
+ 
+ 	if (unlikely(pages_per_huge_page > MAX_ORDER_NR_PAGES)) {
+-		clear_gigantic_page(page, haddr, pages_per_huge_page);
++		clear_gigantic_page(page, addr, pages_per_huge_page);
+ 		return;
+ 	}
+ 
+ 	might_sleep();
++	vaddr = haddr;
+ 	for (i = 0; i < pages_per_huge_page; i++) {
+ 		cond_resched();
+-		clear_user_highpage(page + i, haddr + i * PAGE_SIZE);
++		vaddr = haddr + i*PAGE_SIZE;
++		if (!ARCH_HAS_USER_NOCACHE || i == target)
++			clear_user_highpage(page + i, vaddr);
++		else
++			clear_user_highpage_nocache(page + i, vaddr);
+ 	}
+ }
+ 
+-- 
+1.7.7.6
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

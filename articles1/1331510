@@ -1,0 +1,185 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 058/108] fifo: Do not restart open() if it already found a partner
+Date: Mon, 23 Jul 2012 02:07:49 +0100
+Lines: 118
+Approved: news@gmane.org
+Message-ID: <20120723010700.272854370@decadent.org.uk>
+References: <20120723010651.408577075@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: TEXT/PLAIN; charset=ISO-8859-1
+Content-Transfer-Encoding: QUOTED-PRINTABLE
+X-Trace: dough.gmane.org 1343008397 16174 80.91.229.3 (23 Jul 2012 01:53:17 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 01:53:17 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Anders Kaseorg <andersk@MIT.EDU>,
+	Anders Kaseorg <andersk@mit.edu>,
+	Jonathan Nieder <jrnieder@gmail.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 03:53:16 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1St7pj-0000w8-6k
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 03:53:15 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753545Ab2GWBxE (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 21:53:04 -0400
+X-Warning: Original message contained 8-bit characters, however during
+	   the SMTP transport session the receiving system did not announce
+	   capability of receiving 8-bit SMTP (RFC 1651-1653), and as this
+	   message does not have MIME headers (RFC 2045-2049) to enable
+	   encoding change, we had very little choice.
+X-Warning: We ASSUME it is less harmful to add the MIME headers, and
+	   convert the text to Quoted-Printable, than not to do so,
+	   and to strip the message to 7-bits.. (RFC 1428 Appendix A)
+X-Warning: We don't know what character set the user used, thus we had to
+	   write these MIME-headers with our local system default value.
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:54340 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1753437Ab2GWBnS (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 21:43:18 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7fx-0008Rn-Ms; Mon, 23 Jul 2012 02:43:09 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7ed-0008DA-PT; Mon, 23 Jul 2012 02:41:47 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120723010651.408577075@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331510 gmane.linux.kernel.stable:28662
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331510>
+
+3.2-stable review patch.  If anyone has any objections, please let me k=
+now.
+
+------------------
+
+=46rom: Anders Kaseorg <andersk@MIT.EDU>
+
+commit 05d290d66be6ef77a0b962ebecf01911bd984a78 upstream.
+
+If a parent and child process open the two ends of a fifo, and the
+child immediately exits, the parent may receive a SIGCHLD before its
+open() returns.  In that case, we need to make sure that open() will
+return successfully after the SIGCHLD handler returns, instead of
+throwing EINTR or being restarted.  Otherwise, the restarted open()
+would incorrectly wait for a second partner on the other end.
+
+The following test demonstrates the EINTR that was wrongly thrown from
+the parent=E2=80=99s open().  Change .sa_flags =3D 0 to .sa_flags =3D S=
+A_RESTART
+to see a deadlock instead, in which the restarted open() waits for a
+second reader that will never come.  (On my systems, this happens
+pretty reliably within about 5 to 500 iterations.  Others report that
+it manages to loop ~forever sometimes; YMMV.)
+
+  #include <sys/stat.h>
+  #include <sys/types.h>
+  #include <sys/wait.h>
+  #include <fcntl.h>
+  #include <signal.h>
+  #include <stdio.h>
+  #include <stdlib.h>
+  #include <unistd.h>
+
+  #define CHECK(x) do if ((x) =3D=3D -1) {perror(#x); abort();} while(0=
+)
+
+  void handler(int signum) {}
+
+  int main()
+  {
+      struct sigaction act =3D {.sa_handler =3D handler, .sa_flags =3D =
+0};
+      CHECK(sigaction(SIGCHLD, &act, NULL));
+      CHECK(mknod("fifo", S_IFIFO | S_IRWXU, 0));
+      for (;;) {
+          int fd;
+          pid_t pid;
+          putc('.', stderr);
+          CHECK(pid =3D fork());
+          if (pid =3D=3D 0) {
+              CHECK(fd =3D open("fifo", O_RDONLY));
+              _exit(0);
+          }
+          CHECK(fd =3D open("fifo", O_WRONLY));
+          CHECK(close(fd));
+          CHECK(waitpid(pid, NULL, 0));
+      }
+  }
+
+This is what I suspect was causing the Git test suite to fail in
+t9010-svn-fe.sh:
+
+	http://bugs.debian.org/678852
+
+Signed-off-by: Anders Kaseorg <andersk@mit.edu>
+Reviewed-by: Jonathan Nieder <jrnieder@gmail.com>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ fs/fifo.c |    9 ++++-----
+ 1 file changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/fs/fifo.c b/fs/fifo.c
+index b1a524d..cf6f434 100644
+--- a/fs/fifo.c
++++ b/fs/fifo.c
+@@ -14,7 +14,7 @@
+ #include <linux/sched.h>
+ #include <linux/pipe_fs_i.h>
+=20
+-static void wait_for_partner(struct inode* inode, unsigned int *cnt)
++static int wait_for_partner(struct inode* inode, unsigned int *cnt)
+ {
+ 	int cur =3D *cnt;=09
+=20
+@@ -23,6 +23,7 @@ static void wait_for_partner(struct inode* inode, uns=
+igned int *cnt)
+ 		if (signal_pending(current))
+ 			break;
+ 	}
++	return cur =3D=3D *cnt ? -ERESTARTSYS : 0;
+ }
+=20
+ static void wake_up_partner(struct inode* inode)
+@@ -67,8 +68,7 @@ static int fifo_open(struct inode *inode, struct file=
+ *filp)
+ 				 * seen a writer */
+ 				filp->f_version =3D pipe->w_counter;
+ 			} else {
+-				wait_for_partner(inode, &pipe->w_counter);
+-				if(signal_pending(current))
++				if (wait_for_partner(inode, &pipe->w_counter))
+ 					goto err_rd;
+ 			}
+ 		}
+@@ -90,8 +90,7 @@ static int fifo_open(struct inode *inode, struct file=
+ *filp)
+ 			wake_up_partner(inode);
+=20
+ 		if (!pipe->readers) {
+-			wait_for_partner(inode, &pipe->r_counter);
+-			if (signal_pending(current))
++			if (wait_for_partner(inode, &pipe->r_counter))
+ 				goto err_wr;
+ 		}
+ 		break;
+
+

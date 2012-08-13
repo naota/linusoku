@@ -1,0 +1,119 @@
+Path: news.gmane.org!not-for-mail
+From: H Hartley Sweeten <hartleys@visionengravers.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 66/90] staging: comedi: dt3000: move the setup_pci() code into the attach
+Date: Wed, 18 Jul 2012 18:58:07 -0700
+Lines: 65
+Approved: news@gmane.org
+Message-ID: <201207181858.08254.hartleys@visionengravers.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342663108 28694 80.91.229.3 (19 Jul 2012 01:58:28 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 01:58:28 +0000 (UTC)
+Cc: <devel@driverdev.osuosl.org>, <abbotti@mev.co.uk>,
+	<gregkh@linuxfoundation.org>
+To: Linux Kernel <linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 03:58:28 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Srg0V-0005zu-HZ
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 03:58:23 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755979Ab2GSB6O (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 18 Jul 2012 21:58:14 -0400
+Original-Received: from mail132.messagelabs.com ([216.82.242.115]:57765 "EHLO
+	mail132.messagelabs.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751721Ab2GSB6M (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 18 Jul 2012 21:58:12 -0400
+X-Env-Sender: hartleys@visionengravers.com
+X-Msg-Ref: server-7.tower-132.messagelabs.com!1342663091!13181268!1
+X-Originating-IP: [216.166.12.32]
+X-StarScan-Version: 6.5.10; banners=-,-,-
+X-VirusChecked: Checked
+Original-Received: (qmail 8580 invoked from network); 19 Jul 2012 01:58:11 -0000
+Original-Received: from out001.collaborationhost.net (HELO out001.collaborationhost.net) (216.166.12.32)
+  by server-7.tower-132.messagelabs.com with RC4-SHA encrypted SMTP; 19 Jul 2012 01:58:11 -0000
+Original-Received: from etch.local (10.2.3.210) by smtp.collaborationhost.net
+ (10.2.0.47) with Microsoft SMTP Server (TLS) id 8.3.213.0; Wed, 18 Jul 2012
+ 20:58:11 -0500
+User-Agent: KMail/1.9.9
+Content-Disposition: inline
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330103
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330103>
+
+The setup_pci() function simply calls comedi_pci_enable() to enable
+the device then ioremaps the pci address. Move the code directly
+into the attach function as is more typical for the comedi pci
+drivers.
+
+Signed-off-by: H Hartley Sweeten <hsweeten@visionengravers.com>
+Cc: Ian Abbott <abbotti@mev.co.uk>
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/staging/comedi/drivers/dt3000.c | 29 ++++++-----------------------
+ 1 file changed, 6 insertions(+), 23 deletions(-)
+
+diff --git a/drivers/staging/comedi/drivers/dt3000.c b/drivers/staging/comedi/drivers/dt3000.c
+index 10b43a2..92558e7 100644
+--- a/drivers/staging/comedi/drivers/dt3000.c
++++ b/drivers/staging/comedi/drivers/dt3000.c
+@@ -774,28 +774,6 @@ static int dt3k_mem_insn_read(struct comedi_device *dev,
+ 	return i;
+ }
+ 
+-static int setup_pci(struct comedi_device *dev)
+-{
+-	resource_size_t addr;
+-	int ret;
+-
+-	ret = comedi_pci_enable(devpriv->pci_dev, "dt3000");
+-	if (ret < 0)
+-		return ret;
+-
+-	addr = pci_resource_start(devpriv->pci_dev, 0);
+-	devpriv->phys_addr = addr;
+-	devpriv->io_addr = ioremap(devpriv->phys_addr, DT3000_SIZE);
+-	if (!devpriv->io_addr)
+-		return -ENOMEM;
+-#if DEBUG
+-	printk("0x%08llx mapped to %p, ",
+-	       (unsigned long long)devpriv->phys_addr, devpriv->io_addr);
+-#endif
+-
+-	return 0;
+-}
+-
+ static struct pci_dev *dt3000_find_pci_dev(struct comedi_device *dev,
+ 					   struct comedi_devconfig *it)
+ {
+@@ -842,10 +820,15 @@ static int dt3000_attach(struct comedi_device *dev, struct comedi_devconfig *it)
+ 		return -EIO;
+ 	devpriv->pci_dev = pcidev;
+ 
+-	ret = setup_pci(dev);
++	ret = comedi_pci_enable(pcidev, "dt3000");
+ 	if (ret < 0)
+ 		return ret;
+ 
++	devpriv->phys_addr = pci_resource_start(pcidev, 0);
++	devpriv->io_addr = ioremap(devpriv->phys_addr, DT3000_SIZE);
++	if (!devpriv->io_addr)
++		return -ENOMEM;
++
+ 	dev->board_name = this_board->name;
+ 
+ 	if (request_irq(pcidev->irq, dt3k_interrupt, IRQF_SHARED,
+-- 
+1.7.11
+

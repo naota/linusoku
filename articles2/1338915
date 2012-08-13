@@ -1,0 +1,129 @@
+Path: news.gmane.org!not-for-mail
+From: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.kvm.devel
+Subject: [PATCH v5 08/12] KVM: introduce KVM_HVA_ERR_BAD
+Date: Tue, 07 Aug 2012 17:52:52 +0800
+Lines: 68
+Approved: news@gmane.org
+Message-ID: <5020E574.3000502@linux.vnet.ibm.com>
+References: <5020E423.9080004@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344333194 12050 80.91.229.3 (7 Aug 2012 09:53:14 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 09:53:14 +0000 (UTC)
+Cc: Avi Kivity <avi@redhat.com>, Marcelo Tosatti <mtosatti@redhat.com>,
+	LKML <linux-kernel@vger.kernel.org>, KVM <kvm@vger.kernel.org>
+To: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 11:53:13 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SygTQ-0002U2-Ug
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 11:53:13 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754089Ab2HGJxD (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 05:53:03 -0400
+Original-Received: from e28smtp09.in.ibm.com ([122.248.162.9]:52794 "EHLO
+	e28smtp09.in.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751690Ab2HGJxB (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 05:53:01 -0400
+Original-Received: from /spool/local
+	by e28smtp09.in.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <xiaoguangrong@linux.vnet.ibm.com>;
+	Tue, 7 Aug 2012 15:22:58 +0530
+Original-Received: from d28relay01.in.ibm.com (9.184.220.58)
+	by e28smtp09.in.ibm.com (192.168.1.139) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Tue, 7 Aug 2012 15:22:56 +0530
+Original-Received: from d28av03.in.ibm.com (d28av03.in.ibm.com [9.184.220.65])
+	by d28relay01.in.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q779qtVR24838390;
+	Tue, 7 Aug 2012 15:22:55 +0530
+Original-Received: from d28av03.in.ibm.com (loopback [127.0.0.1])
+	by d28av03.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q779qsTw018743;
+	Tue, 7 Aug 2012 19:52:55 +1000
+Original-Received: from localhost.localdomain ([9.123.236.99])
+	by d28av03.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q779qqnJ018655;
+	Tue, 7 Aug 2012 19:52:53 +1000
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:14.0) Gecko/20120717 Thunderbird/14.0
+In-Reply-To: <5020E423.9080004@linux.vnet.ibm.com>
+x-cbid: 12080709-2674-0000-0000-00000583EA8C
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338915 gmane.comp.emulators.kvm.devel:95666
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338915>
+
+Then, remove bad_hva and inline kvm_is_error_hva
+
+Signed-off-by: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+---
+ include/linux/kvm_host.h |    8 +++++++-
+ virt/kvm/kvm_main.c      |   13 +------------
+ 2 files changed, 8 insertions(+), 13 deletions(-)
+
+diff --git a/include/linux/kvm_host.h b/include/linux/kvm_host.h
+index 8306f24..7737e45 100644
+--- a/include/linux/kvm_host.h
++++ b/include/linux/kvm_host.h
+@@ -77,6 +77,13 @@ static inline bool is_invalid_pfn(pfn_t pfn)
+ 	return !is_noslot_pfn(pfn) && is_error_pfn(pfn);
+ }
+
++#define KVM_HVA_ERR_BAD	(PAGE_OFFSET)
++
++static inline bool kvm_is_error_hva(unsigned long addr)
++{
++	return addr == PAGE_OFFSET;
++}
++
+ #define KVM_ERR_PTR_BAD_PAGE	(ERR_PTR(-ENOENT))
+
+ static inline bool is_error_page(struct page *page)
+@@ -425,7 +432,6 @@ id_to_memslot(struct kvm_memslots *slots, int id)
+ 	return slot;
+ }
+
+-int kvm_is_error_hva(unsigned long addr);
+ int kvm_set_memory_region(struct kvm *kvm,
+ 			  struct kvm_userspace_memory_region *mem,
+ 			  int user_alloc);
+diff --git a/virt/kvm/kvm_main.c b/virt/kvm/kvm_main.c
+index bf6dede..1bd83a6 100644
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -931,17 +931,6 @@ void kvm_disable_largepages(void)
+ }
+ EXPORT_SYMBOL_GPL(kvm_disable_largepages);
+
+-static inline unsigned long bad_hva(void)
+-{
+-	return PAGE_OFFSET;
+-}
+-
+-int kvm_is_error_hva(unsigned long addr)
+-{
+-	return addr == bad_hva();
+-}
+-EXPORT_SYMBOL_GPL(kvm_is_error_hva);
+-
+ struct kvm_memory_slot *gfn_to_memslot(struct kvm *kvm, gfn_t gfn)
+ {
+ 	return __gfn_to_memslot(kvm_memslots(kvm), gfn);
+@@ -988,7 +977,7 @@ static unsigned long gfn_to_hva_many(struct kvm_memory_slot *slot, gfn_t gfn,
+ 				     gfn_t *nr_pages)
+ {
+ 	if (!slot || slot->flags & KVM_MEMSLOT_INVALID)
+-		return bad_hva();
++		return KVM_HVA_ERR_BAD;
+
+ 	if (nr_pages)
+ 		*nr_pages = slot->npages - (gfn - slot->base_gfn);
+-- 
+1.7.7.6
+

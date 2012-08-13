@@ -1,0 +1,271 @@
+Path: news.gmane.org!not-for-mail
+From: Eric Sandeen <sandeen@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: Stack overrun in 3.5.0-rc7 w/ cfq
+Date: Fri, 20 Jul 2012 10:20:56 -0500
+Lines: 219
+Approved: news@gmane.org
+Message-ID: <50097758.3040803@redhat.com>
+References: <5008C388.2020803@redhat.com> <x49vchimsp1.fsf@segfault.boston.devel.redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342797689 2547 80.91.229.3 (20 Jul 2012 15:21:29 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 15:21:29 +0000 (UTC)
+Cc: kernel list <linux-kernel@vger.kernel.org>
+To: Jeff Moyer <jmoyer@redhat.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 17:21:27 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsF1A-0000ET-Nt
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 17:21:25 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753079Ab2GTPVG (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 11:21:06 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:35063 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752386Ab2GTPVB (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 11:21:01 -0400
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6KFL0Cj010571
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK)
+	for <linux-kernel@vger.kernel.org>; Fri, 20 Jul 2012 11:21:01 -0400
+Original-Received: from liberator.sandeen.net (ovpn01.gateway.prod.ext.phx2.redhat.com [10.5.9.1])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6KFKuKm028289
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-CAMELLIA256-SHA bits=256 verify=NO);
+	Fri, 20 Jul 2012 11:21:00 -0400
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.6; rv:13.0) Gecko/20120614 Thunderbird/13.0.1
+In-Reply-To: <x49vchimsp1.fsf@segfault.boston.devel.redhat.com>
+X-Enigmail-Version: 1.4.3
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330914
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330914>
+
+On 7/20/12 9:07 AM, Jeff Moyer wrote:
+> Eric Sandeen <sandeen@redhat.com> writes:
+> 
+>> I got this oops & stack overrun warning while running mkfs.ext4 on a sparse 4T file hosted on xfs.
+>>
+>> Should CFQ be issuing IO here?
+> 
+> Yes.  The on-stack plugging gets flushed when a process is scheduled
+> out.  Seriously, Eric, all of that xfs stuff in the stack trace, and you
+> want to pick on cfq!?!  For shame!
+
+;) I had to get your attention ;)  And Dave put me up to it.
+
+> Am I reading that wrong, or is there no separate IRQ stack?  Or did
+> taking the IRQ cause the stack overrun?
+
+Um, I'm not sure.  I think Dave's point was whether it should be issuing IO
+from the schedule, related to this?
+
+/*
+ * If 'from_schedule' is true, then postpone the dispatch of requests
+ * until a safe kblockd context. We due this to avoid accidental big
+ * additional stack usage in driver dispatch, in places where the originally
+ * plugger did not intend it.
+ */
+static void queue_unplugged(struct request_queue *q, unsigned int depth,
+                            bool from_schedule)
+
+
+FWIW, here's a better trace of how deep XFS itself went on that callchain, about 5k:
+
+[root@inode ~]# cat /sys/kernel/debug/tracing/stack_trace
+        Depth    Size   Location    (56 entries)
+        -----    ----   --------
+  0)     6920      16   rcu_read_lock_held+0x9/0x50
+  1)     6904      64   __module_address+0x105/0x110
+  2)     6840      32   __module_text_address+0x16/0x70
+  3)     6808      32   is_module_text_address+0x27/0x40
+  4)     6776      32   __kernel_text_address+0x58/0x80
+  5)     6744     112   print_context_stack+0x81/0x140
+  6)     6632     144   dump_trace+0x17f/0x300
+  7)     6488      32   save_stack_trace+0x2f/0x50
+  8)     6456      64   set_track+0x67/0x100
+  9)     6392      48   alloc_debug_processing+0x170/0x180
+ 10)     6344     240   __slab_alloc+0x153/0x6f0
+ 11)     6104      80   kmem_cache_alloc+0x212/0x220
+ 12)     6024      16   mempool_alloc_slab+0x15/0x20
+ 13)     6008     144   mempool_alloc+0x60/0x180
+ 14)     5864     128   get_request+0x251/0x660
+ 15)     5736     192   get_request_wait+0x2c/0x330
+ 16)     5544      96   blk_queue_bio+0x105/0x430
+ 17)     5448      48   generic_make_request+0xca/0x100
+ 18)     5400     112   submit_bio+0x85/0x110
+ 19)     5288     112   _xfs_buf_ioapply+0x170/0x1e0 [xfs]
+ 20)     5176      48   xfs_buf_iorequest+0x4d/0x110 [xfs]
+ 21)     5128      32   _xfs_buf_read+0x31/0x50 [xfs]
+ 22)     5096      48   xfs_buf_read+0x113/0x170 [xfs]
+ 23)     5048      96   xfs_trans_read_buf+0x325/0x610 [xfs]
+ 24)     4952      96   xfs_btree_read_buf_block+0x5e/0xd0 [xfs]
+ 25)     4856      96   xfs_btree_lookup_get_block+0x81/0xf0 [xfs]
+ 26)     4760     176   xfs_btree_lookup+0xbf/0x470 [xfs]
+ 27)     4584      16   xfs_alloc_lookup_ge+0x1c/0x20 [xfs]
+ 28)     4568     240   xfs_alloc_ag_vextent_near+0x98/0xe10 [xfs]
+ 29)     4328      32   xfs_alloc_ag_vextent+0xd5/0x100 [xfs]
+ 30)     4296     112   __xfs_alloc_vextent+0x57a/0x7b0 [xfs]
+ 31)     4184     272   xfs_alloc_vextent+0x198/0x1a0 [xfs]
+ 32)     3912     256   xfs_bmbt_alloc_block+0xdb/0x210 [xfs]
+ 33)     3656     240   xfs_btree_split+0xbd/0x710 [xfs]
+ 34)     3416      96   xfs_btree_make_block_unfull+0x12d/0x190 [xfs]
+ 35)     3320     224   xfs_btree_insrec+0x3ef/0x5a0 [xfs]
+ 36)     3096     144   xfs_btree_insert+0x6d/0x190 [xfs]
+ 37)     2952     256   xfs_bmap_add_extent_delay_real+0xf56/0x1cf0 [xfs]
+ 38)     2696      80   xfs_bmapi_allocate+0x238/0x2d0 [xfs]
+ 39)     2616     336   xfs_bmapi_write+0x521/0x790 [xfs]
+ 40)     2280     192   xfs_iomap_write_allocate+0x13d/0x370 [xfs]
+ 41)     2088     112   xfs_map_blocks+0x299/0x310 [xfs]
+ 42)     1976     208   xfs_vm_writepage+0x197/0x5c0 [xfs]
+ 43)     1768      32   __writepage+0x1a/0x50
+ 44)     1736     336   write_cache_pages+0x206/0x5f0
+ 45)     1400      96   generic_writepages+0x54/0x80
+ 46)     1304      48   xfs_vm_writepages+0x5c/0x80 [xfs]
+ 47)     1256      16   do_writepages+0x23/0x40
+ 48)     1240      80   __writeback_single_inode+0x46/0x1e0
+ 49)     1160     192   writeback_sb_inodes+0x27d/0x500
+ 50)      968      80   __writeback_inodes_wb+0x9e/0xd0
+ 51)      888     192   wb_writeback+0x2db/0x5c0
+ 52)      696     176   wb_do_writeback+0x130/0x300
+ 53)      520     160   bdi_writeback_thread+0xc3/0x410
+ 54)      360     176   kthread+0xc6/0xd0
+ 55)      184     184   kernel_thread_helper+0x4/0x10
+
+
+> Cheers,
+> Jeff
+> 
+>>
+>> -Eric
+>>
+>> [10821.639839] BUG: unable to handle kernel paging request at fffffffb900148a0
+>> [10821.640820] IP: [<ffffffff810a0a04>] cpuacct_charge+0xb4/0x210
+>> [10821.640820] PGD 1c0d067 PUD 0 
+>> [10821.640820] Thread overran stack, or stack corrupted
+>> [10821.640820] Oops: 0000 [#1] SMP 
+>> [10821.640820] CPU 1 
+>> [10821.640820] Modules linked in:[10821.640820]  xfs sunrpc ip6table_filter ip6_tables binfmt_misc vhost_net macvtap macvlan tun iTCO_wdt iTCO_vendor_support dcdbas microcode i2c_i801 lpc_ich mfd_core tg3 shpchp i3000_edac edac_core ext3 jbd mbcache ata_generic pata_acpi pata_sil680 radeon ttm drm_kms_helper drm i2c_algo_bit i2c_core [last unloaded: scsi_wait_scan]
+>>
+>> [10821.640820] Pid: 2914, comm: flush-8:16 Not tainted 3.5.0-rc7+ #65 Dell Computer Corporation PowerEdge 860/0RH817
+>> [10821.640820] RIP: 0010:[<ffffffff810a0a04>]  [<ffffffff810a0a04>] cpuacct_charge+0xb4/0x210
+>> [10821.640820] RSP: 0018:ffff88007d003d58  EFLAGS: 00010082
+>> [10821.640820] RAX: 00000000001d6fe8 RBX: 00000000000b67c5 RCX: 0000000000000003
+>> [10821.640820] RDX: 0000000000000001 RSI: ffffffff81c2fae0 RDI: 0000000000000046
+>> [10821.640820] RBP: ffff88007d003d88 R08: 0000000000000003 R09: 0000000000000001
+>> [10821.640820] R10: 0000000000000001 R11: 0000000000000004 R12: ffff88007b8d0000
+>> [10821.640820] R13: ffffffff81c60ee0 R14: ffffffff820f7d40 R15: 00000153b050614b
+>> [10821.640820] FS:  0000000000000000(0000) GS:ffff88007d000000(0000) knlGS:0000000000000000
+>> [10821.640820] CS:  0010 DS: 0000 ES: 0000 CR0: 000000008005003b
+>> [10821.640820] CR2: fffffffb900148a0 CR3: 000000007a3ab000 CR4: 00000000000007e0
+>> [10821.640820] DR0: 0000000000000000 DR1: 0000000000000000 DR2: 0000000000000000
+>> [10821.640820] DR3: 0000000000000000 DR6: 00000000ffff0ff0 DR7: 0000000000000400
+>> [10821.640820] Process flush-8:16 (pid: 2914, threadinfo ffff88007981a000, task ffff88007b8d0000)
+>> [10821.640820] Stack:
+>> [10821.640820]  ffffffff810a0978 000000001dcd6500 ffff88007d1d42b8 00000000000b67c5
+>> [10821.640820]  ffff88007b8d0048 ffff88007b8d0000 ffff88007d003dc8 ffffffff810a82ef
+>> [10821.640820]  ffffffff81810920 ffff88007d1d42b8 ffff88007b8d0048 0000000000000000
+>> [10821.640820] Call Trace:
+>> [10821.640820]  <IRQ> 
+>> [10821.640820]  [<ffffffff810a0978>] ? cpuacct_charge+0x28/0x210
+>> [10821.640820]  [<ffffffff810a82ef>] update_curr+0x13f/0x220
+>> [10821.640820]  [<ffffffff810a86cd>] task_tick_fair+0xbd/0x140
+>> [10821.640820]  [<ffffffff8109d0ae>] scheduler_tick+0xde/0x150
+>> [10821.640820]  [<ffffffff8107477e>] update_process_times+0x6e/0x90
+>> [10821.640820]  [<ffffffff810c8606>] tick_sched_timer+0x66/0xc0
+>> [10821.640820]  [<ffffffff81092a83>] __run_hrtimer+0x83/0x320
+>> [10821.640820]  [<ffffffff810c85a0>] ? tick_nohz_handler+0x100/0x100
+>> [10821.640820]  [<ffffffff81092fc6>] hrtimer_interrupt+0x106/0x280
+>> [10821.640820]  [<ffffffff810a67e5>] ? sched_clock_local+0x25/0x90
+>> [10821.640820]  [<ffffffff81652129>] smp_apic_timer_interrupt+0x69/0x99
+>> [10821.640820]  [<ffffffff81650daf>] apic_timer_interrupt+0x6f/0x80
+>> [10821.640820]  <EOI> 
+>> [10821.640820]  [<ffffffff81647274>] ? _raw_spin_unlock_irq+0x34/0x50
+>> [10821.640820]  [<ffffffff813e5f78>] scsi_request_fn+0xc8/0x5b0
+>> [10821.640820]  [<ffffffff812a69ae>] __blk_run_queue+0x1e/0x20
+>> [10821.640820]  [<ffffffff812cb798>] cfq_insert_request+0x398/0x720
+>> [10821.640820]  [<ffffffff812cb44c>] ? cfq_insert_request+0x4c/0x720
+>> [10821.640820]  [<ffffffff812b2dc1>] ? attempt_merge+0x21/0x520
+>> [10821.640820]  [<ffffffff81650016>] ? ftrace_call+0x5/0x2b
+>> [10821.640820]  [<ffffffff812a6130>] __elv_add_request+0x220/0x2e0
+>> [10821.640820]  [<ffffffff812ad914>] blk_flush_plug_list+0x1a4/0x260
+>> [10821.640820]  [<ffffffff816456a0>] schedule+0x50/0x70
+>> [10821.640820]  [<ffffffff81643325>] schedule_timeout+0x315/0x410
+>> [10821.640820]  [<ffffffff810cefcd>] ? mark_held_locks+0x8d/0x140
+>> [10821.640820]  [<ffffffff81647270>] ? _raw_spin_unlock_irq+0x30/0x50
+>> [10821.640820]  [<ffffffff810cf335>] ? trace_hardirqs_on_caller+0x105/0x190
+>> [10821.640820]  [<ffffffff8164551b>] wait_for_common+0x12b/0x180
+>> [10821.640820]  [<ffffffff810a6070>] ? try_to_wake_up+0x2e0/0x2e0
+>> [10821.640820]  [<ffffffff81650016>] ? ftrace_call+0x5/0x2b
+>> [10821.640820]  [<ffffffffa02e8561>] ? _xfs_buf_read+0x41/0x50 [xfs]
+>> [10821.640820]  [<ffffffffa034d1d5>] ? xfs_trans_read_buf+0x325/0x610 [xfs]
+>> [10821.640820]  [<ffffffff8164564d>] wait_for_completion+0x1d/0x20
+>> [10821.640820]  [<ffffffffa02e63e5>] xfs_buf_iowait+0xc5/0x1b0 [xfs]
+>> [10821.640820]  [<ffffffffa02e8561>] _xfs_buf_read+0x41/0x50 [xfs]
+>> [10821.640820]  [<ffffffffa02e8683>] xfs_buf_read+0x113/0x170 [xfs]
+>> [10821.640820]  [<ffffffffa034d1d5>] xfs_trans_read_buf+0x325/0x610 [xfs]
+>> [10821.640820]  [<ffffffffa031d3be>] xfs_btree_read_buf_block+0x5e/0xd0 [xfs]
+>> [10821.640820]  [<ffffffff81650016>] ? ftrace_call+0x5/0x2b
+>> [10821.640820]  [<ffffffffa031dac1>] xfs_btree_lookup_get_block+0x81/0xf0 [xfs]
+>> [10821.640820]  [<ffffffffa031b72c>] ? xfs_btree_ptr_offset+0x4c/0x90 [xfs]
+>> [10821.640820]  [<ffffffffa031e14f>] xfs_btree_lookup+0xbf/0x470 [xfs]
+>> [10821.640820]  [<ffffffff81650016>] ? ftrace_call+0x5/0x2b
+>> [10821.640820]  [<ffffffffa0301cd9>] xfs_alloc_lookup_eq+0x19/0x20 [xfs]
+>> [10821.640820]  [<ffffffffa0301fb9>] xfs_alloc_fixup_trees+0x269/0x340 [xfs]
+>> [10821.640820]  [<ffffffffa0304152>] xfs_alloc_ag_vextent_near+0x852/0xe10 [xfs]
+>> [10821.640820]  [<ffffffffa0305345>] xfs_alloc_ag_vextent+0xd5/0x100 [xfs]
+>> [10821.640820]  [<ffffffffa0305eda>] __xfs_alloc_vextent+0x57a/0x7b0 [xfs]
+>> [10821.640820]  [<ffffffff810cc7b9>] ? lockdep_init_map+0x59/0x150
+>> [10821.640820]  [<ffffffffa03062a8>] xfs_alloc_vextent+0x198/0x1a0 [xfs]
+>> [10821.640820]  [<ffffffffa031b29b>] xfs_bmbt_alloc_block+0xdb/0x210 [xfs]
+>> [10821.640820]  [<ffffffffa032033d>] xfs_btree_split+0xbd/0x710 [xfs]
+>> [10821.640820]  [<ffffffff81650016>] ? ftrace_call+0x5/0x2b
+>> [10821.640820]  [<ffffffffa0320ebd>] xfs_btree_make_block_unfull+0x12d/0x190 [xfs]
+>> [10821.640820]  [<ffffffffa032130f>] xfs_btree_insrec+0x3ef/0x5a0 [xfs]
+>> [10821.640820]  [<ffffffff81650016>] ? ftrace_call+0x5/0x2b
+>> [10821.640820]  [<ffffffffa032152d>] xfs_btree_insert+0x6d/0x190 [xfs]
+>> [10821.640820]  [<ffffffffa03166db>] xfs_bmap_add_extent_delay_real+0x72b/0x1cf0 [xfs]
+>> [10821.640820]  [<ffffffff811a85c3>] ? kmem_cache_alloc+0x113/0x220
+>> [10821.640820]  [<ffffffffa0317ed8>] xfs_bmapi_allocate+0x238/0x2d0 [xfs]
+>> [10821.640820]  [<ffffffff81650016>] ? ftrace_call+0x5/0x2b
+>> [10821.640820]  [<ffffffffa031a801>] xfs_bmapi_write+0x521/0x790 [xfs]
+>> [10821.640820]  [<ffffffffa02f390d>] xfs_iomap_write_allocate+0x13d/0x370 [xfs]
+>> [10821.640820]  [<ffffffffa02e48d9>] xfs_map_blocks+0x299/0x310 [xfs]
+>> [10821.640820]  [<ffffffffa02e5277>] xfs_vm_writepage+0x197/0x5c0 [xfs]
+>> [10821.640820]  [<ffffffff8115da0a>] __writepage+0x1a/0x50
+>> [10821.640820]  [<ffffffff8115fc46>] write_cache_pages+0x206/0x5f0
+>> [10821.640820]  [<ffffffff8115d9f0>] ? bdi_position_ratio+0x130/0x130
+>> [10821.640820]  [<ffffffff81160084>] generic_writepages+0x54/0x80
+>> [10821.640820]  [<ffffffffa02e45fc>] xfs_vm_writepages+0x5c/0x80 [xfs]
+>> [10821.640820]  [<ffffffff811600d3>] do_writepages+0x23/0x40
+>> [10821.640820]  [<ffffffff811ecd16>] __writeback_single_inode+0x46/0x1e0
+>> [10821.640820]  [<ffffffff811ef82d>] writeback_sb_inodes+0x27d/0x500
+>> [10821.640820]  [<ffffffff8164733b>] ? _raw_spin_unlock+0x2b/0x50
+>> [10821.640820]  [<ffffffff811efb4e>] __writeback_inodes_wb+0x9e/0xd0
+>> [10821.640820]  [<ffffffff811efefb>] wb_writeback+0x2db/0x5c0
+>> [10821.640820]  [<ffffffff81650016>] ? ftrace_call+0x5/0x2b
+>> [10821.640820]  [<ffffffff811f0310>] wb_do_writeback+0x130/0x300
+>> [10821.640820]  [<ffffffff811f05a3>] bdi_writeback_thread+0xc3/0x410
+>> [10821.640820]  [<ffffffff811f04e0>] ? wb_do_writeback+0x300/0x300
+>> [10821.640820]  [<ffffffff811f04e0>] ? wb_do_writeback+0x300/0x300
+>> [10821.640820]  [<ffffffff8108d496>] kthread+0xc6/0xd0
+>> [10821.640820]  [<ffffffff816516b4>] kernel_thread_helper+0x4/0x10
+>> [10821.640820]  [<ffffffff81647570>] ? retint_restore_args+0x13/0x13
+>> [10821.640820]  [<ffffffff8108d3d0>] ? __init_kthread_worker+0x70/0x70
+>> [10821.640820]  [<ffffffff816516b0>] ? gs_change+0x13/0x13
+>> --
+>> To unsubscribe from this list: send the line "unsubscribe linux-kernel" in
+>> the body of a message to majordomo@vger.kernel.org
+>> More majordomo info at  http://vger.kernel.org/majordomo-info.html
+>> Please read the FAQ at  http://www.tux.org/lkml/
+
+

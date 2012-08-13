@@ -1,0 +1,190 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 31/40] mm: vmscan: check if reclaim should really abort even if compaction_ready() is true for one zone
+Date: Thu, 26 Jul 2012 14:29:49 -0700
+Lines: 120
+Approved: news@gmane.org
+Message-ID: <20120726211413.939220739@linuxfoundation.org>
+References: <20120726211424.GA7709@kroah.com>
+ <20120726211411.164006056@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343338375 10814 80.91.229.3 (26 Jul 2012 21:32:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 21:32:55 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Mel Gorman <mgorman@suse.de>,
+	Rik van Riel <riel@redhat.com>,
+	Andrea Arcangeli <aarcange@redhat.com>,
+	Minchan Kim <minchan.kim@gmail.com>,
+	Dave Jones <davej@redhat.com>, Jan Kara <jack@suse.cz>,
+	Andy Isaacson <adi@hexapodia.org>, Nai Xia <nai.xia@gmail.com>,
+	Johannes Weiner <jweiner@redhat.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 23:32:48 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuVfo-0006sC-Lr
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 23:32:45 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753680Ab2GZVbx (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 17:31:53 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:62132 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753597Ab2GZVbj (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 17:31:39 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so3820546pbb.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 14:31:39 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=osW7BVKS5xXuzpHWWO1kRbbOhjES4EJSC1cWWiZ3DnA=;
+        b=fIkHyPN0It8l17jfdo5aEpeXaZkedEhgbZk9lP3V6RNGpreYj0zitGFOdm5/q16uvp
+         rgv1zynXZRAIieL4sUIriYqz4A69AfwOmk+oP4CtLnxdC22iZM7yVCQQ2n39/KevW/8p
+         qRP3095aEfEuj4YU5uCUhbpSJkXYSuXycwNb/YV+xbkzOIb5Cdqa0BQQk002WCofiaZL
+         4zIppiY0PlwT/ZnlJ9W/H36N2dEAIqmXfTcgws3EsP6oDvzMFH6YcCjUag65a3QRBO2I
+         3C8IjUk6Zxw2rkd+eUGG2dOQJsuHQws6P7NCEUZGwSuWwjgkXOjzhy1lKdI9CrdiqChB
+         uFHQ==
+Original-Received: by 10.68.217.233 with SMTP id pb9mr8022869pbc.121.1343338298931;
+        Thu, 26 Jul 2012 14:31:38 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id pq5sm436360pbb.30.2012.07.26.14.31.36
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 14:31:38 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120726211411.164006056@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQmv4GPMs366I1atGspbN2Uijs771C9Ua8nV3nZyfGSByQKi4nnj8Fkd+VAMhSPlcPphSs63
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333942 gmane.linux.kernel.stable:28880
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333942>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Mel Gorman <mgorman@suse.de>
+
+commit 0cee34fd72c582b4f8ad8ce00645b75fb4168199 upstream.
+
+Stable note: Not tracked on Bugzilla. THP and compaction was found to
+	aggressively reclaim pages and stall systems under different
+	situations that was addressed piecemeal over time.
+
+If compaction can proceed for a given zone, shrink_zones() does not
+reclaim any more pages from it.  After commit [e0c2327: vmscan: abort
+reclaim/compaction if compaction can proceed], do_try_to_free_pages()
+tries to finish as soon as possible once one zone can compact.
+
+This was intended to prevent slabs being shrunk unnecessarily but there
+are side-effects.  One is that a small zone that is ready for compaction
+will abort reclaim even if the chances of successfully allocating a THP
+from that zone is small.  It also means that reclaim can return too early
+even though sc->nr_to_reclaim pages were not reclaimed.
+
+This partially reverts the commit until it is proven that slabs are really
+being shrunk unnecessarily but preserves the check to return 1 to avoid
+OOM if reclaim was aborted prematurely.
+
+[aarcange@redhat.com: This patch replaces a revert from Andrea]
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Reviewed-by: Rik van Riel <riel@redhat.com>
+Cc: Andrea Arcangeli <aarcange@redhat.com>
+Cc: Minchan Kim <minchan.kim@gmail.com>
+Cc: Dave Jones <davej@redhat.com>
+Cc: Jan Kara <jack@suse.cz>
+Cc: Andy Isaacson <adi@hexapodia.org>
+Cc: Nai Xia <nai.xia@gmail.com>
+Cc: Johannes Weiner <jweiner@redhat.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ mm/vmscan.c |   19 +++++++++----------
+ 1 file changed, 9 insertions(+), 10 deletions(-)
+
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -2129,7 +2129,8 @@ static inline bool compaction_ready(stru
+  *
+  * This function returns true if a zone is being reclaimed for a costly
+  * high-order allocation and compaction is ready to begin. This indicates to
+- * the caller that it should retry the allocation or fail.
++ * the caller that it should consider retrying the allocation instead of
++ * further reclaim.
+  */
+ static bool shrink_zones(int priority, struct zonelist *zonelist,
+ 					struct scan_control *sc)
+@@ -2138,7 +2139,7 @@ static bool shrink_zones(int priority, s
+ 	struct zone *zone;
+ 	unsigned long nr_soft_reclaimed;
+ 	unsigned long nr_soft_scanned;
+-	bool should_abort_reclaim = false;
++	bool aborted_reclaim = false;
+ 
+ 	for_each_zone_zonelist_nodemask(zone, z, zonelist,
+ 					gfp_zone(sc->gfp_mask), sc->nodemask) {
+@@ -2164,7 +2165,7 @@ static bool shrink_zones(int priority, s
+ 				 * allocations.
+ 				 */
+ 				if (compaction_ready(zone, sc)) {
+-					should_abort_reclaim = true;
++					aborted_reclaim = true;
+ 					continue;
+ 				}
+ 			}
+@@ -2186,7 +2187,7 @@ static bool shrink_zones(int priority, s
+ 		shrink_zone(priority, zone, sc);
+ 	}
+ 
+-	return should_abort_reclaim;
++	return aborted_reclaim;
+ }
+ 
+ static bool zone_reclaimable(struct zone *zone)
+@@ -2240,7 +2241,7 @@ static unsigned long do_try_to_free_page
+ 	struct zoneref *z;
+ 	struct zone *zone;
+ 	unsigned long writeback_threshold;
+-	bool should_abort_reclaim;
++	bool aborted_reclaim;
+ 
+ 	get_mems_allowed();
+ 	delayacct_freepages_start();
+@@ -2252,9 +2253,7 @@ static unsigned long do_try_to_free_page
+ 		sc->nr_scanned = 0;
+ 		if (!priority)
+ 			disable_swap_token(sc->mem_cgroup);
+-		should_abort_reclaim = shrink_zones(priority, zonelist, sc);
+-		if (should_abort_reclaim)
+-			break;
++		aborted_reclaim = shrink_zones(priority, zonelist, sc);
+ 
+ 		/*
+ 		 * Don't shrink slabs when reclaiming memory from
+@@ -2320,8 +2319,8 @@ out:
+ 	if (oom_killer_disabled)
+ 		return 0;
+ 
+-	/* Aborting reclaim to try compaction? don't OOM, then */
+-	if (should_abort_reclaim)
++	/* Aborted reclaim to try compaction? don't OOM, then */
++	if (aborted_reclaim)
+ 		return 1;
+ 
+ 	/* top priority shrink_zones still had more to do? don't OOM, then */
+
+

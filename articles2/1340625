@@ -1,0 +1,89 @@
+Path: news.gmane.org!not-for-mail
+From: Shubhrajyoti D <shubhrajyoti@ti.com>
+Newsgroups: gmane.linux.kernel.input,gmane.linux.kernel
+Subject: [PATCH] Input: omap4-keypad: Fix the pm_runtime_get_sync return check
+Date: Thu, 9 Aug 2012 16:41:30 +0530
+Lines: 36
+Approved: news@gmane.org
+Message-ID: <1344510690-13030-1-git-send-email-shubhrajyoti@ti.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1344510704 12588 80.91.229.3 (9 Aug 2012 11:11:44 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 11:11:44 +0000 (UTC)
+Cc: <linux-kernel@vger.kernel.org>,
+	Shubhrajyoti D <shubhrajyoti@ti.com>
+To: <linux-input@vger.kernel.org>
+Original-X-From: linux-input-owner@vger.kernel.org Thu Aug 09 13:11:44 2012
+Return-path: <linux-input-owner@vger.kernel.org>
+Envelope-to: glki-linux-input-2@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-input-owner@vger.kernel.org>)
+	id 1SzQeQ-0000aN-TY
+	for glki-linux-input-2@plane.gmane.org; Thu, 09 Aug 2012 13:11:39 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757973Ab2HILLh (ORCPT <rfc822;glki-linux-input-2@m.gmane.org>);
+	Thu, 9 Aug 2012 07:11:37 -0400
+Original-Received: from bear.ext.ti.com ([192.94.94.41]:60693 "EHLO bear.ext.ti.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1757922Ab2HILLg (ORCPT <rfc822;linux-input@vger.kernel.org>);
+	Thu, 9 Aug 2012 07:11:36 -0400
+Original-Received: from dbdp20.itg.ti.com ([172.24.170.38])
+	by bear.ext.ti.com (8.13.7/8.13.7) with ESMTP id q79BBY6B024234;
+	Thu, 9 Aug 2012 06:11:35 -0500
+Original-Received: from DBDE71.ent.ti.com (localhost [127.0.0.1])
+	by dbdp20.itg.ti.com (8.13.8/8.13.8) with ESMTP id q79BBXtY013775;
+	Thu, 9 Aug 2012 16:41:33 +0530 (IST)
+Original-Received: from dbdp33.itg.ti.com (172.24.170.252) by DBDE71.ent.ti.com
+ (172.24.170.149) with Microsoft SMTP Server id 14.1.323.3; Thu, 9 Aug 2012
+ 16:41:33 +0530
+Original-Received: from ula0393217.india.ti.com (smtpvbd.itg.ti.com [172.24.170.250])
+	by dbdp33.itg.ti.com (8.13.8/8.13.8) with ESMTP id q79BBWeN007686;	Thu, 9 Aug
+ 2012 16:41:33 +0530
+X-Mailer: git-send-email 1.7.5.4
+Original-Sender: linux-input-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-input.vger.kernel.org>
+X-Mailing-List: linux-input@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel.input:26253 gmane.linux.kernel:1340625
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340625>
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340625>
+
+A non-zero on pm_runtime_get_sync shouldnt be considered as an error
+it only means that there was another user. Fix the error check to check
+for negative values only.
+
+This should fix issues like below
+[  917.049713] omap4-keypad omap4-keypad: pm_runtime_get_sync() failed
+[  917.056457] omap4-keypad: probe of omap4-keypad failed with error 1
+
+Signed-off-by: Shubhrajyoti D <shubhrajyoti@ti.com>
+---
+ drivers/input/keyboard/omap4-keypad.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/input/keyboard/omap4-keypad.c b/drivers/input/keyboard/omap4-keypad.c
+index 17efede..34cddaf 100644
+--- a/drivers/input/keyboard/omap4-keypad.c
++++ b/drivers/input/keyboard/omap4-keypad.c
+@@ -305,8 +305,8 @@ static int __devinit omap4_keypad_probe(struct platform_device *pdev)
+ 	 */
+ 	pm_runtime_enable(&pdev->dev);
+ 	error = pm_runtime_get_sync(&pdev->dev);
+-	if (error) {
+-		dev_err(&pdev->dev, "pm_runtime_get_sync() failed\n");
++	if (IS_ERR_VALUE(error)) {
++		dev_err(&pdev->dev, "pm_runtime_get_sync() failed %d\n", error);
+ 		goto err_unmap;
+ 	}
+ 	rev = __raw_readl(keypad_data->base + OMAP4_KBD_REVISION);
+-- 
+1.7.5.4
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-input" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

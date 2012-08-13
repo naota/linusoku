@@ -1,0 +1,108 @@
+Path: news.gmane.org!not-for-mail
+From: Joerg Roedel <joro@8bytes.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.acpi.devel
+Subject: Re: [PATCH] irq_remap: disable IRQ remapping if any IOAPIC lacks an
+ IOMMU
+Date: Tue, 7 Aug 2012 23:04:08 +0200
+Lines: 48
+Approved: news@gmane.org
+Message-ID: <20120807210408.GK1917@8bytes.org>
+References: <20120807201030.GJ1917@8bytes.org>
+ <1344372489-14087-1-git-send-email-seth.forshee@canonical.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344373467 2733 80.91.229.3 (7 Aug 2012 21:04:27 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 21:04:27 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, linux-acpi@vger.kernel.org,
+	x86@kernel.org, Thomas Gleixner <tglx@linutronix.de>,
+	Ingo Molnar <mingo@redhat.com>,
+	"H. Peter Anvin" <hpa@zytor.com>, Len Brown <lenb@kernel.org>,
+	Joerg Roedel <joerg.roedel@amd.com>,
+	Suresh Siddha <suresh.b.siddha@intel.com>,
+	Yinghai Lu <yinghai@kernel.org>
+To: Seth Forshee <seth.forshee@canonical.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 23:04:24 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Syqwx-0003Xc-EU
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 23:04:23 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756510Ab2HGVEO (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 17:04:14 -0400
+Original-Received: from 8bytes.org ([85.214.48.195]:52547 "EHLO mail.8bytes.org"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754722Ab2HGVEM (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 17:04:12 -0400
+Original-Received: from localhost (localhost [127.0.0.1])
+	by mail.8bytes.org (Postfix) with SMTP id CC60A12B0A1
+	for <linux-kernel@vger.kernel.org>; Tue,  7 Aug 2012 23:04:10 +0200 (CEST)
+Original-Received: by mail.8bytes.org (Postfix, from userid 1000)
+	id 7D7AE12AF6E; Tue,  7 Aug 2012 23:04:08 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <1344372489-14087-1-git-send-email-seth.forshee@canonical.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-DSPAM-Result: Whitelisted
+X-DSPAM-Processed: Tue Aug  7 23:04:10 2012
+X-DSPAM-Confidence: 0.9995
+X-DSPAM-Probability: 0.0000
+X-DSPAM-Signature: 502182ca20421372317312
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339380 gmane.linux.acpi.devel:54805
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339380>
+
+On Tue, Aug 07, 2012 at 03:48:09PM -0500, Seth Forshee wrote:
+> The ACPI tables in the Macbook Air 5,1 define a single IOAPIC with id 2,
+> but the only remapping unit described in the DMAR table matches id 0.
+> Interrupt remapping fails as a result, and the kernel panics with the
+> message "timer doesn't work through Interrupt-remapped IO-APIC."
+> 
+> To fix this, check each IOAPIC for a corresponding IOMMU. If an IOMMU is
+> not found, do not allow IRQ remapping to be enabled.
+> 
+> Signed-off-by: Seth Forshee <seth.forshee@canonical.com>
+> ---
+>  drivers/iommu/intel_irq_remapping.c |   11 +++++++++++
+>  1 file changed, 11 insertions(+)
+> 
+> diff --git a/drivers/iommu/intel_irq_remapping.c b/drivers/iommu/intel_irq_remapping.c
+> index e0b18f3..ce2c0c6 100644
+> --- a/drivers/iommu/intel_irq_remapping.c
+> +++ b/drivers/iommu/intel_irq_remapping.c
+> @@ -526,6 +526,7 @@ static int __init intel_irq_remapping_supported(void)
+>  static int __init intel_enable_irq_remapping(void)
+>  {
+>  	struct dmar_drhd_unit *drhd;
+> +	int ioapic_idx;
+>  	int setup = 0;
+>  	int eim = 0;
+>  
+> @@ -534,6 +535,16 @@ static int __init intel_enable_irq_remapping(void)
+>  		return -1;
+>  	}
+>  
+> +	for (ioapic_idx = 0; ioapic_idx < nr_ioapics; ioapic_idx++) {
+> +		int ioapic_id = mpc_ioapic_id(ioapic_idx);
+> +		if (!map_ioapic_to_ir(ioapic_id)) {
+> +			pr_info("ioapic %d has no mapping iommu, "
+> +				"interrupt remapping will be disabled\n",
+> +				ioapic_id);
+> +			return -1;
+> +		}
+> +	}
+> +
+
+I would change this to pr_err() and add FW_BUG to make clear that this
+is an error caused by a firmware bug.
+
+
+	Joerg
+
+

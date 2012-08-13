@@ -1,0 +1,136 @@
+Path: news.gmane.org!not-for-mail
+From: "Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH, RFC 0/9] Introduce huge zero page
+Date: Thu,  9 Aug 2012 12:08:11 +0300
+Lines: 69
+Approved: news@gmane.org
+Message-ID: <1344503300-9507-1-git-send-email-kirill.shutemov@linux.intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344503326 13548 80.91.229.3 (9 Aug 2012 09:08:46 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 09:08:46 +0000 (UTC)
+Cc: Andi Kleen <ak@linux.intel.com>,
+	"H. Peter Anvin" <hpa@linux.intel.com>,
+	linux-kernel@vger.kernel.org,
+	"Kirill A. Shutemov" <kirill@shutemov.name>,
+	"Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+To: Andrew Morton <akpm@linux-foundation.org>,
+	Andrea Arcangeli <aarcange@redhat.com>,
+	linux-mm@kvack.org
+Original-X-From: owner-linux-mm@kvack.org Thu Aug 09 11:08:45 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SzOjU-0000ds-R9
+	for glkm-linux-mm-2@m.gmane.org; Thu, 09 Aug 2012 11:08:45 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 25BBE6B0068; Thu,  9 Aug 2012 05:08:41 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id CDDE26B0071; Thu,  9 Aug 2012 05:08:40 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 2AD806B006E; Thu,  9 Aug 2012 05:08:40 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx157.postini.com [74.125.245.157])
+	by kanga.kvack.org (Postfix) with SMTP id 6B3076B005A
+	for <linux-mm@kvack.org>; Thu,  9 Aug 2012 05:08:39 -0400 (EDT)
+Original-Received: from mga01.intel.com ([192.55.52.88]) by na3sys010amx157.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 09 Aug 2012 09:08:39 GMT
+Original-Received: from fmsmga002.fm.intel.com ([10.253.24.26])
+  by fmsmga101.fm.intel.com with ESMTP; 09 Aug 2012 02:08:38 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.77,739,1336374000"; 
+   d="scan'208";a="205376417"
+Original-Received: from blue.fi.intel.com ([10.237.72.50])
+  by fmsmga002.fm.intel.com with ESMTP; 09 Aug 2012 02:08:34 -0700
+Original-Received: by blue.fi.intel.com (Postfix, from userid 1000)
+	id 8238DE0073; Thu,  9 Aug 2012 12:08:38 +0300 (EEST)
+X-Mailer: git-send-email 1.7.10.4
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:39.64365/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0005) s cv gt3 GT2 gt1 r p m c 
+X-pstn-addresses: from <kirill.shutemov@linux.intel.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83885 gmane.linux.kernel:1340568
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340568>
+
+From: "Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+
+During testing I noticed big (up to 2.5 times) memory consumption overhead
+on some workloads (e.g. ft.A from NPB) if THP is enabled.
+
+The main reason for that big difference is lacking zero page in THP case.
+We have to allocate a real page on read page fault.
+
+A program to demonstrate the issue:
+#include <assert.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#define MB 1024*1024
+
+int main(int argc, char **argv)
+{
+        char *p;
+        int i;
+
+        posix_memalign((void **)&p, 2 * MB, 200 * MB);
+        for (i = 0; i < 200 * MB; i+= 4096)
+                assert(p[i] == 0);
+        pause();
+        return 0;
+}
+
+With thp-never RSS is about 400k, but with thp-always it's 200M.
+After the patcheset thp-always RSS is 400k too.
+
+H. Peter Anvin proposed to use a "virtual huge zero page" -- a pmd table
+with all pte set to 4k zero page. I haven't tried that approach and I'm
+not sure if it's good idea (cache vs. tlb trashing). And I guess it will
+require more code to handle.
+For now, I just allocate 2M page and use it.
+
+Kirill A. Shutemov (9):
+  thp: huge zero page: basic preparation
+  thp: zap_huge_pmd(): zap huge zero pmd
+  thp: copy_huge_pmd(): copy huge zero page
+  thp: do_huge_pmd_wp_page(): handle huge zero page
+  thp: change_huge_pmd(): keep huge zero page write-protected
+  thp: add address parameter to split_huge_page_pmd()
+  thp: implement splitting pmd for huge zero page
+  thp: setup huge zero page on non-write page fault
+  thp: lazy huge zero page allocation
+
+ Documentation/vm/transhuge.txt |    4 +-
+ arch/x86/kernel/vm86_32.c      |    2 +-
+ fs/proc/task_mmu.c             |    2 +-
+ include/linux/huge_mm.h        |   10 +-
+ include/linux/mm.h             |    8 ++
+ mm/huge_memory.c               |  228 +++++++++++++++++++++++++++++++++++-----
+ mm/memory.c                    |   11 +--
+ mm/mempolicy.c                 |    2 +-
+ mm/mprotect.c                  |    2 +-
+ mm/mremap.c                    |    3 +-
+ mm/pagewalk.c                  |    2 +-
+ 11 files changed, 226 insertions(+), 48 deletions(-)
+
+-- 
+1.7.7.6
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

@@ -1,0 +1,92 @@
+Path: news.gmane.org!not-for-mail
+From: Dimitris Papastamos <dp@opensource.wolfsonmicro.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH v2] regmap: Don't lock in regmap_reinit_cache()
+Date: Fri, 27 Jul 2012 14:54:15 +0100
+Lines: 51
+Approved: news@gmane.org
+Message-ID: <1343397255-31163-1-git-send-email-dp@opensource.wolfsonmicro.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343397272 26023 80.91.229.3 (27 Jul 2012 13:54:32 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 13:54:32 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, patches@opensource.wolfsonmicro.com
+To: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 15:54:30 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sukzp-0007Jx-D4
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 15:54:25 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752177Ab2G0NyS (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 09:54:18 -0400
+Original-Received: from opensource.wolfsonmicro.com ([80.75.67.52]:43667 "EHLO
+	opensource.wolfsonmicro.com" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1751877Ab2G0NyR (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 09:54:17 -0400
+Original-Received: from localhost (195-144-086-057.dyn.adsl.xs4all.be [195.144.86.57])
+	by opensource.wolfsonmicro.com (Postfix) with ESMTPSA id BC1FA11041E;
+	Fri, 27 Jul 2012 14:54:15 +0100 (BST)
+X-Mailer: git-send-email 1.7.11.3
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334328
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334328>
+
+When bus->fast_io is set, the locking here is done with spinlocks.
+This is currently true for the regmap-mmio bus implementation.
+
+While holding a spinlock we can't go to sleep, various operations
+like removing the debugfs entries or re-initializing the cache will
+sleep, therefore, shift the locking up to the user.
+
+Signed-off-by: Dimitris Papastamos <dp@opensource.wolfsonmicro.com>
+---
+ V2, removed the change id that was automatically.
+
+ drivers/base/regmap/regmap.c | 13 ++++---------
+ 1 file changed, 4 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/base/regmap/regmap.c b/drivers/base/regmap/regmap.c
+index c241ae2..52069d2 100644
+--- a/drivers/base/regmap/regmap.c
++++ b/drivers/base/regmap/regmap.c
+@@ -659,13 +659,12 @@ EXPORT_SYMBOL_GPL(devm_regmap_init);
+  * new cache.  This can be used to restore the cache to defaults or to
+  * update the cache configuration to reflect runtime discovery of the
+  * hardware.
++ *
++ * No explicit locking is done here, the user needs to ensure that
++ * this function will not race with other calls to regmap.
+  */
+ int regmap_reinit_cache(struct regmap *map, const struct regmap_config *config)
+ {
+-	int ret;
+-
+-	map->lock(map);
+-
+ 	regcache_exit(map);
+ 	regmap_debugfs_exit(map);
+ 
+@@ -681,11 +680,7 @@ int regmap_reinit_cache(struct regmap *map, const struct regmap_config *config)
+ 	map->cache_bypass = false;
+ 	map->cache_only = false;
+ 
+-	ret = regcache_init(map, config);
+-
+-	map->unlock(map);
+-
+-	return ret;
++	return regcache_init(map, config);
+ }
+ EXPORT_SYMBOL_GPL(regmap_reinit_cache);
+ 
+-- 
+1.7.11.3
+

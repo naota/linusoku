@@ -1,0 +1,152 @@
+Path: news.gmane.org!not-for-mail
+From: "Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH, RFC 7/9] thp: implement splitting pmd for huge zero page
+Date: Thu,  9 Aug 2012 12:08:18 +0300
+Lines: 83
+Approved: news@gmane.org
+Message-ID: <1344503300-9507-8-git-send-email-kirill.shutemov@linux.intel.com>
+References: <1344503300-9507-1-git-send-email-kirill.shutemov@linux.intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344503336 13624 80.91.229.3 (9 Aug 2012 09:08:56 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 09:08:56 +0000 (UTC)
+Cc: Andi Kleen <ak@linux.intel.com>,
+	"H. Peter Anvin" <hpa@linux.intel.com>,
+	linux-kernel@vger.kernel.org,
+	"Kirill A. Shutemov" <kirill@shutemov.name>,
+	"Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+To: Andrew Morton <akpm@linux-foundation.org>,
+	Andrea Arcangeli <aarcange@redhat.com>,
+	linux-mm@kvack.org
+Original-X-From: owner-linux-mm@kvack.org Thu Aug 09 11:08:55 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SzOjc-0000sK-4S
+	for glkm-linux-mm-2@m.gmane.org; Thu, 09 Aug 2012 11:08:52 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 0C7EF6B0073; Thu,  9 Aug 2012 05:08:45 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 212516B007B; Thu,  9 Aug 2012 05:08:43 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id A898A6B0070; Thu,  9 Aug 2012 05:08:42 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx187.postini.com [74.125.245.187])
+	by kanga.kvack.org (Postfix) with SMTP id 0850E6B006E
+	for <linux-mm@kvack.org>; Thu,  9 Aug 2012 05:08:40 -0400 (EDT)
+Original-Received: from mga01.intel.com ([192.55.52.88]) by na3sys010amx187.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 09 Aug 2012 09:08:41 GMT
+Original-Received: from fmsmga001.fm.intel.com ([10.253.24.23])
+  by fmsmga101.fm.intel.com with ESMTP; 09 Aug 2012 02:08:40 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.77,739,1336374000"; 
+   d="scan'208";a="195262091"
+Original-Received: from blue.fi.intel.com ([10.237.72.50])
+  by fmsmga001.fm.intel.com with ESMTP; 09 Aug 2012 02:08:38 -0700
+Original-Received: by blue.fi.intel.com (Postfix, from userid 1000)
+	id 04972E008D; Thu,  9 Aug 2012 12:08:38 +0300 (EEST)
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1344503300-9507-1-git-send-email-kirill.shutemov@linux.intel.com>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:35.98566/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0005) s cv gt3 GT2 gt1 r p m c 
+X-pstn-addresses: from <kirill.shutemov@linux.intel.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83887 gmane.linux.kernel:1340570
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340570>
+
+From: "Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+
+We can't split huge zero page itself, but we can split the pmd which
+points to it.
+
+On splitting the pmd we create a table with all ptes set to normal zero
+page.
+
+Signed-off-by: Kirill A. Shutemov <kirill.shutemov@linux.intel.com>
+---
+ mm/huge_memory.c |   36 ++++++++++++++++++++++++++++++++++++
+ 1 files changed, 36 insertions(+), 0 deletions(-)
+
+diff --git a/mm/huge_memory.c b/mm/huge_memory.c
+index c8948d6..4df5841 100644
+--- a/mm/huge_memory.c
++++ b/mm/huge_memory.c
+@@ -1599,6 +1599,7 @@ int split_huge_page(struct page *page)
+ 	struct anon_vma *anon_vma;
+ 	int ret = 1;
+ 
++	BUG_ON(is_huge_zero_pfn(page_to_pfn(page)));
+ 	BUG_ON(!PageAnon(page));
+ 	anon_vma = page_lock_anon_vma(page);
+ 	if (!anon_vma)
+@@ -2503,6 +2504,36 @@ static int khugepaged(void *none)
+ 	return 0;
+ }
+ 
++static void __split_huge_zero_page_pmd(struct mm_struct *mm, pmd_t *pmd,
++		unsigned long address)
++{
++	pgtable_t pgtable;
++	pmd_t _pmd;
++	unsigned long haddr = address & HPAGE_PMD_MASK;
++	struct vm_area_struct *vma;
++	int i;
++
++	vma = find_vma(mm, address);
++	VM_BUG_ON(vma == NULL);
++	pmdp_clear_flush_notify(vma, haddr, pmd);
++	/* leave pmd empty until pte is filled */
++
++	pgtable = get_pmd_huge_pte(mm);
++	pmd_populate(mm, &_pmd, pgtable);
++
++	for (i = 0; i < HPAGE_PMD_NR; i++, haddr += PAGE_SIZE) {
++		pte_t *pte, entry;
++		entry = pfn_pte(my_zero_pfn(haddr), vma->vm_page_prot);
++		entry = pte_mkspecial(entry);
++		pte = pte_offset_map(&_pmd, haddr);
++		VM_BUG_ON(!pte_none(*pte));
++		set_pte_at(mm, haddr, pte, entry);
++		pte_unmap(pte);
++	}
++	smp_wmb(); /* make pte visible before pmd */
++	pmd_populate(mm, pmd, pgtable);
++}
++
+ void __split_huge_page_pmd(struct mm_struct *mm, pmd_t *pmd,
+ 		unsigned long address)
+ {
+@@ -2513,6 +2544,11 @@ void __split_huge_page_pmd(struct mm_struct *mm, pmd_t *pmd,
+ 		spin_unlock(&mm->page_table_lock);
+ 		return;
+ 	}
++	if (is_huge_zero_pmd(*pmd)) {
++		__split_huge_zero_page_pmd(mm, pmd, address);
++		spin_unlock(&mm->page_table_lock);
++		return;
++	}
+ 	page = pmd_page(*pmd);
+ 	VM_BUG_ON(!page_count(page));
+ 	get_page(page);
+-- 
+1.7.7.6
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

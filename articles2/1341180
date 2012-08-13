@@ -1,0 +1,111 @@
+Path: news.gmane.org!not-for-mail
+From: Mike Galbraith <efault@gmx.de>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [RFC/PATCH] sched: Honor sync wake up in select_idle_sibling
+Date: Fri, 10 Aug 2012 10:14:44 +0200
+Lines: 57
+Approved: news@gmane.org
+Message-ID: <1344586484.4330.24.camel@marge.simpson.net>
+References: <1344583512-25352-1-git-send-email-namhyung@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344586503 31201 80.91.229.3 (10 Aug 2012 08:15:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 08:15:03 +0000 (UTC)
+Cc: Ingo Molnar <mingo@kernel.org>,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	LKML <linux-kernel@vger.kernel.org>,
+	Namhyung Kim <namhyung.kim@lge.com>,
+	Suresh Siddha <suresh.b.siddha@intel.com>
+To: Namhyung Kim <namhyung@kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 10 10:15:01 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzkN2-0005V4-Cv
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 10 Aug 2012 10:15:00 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757840Ab2HJIOz (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 10 Aug 2012 04:14:55 -0400
+Original-Received: from mailout-de.gmx.net ([213.165.64.22]:48243 "HELO
+	mailout-de.gmx.net" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with SMTP id S1757700Ab2HJIOt (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 10 Aug 2012 04:14:49 -0400
+Original-Received: (qmail invoked by alias); 10 Aug 2012 08:14:47 -0000
+Original-Received: from p4FE18A6E.dip0.t-ipconnect.de (EHLO [192.168.178.27]) [79.225.138.110]
+  by mail.gmx.net (mp032) with SMTP; 10 Aug 2012 10:14:47 +0200
+X-Authenticated: #14349625
+X-Provags-ID: V01U2FsdGVkX1/KGopRgmTKAj9VmSDpZpRNEFIPGqw/LfYRcIbKEs
+	/BYmfHr/t3y6rc
+In-Reply-To: <1344583512-25352-1-git-send-email-namhyung@kernel.org>
+X-Mailer: Evolution 3.2.3 
+X-Y-GMX-Trusted: 0
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341180
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341180>
+
+On Fri, 2012-08-10 at 16:25 +0900, Namhyung Kim wrote: 
+> From: Namhyung Kim <namhyung.kim@lge.com>
+> 
+> When sync wakeup happens and there's the waker task running alone,
+> select the target cpu as if it's already idle.
+
+Ouch.  That defeats the purpose of select_idle_sibling().  Just because
+we're doing a sync wakeup does not mean there's no convertible overlap,
+nor that the waker is really really going to take a nap immediately.  A
+lot of the places that benefit up to and including hugely from looking
+for an idle shared cache to wake to do sync wakeups.
+
+> Cc: Mike Galbraith <efault@gmx.de>
+> Cc: Suresh Siddha <suresh.b.siddha@intel.com>
+> Signed-off-by: Namhyung Kim <namhyung@kernel.org>
+> ---
+>  kernel/sched/fair.c | 11 +++++++++--
+>  1 file changed, 9 insertions(+), 2 deletions(-)
+> 
+> diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+> index d0cc03b3e70b..64b68bc82b52 100644
+> --- a/kernel/sched/fair.c
+> +++ b/kernel/sched/fair.c
+> @@ -2632,7 +2632,7 @@ find_idlest_cpu(struct sched_group *group, struct task_struct *p, int this_cpu)
+>  /*
+>   * Try and locate an idle CPU in the sched_domain.
+>   */
+> -static int select_idle_sibling(struct task_struct *p, int target)
+> +static int select_idle_sibling(struct task_struct *p, int target, int sync)
+>  {
+>  	int cpu = smp_processor_id();
+>  	int prev_cpu = task_cpu(p);
+> @@ -2646,6 +2646,13 @@ static int select_idle_sibling(struct task_struct *p, int target)
+>  		return cpu;
+>  
+>  	/*
+> +	 * If the task is going to be woken-up on this cpu and there's only
+> +	 * the sync-waker running, then it is the right target.
+> +	 */
+> +	if (target == cpu && sync && this_rq()->nr_running == 1)
+> +		return cpu;
+> +
+> +	/*
+>  	 * If the task is going to be woken-up on the cpu where it previously
+>  	 * ran and if it is currently idle, then it the right target.
+>  	 */
+> @@ -2748,7 +2755,7 @@ select_task_rq_fair(struct task_struct *p, int sd_flag, int wake_flags)
+>  		if (cpu == prev_cpu || wake_affine(affine_sd, p, sync))
+>  			prev_cpu = cpu;
+>  
+> -		new_cpu = select_idle_sibling(p, prev_cpu);
+> +		new_cpu = select_idle_sibling(p, prev_cpu, sync);
+>  		goto unlock;
+>  	}
+>  
+
+

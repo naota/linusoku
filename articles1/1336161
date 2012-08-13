@@ -1,0 +1,98 @@
+Path: news.gmane.org!not-for-mail
+From: Cruz Julian Bishop <cruzjbishop@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 5/5] Fixes a potential bug in android/logger.c
+Date: Wed,  1 Aug 2012 14:54:20 +1000
+Lines: 39
+Approved: news@gmane.org
+Message-ID: <1343796860-7025-6-git-send-email-cruzjbishop@gmail.com>
+References: <1343796860-7025-1-git-send-email-cruzjbishop@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343796953 29645 80.91.229.3 (1 Aug 2012 04:55:53 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 1 Aug 2012 04:55:53 +0000 (UTC)
+Cc: swetland@google.com, linux-kernel@vger.kernel.org,
+	Cruz Julian Bishop <cruzjbishop@gmail.com>
+To: greg@kroah.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 01 06:55:53 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwQyL-00014d-9g
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 01 Aug 2012 06:55:49 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753026Ab2HAEzl (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 1 Aug 2012 00:55:41 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:64111 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752165Ab2HAEy4 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 1 Aug 2012 00:54:56 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so465707pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 31 Jul 2012 21:54:56 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=AVEjlVvGzJKVNuss57w5cnD2y24v4buI/6vo5UIV+FA=;
+        b=aWpdLim7InxSeZZTfY9SX7iEKI1Eiqexu0T4wc3VesR0FoF2HX7CF/kiVAfZQxWQw4
+         PlU1McPWPFvDUMDa/TLLGXMfR6XoHd06Yll/8wpR3WyZMxBuhAJ8FZ9DOL7MvyqEp8rT
+         1qORRdSLbrNJSKg2XRTAGTTZO++8sSH26EDsw8ZuV8RE1E6NW1UQSTypahfd1Z2wFPMg
+         8oSMhLXeg6elBXWBJJ1EuixylVHbwEeM4gPDOFCPuULWwa9u43eiqUwxeVCHTd4rrK1b
+         9v+7iLHRyY87tPEtcJvpSC204q4aiYzv/+0x3xtSi6roE8ooW11R+0zq/S30xtOZ90/D
+         iCgQ==
+Original-Received: by 10.68.219.166 with SMTP id pp6mr49005446pbc.35.1343796896537;
+        Tue, 31 Jul 2012 21:54:56 -0700 (PDT)
+Original-Received: from localhost.localdomain (122-148-43-129.static.dsl.dodo.com.au. [122.148.43.129])
+        by mx.google.com with ESMTPS id ru4sm1735748pbc.66.2012.07.31.21.54.54
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 31 Jul 2012 21:54:56 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1343796860-7025-1-git-send-email-cruzjbishop@gmail.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336161
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336161>
+
+Previously, when calling is_between(a, b, c), the calculation was wrong.
+It counted C as between A and B if C was equal to B, but not A.
+
+Example of this are:
+
+is_between(1, 10, 10) = 1 (Expected: 0)
+is_between(1, 10, 1) = 0 (Expected: 0)
+is_between(20, 10, 10) = 1 (Expected: 0)
+
+And so on and so forth.
+
+Obviously, ten is not a number between one and ten - only two to eight are, so I made this patch :)
+
+Signed-off-by: Cruz Julian Bishop <cruzjbishop@gmail.com>
+---
+ drivers/staging/android/logger.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/staging/android/logger.c b/drivers/staging/android/logger.c
+index 226d8b5..925df5c 100644
+--- a/drivers/staging/android/logger.c
++++ b/drivers/staging/android/logger.c
+@@ -298,11 +298,11 @@ static inline int is_between(size_t a, size_t b, size_t c)
+ {
+ 	if (a < b) {
+ 		/* is c between a and b? */
+-		if (a < c && c <= b)
++		if (a < c && c < b)
+ 			return 1;
+ 	} else {
+ 		/* is c outside of b through a? */
+-		if (c <= b || a < c)
++		if (c < b || a < c)
+ 			return 1;
+ 	}
+ 
+-- 
+1.7.9.5
+

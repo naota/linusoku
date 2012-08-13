@@ -1,0 +1,138 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.file-systems,gmane.linux.nfs
+Subject: [PATCH v5 00/19] vfs: add the ability to retry on ESTALE to several syscalls
+Date: Wed,  8 Aug 2012 09:21:23 -0400
+Lines: 78
+Approved: news@gmane.org
+Message-ID: <1344432102-22312-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344432131 30697 80.91.229.3 (8 Aug 2012 13:22:11 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 13:22:11 +0000 (UTC)
+Cc: linux-fsdevel@vger.kernel.org, linux-nfs@vger.kernel.org,
+	linux-kernel@vger.kernel.org, michael.brantley@deshaw.com,
+	hch@infradead.org, miklos@szeredi.hu, pstaubach@exagrid.com
+To: viro@ZenIV.linux.org.uk
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 15:22:03 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sz6D0-00053t-OL
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 15:21:59 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1758404Ab2HHNVu (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 09:21:50 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:53416 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1758353Ab2HHNVs (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 09:21:48 -0400
+Original-Received: by ghrr11 with SMTP id r11so730335ghr.19
+        for <linux-kernel@vger.kernel.org>; Wed, 08 Aug 2012 06:21:47 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer
+         :x-gm-message-state;
+        bh=afKKxkINHwgKIs2Ky4yNL5YexMav64BXXgpfc4uC9GQ=;
+        b=bDu60+qrb+4aavc8OKNAo51cnPsFuDM5b0RTg9x+2+xFhAnOoAcZSyOGhtxzpvVmx7
+         BbrZMz/MXx9WZ09+M9y6n3xL9WE4JYI3k0coeL/soi8yBfh2+MS9ryakrY6AT4IyJ34V
+         bz7Fr0JY8MNX2djHKDlVMluLfCnyIjLhbNB/5B/y9wYtJwfbCdaMuBp3CIL0AKly3WlU
+         FWxTxQ3Vj1WCZyUrw10vBj85gs4rn4RjuYzBKVhSPzG4qpObKuwswsqnx3yKFqSnnIKv
+         Tsl47IVFdFkAqggXit7t7R+YFCSp736pBQ078L6TVi81Dh+Tt3KElSTcEVAGSTX71QJz
+         w9Fw==
+Original-Received: by 10.236.73.198 with SMTP id v46mr17054565yhd.80.1344432107612;
+        Wed, 08 Aug 2012 06:21:47 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-069-134-145-027.nc.res.rr.com. [69.134.145.27])
+        by mx.google.com with ESMTPS id l1sm24418002yhm.19.2012.08.08.06.21.46
+        (version=SSLv3 cipher=OTHER);
+        Wed, 08 Aug 2012 06:21:46 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+X-Gm-Message-State: ALoCoQkCmZlSj6kGFb20QKZuWuXrKz54YcQx84y0X6ZDCQxOTtkH0y+khxm3Cun1PGYH+G4WJi/C
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340035 gmane.linux.file-systems:66456 gmane.linux.nfs:51360
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340035>
+
+This patchset is a respin of the one I sent on July 26th. The main
+reason for the resend is to deal with some recent changes in namei.c
+that created some merge conflicts.
+
+This series depends on the "audit" series that I also sent on July 26th.
+That set didn't need any changes, so I'm not planning to resend it.
+
+This set is also available via the "estale" branch of my git tree:
+
+    git://git.samba.org/jlayton/linux.git estale
+
+I'd like to see this go in for 3.7 if at all possible.
+
+The original cover letter text follows:
+
+ESTALE errors are a source of pain for many users, primarily those who
+are doing work on NFS. When userspace provides a path to a syscall, then
+there's really little excuse for returning ESTALE. If userspace gave us
+a path that we had to lookup in order to do the call, then it's not
+particularly helpful to return ESTALE just because that path went stale
+before we could do the actual operation.
+
+We can and should do better here. The kernel should instead catch that
+error and retry the lookup and call, while forcing a revalidation of all
+dentries involved.
+
+Unfortunately fixing this requires touching the syscalls themselves, or
+at least their immediate helper functions. Not all syscalls can be
+retried -- only those that take a pathname as an argument.
+
+With this patchset, I've decided to take the relatively less
+controversial approach of just having the kernel retry once when it gets
+an ESTALE error. I still think that it's not as strong as it should be,
+but it should improve the situation in many common cases.
+
+I've also tried to engineer this in such a way that if we do decide that
+we need to retry more than once, then it should be easy to change that
+later. This should cover all of the syscalls in fs/stat.c and
+fs/namei.c, and a few from fs/open.c.
+
+Once these are merged, I'll look at adding similar handling to other
+path-based syscalls in a later set. A quick look shows that we have
+about 50-odd path-based syscalls that will need similar handling, so
+this is just a start.
+
+Jeff Layton (19):
+  vfs: add a retry_estale helper function to handle retries on ESTALE
+  vfs: add a kern_path_at function
+  vfs: make fstatat retry on ESTALE errors from getattr call
+  vfs: fix readlinkat to retry on ESTALE
+  vfs: remove user_path_at_empty
+  vfs: turn "empty" arg in getname_flags into a bool
+  vfs: add new "reval" argument to kern_path_create
+  vfs: fix mknodat to retry on ESTALE errors
+  vfs: fix mkdir to retry on ESTALE errors
+  vfs: fix symlinkat to retry on ESTALE errors
+  vfs: fix linkat to retry on ESTALE errors
+  vfs: make rmdir retry on ESTALE errors
+  vfs: make do_unlinkat retry on ESTALE errors
+  vfs: fix renameat to retry on ESTALE errors
+  vfs: remove user_path_parent
+  vfs: have do_sys_truncate retry once on an ESTALE error
+  vfs: have faccessat retry once on an ESTALE error
+  vfs: have chdir retry lookup and call once on ESTALE error
+  vfs: make chroot retry once on ESTALE error
+
+ drivers/base/devtmpfs.c |   7 +-
+ fs/namei.c              | 357 ++++++++++++++++++++++++++++++------------------
+ fs/open.c               | 234 ++++++++++++++++++-------------
+ fs/stat.c               |  44 ++++--
+ include/linux/fs.h      |  22 +++
+ include/linux/namei.h   |   4 +-
+ net/unix/af_unix.c      |   2 +-
+ 7 files changed, 422 insertions(+), 248 deletions(-)
+
+-- 
+1.7.11.2
+

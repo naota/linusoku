@@ -1,0 +1,105 @@
+Path: news.gmane.org!not-for-mail
+From: Cong Wang <amwang@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.network
+Subject: [PATCH 6/7] netpoll: use netpoll_rx_on() in netpoll_rx()
+Date: Fri, 27 Jul 2012 23:38:03 +0800
+Lines: 57
+Approved: news@gmane.org
+Message-ID: <1343403484-29347-7-git-send-email-amwang@redhat.com>
+References: <1343403484-29347-1-git-send-email-amwang@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343403652 19580 80.91.229.3 (27 Jul 2012 15:40:52 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 15:40:52 +0000 (UTC)
+Cc: Cong Wang <amwang@redhat.com>,
+	"David S. Miller" <davem@davemloft.net>,
+	Jiri Pirko <jiri@resnulli.us>, linux-kernel@vger.kernel.org
+To: netdev@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 17:40:51 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sumek-00075s-Ot
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 17:40:47 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752860Ab2G0PkS (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 11:40:18 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:47751 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752678Ab2G0PjZ (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 11:39:25 -0400
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6RFdO7c032310
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Fri, 27 Jul 2012 11:39:24 -0400
+Original-Received: from cr0.redhat.com (vpn-244-37.nrt.redhat.com [10.64.244.37])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6RFcJQn024275;
+	Fri, 27 Jul 2012 11:39:21 -0400
+In-Reply-To: <1343403484-29347-1-git-send-email-amwang@redhat.com>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334372 gmane.linux.network:238566
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334372>
+
+The logic of the code is same, just call netpoll_rx_on().
+
+Cc: "David S. Miller" <davem@davemloft.net>
+Signed-off-by: Cong Wang <amwang@redhat.com>
+---
+ include/linux/netpoll.h |   18 +++++++++---------
+ 1 files changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/include/linux/netpoll.h b/include/linux/netpoll.h
+index 36f938c..f654fa3 100644
+--- a/include/linux/netpoll.h
++++ b/include/linux/netpoll.h
+@@ -63,6 +63,13 @@ static inline void netpoll_send_skb(struct netpoll *np, struct sk_buff *skb)
+ 
+ 
+ #ifdef CONFIG_NETPOLL
++static inline int netpoll_rx_on(struct sk_buff *skb)
++{
++	struct netpoll_info *npinfo = rcu_dereference_bh(skb->dev->npinfo);
++
++	return npinfo && (!list_empty(&npinfo->rx_np) || npinfo->rx_flags);
++}
++
+ static inline bool netpoll_rx(struct sk_buff *skb)
+ {
+ 	struct netpoll_info *npinfo;
+@@ -70,11 +77,11 @@ static inline bool netpoll_rx(struct sk_buff *skb)
+ 	bool ret = false;
+ 
+ 	local_irq_save(flags);
+-	npinfo = rcu_dereference_bh(skb->dev->npinfo);
+ 
+-	if (!npinfo || (list_empty(&npinfo->rx_np) && !npinfo->rx_flags))
++	if (!netpoll_rx_on(skb))
+ 		goto out;
+ 
++	npinfo = rcu_dereference_bh(skb->dev->npinfo);
+ 	spin_lock(&npinfo->rx_lock);
+ 	/* check rx_flags again with the lock held */
+ 	if (npinfo->rx_flags && __netpoll_rx(skb, npinfo))
+@@ -86,13 +93,6 @@ out:
+ 	return ret;
+ }
+ 
+-static inline int netpoll_rx_on(struct sk_buff *skb)
+-{
+-	struct netpoll_info *npinfo = rcu_dereference_bh(skb->dev->npinfo);
+-
+-	return npinfo && (!list_empty(&npinfo->rx_np) || npinfo->rx_flags);
+-}
+-
+ static inline int netpoll_receive_skb(struct sk_buff *skb)
+ {
+ 	if (!list_empty(&skb->dev->napi_list))
+-- 
+1.7.7.6
+

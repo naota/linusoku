@@ -1,0 +1,99 @@
+Path: news.gmane.org!not-for-mail
+From: Tejun Heo <tj@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCHSET] workqueue: reimplement CPU hotplug to keep idle
+ workers
+Date: Fri, 20 Jul 2012 10:50:41 -0700
+Lines: 32
+Approved: news@gmane.org
+Message-ID: <20120720175041.GI32763@google.com>
+References: <1342545149-3515-1-git-send-email-tj@kernel.org>
+ <1342799311.2583.7.camel@twins>
+ <20120720170255.GE32763@google.com>
+ <1342804877.2583.42.camel@twins>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1342806693 14192 80.91.229.3 (20 Jul 2012 17:51:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 17:51:33 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, torvalds@linux-foundation.org,
+	tglx@linutronix.de, linux-pm@vger.kernel.org
+To: Peter Zijlstra <peterz@infradead.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 19:51:32 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsHMQ-00065X-24
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 19:51:30 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752795Ab2GTRus (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 13:50:48 -0400
+Original-Received: from mail-yw0-f46.google.com ([209.85.213.46]:39577 "EHLO
+	mail-yw0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751768Ab2GTRuq (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 13:50:46 -0400
+Original-Received: by yhmm54 with SMTP id m54so4243268yhm.19
+        for <multiple recipients>; Fri, 20 Jul 2012 10:50:46 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:date:from:to:cc:subject:message-id:references:mime-version
+         :content-type:content-disposition:in-reply-to:user-agent;
+        bh=LW2bSMdsq0SL4btDvoKqqENznH1M0BXKN3xf7V7u4GQ=;
+        b=JGJln0bRrTvdeJLuIk532bmJlrxEcLFLkUAc3gIa1JgA9eTJ+4AoSfJCEzfNhA6HLr
+         7w/lC4BXKfU4IZVisv8ZAZk9bjakcWjeYKiH/kWo4Dy2EeQ7MzMcekiL5PTBirnhEvIZ
+         mMvhEwRdindnxiuOPX9otCcY1Xj3nVmlcpPLasAW8lYQyf7m5HcXaPLK6PxQFICXsCVB
+         I81iIkdgC0L0znlokoWK8F5k4O2D3mtJYle+OY8tnLQhlCV4UAkbdzRAA0UTzEFgzupN
+         71QTtfvVwIiUJav3OAOzdf30zyDKESwm/t1zTZAGr/i2IGITO6SwnqQYos3TwppcNtAF
+         WL3w==
+Original-Received: by 10.66.75.225 with SMTP id f1mr13037419paw.35.1342806645987;
+        Fri, 20 Jul 2012 10:50:45 -0700 (PDT)
+Original-Received: from google.com (wtj.mtv.corp.google.com [172.18.110.84])
+        by mx.google.com with ESMTPS id pp2sm4378781pbb.1.2012.07.20.10.50.43
+        (version=SSLv3 cipher=OTHER);
+        Fri, 20 Jul 2012 10:50:44 -0700 (PDT)
+Content-Disposition: inline
+In-Reply-To: <1342804877.2583.42.camel@twins>
+User-Agent: Mutt/1.5.20 (2009-06-14)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330976
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330976>
+
+Hey, again.
+
+On Fri, Jul 20, 2012 at 07:21:17PM +0200, Peter Zijlstra wrote:
+> > So, the above was my rationale before this "we need to stop destroying
+> > and re-creating kthreads across CPU hotplug events because phones do
+> > it gazillion times".  Now, I don't think we have any other way.
+> 
+> OK, so why can't you splice the list of works from the CPU going down
+> onto the list of the CPU doing the down and convert any busy worker
+> threads to be bound to the cpu doing down?
+> 
+> That way there's nothing 'left' to get back to on up.
+
+As I wrote above, per-cpu workqueues don't really interact with each
+other and there's no mechanism to transfer work items from one to
+another, which unfortunately isn't trivial due to backlinks from work
+item to cpu workqueue which is necessary for flush / cancel
+operations.  I'm sure it's doable but that part is already pretty
+complex (already was before cmwq and untangling it probably requires
+bloating work_struct) and I don't think it's wise to complicate usual
+hot paths for hotplug support.
+
+Also, re-binding busy workers is easy.  The idle ones are difficult
+and we have to do that anyway for PM optimization.  What would be the
+benefit of not re-binding busy ones at the risk of continually
+transferring workers to another CPU given the right workload + CPU
+down/up patterns?
+
+Thanks.
+
+-- 
+tejun

@@ -1,0 +1,86 @@
+Path: news.gmane.org!not-for-mail
+From: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+Newsgroups: gmane.linux.kernel
+Subject: Is iommu_num_pages() broken ?
+Date: Sun, 05 Aug 2012 10:16:56 +1000
+Lines: 41
+Approved: news@gmane.org
+Message-ID: <1344125816.24037.84.camel@pasglop>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344125907 20711 80.91.229.3 (5 Aug 2012 00:18:27 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 5 Aug 2012 00:18:27 +0000 (UTC)
+Cc: Anton Blanchard <anton@au1.ibm.com>,
+	FUJITA Tomonori <fujita.tomonori@lab.ntt.co.jp>,
+	linux-kernel@vger.kernel.org
+To: Joerg Roedel <joerg.roedel@amd.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Aug 05 02:18:27 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxoY6-0000F0-Aa
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 05 Aug 2012 02:18:26 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754303Ab2HEARc (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 4 Aug 2012 20:17:32 -0400
+Original-Received: from gate.crashing.org ([63.228.1.57]:37132 "EHLO gate.crashing.org"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754161Ab2HEAR3 (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 4 Aug 2012 20:17:29 -0400
+Original-Received: from [127.0.0.1] (localhost.localdomain [127.0.0.1])
+	by gate.crashing.org (8.14.1/8.13.8) with ESMTP id q750GuZx023975;
+	Sat, 4 Aug 2012 19:16:57 -0500
+X-Mailer: Evolution 3.2.3-0ubuntu6 
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337770
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337770>
+
+Hi folks !
+
+I stumbled upon this today:
+
+static inline unsigned long iommu_num_pages(unsigned long addr,
+					    unsigned long len,
+					    unsigned long io_page_size)
+{
+	unsigned long size = (addr & (io_page_size - 1)) + len;
+
+	return DIV_ROUND_UP(size, io_page_size);
+}
+ 
+
+That doesn't look right to me...
+
+The powerpc iommu code at least uses that with an addr which may not be
+page aligned (ie, result of sg_virt() which include the offset).
+
+The above code will align the start before adding the len which is wrong
+and will result in potentially missing a page or am I missing
+something ?
+
+Shouldn't it be something like
+
+static inline unsigned long iommu_num_pages(unsigned long addr,
+					    unsigned long len,
+					    unsigned long io_page_size)
+{
+	unsigned long start = addr & (io_page_size - 1);
+	unsigned long end = addr + len;
+
+	return DIV_ROUND_UP(end - start, io_page_size);
+}
+
+?
+
+Cheers,
+Ben.
+
+

@@ -1,0 +1,141 @@
+Path: news.gmane.org!not-for-mail
+From: "Kirill A. Shutemov" <kirill@shutemov.name>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH 2/2] perf: use XSI-complaint version of strerror_r()
+ instead of GNU-specific
+Date: Mon, 23 Jul 2012 23:31:20 +0300
+Lines: 88
+Approved: news@gmane.org
+Message-ID: <20120723203120.GA25072@shutemov.name>
+References: <1343055645-24083-1-git-send-email-kirill@shutemov.name>
+ <1343055645-24083-2-git-send-email-kirill@shutemov.name>
+ <CAOPLpQe7=Gv7ToM8cqe1rNCP+vX5=gVppA1=gfaO0LSdqMhqMQ@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: QUOTED-PRINTABLE
+X-Trace: dough.gmane.org 1343075462 7937 80.91.229.3 (23 Jul 2012 20:31:02 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 20:31:02 +0000 (UTC)
+Cc: Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Paul Mackerras <paulus@samba.org>,
+	Ingo Molnar <mingo@redhat.com>,
+	Arnaldo Carvalho de Melo <acme@ghostprotocols.net>,
+	linux-kernel@vger.kernel.org
+To: Ulrich Drepper <drepper@gmail.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 22:31:00 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StPHO-0004gw-Sb
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 22:30:59 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754713Ab2GWUab convert rfc822-to-quoted-printable (ORCPT
+	<rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 16:30:31 -0400
+Original-Received: from shutemov.name ([176.9.204.213]:44236 "EHLO shutemov.name"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754371Ab2GWUa3 (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 16:30:29 -0400
+Original-Received: by shutemov.name (Postfix, from userid 1000)
+	id 572342E031; Mon, 23 Jul 2012 23:31:20 +0300 (EEST)
+Content-Disposition: inline
+In-Reply-To: <CAOPLpQe7=Gv7ToM8cqe1rNCP+vX5=gVppA1=gfaO0LSdqMhqMQ@mail.gmail.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331955
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331955>
+
+On Mon, Jul 23, 2012 at 02:00:33PM -0400, Ulrich Drepper wrote:
+> On Mon, Jul 23, 2012 at 11:00 AM, Kirill A. Shutemov
+> <kirill@shutemov.name> wrote:
+> > The right way to fix it is to switch to XSI-compliant version.
+>=20
+> And why exactly would this be "the right way"?  Just fix the use of
+> strerror_r or use strerror_l.
+
+Okay. What about this:
+
+=46rom 8b76ea28a09ebc72c7bdcc1d92e80a63a5cdaf1c Mon Sep 17 00:00:00 200=
+1
+=46rom: "Kirill A. Shutemov" <kirill@shutemov.name>
+Date: Mon, 23 Jul 2012 17:41:05 +0300
+Subject: [PATCH] perf: fix strerror_r() usage
+MIME-Version: 1.0
+Content-Type: text/plain; charset=3DUTF-8
+Content-Transfer-Encoding: 8bit
+
+Perf uses GNU-specific version of strerror_r(). The GNU-specific
+strerror_r() returns a pointer to a string containing the error message=
+=2E
+This may be either a pointer to a string that the function stores in
+buf, or a pointer to some (immutable) static string (in which case buf
+is unused).
+
+In glibc-2.16 GNU version was marked with attribute warn_unused_result.
+It triggers few warnings in perf:
+
+util/target.c: In function =E2=80=98perf_target__strerror=E2=80=99:
+util/target.c:114:13: error: ignoring return value of =E2=80=98strerror=
+_r=E2=80=99, declared with attribute warn_unused_result [-Werror=3Dunus=
+ed-result]
+ui/browsers/hists.c: In function =E2=80=98hist_browser__dump=E2=80=99:
+ui/browsers/hists.c:981:13: error: ignoring return value of =E2=80=98st=
+rerror_r=E2=80=99, declared with attribute warn_unused_result [-Werror=3D=
+unused-result]
+
+They are bugs.
+
+Let's fix strerror_r() usage.
+
+Signed-off-by: Kirill A. Shutemov <kirill@shutemov.name>
+---
+ tools/perf/ui/browsers/hists.c | 4 ++--
+ tools/perf/util/target.c       | 9 ++++++++-
+ 2 files changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/tools/perf/ui/browsers/hists.c b/tools/perf/ui/browsers/hi=
+sts.c
+index 482f051..413bd62 100644
+--- a/tools/perf/ui/browsers/hists.c
++++ b/tools/perf/ui/browsers/hists.c
+@@ -978,8 +978,8 @@ static int hist_browser__dump(struct hist_browser *=
+browser)
+ 	fp =3D fopen(filename, "w");
+ 	if (fp =3D=3D NULL) {
+ 		char bf[64];
+-		strerror_r(errno, bf, sizeof(bf));
+-		ui_helpline__fpush("Couldn't write to %s: %s", filename, bf);
++		const char *err =3D strerror_r(errno, bf, sizeof(bf));
++		ui_helpline__fpush("Couldn't write to %s: %s", filename, err);
+ 		return -1;
+ 	}
+=20
+diff --git a/tools/perf/util/target.c b/tools/perf/util/target.c
+index 1064d5b..45ab408 100644
+--- a/tools/perf/util/target.c
++++ b/tools/perf/util/target.c
+@@ -111,7 +111,14 @@ int perf_target__strerror(struct perf_target *targ=
+et, int errnum,
+ 	const char *msg;
+=20
+ 	if (errnum >=3D 0) {
+-		strerror_r(errnum, buf, buflen);
++		const char *err =3D strerror_r(errnum, buf, buflen);
++
++		if (err !=3D buf && buflen > 0) {
++			size_t len =3D strlen(err);
++			char *c =3D mempcpy(buf, err, min(buflen - 1, len));
++			*c =3D '\0';
++		}
++
+ 		return 0;
+ 	}
+=20
+--=20
+ Kirill A. Shutemov

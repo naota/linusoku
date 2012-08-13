@@ -1,0 +1,85 @@
+Path: news.gmane.org!not-for-mail
+From: Alexey Khoroshilov <khoroshilov@ispras.ru>
+Newsgroups: gmane.linux.kernel,gmane.linux.file-systems
+Subject: [PATCH] bio: Fix potential memory leak in bio_find_or_create_slab()
+Date: Thu,  9 Aug 2012 09:52:12 +0400
+Lines: 42
+Approved: news@gmane.org
+Message-ID: <1344491532-4969-1-git-send-email-khoroshilov@ispras.ru>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344491614 22962 80.91.229.3 (9 Aug 2012 05:53:34 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 05:53:34 +0000 (UTC)
+Cc: Alexey Khoroshilov <khoroshilov@ispras.ru>,
+	Alexander Viro <viro@zeniv.linux.org.uk>,
+	linux-fsdevel@vger.kernel.org, linux-kernel@vger.kernel.org,
+	ldv-project@ispras.ru
+To: Jens Axboe <axboe@kernel.dk>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 09 07:53:34 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzLgb-000788-3Z
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 09 Aug 2012 07:53:33 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753716Ab2HIFx1 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 01:53:27 -0400
+Original-Received: from mail.ispras.ru ([83.149.199.43]:46055 "EHLO mail.ispras.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751822Ab2HIFx0 (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 01:53:26 -0400
+Original-Received: from parliament.intra.ispras.ru (unknown [83.149.199.44])
+	by mail.ispras.ru (Postfix) with ESMTP id 165EC24F7BB;
+	Thu,  9 Aug 2012 09:53:24 +0400 (MSK)
+X-Mailer: git-send-email 1.7.9.5
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340469 gmane.linux.file-systems:66478
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340469>
+
+Do not leak memory by updating pointer with potentially NULL realloc return value.
+
+Found by Linux Driver Verification project (linuxtesting.org).
+
+Signed-off-by: Alexey Khoroshilov <khoroshilov@ispras.ru>
+---
+ fs/bio.c |   11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/fs/bio.c b/fs/bio.c
+index 5eaa70c..3fb4380 100644
+--- a/fs/bio.c
++++ b/fs/bio.c
+@@ -73,7 +73,7 @@ static struct kmem_cache *bio_find_or_create_slab(unsigned int extra_size)
+ {
+ 	unsigned int sz = sizeof(struct bio) + extra_size;
+ 	struct kmem_cache *slab = NULL;
+-	struct bio_slab *bslab;
++	struct bio_slab *bslab, *new_bio_slabs;
+ 	unsigned int i, entry = -1;
+ 
+ 	mutex_lock(&bio_slab_lock);
+@@ -97,11 +97,12 @@ static struct kmem_cache *bio_find_or_create_slab(unsigned int extra_size)
+ 
+ 	if (bio_slab_nr == bio_slab_max && entry == -1) {
+ 		bio_slab_max <<= 1;
+-		bio_slabs = krealloc(bio_slabs,
+-				     bio_slab_max * sizeof(struct bio_slab),
+-				     GFP_KERNEL);
+-		if (!bio_slabs)
++		new_bio_slabs = krealloc(bio_slabs,
++					 bio_slab_max * sizeof(struct bio_slab),
++					 GFP_KERNEL);
++		if (!new_bio_slabs)
+ 			goto out_unlock;
++		bio_slabs = new_bio_slabs;
+ 	}
+ 	if (entry == -1)
+ 		entry = bio_slab_nr++;
+-- 
+1.7.9.5
+

@@ -1,0 +1,99 @@
+Path: news.gmane.org!not-for-mail
+From: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+Newsgroups: gmane.linux.ports.ppc.embedded,gmane.linux.kernel
+Subject: Re: next/mmotm unbootable on G5: irqdomain
+Date: Mon, 23 Jul 2012 12:45:43 +1000
+Lines: 39
+Approved: news@gmane.org
+Message-ID: <1343011543.2957.2.camel@pasglop>
+References: <alpine.LSU.2.00.1207211911160.1585@eggly.anvils>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343011601 2024 80.91.229.3 (23 Jul 2012 02:46:41 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 02:46:41 +0000 (UTC)
+Cc: Stephen Rothwell <sfr@canb.auug.org.au>, linux-kernel@vger.kernel.org,
+ Milton Miller <miltonm@bga.com>, Paul Mundt <lethal@linux-sh.org>,
+ Rob Herring <rob.herring@calxeda.com>,
+ Andrew Morton <akpm@linux-foundation.org>, linuxppc-dev@lists.ozlabs.org,
+ Thomas Gleixner <tglx@linutronix.de>
+To: Hugh Dickins <hughd@google.com>
+Original-X-From: linuxppc-dev-bounces+glppe-linuxppc-embedded-2=m.gmane.org@lists.ozlabs.org Mon Jul 23 04:46:39 2012
+Return-path: <linuxppc-dev-bounces+glppe-linuxppc-embedded-2=m.gmane.org@lists.ozlabs.org>
+Envelope-to: glppe-linuxppc-embedded-2@m.gmane.org
+Original-Received: from ozlabs.org ([203.10.76.45])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linuxppc-dev-bounces+glppe-linuxppc-embedded-2=m.gmane.org@lists.ozlabs.org>)
+	id 1St8fL-0006VI-PJ
+	for glppe-linuxppc-embedded-2@m.gmane.org; Mon, 23 Jul 2012 04:46:37 +0200
+Original-Received: from ozlabs.org (localhost [IPv6:::1])
+	by ozlabs.org (Postfix) with ESMTP id ADED12C04A8
+	for <glppe-linuxppc-embedded-2@m.gmane.org>; Mon, 23 Jul 2012 12:46:31 +1000 (EST)
+Original-Received: from gate.crashing.org (gate.crashing.org [63.228.1.57])
+ (using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+ (Client did not present a certificate)
+ by ozlabs.org (Postfix) with ESMTPS id 1E5452C0131
+ for <linuxppc-dev@lists.ozlabs.org>; Mon, 23 Jul 2012 12:46:11 +1000 (EST)
+Original-Received: from [127.0.0.1] (localhost.localdomain [127.0.0.1])
+ by gate.crashing.org (8.14.1/8.13.8) with ESMTP id q6N2jgTl019554;
+ Sun, 22 Jul 2012 21:45:43 -0500
+In-Reply-To: <alpine.LSU.2.00.1207211911160.1585@eggly.anvils>
+X-Mailer: Evolution 3.2.3-0ubuntu6 
+X-BeenThere: linuxppc-dev@lists.ozlabs.org
+X-Mailman-Version: 2.1.15
+Precedence: list
+List-Id: Linux on PowerPC Developers Mail List <linuxppc-dev.lists.ozlabs.org>
+List-Unsubscribe: <https://lists.ozlabs.org/options/linuxppc-dev>,
+ <mailto:linuxppc-dev-request@lists.ozlabs.org?subject=unsubscribe>
+List-Archive: <http://lists.ozlabs.org/pipermail/linuxppc-dev/>
+List-Post: <mailto:linuxppc-dev@lists.ozlabs.org>
+List-Help: <mailto:linuxppc-dev-request@lists.ozlabs.org?subject=help>
+List-Subscribe: <https://lists.ozlabs.org/listinfo/linuxppc-dev>,
+ <mailto:linuxppc-dev-request@lists.ozlabs.org?subject=subscribe>
+Errors-To: linuxppc-dev-bounces+glppe-linuxppc-embedded-2=m.gmane.org@lists.ozlabs.org
+Original-Sender: "Linuxppc-dev"
+ <linuxppc-dev-bounces+glppe-linuxppc-embedded-2=m.gmane.org@lists.ozlabs.org>
+Xref: news.gmane.org gmane.linux.ports.ppc.embedded:52264 gmane.linux.kernel:1331589
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331589>
+
+On Sat, 2012-07-21 at 19:47 -0700, Hugh Dickins wrote:
+> I have to revert the patch below from mmotm 2012-07-20-16-30 or
+> next-20120720 in order to boot on the PowerPC G5: otherwise it
+> freezes before switching to the framebuffer console - but I'm
+> not certain where because that initial console doesn't scroll
+> (there are mpic messages at bottom and at top of screen, probably
+> later messages at the top but I don't know the sequence).
+
+This fixes it (Grant, how do we avoid bisection breakage here ? I can
+put that in -powerpc and we can make sure that gets merged before your
+tree ?)
+
+powerpc/mpic: Create a revmap with enough entries for IPIs and timers
+
+The current mpic code creates a linear revmap just big enough for all
+the sources, which happens to miss the IPIs and timers on some machines.
+
+This will in turn break when the irqdomain code loses the fallback of
+doing a linear search when the revmap fails (and really slows down IPIs
+otherwise).
+
+This happens for example on the U4 based Apple machines such as the
+dual core PowerMac G5s.
+
+Signed-off-by: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+---
+diff --git a/arch/powerpc/sysdev/mpic.c b/arch/powerpc/sysdev/mpic.c
+index 906f29c..bfc6211 100644
+--- a/arch/powerpc/sysdev/mpic.c
++++ b/arch/powerpc/sysdev/mpic.c
+@@ -1376,7 +1376,7 @@ struct mpic * __init mpic_alloc(struct device_node *node,
+ 	mpic->isu_mask = (1 << mpic->isu_shift) - 1;
+ 
+ 	mpic->irqhost = irq_domain_add_linear(mpic->node,
+-				       last_irq + 1,
++				       intvec_top,
+ 				       &mpic_host_ops, mpic);
+ 
+ 	/*

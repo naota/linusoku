@@ -1,0 +1,104 @@
+Path: news.gmane.org!not-for-mail
+From: Jiri Kosina <jkosina@suse.cz>
+Newsgroups: gmane.linux.ports.parisc,gmane.linux.kernel
+Subject: [PATCH] parisc: fix personality flag check in copy_thread()
+Date: Wed, 1 Aug 2012 21:57:53 +0200 (CEST)
+Lines: 59
+Approved: news@gmane.org
+Message-ID: <alpine.LNX.2.00.1208012155330.14910@pobox.suse.cz>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: TEXT/PLAIN; charset=US-ASCII
+X-Trace: dough.gmane.org 1343851083 11818 80.91.229.3 (1 Aug 2012 19:58:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 1 Aug 2012 19:58:03 +0000 (UTC)
+Cc: linux-parisc@vger.kernel.org, linux-kernel@vger.kernel.org
+To: "James E.J. Bottomley" <jejb@parisc-linux.org>,
+	Helge Deller <deller@gmx.de>
+Original-X-From: linux-parisc-owner@vger.kernel.org Wed Aug 01 21:58:03 2012
+Return-path: <linux-parisc-owner@vger.kernel.org>
+Envelope-to: glpp-linux-parisc@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-parisc-owner@vger.kernel.org>)
+	id 1Swf3S-0001S3-GJ
+	for glpp-linux-parisc@plane.gmane.org; Wed, 01 Aug 2012 21:58:02 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754209Ab2HAT6B (ORCPT <rfc822;glpp-linux-parisc@m.gmane.org>);
+	Wed, 1 Aug 2012 15:58:01 -0400
+Original-Received: from cantor2.suse.de ([195.135.220.15]:45574 "EHLO mx2.suse.de"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754155Ab2HAT6A (ORCPT <rfc822;linux-parisc@vger.kernel.org>);
+	Wed, 1 Aug 2012 15:58:00 -0400
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id E20B0A2FD7;
+	Wed,  1 Aug 2012 21:57:58 +0200 (CEST)
+User-Agent: Alpine 2.00 (LNX 1167 2008-08-23)
+Original-Sender: linux-parisc-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-parisc.vger.kernel.org>
+X-Mailing-List: linux-parisc@vger.kernel.org
+Xref: news.gmane.org gmane.linux.ports.parisc:4518 gmane.linux.kernel:1336515
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336515>
+
+Directly comparing task_struct->personality against PER_* is not fully 
+correct, as it doesn't take flags potentially stored in top three bytes 
+into account.
+
+Analogically, directly forcefully setting personality to PER_LINUX32 or
+PER_LINUX discards any flags stored in the top three bytes.
+
+Signed-off-by: Jiri Kosina <jkosina@suse.cz>
+---
+
+Found accidentally, untested, I don't have the hardware.
+
+ arch/parisc/kernel/process.c    |    2 +-
+ arch/parisc/kernel/sys_parisc.c |    8 ++++----
+ 2 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/arch/parisc/kernel/process.c b/arch/parisc/kernel/process.c
+index d4b94b3..2c05a92 100644
+--- a/arch/parisc/kernel/process.c
++++ b/arch/parisc/kernel/process.c
+@@ -309,7 +309,7 @@ copy_thread(unsigned long clone_flags, unsigned long usp,
+ 		cregs->ksp = (unsigned long)stack
+ 			+ (pregs->gr[21] & (THREAD_SIZE - 1));
+ 		cregs->gr[30] = usp;
+-		if (p->personality == PER_HPUX) {
++		if (personality(p->personality) == PER_HPUX) {
+ #ifdef CONFIG_HPUX
+ 			cregs->kpc = (unsigned long) &hpux_child_return;
+ #else
+diff --git a/arch/parisc/kernel/sys_parisc.c b/arch/parisc/kernel/sys_parisc.c
+index c9b9322..f309990 100644
+--- a/arch/parisc/kernel/sys_parisc.c
++++ b/arch/parisc/kernel/sys_parisc.c
+@@ -225,12 +225,12 @@ long parisc_personality(unsigned long personality)
+ 	long err;
+ 
+ 	if (personality(current->personality) == PER_LINUX32
+-	    && personality == PER_LINUX)
+-		personality = PER_LINUX32;
++	    && personality(personality) == PER_LINUX)
++		personality &= ~PER_LINUX | PER_LINUX32;
+ 
+ 	err = sys_personality(personality);
+-	if (err == PER_LINUX32)
+-		err = PER_LINUX;
++	if (personality(err) == PER_LINUX32)
++		err &= ~PER_LINUX32 | PER_LINUX;
+ 
+ 	return err;
+ }
+
+-- 
+Jiri Kosina
+SUSE Labs
+--
+To unsubscribe from this list: send the line "unsubscribe linux-parisc" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

@@ -1,0 +1,111 @@
+Path: news.gmane.org!not-for-mail
+From: "Rafael J. Wysocki" <rjw@sisk.pl>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] RTC: Avoid races between RTC alarm wakeup and suspend.
+Date: Mon, 30 Jul 2012 23:01:49 +0200
+Lines: 54
+Approved: news@gmane.org
+Message-ID: <201207302301.49972.rjw@sisk.pl>
+References: <20120730113547.2c425ea9@notabene.brown>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain;
+  charset="iso-8859-2"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343681791 29165 80.91.229.3 (30 Jul 2012 20:56:31 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 20:56:31 +0000 (UTC)
+Cc: Alessandro Zummo <a.zummo@towertech.it>,
+	rtc-linux@googlegroups.com, linux-pm@vger.kernel.org,
+	linux-kernel@vger.kernel.org
+To: NeilBrown <neilb@suse.de>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 22:56:30 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Svx0v-0000cW-1d
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 22:56:29 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754673Ab2G3U4U (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 16:56:20 -0400
+Original-Received: from ogre.sisk.pl ([193.178.161.156]:35312 "EHLO ogre.sisk.pl"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754267Ab2G3U4S (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 16:56:18 -0400
+Original-Received: from localhost (localhost.localdomain [127.0.0.1])
+	by ogre.sisk.pl (Postfix) with ESMTP id 5B5721DAB29;
+	Mon, 30 Jul 2012 22:48:40 +0200 (CEST)
+Original-Received: from ogre.sisk.pl ([127.0.0.1])
+ by localhost (ogre.sisk.pl [127.0.0.1]) (amavisd-new, port 10024) with ESMTP
+ id 26170-01; Mon, 30 Jul 2012 22:48:17 +0200 (CEST)
+Original-Received: from ferrari.rjw.lan (62-121-64-87.home.aster.pl [62.121.64.87])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by ogre.sisk.pl (Postfix) with ESMTP id 1E9491DB1EE;
+	Mon, 30 Jul 2012 22:48:13 +0200 (CEST)
+User-Agent: KMail/1.13.6 (Linux/3.5.0+; KDE/4.6.0; x86_64; ; )
+In-Reply-To: <20120730113547.2c425ea9@notabene.brown>
+X-Virus-Scanned: amavisd-new at ogre.sisk.pl using MkS_Vir for Linux
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335321
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335321>
+
+On Monday, July 30, 2012, NeilBrown wrote:
+> 
+> If an RTC alarm fires just as suspend is happening, it is possible for
+> suspend to complete and the alarm to be missed.
+> 
+> To avoid the race, we must register the event with the PM core.
+> 
+> As the event is made visible to userspace through a thread which is
+> only scheduled by the interrupt, we need a pm_stay_awake/pm_relax
+> pair preventing suspend from the interrupt until the thread completes
+> its work.
+> 
+> Signed-off-by: NeilBrown <neilb@suse.de>
+> 
+> --
+> This makes the pm_wakeup_event() call in cmos_interrupt unnecessary as it
+> provides suspend protection for all RTCs that use rtc_update_irq.
+
+Care to remove the call in cmos_interrupt(), then?
+
+> I think the pm_stay_awake//pm_relax is needed - just pm_wakup_event() is 
+> theoretically not sufficient.
+> 
+> This is because there is no guarantee (that I know of) that the workqueue
+> thread will actually get scheduled before 'suspend' takes over.
+
+I think you are right.
+
+Thanks,
+Rafael
+
+
+> diff --git a/drivers/rtc/interface.c b/drivers/rtc/interface.c
+> index eb415bd..9592b93 100644
+> --- a/drivers/rtc/interface.c
+> +++ b/drivers/rtc/interface.c
+> @@ -582,6 +582,7 @@ enum hrtimer_restart rtc_pie_update_irq(struct hrtimer *timer)
+>  void rtc_update_irq(struct rtc_device *rtc,
+>  		unsigned long num, unsigned long events)
+>  {
+> +	pm_stay_awake(rtc->dev.parent);
+>  	schedule_work(&rtc->irqwork);
+>  }
+>  EXPORT_SYMBOL_GPL(rtc_update_irq);
+> @@ -844,6 +845,7 @@ void rtc_timer_do_work(struct work_struct *work)
+>  
+>  	mutex_lock(&rtc->ops_lock);
+>  again:
+> +	pm_relax(rtc->dev.parent);
+>  	__rtc_read_time(rtc, &tm);
+>  	now = rtc_tm_to_ktime(tm);
+>  	while ((next = timerqueue_getnext(&rtc->timerqueue))) {
+> 
+

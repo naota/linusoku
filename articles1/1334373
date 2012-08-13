@@ -1,0 +1,140 @@
+Path: news.gmane.org!not-for-mail
+From: Frederic Weisbecker <fweisbec@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [RFC PATCH 0/5] cputime: Generic virtual based cputime accounting
+Date: Fri, 27 Jul 2012 17:40:29 +0200
+Lines: 67
+Approved: news@gmane.org
+Message-ID: <1343403634-31555-1-git-send-email-fweisbec@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343403656 19602 80.91.229.3 (27 Jul 2012 15:40:56 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 15:40:56 +0000 (UTC)
+Cc: Frederic Weisbecker <fweisbec@gmail.com>,
+	Alessio Igor Bogani <abogani@kernel.org>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Avi Kivity <avi@redhat.com>,
+	Chris Metcalf <cmetcalf@tilera.com>,
+	Christoph Lameter <cl@linux.com>,
+	Geoff Levand <geoff@infradead.org>,
+	Gilad Ben Yossef <gilad@benyossef.com>,
+	Hakan Akkan <hakanakkan@gmail.com>,
+	"H. Peter Anvin" <hpa@zytor.com>, Ingo Molnar <mingo@kernel.org>,
+	Kevin Hilman <khilman@ti.com>,
+	Max Krasnyansky <maxk@qualcomm.com>,
+	"Paul E. McKenney" <paulmck@linux.vnet.ibm.com>,
+	Peter Zijlstra <peterz@infradead.org>,
+	Stephen Hemminger <shemminger@vyatta.com>,
+	Steven Rostedt <rostedt@goodmis.org>,
+	Sven-Thorsten Dietrich <thebigcorporation@gmail.com>,
+	Thomas Gleixner <tglx@linutronix.de>
+To: LKML <linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 17:40:51 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sumel-00075s-Aj
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 17:40:47 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752911Ab2G0Pko (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 11:40:44 -0400
+Original-Received: from mail-ee0-f46.google.com ([74.125.83.46]:37559 "EHLO
+	mail-ee0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752673Ab2G0Pkl (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 11:40:41 -0400
+Original-Received: by eeil10 with SMTP id l10so715378eei.19
+        for <linux-kernel@vger.kernel.org>; Fri, 27 Jul 2012 08:40:40 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer;
+        bh=pjQ7m1t1mqajLno+2ZeRLUi/sIzB8/fyUBaV8M55laQ=;
+        b=hr9LvzARXbE3iPOOuxPCM121j0hcpicSmpdXt3ByuQFtA14lsl5rZ2VHoc7ksAwirm
+         R1mJVJQYeDZDOBhRFdcCysyw+kIh9XnSjefGyVpDiI9XaBIeJvicU/6s8OWLZ21rvoph
+         9rl2j4a9L7flb+E6HQjJDV7qnJVAh7D0eNKZ460rNxV6q11HfFm5HyeHEJD729nakay3
+         Jm5eorZd2q/weX7x9WW0m08xrnvsFtj7m1AIMY3lIdz8nIhRWgsRF9kKlOxVc2X7M2a4
+         /3KIbpitk5KuipofrMAmWglFRe/6Yz72QkAWilcgZ5tt2FGAPz00SoMGZjSVSHXov/Eq
+         3bAQ==
+Original-Received: by 10.14.179.71 with SMTP id g47mr3195252eem.21.1343403640317;
+        Fri, 27 Jul 2012 08:40:40 -0700 (PDT)
+Original-Received: from localhost.localdomain (71.20.196.77.rev.sfr.net. [77.196.20.71])
+        by mx.google.com with ESMTPS id u48sm7197599eep.7.2012.07.27.08.40.37
+        (version=SSLv3 cipher=OTHER);
+        Fri, 27 Jul 2012 08:40:39 -0700 (PDT)
+X-Mailer: git-send-email 1.7.5.4
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334373
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334373>
+
+So,
+
+This is a proposition to handle the cputime accounting without the
+tick to prepare for stopping the tick further idle.
+
+I have managed to reuse and generalize the kernel/user boundary
+hooks used by RCU. This way we can minimize the changes in archs
+that don't support virtual cputime and we can also switch between
+vtime and tick based accounting to minimize the overhead depending
+on the tick behaviour.
+
+This is based on top of rcu/idle branch in Paul's tree and my
+vtime consolidation series: https://lkml.org/lkml/2012/6/20/762
+(still waiting to be picked btw).
+
+You, adventurer, can pull from:
+
+git://github.com/fweisbec/linux-dynticks.git
+	vtime/generic
+
+
+Frederic Weisbecker (5):
+  user_hooks: New user hooks subsystem
+  cputime: Don't allow virtual and irq finegrained cputime accounting
+    simultaneously
+  cputime: Allow dynamic switch between tick/virtual based cputime
+    accounting
+  cputime: Rename account_system_vtime to account_vtime
+  cputime: Generic on-demand virtual cputime accounting
+
+ arch/Kconfig                                 |   10 +-
+ arch/ia64/include/asm/cputime.h              |    5 +
+ arch/ia64/kernel/time.c                      |    6 +-
+ arch/powerpc/include/asm/cputime.h           |    5 +
+ arch/powerpc/kernel/time.c                   |   10 +-
+ arch/s390/include/asm/cputime.h              |    5 +
+ arch/s390/kernel/vtime.c                     |    6 +-
+ arch/x86/Kconfig                             |    2 +-
+ arch/x86/include/asm/{rcu.h => user_hooks.h} |   12 +-
+ arch/x86/kernel/ptrace.c                     |    6 +-
+ arch/x86/kernel/signal.c                     |    5 +-
+ arch/x86/kernel/traps.c                      |    2 +-
+ arch/x86/mm/fault.c                          |    2 +-
+ include/asm-generic/cputime.h                |    7 +
+ include/linux/hardirq.h                      |    8 +-
+ include/linux/kernel_stat.h                  |   13 ++
+ include/linux/kvm_host.h                     |    4 +-
+ include/linux/rcupdate.h                     |    2 -
+ include/linux/sched.h                        |   13 +--
+ include/linux/user_hooks.h                   |   36 ++++++
+ init/Kconfig                                 |   35 ++++--
+ kernel/Makefile                              |    1 +
+ kernel/fork.c                                |    3 +-
+ kernel/rcutree.c                             |   42 +-------
+ kernel/sched/core.c                          |    9 +-
+ kernel/sched/cputime.c                       |  159 +++++++++++++++++++++----
+ kernel/softirq.c                             |    6 +-
+ kernel/time/tick-sched.c                     |   28 ++---
+ kernel/user_hooks.c                          |   56 +++++++++
+ 29 files changed, 348 insertions(+), 150 deletions(-)
+ rename arch/x86/include/asm/{rcu.h => user_hooks.h} (56%)
+ create mode 100644 include/linux/user_hooks.h
+ create mode 100644 kernel/user_hooks.c
+
+-- 
+1.7.5.4
+

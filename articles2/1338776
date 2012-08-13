@@ -1,0 +1,119 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 07/70] cfg80211: fix interface combinations check for  ADHOC(IBSS)
+Date: Tue, 07 Aug 2012 04:28:02 +0100
+Lines: 66
+Approved: news@gmane.org
+Message-ID: <20120807032757.155880179@decadent.org.uk>
+References: <20120807032755.803571133@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344311666 24107 80.91.229.3 (7 Aug 2012 03:54:26 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 03:54:26 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Liang Li <liang.li@windriver.com>,
+	Paul Gortmaker <paul.gortmaker@windriver.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 05:54:25 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyasC-00065B-5l
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 05:54:24 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932712Ab2HGDyR (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 23:54:17 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:59629 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1757283Ab2HGDiM (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 23:38:12 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1SyacD-00081k-Rz; Tue, 07 Aug 2012 04:37:54 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Syabw-0002ml-Vn; Tue, 07 Aug 2012 04:37:37 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120807032755.803571133@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338776 gmane.linux.kernel.stable:29217
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338776>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Liang Li <liang.li@windriver.com>
+
+partial of commit 8e8b41f9d8c8e63fc92f899ace8da91a490ac573 upstream.
+
+As part of commit 463454b5dbd8 ("cfg80211: fix interface
+combinations check"), this extra check was introduced:
+
+       if ((all_iftypes & used_iftypes) != used_iftypes)
+               goto cont;
+
+However, most wireless NIC drivers did not advertise ADHOC in
+wiphy.iface_combinations[i].limits[] and hence we'll get -EBUSY
+when we bring up a ADHOC wlan with commands similar to:
+
+ # iwconfig wlan0 mode ad-hoc && ifconfig wlan0 up
+
+In commit 8e8b41f9d8c8e ("cfg80211: enforce lack of interface
+combinations"), the change below fixes the issue:
+
+       if (total == 1)
+               return 0;
+
+But it also introduces other dependencies for stable. For example,
+a full cherry pick of 8e8b41f9d8c8e would introduce additional
+regressions unless we also start cherry picking driver specific
+fixes like the following:
+
+  9b4760e  ath5k: add possible wiphy interface combinations
+  1ae2fc2  mac80211_hwsim: advertise interface combinations
+  20c8e8d  ath9k: add possible wiphy interface combinations
+
+And the purpose of the 'if (total == 1)' is to cover the specific
+use case (IBSS, adhoc) that was mentioned above. So we just pick
+the specific part out from 8e8b41f9d8c8e here.
+
+Doing so gives stable kernels a way to fix the change introduced
+by 463454b5dbd8, without having to make cherry picks specific to
+various NIC drivers.
+
+Signed-off-by: Liang Li <liang.li@windriver.com>
+Signed-off-by: Paul Gortmaker <paul.gortmaker@windriver.com>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ net/wireless/util.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/net/wireless/util.c b/net/wireless/util.c
+index b5b6890..88bd89e 100644
+--- a/net/wireless/util.c
++++ b/net/wireless/util.c
+@@ -974,6 +974,9 @@ int cfg80211_can_change_interface(struct cfg80211_registered_device *rdev,
+ 	}
+ 	mutex_unlock(&rdev->devlist_mtx);
+ 
++	if (total == 1)
++		return 0;
++
+ 	for (i = 0; i < rdev->wiphy.n_iface_combinations; i++) {
+ 		const struct ieee80211_iface_combination *c;
+ 		struct ieee80211_iface_limit *limits;
+
+

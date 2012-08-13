@@ -1,0 +1,137 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 041/109] s390/mm: fix fault handling for page table walk case
+Date: Tue,  7 Aug 2012 15:35:00 -0700
+Lines: 72
+Approved: news@gmane.org
+Message-ID: <20120807222046.714709548@linuxfoundation.org>
+References: <20120807222043.089735600@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344379159 17612 80.91.229.3 (7 Aug 2012 22:39:19 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:39:19 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	Heiko Carstens <heiko.carstens@de.ibm.com>,
+	Martin Schwidefsky <schwidefsky@de.ibm.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:39:12 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysQg-0003EK-4w
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:39:10 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030473Ab2HGWi2 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:38:28 -0400
+Original-Received: from mail-yw0-f46.google.com ([209.85.213.46]:40991 "EHLO
+	mail-yw0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030445Ab2HGWiU (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:38:20 -0400
+Original-Received: by mail-yw0-f46.google.com with SMTP id m54so158434yhm.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:38:20 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=fxSe6qO12X1zoMbxuVRw2AsljX+P4D7f/5iNmxHbaN0=;
+        b=OHRaThlRsDPasaEDXwou9fV3PQQ85AOSN/PufznLHLLG8vOzEXGctpi01SGOLWAdlm
+         xADiif8VaWmYxQaeNCglzb4Vmdg3XP/YYl0CuXS8GyeuTZWRridoMl/MUG+dsfz2qJ29
+         jBL9hn0bZ+6aJ2uQd/7G16vwKP6/P8Kq87L3SGh81YjCW+peb5yZC8oUXI0LjyHXqmZA
+         KdmDU2w8QLhkA2Ebue401eT9GSlfpXOaGwnLhOyIKPb/dSm7zhhT3H68ntf9t6cj6QP7
+         OZqybb44B9q5FISxjEm3mxNY1+2YiR/XrutxPI5yq3ng5YZo/U7eLjSLtglje6OuyoxY
+         gCig==
+Original-Received: by 10.66.83.8 with SMTP id m8mr29243181pay.48.1344379099876;
+        Tue, 07 Aug 2012 15:38:19 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id or1sm6835851pbb.10.2012.08.07.15.38.17
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:38:18 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222043.089735600@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQk0tTRZyc58zb5kPAK5b3Z5pJcB000BSlRW02w60UplPYW3bQ7HM2DF7wQbyF2t+p34L5h0
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339485 gmane.linux.kernel.stable:29324
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339485>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.4-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Heiko Carstens <heiko.carstens@de.ibm.com>
+
+commit 008c2e8f247f0a8db1e8e26139da12f3a3abcda0 upstream.
+
+Make sure the kernel does not incorrectly create a SIGBUS signal during
+user space accesses:
+
+For user space accesses in the switched addressing mode case the kernel
+may walk page tables and access user address space via the kernel
+mapping. If a page table entry is invalid the function __handle_fault()
+gets called in order to emulate a page fault and trigger all the usual
+actions like paging in a missing page etc. by calling handle_mm_fault().
+
+If handle_mm_fault() returns with an error fixup handling is necessary.
+For the switched addressing mode case all errors need to be mapped to
+-EFAULT, so that the calling uaccess function can return -EFAULT to
+user space.
+
+Unfortunately the __handle_fault() incorrectly calls do_sigbus() if
+VM_FAULT_SIGBUS is set. This however should only happen if a page fault
+was triggered by a user space instruction. For kernel mode uaccesses
+the correct action is to only return -EFAULT.
+So user space may incorrectly see SIGBUS signals because of this bug.
+
+For current machines this would only be possible for the switched
+addressing mode case in conjunction with futex operations.
+
+Signed-off-by: Heiko Carstens <heiko.carstens@de.ibm.com>
+Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ arch/s390/mm/fault.c |   13 +++++++------
+ 1 file changed, 7 insertions(+), 6 deletions(-)
+
+--- a/arch/s390/mm/fault.c
++++ b/arch/s390/mm/fault.c
+@@ -443,6 +443,7 @@ int __handle_fault(unsigned long uaddr,
+ 	struct pt_regs regs;
+ 	int access, fault;
+ 
++	/* Emulate a uaccess fault from kernel mode. */
+ 	regs.psw.mask = psw_kernel_bits | PSW_MASK_DAT | PSW_MASK_MCHECK;
+ 	if (!irqs_disabled())
+ 		regs.psw.mask |= PSW_MASK_IO | PSW_MASK_EXT;
+@@ -452,12 +453,12 @@ int __handle_fault(unsigned long uaddr,
+ 	regs.int_parm_long = (uaddr & PAGE_MASK) | 2;
+ 	access = write ? VM_WRITE : VM_READ;
+ 	fault = do_exception(&regs, access);
+-	if (unlikely(fault)) {
+-		if (fault & VM_FAULT_OOM)
+-			return -EFAULT;
+-		else if (fault & VM_FAULT_SIGBUS)
+-			do_sigbus(&regs);
+-	}
++	/*
++	 * Since the fault happened in kernel mode while performing a uaccess
++	 * all we need to do now is emulating a fixup in case "fault" is not
++	 * zero.
++	 * For the calling uaccess functions this results always in -EFAULT.
++	 */
+ 	return fault ? -EFAULT : 0;
+ }
+ 
+
+

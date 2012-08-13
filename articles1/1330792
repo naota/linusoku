@@ -1,0 +1,142 @@
+Path: news.gmane.org!not-for-mail
+From: Vasilis Liaskovitis <vasilis.liaskovitis@profitbricks.com>
+Newsgroups: gmane.linux.acpi.devel,gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [RFC PATCH] memory-hotplug: Add memblock_state notifier
+Date: Fri, 20 Jul 2012 13:18:08 +0200
+Lines: 84
+Approved: news@gmane.org
+Message-ID: <1342783088-29970-1-git-send-email-vasilis.liaskovitis@profitbricks.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342783101 8248 80.91.229.3 (20 Jul 2012 11:18:21 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 11:18:21 +0000 (UTC)
+Cc: Vasilis Liaskovitis <vasilis.liaskovitis@profitbricks.com>
+To: linux-mm@kvack.org, linux-kernel@vger.kernel.org,
+	linux-acpi@vger.kernel.org, isimatu.yasuaki@jp.fujitsu.com,
+	wency@cn.fujitsu.com
+Original-X-From: linux-acpi-owner@vger.kernel.org Fri Jul 20 13:18:21 2012
+Return-path: <linux-acpi-owner@vger.kernel.org>
+Envelope-to: glad-acpi-devel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-acpi-owner@vger.kernel.org>)
+	id 1SsBDw-00046w-2w
+	for glad-acpi-devel@plane.gmane.org; Fri, 20 Jul 2012 13:18:20 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752647Ab2GTLSS (ORCPT <rfc822;glad-acpi-devel@m.gmane.org>);
+	Fri, 20 Jul 2012 07:18:18 -0400
+Original-Received: from mail-bk0-f46.google.com ([209.85.214.46]:48505 "EHLO
+	mail-bk0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752594Ab2GTLSQ (ORCPT
+	<rfc822;linux-acpi@vger.kernel.org>); Fri, 20 Jul 2012 07:18:16 -0400
+Original-Received: by bkwj10 with SMTP id j10so3237413bkw.19
+        for <linux-acpi@vger.kernel.org>; Fri, 20 Jul 2012 04:18:14 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:x-gm-message-state;
+        bh=jFd1DlK3sDRkLZvKTrztwnostP8mATX5a+fJk35lDgw=;
+        b=AD4vVkNQW5XxpuZnQvBuSVLm7T+n6F/+xZySwDD/y3sMueBlr/GPobns8/ffDrU7/k
+         CTOsjLKVicHIvEBwZSR2DArRG9gMVUpB8clyNsHjhBIYG2i7SmkLw42tyVT3PV2vUZBN
+         qMiQMhMKfAYy1ALsjVvEyaINaIBYsJVOzeHgO+ff9+eAKgv1wNlB1x9ptawY6oM623Xi
+         zVWNJ/IL5LifacxK31lm5bTXTGXZPsqWjGAg41Faxq74jOrGCt494DoV7cLN0ZFmAiX0
+         Olh9/57kXl7cvzBC5hleF7QwEtQ+KeVaiJIbrcceMhbT7Kixb0l9IrrQvgBWiZj3koXz
+         9nQw==
+Original-Received: by 10.205.130.17 with SMTP id hk17mr2778962bkc.76.1342783094671;
+        Fri, 20 Jul 2012 04:18:14 -0700 (PDT)
+Original-Received: from dhcp-192-168-178-175.ri.profitbricks.localdomain ([62.217.45.26])
+        by mx.google.com with ESMTPS id he8sm2630597bkc.3.2012.07.20.04.18.13
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 20 Jul 2012 04:18:14 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9
+X-Gm-Message-State: ALoCoQngh+Kb4j1hneUduokpODYrDh2VSqHrsC7m4gBLOp0Acqoq9QJYlixciyU8HqMO+d7nV/Cp
+Original-Sender: linux-acpi-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-acpi.vger.kernel.org>
+X-Mailing-List: linux-acpi@vger.kernel.org
+Xref: news.gmane.org gmane.linux.acpi.devel:54383 gmane.linux.kernel.mm:82763 gmane.linux.kernel:1330792
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330792>
+
+hot-remove initiated by acpi_memhotplug driver tries to offline pages and then
+remove section/sysfs files in remove_memory(). remove_memory() will only proceed
+if is_memblk_offline() returns true, i.e. only if the corresponding memblock
+is in MEM_OFFLINE state. However, the memblock state is currently only updated
+if the offlining has been initiated from the sysfs interface (echo offline >
+/sys/devices/system/memory/memoryXX/state). The acpi hot-remove codepath does
+not use the sysfs interface but directly calls offline_pages. So remove_memory()
+will always fail, even if offline_pages has succeeded.
+
+This patch solves this by registering a memblock_state notifier function in the
+memory_notify chain. This will change state of memblocks independently of sysfs
+usage.
+
+The patch is based on work-in-progress patches for memory hot-remove, see:
+http://lwn.net/Articles/507244/
+
+Signed-off-by: Vasilis Liaskovitis <vasilis.liaskovitis@profitbricks.com>
+---
+ drivers/base/memory.c |   37 +++++++++++++++++++++++++++++++++++++
+ 1 files changed, 37 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/base/memory.c b/drivers/base/memory.c
+index 8981568..4095f3f 100644
+--- a/drivers/base/memory.c
++++ b/drivers/base/memory.c
+@@ -706,6 +706,42 @@ int unregister_memory_section(struct mem_section *section)
+ 	return remove_memory_block(0, section, 0);
+ }
+ 
++static int memblock_state_notifier_nb(struct notifier_block *nb, unsigned long
++		val, void *v)
++{
++	struct memory_notify *arg = (struct memory_notify *)v;
++	struct memory_block *mem = NULL;
++	struct mem_section *ms;
++	unsigned long section_nr;
++
++	section_nr = pfn_to_section_nr(arg->start_pfn);
++	ms = __nr_to_section(section_nr);
++	mem = find_memory_block(ms);
++	if (!mem)
++		goto out;
++
++	switch (val) {
++	case MEM_GOING_OFFLINE:
++	case MEM_OFFLINE:
++	case MEM_GOING_ONLINE:
++	case MEM_ONLINE:
++	case MEM_CANCEL_ONLINE:
++	case MEM_CANCEL_OFFLINE:
++		mem->state = val;
++		break;
++	default:
++		printk(KERN_WARNING "invalid memblock state\n");
++		break;
++	}
++out:
++	return NOTIFY_OK;
++}
++
++static struct notifier_block memblock_state_nb = {
++	.notifier_call = memblock_state_notifier_nb,
++	.priority = 0
++};
++
+ /*
+  * Initialize the sysfs support for memory devices...
+  */
+@@ -724,6 +760,7 @@ int __init memory_dev_init(void)
+ 	block_sz = get_memory_block_size();
+ 	sections_per_block = block_sz / MIN_MEMORY_BLOCK_SIZE;
+ 
++	register_memory_notifier(&memblock_state_nb);
+ 	/*
+ 	 * Create entries for memory sections that were found
+ 	 * during boot and have been initialized
+-- 
+1.7.9
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-acpi" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

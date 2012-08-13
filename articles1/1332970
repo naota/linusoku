@@ -1,0 +1,165 @@
+Path: news.gmane.org!not-for-mail
+From: Stanislav Kinsbursky <skinsbursky@parallels.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.nfs,gmane.linux.openvz.devel
+Subject: [PATCH v2 09/15] NFSd: make nfsd4_manager allocated per network
+	namespace context.
+Date: Wed, 25 Jul 2012 16:56:58 +0400
+Lines: 118
+Approved: news@gmane.org
+Message-ID: <20120725125658.24376.70114.stgit@localhost.localdomain>
+References: <20120725125258.24376.82525.stgit@localhost.localdomain>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343221221 22183 80.91.229.3 (25 Jul 2012 13:00:21 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 13:00:21 +0000 (UTC)
+Cc: linux-nfs@vger.kernel.org, Trond.Myklebust@netapp.com,
+	linux-kernel@vger.kernel.org, devel@openvz.org
+To: bfields@fieldses.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 15:00:18 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su1CI-0005AZ-O5
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 15:00:15 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S933040Ab2GYM6u (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 08:58:50 -0400
+Original-Received: from mailhub.sw.ru ([195.214.232.25]:25162 "EHLO relay.sw.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S932983Ab2GYM6s (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 08:58:48 -0400
+Original-Received: from localhost.localdomain ([10.30.21.131])
+	by relay.sw.ru (8.13.4/8.13.4) with ESMTP id q6PCwBxP024721;
+	Wed, 25 Jul 2012 16:58:12 +0400 (MSK)
+In-Reply-To: <20120725125258.24376.82525.stgit@localhost.localdomain>
+User-Agent: StGit/0.16
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332970 gmane.linux.nfs:51116 gmane.linux.openvz.devel:1900
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332970>
+
+Signed-off-by: Stanislav Kinsbursky <skinsbursky@parallels.com>
+---
+ fs/nfsd/netns.h     |    2 ++
+ fs/nfsd/nfs4state.c |   32 +++++++++++++++++++-------------
+ 2 files changed, 21 insertions(+), 13 deletions(-)
+
+diff --git a/fs/nfsd/netns.h b/fs/nfsd/netns.h
+index 3936563..e99767d 100644
+--- a/fs/nfsd/netns.h
++++ b/fs/nfsd/netns.h
+@@ -34,6 +34,8 @@ struct nfsd_net {
+ 
+ 	struct cache_detail *idtoname_cache;
+ 	struct cache_detail *nametoid_cache;
++
++	struct lock_manager nfsd4_manager;
+ };
+ 
+ extern int nfsd_net_id;
+diff --git a/fs/nfsd/nfs4state.c b/fs/nfsd/nfs4state.c
+index ab0a02a..fad2408 100644
+--- a/fs/nfsd/nfs4state.c
++++ b/fs/nfsd/nfs4state.c
+@@ -45,6 +45,8 @@
+ #include "vfs.h"
+ #include "current_stateid.h"
+ 
++#include "netns.h"
++
+ #define NFSDDBG_FACILITY                NFSDDBG_PROC
+ 
+ /* Globals */
+@@ -3115,22 +3117,21 @@ out:
+ 	return status;
+ }
+ 
+-static struct lock_manager nfsd4_manager = {
+-};
+-
+ static bool grace_ended;
+ 
+ static void
+-nfsd4_end_grace(void)
++nfsd4_end_grace(struct net *net)
+ {
++	struct nfsd_net *nn = net_generic(net, nfsd_net_id);
++
+ 	/* do nothing if grace period already ended */
+ 	if (grace_ended)
+ 		return;
+ 
+ 	dprintk("NFSD: end of grace period\n");
+ 	grace_ended = true;
+-	nfsd4_record_grace_done(&init_net, boot_time);
+-	locks_end_grace(&nfsd4_manager);
++	nfsd4_record_grace_done(net, boot_time);
++	locks_end_grace(&nn->nfsd4_manager);
+ 	/*
+ 	 * Now that every NFSv4 client has had the chance to recover and
+ 	 * to see the (possibly new, possibly shorter) lease time, we
+@@ -3153,7 +3154,7 @@ nfs4_laundromat(void)
+ 	nfs4_lock_state();
+ 
+ 	dprintk("NFSD: laundromat service - starting\n");
+-	nfsd4_end_grace();
++	nfsd4_end_grace(&init_net);
+ 	INIT_LIST_HEAD(&reaplist);
+ 	spin_lock(&client_lock);
+ 	list_for_each_safe(pos, next, &client_lru) {
+@@ -4687,6 +4688,8 @@ set_max_delegations(void)
+ int
+ nfs4_state_start(void)
+ {
++	struct net *net = &init_net;
++	struct nfsd_net *nn = net_generic(net, nfsd_net_id);
+ 	int ret;
+ 
+ 	/*
+@@ -4696,10 +4699,10 @@ nfs4_state_start(void)
+ 	 * to that instead and then do most of the rest of this on a per-net
+ 	 * basis.
+ 	 */
+-	get_net(&init_net);
+-	nfsd4_client_tracking_init(&init_net);
++	get_net(net);
++	nfsd4_client_tracking_init(net);
+ 	boot_time = get_seconds();
+-	locks_start_grace(&nfsd4_manager);
++	locks_start_grace(&nn->nfsd4_manager);
+ 	grace_ended = false;
+ 	printk(KERN_INFO "NFSD: starting %ld-second grace period\n",
+ 	       nfsd4_grace);
+@@ -4722,8 +4725,8 @@ nfs4_state_start(void)
+ out_free_laundry:
+ 	destroy_workqueue(laundry_wq);
+ out_recovery:
+-	nfsd4_client_tracking_exit(&init_net);
+-	put_net(&init_net);
++	nfsd4_client_tracking_exit(net);
++	put_net(net);
+ 	return ret;
+ }
+ 
+@@ -4764,9 +4767,12 @@ __nfs4_state_shutdown(void)
+ void
+ nfs4_state_shutdown(void)
+ {
++	struct net *net = &init_net;
++	struct nfsd_net *nn = net_generic(net, nfsd_net_id);
++
+ 	cancel_delayed_work_sync(&laundromat_work);
+ 	destroy_workqueue(laundry_wq);
+-	locks_end_grace(&nfsd4_manager);
++	locks_end_grace(&nn->nfsd4_manager);
+ 	nfs4_lock_state();
+ 	__nfs4_state_shutdown();
+ 	nfs4_unlock_state();
+

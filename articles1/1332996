@@ -1,0 +1,449 @@
+Path: news.gmane.org!not-for-mail
+From: Borislav Petkov <bp@amd64.org>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [RFC PATCH 05/13] driver core: firmware loader: introduce
+ firmware_buf
+Date: Wed, 25 Jul 2012 15:59:48 +0200
+Lines: 388
+Approved: news@gmane.org
+Message-ID: <20120725135948.GD11152@aftab.osrc.amd.com>
+References: <1343149213-10160-1-git-send-email-ming.lei@canonical.com>
+ <1343149213-10160-6-git-send-email-ming.lei@canonical.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: QUOTED-PRINTABLE
+X-Trace: dough.gmane.org 1343224807 21773 80.91.229.3 (25 Jul 2012 14:00:07 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 14:00:07 +0000 (UTC)
+Cc: Linus Torvalds <torvalds@linux-foundation.org>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	"Rafael J. Wysocki" <rjw@sisk.pl>, linux-kernel@vger.kernel.org
+To: Ming Lei <ming.lei@canonical.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 16:00:06 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su28B-0004Ma-D5
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 16:00:04 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S933123Ab2GYN7z convert rfc822-to-quoted-printable (ORCPT
+	<rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 09:59:55 -0400
+Original-Received: from osrc3.amd.com ([217.9.48.20]:35631 "EHLO mail.x86-64.org"
+	rhost-flags-OK-FAIL-OK-OK) by vger.kernel.org with ESMTP
+	id S932927Ab2GYN7x (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 09:59:53 -0400
+Original-Received: from localhost (localhost [127.0.0.1])
+	by mail.x86-64.org (Postfix) with ESMTP id F0D8B141902;
+	Wed, 25 Jul 2012 15:59:51 +0200 (CEST)
+X-Virus-Scanned: Nedap ESD1 at etzel.amd.com
+Original-Received: from mail.x86-64.org ([127.0.0.1])
+	by localhost (www.amd64.org [127.0.0.1]) (amavisd-new, port 10024)
+	with ESMTP id 5I67BvVSzLuK; Wed, 25 Jul 2012 15:59:51 +0200 (CEST)
+Original-Received: from gwo.osrc.amd.com (gwo.osrc.amd.com [10.97.0.252])
+	by mail.x86-64.org (Postfix) with ESMTP;
+	Wed, 25 Jul 2012 15:59:51 +0200 (CEST)
+Original-Received: from aftab.osrc.amd.com (aftab.osrc.amd.com [165.204.15.109])
+	by gwo.osrc.amd.com (Postfix) with ESMTP id CCFCA49C1F5;
+	Wed, 25 Jul 2012 14:59:51 +0100 (BST)
+Content-Disposition: inline
+In-Reply-To: <1343149213-10160-6-git-send-email-ming.lei@canonical.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332996
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332996>
+
+On Wed, Jul 25, 2012 at 01:00:05AM +0800, Ming Lei wrote:
+> This patch introduces struct firmware_buf to describe the buffer
+> which holds the firmware data, which will make the following
+> cache_firmware/uncache_firmware implemented easily.
+>=20
+> Signed-off-by: Ming Lei <ming.lei@canonical.com>
+> ---
+>  drivers/base/firmware_class.c |  176 +++++++++++++++++++++++--------=
+----------
+>  1 file changed, 101 insertions(+), 75 deletions(-)
+>=20
+> diff --git a/drivers/base/firmware_class.c b/drivers/base/firmware_cl=
+ass.c
+> index 0b343b8..986d9df 100644
+> --- a/drivers/base/firmware_class.c
+> +++ b/drivers/base/firmware_class.c
+> @@ -89,7 +89,7 @@ static inline long firmware_loading_timeout(void)
+>   * guarding for corner cases a global lock should be OK */
+>  static DEFINE_MUTEX(fw_lock);
+> =20
+> -struct firmware_priv {
+> +struct firmware_buf {
+>  	struct completion completion;
+>  	struct firmware *fw;
+>  	unsigned long status;
+> @@ -98,10 +98,14 @@ struct firmware_priv {
+>  	struct page **pages;
+>  	int nr_pages;
+>  	int page_array_size;
+> +	char fw_id[];
+> +};
+> +
+> +struct firmware_priv {
+>  	struct timer_list timeout;
+> -	struct device dev;
+>  	bool nowait;
+> -	char fw_id[];
+> +	struct device dev;
+> +	struct firmware_buf *buf;
+>  };
+> =20
+>  static struct firmware_priv *to_firmware_priv(struct device *dev)
+> @@ -111,8 +115,10 @@ static struct firmware_priv *to_firmware_priv(st=
+ruct device *dev)
+> =20
+>  static void fw_load_abort(struct firmware_priv *fw_priv)
+>  {
+> -	set_bit(FW_STATUS_ABORT, &fw_priv->status);
+> -	complete(&fw_priv->completion);
+> +	struct firmware_buf *buf =3D fw_priv->buf;
+> +
+> +	set_bit(FW_STATUS_ABORT, &buf->status);
+> +	complete(&buf->completion);
+>  }
+> =20
+>  static ssize_t firmware_timeout_show(struct class *class,
+> @@ -152,16 +158,23 @@ static struct class_attribute firmware_class_at=
+trs[] =3D {
+>  	__ATTR_NULL
+>  };
+> =20
+> -static void fw_dev_release(struct device *dev)
+> +static void fw_free_buf(struct firmware_buf *buf)
+>  {
+> -	struct firmware_priv *fw_priv =3D to_firmware_priv(dev);
+>  	int i;
+> =20
+> -	/* free untransfered pages buffer */
+> -	for (i =3D 0; i < fw_priv->nr_pages; i++)
+> -		__free_page(fw_priv->pages[i]);
+> -	kfree(fw_priv->pages);
+> +	if (!buf)
+> +		return;
+
+This is subtle: the caller of fw_free_buf might forget to assign NULL t=
+o
+the buf ptr.
+
+Why not pass struct firmware_priv *fw_priv to the function instead and =
+=2E..
+
+> +
+> +	for (i =3D 0; i < buf->nr_pages; i++)
+> +		__free_page(buf->pages[i]);
+> +	kfree(buf->pages);
+
+assign NULL to the ptr as a last step, when all is done:
+
+	fw_priv->buf =3D NULL;
+
+This way you're making sure ->buf is NULL after all pages are freed and
+your check above is always correct.
+
+> +}
+> +
+> +static void fw_dev_release(struct device *dev)
+> +{
+> +	struct firmware_priv *fw_priv =3D to_firmware_priv(dev);
+> =20
+> +	kfree(fw_priv->buf);
+>  	kfree(fw_priv);
+> =20
+>  	module_put(THIS_MODULE);
+> @@ -171,7 +184,7 @@ static int firmware_uevent(struct device *dev, st=
+ruct kobj_uevent_env *env)
+>  {
+>  	struct firmware_priv *fw_priv =3D to_firmware_priv(dev);
+> =20
+> -	if (add_uevent_var(env, "FIRMWARE=3D%s", fw_priv->fw_id))
+> +	if (add_uevent_var(env, "FIRMWARE=3D%s", fw_priv->buf->fw_id))
+>  		return -ENOMEM;
+>  	if (add_uevent_var(env, "TIMEOUT=3D%i", loading_timeout))
+>  		return -ENOMEM;
+> @@ -192,7 +205,7 @@ static ssize_t firmware_loading_show(struct devic=
+e *dev,
+>  				     struct device_attribute *attr, char *buf)
+>  {
+>  	struct firmware_priv *fw_priv =3D to_firmware_priv(dev);
+> -	int loading =3D test_bit(FW_STATUS_LOADING, &fw_priv->status);
+> +	int loading =3D test_bit(FW_STATUS_LOADING, &fw_priv->buf->status);
+> =20
+>  	return sprintf(buf, "%d\n", loading);
+>  }
+> @@ -231,32 +244,33 @@ static ssize_t firmware_loading_store(struct de=
+vice *dev,
+>  				      const char *buf, size_t count)
+>  {
+>  	struct firmware_priv *fw_priv =3D to_firmware_priv(dev);
+> +	struct firmware_buf *fw_buf =3D fw_priv->buf;
+>  	int loading =3D simple_strtol(buf, NULL, 10);
+>  	int i;
+> =20
+>  	mutex_lock(&fw_lock);
+> =20
+> -	if (!fw_priv->fw)
+> +	if (!fw_buf)
+>  		goto out;
+> =20
+>  	switch (loading) {
+>  	case 1:
+>  		/* discarding any previous partial load */
+> -		if (!test_bit(FW_STATUS_DONE, &fw_priv->status)) {
+> -			for (i =3D 0; i < fw_priv->nr_pages; i++)
+> -				__free_page(fw_priv->pages[i]);
+> -			kfree(fw_priv->pages);
+> -			fw_priv->pages =3D NULL;
+> -			fw_priv->page_array_size =3D 0;
+> -			fw_priv->nr_pages =3D 0;
+> -			set_bit(FW_STATUS_LOADING, &fw_priv->status);
+> +		if (!test_bit(FW_STATUS_DONE, &fw_buf->status)) {
+> +			for (i =3D 0; i < fw_buf->nr_pages; i++)
+> +				__free_page(fw_buf->pages[i]);
+> +			kfree(fw_buf->pages);
+> +			fw_buf->pages =3D NULL;
+> +			fw_buf->page_array_size =3D 0;
+> +			fw_buf->nr_pages =3D 0;
+> +			set_bit(FW_STATUS_LOADING, &fw_buf->status);
+>  		}
+>  		break;
+>  	case 0:
+> -		if (test_bit(FW_STATUS_LOADING, &fw_priv->status)) {
+> -			set_bit(FW_STATUS_DONE, &fw_priv->status);
+> -			clear_bit(FW_STATUS_LOADING, &fw_priv->status);
+> -			complete(&fw_priv->completion);
+> +		if (test_bit(FW_STATUS_LOADING, &fw_buf->status)) {
+> +			set_bit(FW_STATUS_DONE, &fw_buf->status);
+> +			clear_bit(FW_STATUS_LOADING, &fw_buf->status);
+> +			complete(&fw_buf->completion);
+>  			break;
+>  		}
+>  		/* fallthrough */
+> @@ -280,21 +294,21 @@ static ssize_t firmware_data_read(struct file *=
+filp, struct kobject *kobj,
+>  {
+>  	struct device *dev =3D kobj_to_dev(kobj);
+>  	struct firmware_priv *fw_priv =3D to_firmware_priv(dev);
+> -	struct firmware *fw;
+> +	struct firmware_buf *buf;
+>  	ssize_t ret_count;
+> =20
+>  	mutex_lock(&fw_lock);
+> -	fw =3D fw_priv->fw;
+> -	if (!fw || test_bit(FW_STATUS_DONE, &fw_priv->status)) {
+> +	buf =3D fw_priv->buf;
+> +	if (!buf || test_bit(FW_STATUS_DONE, &buf->status)) {
+>  		ret_count =3D -ENODEV;
+>  		goto out;
+>  	}
+> -	if (offset > fw_priv->size) {
+> +	if (offset > buf->size) {
+>  		ret_count =3D 0;
+>  		goto out;
+>  	}
+> -	if (count > fw_priv->size - offset)
+> -		count =3D fw_priv->size - offset;
+> +	if (count > buf->size - offset)
+> +		count =3D buf->size - offset;
+> =20
+>  	ret_count =3D count;
+> =20
+> @@ -304,11 +318,11 @@ static ssize_t firmware_data_read(struct file *=
+filp, struct kobject *kobj,
+>  		int page_ofs =3D offset & (PAGE_SIZE-1);
+>  		int page_cnt =3D min_t(size_t, PAGE_SIZE - page_ofs, count);
+> =20
+> -		page_data =3D kmap(fw_priv->pages[page_nr]);
+> +		page_data =3D kmap(buf->pages[page_nr]);
+> =20
+>  		memcpy(buffer, page_data + page_ofs, page_cnt);
+> =20
+> -		kunmap(fw_priv->pages[page_nr]);
+> +		kunmap(buf->pages[page_nr]);
+>  		buffer +=3D page_cnt;
+>  		offset +=3D page_cnt;
+>  		count -=3D page_cnt;
+> @@ -320,12 +334,13 @@ out:
+
+While you're at it, you can indent this "out:" label one space to the
+right so that the diff can pick up the function name in the hunk tag
+above instead of the label.
+
+@@ -329,7 +329,7 @@ static ssize_t firmware_data_read(struct file *filp=
+, struct kobject *kobj,
+                offset +=3D page_cnt;
+                count -=3D page_cnt;
+        }
+-out:
++ out:
+        mutex_unlock(&fw_lock);
+        return ret_count;
+ }
+
+>  static int fw_realloc_buffer(struct firmware_priv *fw_priv, int min_=
+size)
+>  {
+> +	struct firmware_buf *buf =3D fw_priv->buf;
+>  	int pages_needed =3D ALIGN(min_size, PAGE_SIZE) >> PAGE_SHIFT;
+> =20
+>  	/* If the array of pages is too small, grow it... */
+> -	if (fw_priv->page_array_size < pages_needed) {
+> +	if (buf->page_array_size < pages_needed) {
+>  		int new_array_size =3D max(pages_needed,
+> -					 fw_priv->page_array_size * 2);
+> +					 buf->page_array_size * 2);
+>  		struct page **new_pages;
+> =20
+>  		new_pages =3D kmalloc(new_array_size * sizeof(void *),
+> @@ -334,24 +349,24 @@ static int fw_realloc_buffer(struct firmware_pr=
+iv *fw_priv, int min_size)
+>  			fw_load_abort(fw_priv);
+>  			return -ENOMEM;
+>  		}
+> -		memcpy(new_pages, fw_priv->pages,
+> -		       fw_priv->page_array_size * sizeof(void *));
+> -		memset(&new_pages[fw_priv->page_array_size], 0, sizeof(void *) *
+> -		       (new_array_size - fw_priv->page_array_size));
+> -		kfree(fw_priv->pages);
+> -		fw_priv->pages =3D new_pages;
+> -		fw_priv->page_array_size =3D new_array_size;
+> +		memcpy(new_pages, buf->pages,
+> +		       buf->page_array_size * sizeof(void *));
+> +		memset(&new_pages[buf->page_array_size], 0, sizeof(void *) *
+> +		       (new_array_size - buf->page_array_size));
+> +		kfree(buf->pages);
+> +		buf->pages =3D new_pages;
+> +		buf->page_array_size =3D new_array_size;
+>  	}
+> =20
+> -	while (fw_priv->nr_pages < pages_needed) {
+> -		fw_priv->pages[fw_priv->nr_pages] =3D
+> +	while (buf->nr_pages < pages_needed) {
+> +		buf->pages[buf->nr_pages] =3D
+>  			alloc_page(GFP_KERNEL | __GFP_HIGHMEM);
+> =20
+> -		if (!fw_priv->pages[fw_priv->nr_pages]) {
+> +		if (!buf->pages[buf->nr_pages]) {
+>  			fw_load_abort(fw_priv);
+>  			return -ENOMEM;
+>  		}
+> -		fw_priv->nr_pages++;
+> +		buf->nr_pages++;
+>  	}
+>  	return 0;
+>  }
+> @@ -374,15 +389,15 @@ static ssize_t firmware_data_write(struct file =
+*filp, struct kobject *kobj,
+>  {
+>  	struct device *dev =3D kobj_to_dev(kobj);
+>  	struct firmware_priv *fw_priv =3D to_firmware_priv(dev);
+> -	struct firmware *fw;
+> +	struct firmware_buf *buf;
+>  	ssize_t retval;
+> =20
+>  	if (!capable(CAP_SYS_RAWIO))
+>  		return -EPERM;
+> =20
+>  	mutex_lock(&fw_lock);
+> -	fw =3D fw_priv->fw;
+> -	if (!fw || test_bit(FW_STATUS_DONE, &fw_priv->status)) {
+> +	buf =3D fw_priv->buf;
+> +	if (!buf || test_bit(FW_STATUS_DONE, &buf->status)) {
+>  		retval =3D -ENODEV;
+>  		goto out;
+>  	}
+> @@ -399,17 +414,17 @@ static ssize_t firmware_data_write(struct file =
+*filp, struct kobject *kobj,
+>  		int page_ofs =3D offset & (PAGE_SIZE - 1);
+>  		int page_cnt =3D min_t(size_t, PAGE_SIZE - page_ofs, count);
+> =20
+> -		page_data =3D kmap(fw_priv->pages[page_nr]);
+> +		page_data =3D kmap(buf->pages[page_nr]);
+> =20
+>  		memcpy(page_data + page_ofs, buffer, page_cnt);
+> =20
+> -		kunmap(fw_priv->pages[page_nr]);
+> +		kunmap(buf->pages[page_nr]);
+>  		buffer +=3D page_cnt;
+>  		offset +=3D page_cnt;
+>  		count -=3D page_cnt;
+>  	}
+> =20
+> -	fw_priv->size =3D max_t(size_t, offset, fw_priv->size);
+> +	buf->size =3D max_t(size_t, offset, buf->size);
+>  out:
+>  	mutex_unlock(&fw_lock);
+>  	return retval;
+> @@ -434,20 +449,31 @@ fw_create_instance(struct firmware *firmware, c=
+onst char *fw_name,
+>  		   struct device *device, bool uevent, bool nowait)
+>  {
+>  	struct firmware_priv *fw_priv;
+> +	struct firmware_buf *buf;
+>  	struct device *f_dev;
+> =20
+> -	fw_priv =3D kzalloc(sizeof(*fw_priv) + strlen(fw_name) + 1 , GFP_KE=
+RNEL);
+> +	fw_priv =3D kzalloc(sizeof(*fw_priv), GFP_KERNEL);
+>  	if (!fw_priv) {
+>  		dev_err(device, "%s: kmalloc failed\n", __func__);
+> -		return ERR_PTR(-ENOMEM);
+> +		fw_priv =3D ERR_PTR(-ENOMEM);
+> +		goto exit;
+>  	}
+> =20
+> -	fw_priv->fw =3D firmware;
+> +	buf =3D kzalloc(sizeof(*buf) + strlen(fw_name) + 1, GFP_KERNEL);
+> +	if (!buf) {
+> +		dev_err(device, "%s: kmalloc failed\n", __func__);
+> +		kfree(fw_priv);
+> +		fw_priv =3D ERR_PTR(-ENOMEM);
+> +		goto exit;
+> +	}
+> +
+> +	buf->fw =3D firmware;
+> +	fw_priv->buf =3D buf;
+>  	fw_priv->nowait =3D nowait;
+> -	strcpy(fw_priv->fw_id, fw_name);
+> -	init_completion(&fw_priv->completion);
+>  	setup_timer(&fw_priv->timeout,
+>  		    firmware_class_timeout, (u_long) fw_priv);
+> +	strcpy(buf->fw_id, fw_name);
+> +	init_completion(&buf->completion);
+> =20
+>  	f_dev =3D &fw_priv->dev;
+> =20
+> @@ -455,7 +481,7 @@ fw_create_instance(struct firmware *firmware, con=
+st char *fw_name,
+>  	dev_set_name(f_dev, "%s", fw_name);
+>  	f_dev->parent =3D device;
+>  	f_dev->class =3D &firmware_class;
+> -
+> +exit:
+
+Ditto: please indent label names one position to the right.
+
+[ =E2=80=A6 ]
+
+Thanks.
+
+--=20
+Regards/Gruss,
+Boris.
+
+Advanced Micro Devices GmbH
+Einsteinring 24, 85609 Dornach
+GM: Alberto Bozzo
+Reg: Dornach, Landkreis Muenchen
+HRB Nr. 43632 WEEE Registernr: 129 19551

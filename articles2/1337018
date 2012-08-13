@@ -1,0 +1,197 @@
+Path: news.gmane.org!not-for-mail
+From: Michel Lespinasse <walken@google.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH v2 3/9] rbtree: add __rb_change_child() helper function
+Date: Thu,  2 Aug 2012 15:34:12 -0700
+Lines: 104
+Approved: news@gmane.org
+Message-ID: <1343946858-8170-4-git-send-email-walken@google.com>
+References: <1343946858-8170-1-git-send-email-walken@google.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343946884 32644 80.91.229.3 (2 Aug 2012 22:34:44 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 2 Aug 2012 22:34:44 +0000 (UTC)
+Cc: linux-mm@kvack.org,
+	linux-kernel@vger.kernel.org,
+	torvalds@linux-foundation.org
+To: riel@redhat.com,
+	peterz@infradead.org,
+	daniel.santos@pobox.com,
+	aarcange@redhat.com,
+	dwmw2@infradead.org,
+	akpm@linux-foundation.org
+Original-X-From: owner-linux-mm@kvack.org Fri Aug 03 00:34:42 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Sx3ya-0005II-OH
+	for glkm-linux-mm-2@m.gmane.org; Fri, 03 Aug 2012 00:34:41 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id A08BD6B0068; Thu,  2 Aug 2012 18:34:38 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 80D8B6B006E; Thu,  2 Aug 2012 18:34:38 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 2FBDD6B0069; Thu,  2 Aug 2012 18:34:38 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx204.postini.com [74.125.245.204])
+	by kanga.kvack.org (Postfix) with SMTP id 6CCF96B0062
+	for <linux-mm@kvack.org>; Thu,  2 Aug 2012 18:34:37 -0400 (EDT)
+Original-Received: from mail-yw0-f41.google.com ([209.85.213.41]) (using TLSv1) by na3sys010amx204.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 02 Aug 2012 22:34:37 GMT
+Original-Received: by yhr47 with SMTP id 47so71180yhr.14
+        for <linux-mm@kvack.org>; Thu, 02 Aug 2012 15:34:36 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=xH4IQLGiIwte6CvyeDhWKrqp62vPFiGT1cDsp8KExjA=;
+        b=PC7JDDCcU/892MPqA8C2hqOqhxU8GLIxrtMVZR4ZCJG8dwYec+oKfq0vVoXVK8VO5d
+         9Qg46KRHqMI29ucyrIqfuq9gj2Ep4zKNa9NMbvfQRvmgl4sq6/PB37mhAhB9/1/k+cww
+         GZwQGsaiqH0n8VKd7S0ss4TfVbd4njeAMnDW/Edj/nL2TEVaNMeKOJsCONG9oMLZ3pk6
+         Le8X77nz/dQ1zq/wpXqY8tahEPGChbt0a02NnPknRB1IFXiWnlaAPvIhSXhbFgSUQ0sR
+         ETX6LfBFIZ861RPma8izHJA9pPHAuGdGvha/PdQKLIRQAAU0ypIYeL+UMxtfZtsyhCzE
+         ZpnQ==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :x-gm-message-state;
+        bh=xH4IQLGiIwte6CvyeDhWKrqp62vPFiGT1cDsp8KExjA=;
+        b=V5YDoX8DcMd+9xyftwJRv6PQX4Ah6PZSepm5S6aYUwtdXuIpxkfbANQSTWbjQ5KOLR
+         5LAy0Y7QPkkWaaYHC/01e3vr7x2HESIR1MqQ1CFLTn9AyvGK6GwvWlzJqnY/C6wglzPj
+         OA1nr15G5PTz1dTDwhukcRV9Gims1tVNtK4pFTIWn5eotfthyvgMh3+aAzPl7OFOnZ84
+         r4Plo2kZgT5lOiYZvVPm0hJtJ5sq+DUXqaphcPo1TZOSO/iQE/tljhzoJLQNJljZpXhx
+         PR2GD2UX0XWbEiQ9gCDcDeUXKlumMeG0TsqsU1fvUR6tp69wB6Kh4SYGZwhOA94pUt6f
+         n7wg==
+Original-Received: by 10.50.183.200 with SMTP id eo8mr6395817igc.63.1343946875901;
+        Thu, 02 Aug 2012 15:34:35 -0700 (PDT)
+Original-Received: by 10.50.183.200 with SMTP id eo8mr6395796igc.63.1343946875747;
+        Thu, 02 Aug 2012 15:34:35 -0700 (PDT)
+Original-Received: from studio.mtv.corp.google.com (studio.mtv.corp.google.com [172.18.96.163])
+        by mx.google.com with ESMTPS id pp4sm16344211igb.5.2012.08.02.15.34.34
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 02 Aug 2012 15:34:34 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7.3
+In-Reply-To: <1343946858-8170-1-git-send-email-walken@google.com>
+X-Gm-Message-State: ALoCoQkWCidLGz/kVdUqa/GwJMooOH7qLmsdhL6HsbusTx63xJxrgDWYX9zSYR11s7BoYMzRpiaKSd55Rv5gneUPZ29z8MvUzne3fGWYiP/+4/iPoT0Cjw4gkqL6D92gUiXXnXIut2PWEaw1itgegmu601ZwqzK+e6Y+4dv8/YJSEJlSw2QpypuVWRbKNUph/B4jb41Zuhiq
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 1 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0100) s cv GT3 gt2 gt1 r p m c 
+X-pstn-addresses: from <walken@google.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83506 gmane.linux.kernel:1337018
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337018>
+
+Add __rb_change_child() as an inline helper function to replace code that
+would otherwise be duplicated 4 times in the source.
+
+No changes to binary size or speed.
+
+Signed-off-by: Michel Lespinasse <walken@google.com>
+---
+ lib/rbtree.c |   46 +++++++++++++++++-----------------------------
+ 1 files changed, 17 insertions(+), 29 deletions(-)
+
+diff --git a/lib/rbtree.c b/lib/rbtree.c
+index 61cdd0e..de89a61 100644
+--- a/lib/rbtree.c
++++ b/lib/rbtree.c
+@@ -66,6 +66,19 @@ static inline struct rb_node *rb_red_parent(struct rb_node *red)
+ 	return (struct rb_node *)red->__rb_parent_color;
+ }
+ 
++static inline void
++__rb_change_child(struct rb_node *old, struct rb_node *new,
++		  struct rb_node *parent, struct rb_root *root)
++{
++	if (parent) {
++		if (parent->rb_left == old)
++			parent->rb_left = new;
++		else
++			parent->rb_right = new;
++	} else
++		root->rb_node = new;
++}
++
+ /*
+  * Helper function for rotations:
+  * - old's parent and color get assigned to new
+@@ -78,13 +91,7 @@ __rb_rotate_set_parents(struct rb_node *old, struct rb_node *new,
+ 	struct rb_node *parent = rb_parent(old);
+ 	new->__rb_parent_color = old->__rb_parent_color;
+ 	rb_set_parent_color(old, new, color);
+-	if (parent) {
+-		if (parent->rb_left == old)
+-			parent->rb_left = new;
+-		else
+-			parent->rb_right = new;
+-	} else
+-		root->rb_node = new;
++	__rb_change_child(old, new, parent, root);
+ }
+ 
+ void rb_insert_color(struct rb_node *node, struct rb_root *root)
+@@ -375,13 +382,7 @@ void rb_erase(struct rb_node *node, struct rb_root *root)
+ 		while ((left = node->rb_left) != NULL)
+ 			node = left;
+ 
+-		if (rb_parent(old)) {
+-			if (rb_parent(old)->rb_left == old)
+-				rb_parent(old)->rb_left = node;
+-			else
+-				rb_parent(old)->rb_right = node;
+-		} else
+-			root->rb_node = node;
++		__rb_change_child(old, node, rb_parent(old), root);
+ 
+ 		child = node->rb_right;
+ 		parent = rb_parent(node);
+@@ -410,13 +411,7 @@ void rb_erase(struct rb_node *node, struct rb_root *root)
+ 
+ 	if (child)
+ 		rb_set_parent(child, parent);
+-	if (parent) {
+-		if (parent->rb_left == node)
+-			parent->rb_left = child;
+-		else
+-			parent->rb_right = child;
+-	} else
+-		root->rb_node = child;
++	__rb_change_child(node, child, parent, root);
+ 
+ color:
+ 	if (color == RB_BLACK)
+@@ -591,14 +586,7 @@ void rb_replace_node(struct rb_node *victim, struct rb_node *new,
+ 	struct rb_node *parent = rb_parent(victim);
+ 
+ 	/* Set the surrounding nodes to point to the replacement */
+-	if (parent) {
+-		if (victim == parent->rb_left)
+-			parent->rb_left = new;
+-		else
+-			parent->rb_right = new;
+-	} else {
+-		root->rb_node = new;
+-	}
++	__rb_change_child(victim, new, parent, root);
+ 	if (victim->rb_left)
+ 		rb_set_parent(victim->rb_left, new);
+ 	if (victim->rb_right)
+-- 
+1.7.7.3
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

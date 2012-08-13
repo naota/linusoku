@@ -1,0 +1,94 @@
+Path: news.gmane.org!not-for-mail
+From: Cody P Schafer <cody@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH v2] perf: prevent overflow in size calculation
+Date: Thu, 19 Jul 2012 19:57:14 -0700
+Lines: 24
+Approved: news@gmane.org
+Message-ID: <5008C90A.50705@linux.vnet.ibm.com>
+References: <87a9yv2r5q.fsf@sejong.aot.lge.com> <1342752552-3065-1-git-send-email-cody@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8; format=flowed
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342753069 25120 80.91.229.3 (20 Jul 2012 02:57:49 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 02:57:49 +0000 (UTC)
+Cc: Namhyung Kim <namhyung@kernel.org>,
+	Arnaldo Carvalho de Melo <acme@ghostprotocols.net>,
+	Ingo Molnar <mingo@redhat.com>,
+	Paul Mackerras <paulus@samba.org>,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Sukadev Bhattiprolu <sukadev@linux.vnet.ibm.com>,
+	LKML <linux-kernel@vger.kernel.org>
+To: Cody Schafer <cody@linux.vnet.ibm.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 04:57:47 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Ss3PV-0007Fc-Ag
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 04:57:45 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753091Ab2GTC5h (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 22:57:37 -0400
+Original-Received: from e33.co.us.ibm.com ([32.97.110.151]:47121 "EHLO
+	e33.co.us.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751353Ab2GTC5g (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 22:57:36 -0400
+Original-Received: from /spool/local
+	by e33.co.us.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <cody@linux.vnet.ibm.com>;
+	Thu, 19 Jul 2012 20:57:35 -0600
+Original-Received: from d03dlp03.boulder.ibm.com (9.17.202.179)
+	by e33.co.us.ibm.com (192.168.1.133) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Thu, 19 Jul 2012 20:57:21 -0600
+Original-Received: from d03relay05.boulder.ibm.com (d03relay05.boulder.ibm.com [9.17.195.107])
+	by d03dlp03.boulder.ibm.com (Postfix) with ESMTP id 551CE19D8036
+	for <linux-kernel@vger.kernel.org>; Fri, 20 Jul 2012 02:57:18 +0000 (WET)
+Original-Received: from d03av03.boulder.ibm.com (d03av03.boulder.ibm.com [9.17.195.169])
+	by d03relay05.boulder.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6K2vJXE216336
+	for <linux-kernel@vger.kernel.org>; Thu, 19 Jul 2012 20:57:19 -0600
+Original-Received: from d03av03.boulder.ibm.com (loopback [127.0.0.1])
+	by d03av03.boulder.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6K2vIU5014269
+	for <linux-kernel@vger.kernel.org>; Thu, 19 Jul 2012 20:57:19 -0600
+Original-Received: from [9.76.148.70] (sig-9-76-148-70.mts.ibm.com [9.76.148.70])
+	by d03av03.boulder.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6K2vFpB014132;
+	Thu, 19 Jul 2012 20:57:15 -0600
+User-Agent: Mozilla/5.0 (X11; Linux i686; rv:14.0) Gecko/20120714 Thunderbird/14.0
+In-Reply-To: <1342752552-3065-1-git-send-email-cody@linux.vnet.ibm.com>
+X-Content-Scanned: Fidelis XPS MAILER
+x-cbid: 12072002-2398-0000-0000-000008A3FEA0
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330644
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330644>
+
+
+>   	struct annotation *notes = symbol__annotation(sym);
+>   	const size_t size = symbol__size(sym);
+> -	size_t sizeof_sym_hist = (sizeof(struct sym_hist) + size * sizeof(u64));
+> +	size_t sizeof_sym_hist;
+> +
+> +	/* Check for overflow when calculating sizeof_sym_hist */
+> +	if (size > (SIZE_MAX / sizeof(u64) - sizeof(struct sym_hist)))
+> +		return -1;
+> +
+> +	sizeof_sym_hist = (sizeof(struct sym_hist) + size * sizeof(u64));
+> +
+> +	/* Check for overflow in zalloc argument */
+> +	if (sizeof_sym_hist > (SIZE_MAX / symbol_conf.nr_events
+> +				- sizeof(*notes->src)))
+> +		return -1;
+>
+>   	notes->src = zalloc(sizeof(*notes->src) + symbol_conf.nr_events * sizeof_sym_hist);
+>   	if (notes->src == NULL)
+>
+
+Actually, I don't think this is correct either (subtraction seems to 
+occur in the wrong spot).
+

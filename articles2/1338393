@@ -1,0 +1,98 @@
+Path: news.gmane.org!not-for-mail
+From: Axel Lin <axel.lin@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] regulator: core: Fix cast to pointer from integer of
+ different size warning
+Date: Mon, 06 Aug 2012 23:44:19 +0800
+Lines: 37
+Approved: news@gmane.org
+Message-ID: <1344267859.9376.3.camel@phoenix>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344267883 16613 80.91.229.3 (6 Aug 2012 15:44:43 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 15:44:43 +0000 (UTC)
+Cc: Liam Girdwood <lrg@ti.com>, linux-kernel@vger.kernel.org
+To: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Aug 06 17:44:43 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyPU2-0004JF-Lt
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 06 Aug 2012 17:44:43 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756470Ab2HFPoe (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 11:44:34 -0400
+Original-Received: from mail-yw0-f46.google.com ([209.85.213.46]:43335 "EHLO
+	mail-yw0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756256Ab2HFPod (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 11:44:33 -0400
+Original-Received: by yhmm54 with SMTP id m54so2604743yhm.19
+        for <linux-kernel@vger.kernel.org>; Mon, 06 Aug 2012 08:44:32 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=message-id:subject:from:to:cc:date:content-type:x-mailer
+         :content-transfer-encoding:mime-version;
+        bh=D7fHVHNvVn50MnneFabp0pZ6hbqWk6FHZ7lxArERmws=;
+        b=ECvukm3zfz2BCegd4eF8bY77DgaAcYbhcYOrSRxh9XUw+hKNHEe7ij3CncytE/z6Hv
+         sybjqV4Qt7Csn9gyjw09CxHIGDia52/sFO3Sh9tdvM6QRHM7ALmjTKyDX3VY2WgDYFoQ
+         L7UuUR83JseWxSvq5ceI4o1iSmnk7AliQnp/lS65DWGh6njGmzHPWjtPvA0/pu7N6aqU
+         kIz2APtY3hhnT3zRcRHhIhY4RTKPvV2aPDX24P6mN0xKIBblrdmOf55E+LCQc8OZg/Y9
+         keKEXqY19bvZziHIB/iiXZwQhB/ZP+jMzw1Lhp3BxtY26sr8y0lVTE1VHNNIwZ1DdWUR
+         5EEQ==
+Original-Received: by 10.68.195.97 with SMTP id id1mr20244685pbc.91.1344267872254;
+        Mon, 06 Aug 2012 08:44:32 -0700 (PDT)
+Original-Received: from [114.39.97.175] (114-39-97-175.dynamic.hinet.net. [114.39.97.175])
+        by mx.google.com with ESMTPS id oa5sm9180997pbb.14.2012.08.06.08.44.29
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 06 Aug 2012 08:44:31 -0700 (PDT)
+X-Mailer: Evolution 3.2.3-0ubuntu6 
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338393
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338393>
+
+This is to address the following warning during compilation time: (Compile on x86_64)
+
+  CC      drivers/regulator/core.o
+drivers/regulator/core.c: In function '_regulator_do_set_voltage':
+drivers/regulator/core.c:2183:10: warning: cast to pointer from integer of different size [-Wint-to-pointer-cast]
+
+This patch adds a temporary variable to avoid double cast.
+
+Signed-off-by: Axel Lin <axel.lin@gmail.com>
+---
+ drivers/regulator/core.c |    7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/regulator/core.c b/drivers/regulator/core.c
+index b28221a..5f22210 100644
+--- a/drivers/regulator/core.c
++++ b/drivers/regulator/core.c
+@@ -2179,9 +2179,12 @@ static int _regulator_do_set_voltage(struct regulator_dev *rdev,
+ 		}
+ 	}
+ 
+-	if (ret == 0 && best_val >= 0)
++	if (ret == 0 && best_val >= 0) {
++		unsigned long data = best_val;
++
+ 		_notifier_call_chain(rdev, REGULATOR_EVENT_VOLTAGE_CHANGE,
+-				     (void *)best_val);
++				     (void *)data);
++	}
+ 
+ 	trace_regulator_set_voltage_complete(rdev_get_name(rdev), best_val);
+ 
+-- 
+1.7.9.5
+
+
+

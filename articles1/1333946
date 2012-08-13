@@ -1,0 +1,119 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 34/40] mm/vmscan.c: consider swap space when deciding whether to continue reclaim
+Date: Thu, 26 Jul 2012 14:29:52 -0700
+Lines: 51
+Approved: news@gmane.org
+Message-ID: <20120726211414.242792472@linuxfoundation.org>
+References: <20120726211424.GA7709@kroah.com>
+ <20120726211411.164006056@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343338419 11235 80.91.229.3 (26 Jul 2012 21:33:39 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 21:33:39 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Minchan Kim <minchan@kernel.org>,
+	KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>,
+	Mel Gorman <mgorman@suse.de>, Rik van Riel <riel@redhat.com>,
+	Johannes Weiner <jweiner@redhat.com>,
+	Andrea Arcangeli <aarcange@redhat.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 23:33:36 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuVgd-0007W0-R5
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 23:33:36 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753831Ab2GZVdI (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 17:33:08 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:35774 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753715Ab2GZVcD (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 17:32:03 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so3820542pbb.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 14:32:03 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=0CIjYqWnqO8082aAQdM1GJi/7O3Im/3Wj/p/7a1q8xI=;
+        b=Q22ojZtVEt7spjm3SogzJpfOpgaSlDNMaLdrnJwwk6ZJ49cC9folYOaojKi1SEVOZ3
+         cAitRGM+4MTluDgYxMYpnrTsZ6v2qPO5EmCbMc1m7P7K32VkXpkh6Ct5PQrNDKJw2x0d
+         v2kbIxVh4t439lgk56I/5Nlu2XY/xK8O5dlicdCucZF5E83EpQZsC4At3zPdQBeqzEFU
+         JsvFYpJjsnoCP7+9c11CmI9IPU2lx0hwO0tOSnFzBBo8iXWX7UNWXgmG8AC9b0hYuGOU
+         mCQyo6dGLlY1P9SQIYsqRTEOhrAzLI2XPxUNwD07D+pweETw1D0hnLr4LS26KVTmp+sh
+         xuww==
+Original-Received: by 10.68.241.35 with SMTP id wf3mr8167348pbc.102.1343338323587;
+        Thu, 26 Jul 2012 14:32:03 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id rs4sm444409pbc.0.2012.07.26.14.32.01
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 14:32:02 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120726211411.164006056@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQkJ6HLtWR/ayM8g4+lxiZNn1TH23C4ydBioaj9IuPGze7osnh0ZYm+hijsRemplZwEsP4bi
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333946 gmane.linux.kernel.stable:28884
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333946>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Minchan Kim <minchan@kernel.org>
+
+commit 86cfd3a45042ab242d47f3935a02811a402beab6 upstream.
+
+Stable note: Not tracked in Bugzilla. This patch reduces kswapd CPU
+	usage on swapless systems with high anonymous memory usage.
+
+It's pointless to continue reclaiming when we have no swap space and lots
+of anon pages in the inactive list.
+
+Without this patch, it is possible when swap is disabled to continue
+trying to reclaim when there are only anonymous pages in the system even
+though that will not make any progress.
+
+Signed-off-by: Minchan Kim <minchan@kernel.org>
+Cc: KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>
+Acked-by: Mel Gorman <mgorman@suse.de>
+Reviewed-by: Rik van Riel <riel@redhat.com>
+Cc: Johannes Weiner <jweiner@redhat.com>
+Cc: Andrea Arcangeli <aarcange@redhat.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ mm/vmscan.c |    5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -2008,8 +2008,9 @@ static inline bool should_continue_recla
+ 	 * inactive lists are large enough, continue reclaiming
+ 	 */
+ 	pages_for_compaction = (2UL << sc->order);
+-	inactive_lru_pages = zone_nr_lru_pages(zone, sc, LRU_INACTIVE_ANON) +
+-				zone_nr_lru_pages(zone, sc, LRU_INACTIVE_FILE);
++	inactive_lru_pages = zone_nr_lru_pages(zone, sc, LRU_INACTIVE_FILE);
++	if (nr_swap_pages > 0)
++		inactive_lru_pages += zone_nr_lru_pages(zone, sc, LRU_INACTIVE_ANON);
+ 	if (sc->nr_reclaimed < pages_for_compaction &&
+ 			inactive_lru_pages > pages_for_compaction)
+ 		return true;
+
+

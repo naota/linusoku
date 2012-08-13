@@ -1,0 +1,175 @@
+Path: news.gmane.org!not-for-mail
+From: Rafael Aquini <aquini@redhat.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH v7 3/4] mm: introduce putback_movable_pages()
+Date: Fri, 10 Aug 2012 14:55:16 -0300
+Lines: 106
+Approved: news@gmane.org
+Message-ID: <9147e5cccc4bb2d3f2e5f155e640148eb5365af5.1344619987.git.aquini@redhat.com>
+References: <cover.1344619987.git.aquini@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344621349 25278 80.91.229.3 (10 Aug 2012 17:55:49 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 17:55:49 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, virtualization@lists.linux-foundation.org,
+        Rusty Russell <rusty@rustcorp.com.au>,
+        "Michael S. Tsirkin" <mst@redhat.com>, Rik van Riel <riel@redhat.com>,
+        Mel Gorman <mel@csn.ul.ie>, Andi Kleen <andi@firstfloor.org>,
+        Andrew Morton <akpm@linux-foundation.org>,
+        Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>,
+        Minchan Kim <minchan@kernel.org>, Rafael Aquini <aquini@redhat.com>
+To: linux-mm@kvack.org
+Original-X-From: owner-linux-mm@kvack.org Fri Aug 10 19:55:45 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SztR2-00029P-3i
+	for glkm-linux-mm-2@m.gmane.org; Fri, 10 Aug 2012 19:55:44 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 337346B005A; Fri, 10 Aug 2012 13:55:41 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id F33346B0062; Fri, 10 Aug 2012 13:55:40 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id A14216B0068; Fri, 10 Aug 2012 13:55:40 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx135.postini.com [74.125.245.135])
+	by kanga.kvack.org (Postfix) with SMTP id 50A856B005A
+	for <linux-mm@kvack.org>; Fri, 10 Aug 2012 13:55:39 -0400 (EDT)
+Original-Received: from mx1.redhat.com ([209.132.183.28]) (using TLSv1) by na3sys010amx135.postini.com ([74.125.244.10]) with SMTP;
+	Fri, 10 Aug 2012 17:55:39 GMT
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q7AHtYDB024217
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Fri, 10 Aug 2012 13:55:34 -0400
+Original-Received: from x61.redhat.com (ovpn-113-48.phx2.redhat.com [10.3.113.48])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q7AHtKtc018371;
+	Fri, 10 Aug 2012 13:55:31 -0400
+In-Reply-To: <cover.1344619987.git.aquini@redhat.com>
+In-Reply-To: <cover.1344619987.git.aquini@redhat.com>
+Original-References: <cover.1344619987.git.aquini@redhat.com>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <aquini@redhat.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:84022 gmane.linux.kernel:1341372
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341372>
+
+The PATCH "mm: introduce compaction and migration for virtio ballooned pages"
+hacks around putback_lru_pages() in order to allow ballooned pages to be
+re-inserted on balloon page list as if a ballooned page was like a LRU page.
+
+As ballooned pages are not legitimate LRU pages, this patch introduces
+putback_movable_pages() to properly cope with cases where the isolated
+pageset contains ballooned pages and LRU pages, thus fixing the mentioned
+inelegant hack around putback_lru_pages().
+
+Signed-off-by: Rafael Aquini <aquini@redhat.com>
+---
+ include/linux/migrate.h |  2 ++
+ mm/compaction.c         |  4 ++--
+ mm/migrate.c            | 20 ++++++++++++++++++++
+ mm/page_alloc.c         |  2 +-
+ 4 files changed, 25 insertions(+), 3 deletions(-)
+
+diff --git a/include/linux/migrate.h b/include/linux/migrate.h
+index ce7e667..ff103a1 100644
+--- a/include/linux/migrate.h
++++ b/include/linux/migrate.h
+@@ -10,6 +10,7 @@ typedef struct page *new_page_t(struct page *, unsigned long private, int **);
+ #ifdef CONFIG_MIGRATION
+ 
+ extern void putback_lru_pages(struct list_head *l);
++extern void putback_movable_pages(struct list_head *l);
+ extern int migrate_page(struct address_space *,
+ 			struct page *, struct page *, enum migrate_mode);
+ extern int migrate_pages(struct list_head *l, new_page_t x,
+@@ -33,6 +34,7 @@ extern int migrate_huge_page_move_mapping(struct address_space *mapping,
+ #else
+ 
+ static inline void putback_lru_pages(struct list_head *l) {}
++static inline void putback_movable_pages(struct list_head *l) {}
+ static inline int migrate_pages(struct list_head *l, new_page_t x,
+ 		unsigned long private, bool offlining,
+ 		enum migrate_mode mode) { return -ENOSYS; }
+diff --git a/mm/compaction.c b/mm/compaction.c
+index e4e871b..8567bb8 100644
+--- a/mm/compaction.c
++++ b/mm/compaction.c
+@@ -837,9 +837,9 @@ static int compact_zone(struct zone *zone, struct compact_control *cc)
+ 		trace_mm_compaction_migratepages(nr_migrate - nr_remaining,
+ 						nr_remaining);
+ 
+-		/* Release LRU pages not migrated */
++		/* Release isolated pages not migrated */
+ 		if (err) {
+-			putback_lru_pages(&cc->migratepages);
++			putback_movable_pages(&cc->migratepages);
+ 			cc->nr_migratepages = 0;
+ 			if (err == -ENOMEM) {
+ 				ret = COMPACT_PARTIAL;
+diff --git a/mm/migrate.c b/mm/migrate.c
+index 80f22bb..1165134 100644
+--- a/mm/migrate.c
++++ b/mm/migrate.c
+@@ -79,6 +79,26 @@ void putback_lru_pages(struct list_head *l)
+ 		list_del(&page->lru);
+ 		dec_zone_page_state(page, NR_ISOLATED_ANON +
+ 				page_is_file_cache(page));
++			putback_lru_page(page);
++	}
++}
++
++/*
++ * Put previously isolated pages back onto the appropriated lists
++ * from where they were once taken off for compaction/migration.
++ *
++ * This function shall be used instead of putback_lru_pages(),
++ * whenever the isolated pageset has been built by isolate_migratepages_range()
++ */
++void putback_movable_pages(struct list_head *l)
++{
++	struct page *page;
++	struct page *page2;
++
++	list_for_each_entry_safe(page, page2, l, lru) {
++		list_del(&page->lru);
++		dec_zone_page_state(page, NR_ISOLATED_ANON +
++				page_is_file_cache(page));
+ 		if (unlikely(movable_balloon_page(page)))
+ 			putback_balloon_page(page);
+ 		else
+diff --git a/mm/page_alloc.c b/mm/page_alloc.c
+index 009ac28..78b7663 100644
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -5669,7 +5669,7 @@ static int __alloc_contig_migrate_range(unsigned long start, unsigned long end)
+ 				    0, false, MIGRATE_SYNC);
+ 	}
+ 
+-	putback_lru_pages(&cc.migratepages);
++	putback_movable_pages(&cc.migratepages);
+ 	return ret > 0 ? 0 : ret;
+ }
+ 
+-- 
+1.7.11.2
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

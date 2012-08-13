@@ -1,0 +1,166 @@
+Path: news.gmane.org!not-for-mail
+From: Mel Gorman <mgorman@suse.de>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel.stable,gmane.linux.kernel
+Subject: [PATCH 20/34] kswapd: avoid unnecessary rebalance after an unsuccessful balancing
+Date: Mon, 23 Jul 2012 14:38:33 +0100
+Lines: 103
+Approved: news@gmane.org
+Message-ID: <1343050727-3045-21-git-send-email-mgorman@suse.de>
+References: <1343050727-3045-1-git-send-email-mgorman@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: quoted-printable
+X-Trace: dough.gmane.org 1343050819 21057 80.91.229.3 (23 Jul 2012 13:40:19 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 13:40:19 +0000 (UTC)
+Cc: Linux-MM <linux-mm@kvack.org>,
+	LKML <linux-kernel@vger.kernel.org>, Mel Gorman <mgorman@suse.de>
+To: Stable <stable@vger.kernel.org>
+Original-X-From: owner-linux-mm@kvack.org Mon Jul 23 15:40:16 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1StIrn-000776-Vm
+	for glkm-linux-mm-2@m.gmane.org; Mon, 23 Jul 2012 15:40:08 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id C5ADB6B0074; Mon, 23 Jul 2012 09:39:25 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 67F0A6B0083; Mon, 23 Jul 2012 09:39:19 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id C73A86B0068; Mon, 23 Jul 2012 09:39:10 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx121.postini.com [74.125.245.121])
+	by kanga.kvack.org (Postfix) with SMTP id 98A2A6B0068
+	for <linux-mm@kvack.org>; Mon, 23 Jul 2012 09:39:02 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx121.postini.com ([74.125.244.10]) with SMTP;
+	Mon, 23 Jul 2012 13:39:02 GMT
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id AA267A3E1C;
+	Mon, 23 Jul 2012 15:39:00 +0200 (CEST)
+X-Mailer: git-send-email 1.7.9.2
+In-Reply-To: <1343050727-3045-1-git-send-email-mgorman@suse.de>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mgorman@suse.de> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82874 gmane.linux.kernel.stable:28750 gmane.linux.kernel:1331765
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331765>
+
+From: "Alex,Shi" <alex.shi@intel.com>
+
+commit d2ebd0f6b89567eb93ead4e2ca0cbe03021f344b upstream.
+
+Stable note: Fixes https://bugzilla.redhat.com/show_bug.cgi?id=3D712019. =
+This
+	patch reduces kswapd CPU usage.
+
+In commit 215ddd66 ("mm: vmscan: only read new_classzone_idx from pgdat
+when reclaiming successfully") , Mel Gorman said kswapd is better to slee=
+p
+after a unsuccessful balancing if there is tighter reclaim request pendin=
+g
+in the balancing.  But in the following scenario, kswapd do something tha=
+t
+is not matched our expectation.  The patch fixes this issue.
+
+1, Read pgdat request A (classzone_idx, order =3D 3)
+2, balance_pgdat()
+3, During pgdat, a new pgdat request B (classzone_idx, order =3D 5) is pl=
+aced
+4, balance_pgdat() returns but failed since returned order =3D 0
+5, pgdat of request A assigned to balance_pgdat(), and do balancing again=
+.
+   While the expectation behavior of kswapd should try to sleep.
+
+Signed-off-by: Alex Shi <alex.shi@intel.com>
+Reviewed-by: Tim Chen <tim.c.chen@linux.intel.com>
+Acked-by: Mel Gorman <mgorman@suse.de>
+Tested-by: P=C3=A1draig Brady <P@draigBrady.com>
+Cc: Rik van Riel <riel@redhat.com>
+Cc: KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+---
+ mm/vmscan.c |   14 +++++++++++---
+ 1 file changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/mm/vmscan.c b/mm/vmscan.c
+index aa75861..bf85e4d 100644
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -2841,7 +2841,9 @@ static void kswapd_try_to_sleep(pg_data_t *pgdat, i=
+nt order, int classzone_idx)
+ static int kswapd(void *p)
+ {
+ 	unsigned long order, new_order;
++	unsigned balanced_order;
+ 	int classzone_idx, new_classzone_idx;
++	int balanced_classzone_idx;
+ 	pg_data_t *pgdat =3D (pg_data_t*)p;
+ 	struct task_struct *tsk =3D current;
+=20
+@@ -2872,7 +2874,9 @@ static int kswapd(void *p)
+ 	set_freezable();
+=20
+ 	order =3D new_order =3D 0;
++	balanced_order =3D 0;
+ 	classzone_idx =3D new_classzone_idx =3D pgdat->nr_zones - 1;
++	balanced_classzone_idx =3D classzone_idx;
+ 	for ( ; ; ) {
+ 		int ret;
+=20
+@@ -2881,7 +2885,8 @@ static int kswapd(void *p)
+ 		 * new request of a similar or harder type will succeed soon
+ 		 * so consider going to sleep on the basis we reclaimed at
+ 		 */
+-		if (classzone_idx >=3D new_classzone_idx && order =3D=3D new_order) {
++		if (balanced_classzone_idx >=3D new_classzone_idx &&
++					balanced_order =3D=3D new_order) {
+ 			new_order =3D pgdat->kswapd_max_order;
+ 			new_classzone_idx =3D pgdat->classzone_idx;
+ 			pgdat->kswapd_max_order =3D  0;
+@@ -2896,7 +2901,8 @@ static int kswapd(void *p)
+ 			order =3D new_order;
+ 			classzone_idx =3D new_classzone_idx;
+ 		} else {
+-			kswapd_try_to_sleep(pgdat, order, classzone_idx);
++			kswapd_try_to_sleep(pgdat, balanced_order,
++						balanced_classzone_idx);
+ 			order =3D pgdat->kswapd_max_order;
+ 			classzone_idx =3D pgdat->classzone_idx;
+ 			pgdat->kswapd_max_order =3D 0;
+@@ -2913,7 +2919,9 @@ static int kswapd(void *p)
+ 		 */
+ 		if (!ret) {
+ 			trace_mm_vmscan_kswapd_wake(pgdat->node_id, order);
+-			order =3D balance_pgdat(pgdat, order, &classzone_idx);
++			balanced_classzone_idx =3D classzone_idx;
++			balanced_order =3D balance_pgdat(pgdat, order,
++						&balanced_classzone_idx);
+ 		}
+ 	}
+ 	return 0;
+--=20
+1.7.9.2
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=3Dmailto:"dont@kvack.org"> email@kvack.org </a>
+

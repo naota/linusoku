@@ -1,0 +1,113 @@
+Path: news.gmane.org!not-for-mail
+From: Minchan Kim <minchan@kernel.org>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel,gmane.linux.kernel.cross-arch
+Subject: [PATCH 2/3] mm: Warn if pg_data_t isn't initialized with zero
+Date: Tue, 24 Jul 2012 10:10:34 +0900
+Lines: 50
+Approved: news@gmane.org
+Message-ID: <1343092235-13399-2-git-send-email-minchan@kernel.org>
+References: <1343092235-13399-1-git-send-email-minchan@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343092230 5740 80.91.229.3 (24 Jul 2012 01:10:30 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 01:10:30 +0000 (UTC)
+Cc: Tejun Heo <tj@kernel.org>,
+	Yinghai Lu <yinghai@kernel.org>,
+	linux-mm@kvack.org,
+	linux-kernel@vger.kernel.org,
+	Minchan Kim <minchan@kernel.org>,
+	linux-arch <linux-arch@vger.kernel.org>
+To: Andrew Morton <akpm@linux-foundation.org>
+Original-X-From: owner-linux-mm@kvack.org Tue Jul 24 03:10:29 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1StTdq-0005SI-D0
+	for glkm-linux-mm-2@m.gmane.org; Tue, 24 Jul 2012 03:10:26 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 7778A6B005A; Mon, 23 Jul 2012 21:10:24 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 52FC86B0069; Mon, 23 Jul 2012 21:10:23 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 8651F6B0068; Mon, 23 Jul 2012 21:10:23 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx146.postini.com [74.125.245.146])
+	by kanga.kvack.org (Postfix) with SMTP id 824036B005D
+	for <linux-mm@kvack.org>; Mon, 23 Jul 2012 21:10:21 -0400 (EDT)
+Original-Received: from LGEMRELSE1Q.lge.com ([156.147.1.111]) by na3sys010amx146.postini.com ([74.125.244.10]) with SMTP;
+	Tue, 24 Jul 2012 01:10:21 GMT
+X-AuditID: 9c93016f-b7b08ae00000790d-f7-500df5f8721c
+Original-Received: from localhost.localdomain ( [10.177.220.67])
+	by LGEMRELSE1Q.lge.com (Symantec Brightmail Gateway) with SMTP id DD.2D.30989.8F5FD005; Tue, 24 Jul 2012 10:10:17 +0900 (KST)
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1343092235-13399-1-git-send-email-minchan@kernel.org>
+X-Brightmail-Tracker: AAAAAA==
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <minchan@kernel.org> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82913 gmane.linux.kernel:1332067 gmane.linux.kernel.cross-arch:14697
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332067>
+
+This patch warns if memory-hotplug/boot code doesn't initialize
+pg_data_t with zero when it's allocated. As I looked arch code and
+memory hotplug, they already seem to initiailize pg_data_t.
+So this warning should be never happen. It needs double check and
+let's add checking garbage with warn. I select fields randomly
+nearyby begin/middle/end of pg_data_t for checking garbage.
+If we are very unlucky, those garbage might be zero but it's very unlikely,
+I hope.
+
+This patch isn't for performance but removing initialization code
+which is necessary to add whenever we adds new field to pg_data_t or zone.
+It's rather bothersome and error-prone about compile at least as I had
+experienced.
+
+Firstly, Andrew suggested clearing out of pg_data_t in MM core part but
+Tejun doesn't like it because in the future, some archs can initialize
+some fields in arch code and pass them into general MM part so blindly clearing
+it out in mm core part would be very annoying.
+
+Cc: Tejun Heo <tj@kernel.org>
+Cc: Andrew Morton <akpm@linux-foundation.org>
+Cc: linux-arch <linux-arch@vger.kernel.org>
+Signed-off-by: Minchan Kim <minchan@kernel.org>
+---
+ mm/page_alloc.c |    3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/mm/page_alloc.c b/mm/page_alloc.c
+index b65c362..2037eeb 100644
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -4517,6 +4517,9 @@ void __paginginit free_area_init_node(int nid, unsigned long *zones_size,
+ {
+ 	pg_data_t *pgdat = NODE_DATA(nid);
+ 
++	/* pg_data_t should be reset to zero when it's allocated */
++	WARN_ON(pgdat->nr_zones || pgdat->node_start_pfn || pgdat->classzone_idx);
++
+ 	pgdat->node_id = nid;
+ 	pgdat->node_start_pfn = node_start_pfn;
+ 	calculate_node_totalpages(pgdat, zones_size, zholes_size);
+-- 
+1.7.9.5
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

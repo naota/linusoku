@@ -1,0 +1,195 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 08/40] mm: memory hotplug: Check if pages are correctly reserved on a per-section basis
+Date: Thu, 26 Jul 2012 14:29:26 -0700
+Lines: 128
+Approved: news@gmane.org
+Message-ID: <20120726211411.849674275@linuxfoundation.org>
+References: <20120726211424.GA7709@kroah.com>
+ <20120726211411.164006056@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343338273 9918 80.91.229.3 (26 Jul 2012 21:31:13 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 21:31:13 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Mel Gorman <mgorman@suse.de>,
+	KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>,
+	Nathan Fontenot <nfont@linux.vnet.ibm.com>,
+	Greg Kroah-Hartman <gregkh@suse.de>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 23:31:12 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuVeF-0005gC-Rx
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 23:31:08 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753300Ab2GZVab (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 17:30:31 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:62132 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753271Ab2GZVa0 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 17:30:26 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so3820546pbb.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 14:30:26 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=p6OLpn5Eg9j2lBw7Mmng1qqdmKI98R+T+S1mtNHsO70=;
+        b=ena1UO/+TW5H+pUpFOyUlppMLGfNQ15eQLhqQ95BntAn6dk+h4delGxRerfa3+40PO
+         738zNYIV1dHSsx0QUw7HeOZgjbPJF9tEsZhrl62ZO+AVfq0k43jVWo4lKXDpm1avrO9k
+         l6gv45Al202hqC83KTD30xMeFEE8QyJ5fr2z2DwcOcag6HwdlQ22/zDSD0NqtWlL9uw3
+         lei5yp4POa96Q4DqW4y7oGSOu6fx3J77fg+XHW5q6hueeVlZ/VRoYH4xTup9jXN9Pm9e
+         kueTpjf48Oaq0XXzULq1hyu0/Vthazp8GOP20Xc/SDuKa7K1wNVnMYedIqCfhZiUCCiL
+         SJEw==
+Original-Received: by 10.68.217.233 with SMTP id pb9mr8016524pbc.121.1343338226120;
+        Thu, 26 Jul 2012 14:30:26 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id jy7sm425044pbc.71.2012.07.26.14.30.23
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 14:30:25 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120726211411.164006056@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQlZEG2zVwtCK7y3ulQXl+VPczg3su6gFuQKOUMpL7DkgZKyVYkWIWMSeW95cxAZ0vYgPV7y
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333928 gmane.linux.kernel.stable:28866
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333928>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Mel Gorman <mgorman@suse.de>
+
+commit 2bbcb8788311a40714b585fc11b51da6ffa2ab92 upstream.
+
+Stable note: Fixes https://bugzilla.novell.com/show_bug.cgi?id=721039 .
+        Without the patch, memory hot-add can fail for kernel configurations
+        that do not set CONFIG_SPARSEMEM_VMEMMAP.
+
+(Resending as I am not seeing it in -next so maybe it got lost)
+
+mm: memory hotplug: Check if pages are correctly reserved on a per-section basis
+
+It is expected that memory being brought online is PageReserved
+similar to what happens when the page allocator is being brought up.
+Memory is onlined in "memory blocks" which consist of one or more
+sections. Unfortunately, the code that verifies PageReserved is
+currently assuming that the memmap backing all these pages is virtually
+contiguous which is only the case when CONFIG_SPARSEMEM_VMEMMAP is set.
+As a result, memory hot-add is failing on those configurations with
+the message;
+
+kernel: section number XXX page number 256 not reserved, was it already online?
+
+This patch updates the PageReserved check to lookup struct page once
+per section to guarantee the correct struct page is being checked.
+
+[Check pages within sections properly: rientjes@google.com]
+[original patch by: nfont@linux.vnet.ibm.com]
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Acked-by: KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>
+Tested-by: Nathan Fontenot <nfont@linux.vnet.ibm.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
+
+---
+ drivers/base/memory.c |   58 ++++++++++++++++++++++++++++++++++----------------
+ 1 file changed, 40 insertions(+), 18 deletions(-)
+
+--- a/drivers/base/memory.c
++++ b/drivers/base/memory.c
+@@ -224,13 +224,48 @@ int memory_isolate_notify(unsigned long
+ }
+ 
+ /*
++ * The probe routines leave the pages reserved, just as the bootmem code does.
++ * Make sure they're still that way.
++ */
++static bool pages_correctly_reserved(unsigned long start_pfn,
++					unsigned long nr_pages)
++{
++	int i, j;
++	struct page *page;
++	unsigned long pfn = start_pfn;
++
++	/*
++	 * memmap between sections is not contiguous except with
++	 * SPARSEMEM_VMEMMAP. We lookup the page once per section
++	 * and assume memmap is contiguous within each section
++	 */
++	for (i = 0; i < sections_per_block; i++, pfn += PAGES_PER_SECTION) {
++		if (WARN_ON_ONCE(!pfn_valid(pfn)))
++			return false;
++		page = pfn_to_page(pfn);
++
++		for (j = 0; j < PAGES_PER_SECTION; j++) {
++			if (PageReserved(page + j))
++				continue;
++
++			printk(KERN_WARNING "section number %ld page number %d "
++				"not reserved, was it already online?\n",
++				pfn_to_section_nr(pfn), j);
++
++			return false;
++		}
++	}
++
++	return true;
++}
++
++/*
+  * MEMORY_HOTPLUG depends on SPARSEMEM in mm/Kconfig, so it is
+  * OK to have direct references to sparsemem variables in here.
+  */
+ static int
+ memory_block_action(unsigned long phys_index, unsigned long action)
+ {
+-	int i;
+ 	unsigned long start_pfn, start_paddr;
+ 	unsigned long nr_pages = PAGES_PER_SECTION * sections_per_block;
+ 	struct page *first_page;
+@@ -238,26 +273,13 @@ memory_block_action(unsigned long phys_i
+ 
+ 	first_page = pfn_to_page(phys_index << PFN_SECTION_SHIFT);
+ 
+-	/*
+-	 * The probe routines leave the pages reserved, just
+-	 * as the bootmem code does.  Make sure they're still
+-	 * that way.
+-	 */
+-	if (action == MEM_ONLINE) {
+-		for (i = 0; i < nr_pages; i++) {
+-			if (PageReserved(first_page+i))
+-				continue;
+-
+-			printk(KERN_WARNING "section number %ld page number %d "
+-				"not reserved, was it already online?\n",
+-				phys_index, i);
+-			return -EBUSY;
+-		}
+-	}
+-
+ 	switch (action) {
+ 		case MEM_ONLINE:
+ 			start_pfn = page_to_pfn(first_page);
++
++			if (!pages_correctly_reserved(start_pfn, nr_pages))
++				return -EBUSY;
++
+ 			ret = online_pages(start_pfn, nr_pages);
+ 			break;
+ 		case MEM_OFFLINE:
+
+

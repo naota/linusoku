@@ -1,0 +1,88 @@
+Path: news.gmane.org!not-for-mail
+From: Avi Kivity <avi@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.kvm.devel
+Subject: Re: [PATCH 07/10] KVM: introduce readonly_fault_pfn
+Date: Thu, 19 Jul 2012 13:15:04 +0300
+Lines: 37
+Approved: news@gmane.org
+Message-ID: <5007DE28.2080305@redhat.com>
+References: <5005791B.8040807@linux.vnet.ibm.com> <50057A49.8070400@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342692928 4200 80.91.229.3 (19 Jul 2012 10:15:28 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 10:15:28 +0000 (UTC)
+Cc: Marcelo Tosatti <mtosatti@redhat.com>,
+	LKML <linux-kernel@vger.kernel.org>, KVM <kvm@vger.kernel.org>
+To: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 12:15:25 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SrnlS-0005nq-1g
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 12:15:22 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754233Ab2GSKPT (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 06:15:19 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:40249 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753988Ab2GSKPL (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 06:15:11 -0400
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6JAF9pk013284
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Thu, 19 Jul 2012 06:15:09 -0400
+Original-Received: from balrog.usersys.redhat.com (dhcp-4-121.tlv.redhat.com [10.35.4.121])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6JAF4Uv018849;
+	Thu, 19 Jul 2012 06:15:06 -0400
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120615 Thunderbird/13.0.1
+In-Reply-To: <50057A49.8070400@linux.vnet.ibm.com>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330267 gmane.comp.emulators.kvm.devel:94695
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330267>
+
+On 07/17/2012 05:44 PM, Xiao Guangrong wrote:
+> Introduce readonly_fault_pfn, in the later patch, it indicates failure
+> when we try to get a writable pfn from the readonly memslot
+> 
+> +
+>  inline int kvm_is_mmio_pfn(pfn_t pfn)
+>  {
+>  	if (pfn_valid(pfn)) {
+> @@ -949,13 +952,15 @@ EXPORT_SYMBOL_GPL(kvm_disable_largepages);
+> 
+>  int is_error_page(struct page *page)
+>  {
+> -	return page == bad_page || page == hwpoison_page || page == fault_page;
+> +	return page == bad_page || page == hwpoison_page || page == fault_page
+> +		|| page == readonly_fault_page;
+
+All those checks are slow, and get_page(fault_page) etc. isn't very
+scalable.
+
+We should move to ERR_PTR() etc.  We could use ENOENT, EHWPOISON,
+EFAULT, and EROFS for the above, or maybe there are better matches.
+
+>  }
+>  EXPORT_SYMBOL_GPL(is_error_page);
+> 
+>  int is_error_pfn(pfn_t pfn)
+>  {
+> -	return pfn == bad_pfn || pfn == hwpoison_pfn || pfn == fault_pfn;
+> +	return pfn == bad_pfn || pfn == hwpoison_pfn || pfn == fault_pfn
+> +		|| pfn == readonly_fault_pfn;
+>  }
+
+And a similar change here.
+-- 
+error compiling committee.c: too many arguments to function
+
+

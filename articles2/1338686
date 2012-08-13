@@ -1,0 +1,123 @@
+Path: news.gmane.org!not-for-mail
+From: Palmer Cox <p@lmercox.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 6/6] cpupower tools: Fix warning and a bug with the cpu package count
+Date: Mon,  6 Aug 2012 22:24:48 -0400
+Lines: 62
+Approved: news@gmane.org
+Message-ID: <1344306288-12369-7-git-send-email-p@lmercox.com>
+References: <1344306288-12369-1-git-send-email-p@lmercox.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344306458 20140 80.91.229.3 (7 Aug 2012 02:27:38 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 02:27:38 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, Palmer Cox <p@lmercox.com>
+To: Dominik Brodowski <linux@dominikbrodowski.net>,
+	Thomas Renninger <trenn@suse.de>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 04:27:00 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyZVc-0007TW-0v
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 04:27:00 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932551Ab2HGC0m (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 22:26:42 -0400
+Original-Received: from mail-qc0-f174.google.com ([209.85.216.174]:55164 "EHLO
+	mail-qc0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1757154Ab2HGCZ2 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 22:25:28 -0400
+Original-Received: by mail-qc0-f174.google.com with SMTP id o28so2174731qcr.19
+        for <linux-kernel@vger.kernel.org>; Mon, 06 Aug 2012 19:25:28 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :x-gm-message-state;
+        bh=03TF0Qi7HQZfeLUxu15sI0GV0F/qe4Dgrt6YjwTaQ2s=;
+        b=PLnPwAXSWdMA+p8GZORpgQ2X+Uw/FLU9WOjb1KI+Lsn+9IohfN9vUT0sUa70Re4+lJ
+         TYTyXx0muZkNeqYTZzpFZ1gEoQaSzJlfzCI1Y/o6aVcIGm4r/r4XwCnHKIl2lfCYPiml
+         GhWlPd5pFrUwe/ML8dAg8X4Y3+c4XZhKCksZLn7bGYnhgN42gMa3alx5FPdlTvbOuf1m
+         34G6gNLWcSTf8WrmnQJ54CiyYNG2HEbI6STuI9aZTi656fjO8Y7oVi6yIQFalVNxHGDi
+         pp1QqNESdbOYumujQeuLJPw9TrX7dHeu5g4tP7ImEcFCkvrk87nwCChZXHymxWav3qoZ
+         UWgw==
+Original-Received: by 10.229.135.199 with SMTP id o7mr6554188qct.0.1344306328549;
+        Mon, 06 Aug 2012 19:25:28 -0700 (PDT)
+Original-Received: from enix-thinkpad-t400.cable.rcn.com (216-164-56-124.c3-0.slvr-ubr1.lnh-slvr.md.cable.rcn.com. [216.164.56.124])
+        by mx.google.com with ESMTPS id gq10sm15431365qab.18.2012.08.06.19.25.27
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 06 Aug 2012 19:25:27 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1344306288-12369-1-git-send-email-p@lmercox.com>
+X-Gm-Message-State: ALoCoQnJ9CKzeHVdSa4fA9bV0UvliRJuveTng3jFDovJ9vP7vijOCHx8VKGSN/C15ltFRrlViQiz
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338686
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338686>
+
+The pkgs member of cpupower_topology is being used as the number of
+cpu packages. As the comment in get_cpu_topology notes, the package ids
+are not guaranteed to be contiguous. So, simply setting pkgs to the value
+of the highest physical_package_id doesn't actually provide a count of
+the number of cpu packages. Instead, calculate pkgs by setting it to
+the number of distinct physical_packge_id values which is pretty easy
+to do after the core_info structs are sorted. Calculating pkgs this
+way also has the nice benefit of getting rid of a sign comparison warning
+that GCC 4.6 was reporting.
+---
+ tools/power/cpupower/utils/helpers/topology.c |   18 +++++++++++++-----
+ 1 file changed, 13 insertions(+), 5 deletions(-)
+
+diff --git a/tools/power/cpupower/utils/helpers/topology.c b/tools/power/cpupower/utils/helpers/topology.c
+index 4e2b583..fd3cc4d 100644
+--- a/tools/power/cpupower/utils/helpers/topology.c
++++ b/tools/power/cpupower/utils/helpers/topology.c
+@@ -64,7 +64,7 @@ static int __compare(const void *t1, const void *t2)
+  */
+ int get_cpu_topology(struct cpupower_topology *cpu_top)
+ {
+-	int cpu, cpus = sysconf(_SC_NPROCESSORS_CONF);
++	int cpu, last_pkg, cpus = sysconf(_SC_NPROCESSORS_CONF);
+ 
+ 	cpu_top->core_info = malloc(sizeof(struct cpuid_core_info) * cpus);
+ 	if (cpu_top->core_info == NULL)
+@@ -78,20 +78,28 @@ int get_cpu_topology(struct cpupower_topology *cpu_top)
+ 			"physical_package_id",
+ 			&(cpu_top->core_info[cpu].pkg)) < 0)
+ 			return -1;
+-		if ((int)cpu_top->core_info[cpu].pkg != -1 &&
+-		    cpu_top->core_info[cpu].pkg > cpu_top->pkgs)
+-			cpu_top->pkgs = cpu_top->core_info[cpu].pkg;
+ 		if(sysfs_topology_read_file(
+ 			cpu,
+ 			"core_id",
+ 			&(cpu_top->core_info[cpu].core)) < 0)
+ 			return -1;
+ 	}
+-	cpu_top->pkgs++;
+ 
+ 	qsort(cpu_top->core_info, cpus, sizeof(struct cpuid_core_info),
+ 	      __compare);
+ 
++	/* Count the number of distinct pkgs values. This works
++	   becuase the primary sort of of the core_info structs was just
++	   done by pkg value. */
++        last_pkg = cpu_top->core_info[0].pkg;
++        for(cpu = 1; cpu < cpus; cpu++) {
++                if(cpu_top->core_info[cpu].pkg != last_pkg) {
++			last_pkg = cpu_top->core_info[cpu].pkg;
++                        cpu_top->pkgs++;
++		}
++        }
++        cpu_top->pkgs++;
++
+ 	/* Intel's cores count is not consecutively numbered, there may
+ 	 * be a core_id of 3, but none of 2. Assume there always is 0
+ 	 * Get amount of cores by counting duplicates in a package
+-- 
+1.7.9.5
+

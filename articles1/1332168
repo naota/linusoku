@@ -1,0 +1,138 @@
+Path: news.gmane.org!not-for-mail
+From: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.ppc64.devel
+Subject: hvc_console: Better kernel console support
+Date: Tue, 24 Jul 2012 17:33:13 +1000
+Lines: 95
+Approved: news@gmane.org
+Message-ID: <1343115193.3715.15.camel@pasglop>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343115220 17951 80.91.229.3 (24 Jul 2012 07:33:40 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 07:33:40 +0000 (UTC)
+Cc: Linux Kernel list <linux-kernel@vger.kernel.org>
+To: linuxppc-dev <linuxppc-dev@lists.ozlabs.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 09:33:40 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StZch-0007mQ-Og
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 09:33:40 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755491Ab2GXHdX (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 03:33:23 -0400
+Original-Received: from gate.crashing.org ([63.228.1.57]:34542 "EHLO gate.crashing.org"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755084Ab2GXHdW (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 03:33:22 -0400
+Original-Received: from [127.0.0.1] (localhost.localdomain [127.0.0.1])
+	by gate.crashing.org (8.14.1/8.13.8) with ESMTP id q6O7XFAx017517;
+	Tue, 24 Jul 2012 02:33:16 -0500
+X-Mailer: Evolution 3.2.3-0ubuntu6 
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332168 gmane.linux.ports.ppc64.devel:83819
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332168>
+
+hvc_console has two methods to instanciate the consoles.
+
+hvc_instanciate is meant to be called at early boot, while hvc_alloc is
+called for more dynamically probed objects.
+
+Currently, it only deals with adding kernel consoles in the former case,
+which means for example that if a console only uses dynamic probing, it
+will never be usable as a kernel console even when specifying
+console=hvc0 explicitly, which could be considered annoying...
+
+More specifically, on pseries, we only do the early instanciate for the
+console currently used by the firmware, so if you have your firmware
+configured to go to a video card, for example, you cannot get your
+kernel console, oops messages, etc... on your serial port or hypervisor
+console, which would be handy to deal with oopses.
+
+This fixes it by checking if hvc_console.flags & CON_ENABLED is set when
+registering a new dynamic console, and if not, redo the index check and
+re-register the console if the index matches, allowing console=hvcN to
+work.
+
+Signed-off-by: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+---
+diff --git a/drivers/tty/hvc/hvc_console.c b/drivers/tty/hvc/hvc_console.c
+index 2d691eb..f1d4d96 100644
+--- a/drivers/tty/hvc/hvc_console.c
++++ b/drivers/tty/hvc/hvc_console.c
+@@ -245,6 +245,20 @@ static void hvc_port_destruct(struct tty_port *port)
+ 	kfree(hp);
+ }
+ 
++static void hvc_check_console(int index)
++{
++	/* Already enabled, bail out */
++	if (hvc_console.flags & CON_ENABLED)
++		return;
++
++ 	/* If this index is what the user requested, then register
++	 * now (setup won't fail at this point).  It's ok to just
++	 * call register again if previously .setup failed.
++	 */
++	if (index == hvc_console.index)
++		register_console(&hvc_console);
++}
++
+ /*
+  * hvc_instantiate() is an early console discovery method which locates
+  * consoles * prior to the vio subsystem discovering them.  Hotplugged
+@@ -275,12 +289,8 @@ int hvc_instantiate(uint32_t vtermno, int index, const struct hv_ops *ops)
+ 	if (last_hvc < index)
+ 		last_hvc = index;
+ 
+-	/* if this index is what the user requested, then register
+-	 * now (setup won't fail at this point).  It's ok to just
+-	 * call register again if previously .setup failed.
+-	 */
+-	if (index == hvc_console.index)
+-		register_console(&hvc_console);
++	/* check if we need to re-register the kernel console */
++	hvc_check_console(index);
+ 
+ 	return 0;
+ }
+@@ -858,10 +868,15 @@ struct hvc_struct *hvc_alloc(uint32_t vtermno, int data,
+ 		i = ++last_hvc;
+ 
+ 	hp->index = i;
++	cons_ops[i] = ops;
++	vtermnos[i] = vtermno;
+ 
+ 	list_add_tail(&(hp->next), &hvc_structs);
+ 	spin_unlock(&hvc_structs_lock);
+ 
++	/* check if we need to re-register the kernel console */
++	hvc_check_console(i);
++
+ 	return hp;
+ }
+ EXPORT_SYMBOL_GPL(hvc_alloc);
+@@ -874,8 +889,12 @@ int hvc_remove(struct hvc_struct *hp)
+ 	tty = tty_port_tty_get(&hp->port);
+ 
+ 	spin_lock_irqsave(&hp->lock, flags);
+-	if (hp->index < MAX_NR_HVC_CONSOLES)
++	if (hp->index < MAX_NR_HVC_CONSOLES) {
++		console_lock();
+ 		vtermnos[hp->index] = -1;
++		cons_ops[hp->index] = NULL;
++		console_unlock();
++	}
+ 
+ 	/* Don't whack hp->irq because tty_hangup() will need to free the irq. */
+ 
+
+

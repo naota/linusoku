@@ -1,0 +1,125 @@
+Path: news.gmane.org!not-for-mail
+From: "Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH, RFC 3/9] thp: copy_huge_pmd(): copy huge zero page
+Date: Thu,  9 Aug 2012 12:08:14 +0300
+Lines: 56
+Approved: news@gmane.org
+Message-ID: <1344503300-9507-4-git-send-email-kirill.shutemov@linux.intel.com>
+References: <1344503300-9507-1-git-send-email-kirill.shutemov@linux.intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344503337 13636 80.91.229.3 (9 Aug 2012 09:08:57 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 09:08:57 +0000 (UTC)
+Cc: Andi Kleen <ak@linux.intel.com>,
+	"H. Peter Anvin" <hpa@linux.intel.com>,
+	linux-kernel@vger.kernel.org,
+	"Kirill A. Shutemov" <kirill@shutemov.name>,
+	"Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+To: Andrew Morton <akpm@linux-foundation.org>,
+	Andrea Arcangeli <aarcange@redhat.com>,
+	linux-mm@kvack.org
+Original-X-From: owner-linux-mm@kvack.org Thu Aug 09 11:08:56 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SzOja-0000r4-16
+	for glkm-linux-mm-2@m.gmane.org; Thu, 09 Aug 2012 11:08:50 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 716216B0075; Thu,  9 Aug 2012 05:08:44 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 768236B006E; Thu,  9 Aug 2012 05:08:42 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 6A6E06B0062; Thu,  9 Aug 2012 05:08:41 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx157.postini.com [74.125.245.157])
+	by kanga.kvack.org (Postfix) with SMTP id 381D26B0070
+	for <linux-mm@kvack.org>; Thu,  9 Aug 2012 05:08:40 -0400 (EDT)
+Original-Received: from mga01.intel.com ([192.55.52.88]) by na3sys010amx157.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 09 Aug 2012 09:08:40 GMT
+Original-Received: from fmsmga002.fm.intel.com ([10.253.24.26])
+  by fmsmga101.fm.intel.com with ESMTP; 09 Aug 2012 02:08:39 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.77,739,1336374000"; 
+   d="scan'208";a="205376420"
+Original-Received: from blue.fi.intel.com ([10.237.72.50])
+  by fmsmga002.fm.intel.com with ESMTP; 09 Aug 2012 02:08:35 -0700
+Original-Received: by blue.fi.intel.com (Postfix, from userid 1000)
+	id C6F30E0088; Thu,  9 Aug 2012 12:08:38 +0300 (EEST)
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1344503300-9507-1-git-send-email-kirill.shutemov@linux.intel.com>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:20.95767/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0005) s cv gt3 GT2 gt1 r p m c 
+X-pstn-addresses: from <kirill.shutemov@linux.intel.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83888 gmane.linux.kernel:1340571
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340571>
+
+From: "Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+
+It's easy to copy huge zero page. Just set destination pmd to huge zero
+page.
+
+It's safe to copy huge zero page since we have none yet :-p
+
+Signed-off-by: Kirill A. Shutemov <kirill.shutemov@linux.intel.com>
+---
+ mm/huge_memory.c |   17 +++++++++++++++++
+ 1 files changed, 17 insertions(+), 0 deletions(-)
+
+diff --git a/mm/huge_memory.c b/mm/huge_memory.c
+index 9dcb9e6..a534f84 100644
+--- a/mm/huge_memory.c
++++ b/mm/huge_memory.c
+@@ -725,6 +725,18 @@ static inline struct page *alloc_hugepage(int defrag)
+ }
+ #endif
+ 
++static void set_huge_zero_page(pgtable_t pgtable, struct mm_struct *mm,
++		struct vm_area_struct *vma, unsigned long haddr, pmd_t *pmd)
++{
++	pmd_t entry;
++	entry = pfn_pmd(huge_zero_pfn, vma->vm_page_prot);
++	entry = pmd_wrprotect(entry);
++	entry = pmd_mkhuge(entry);
++	set_pmd_at(mm, haddr, pmd, entry);
++	prepare_pmd_huge_pte(pgtable, mm);
++	mm->nr_ptes++;
++}
++
+ int do_huge_pmd_anonymous_page(struct mm_struct *mm, struct vm_area_struct *vma,
+ 			       unsigned long address, pmd_t *pmd,
+ 			       unsigned int flags)
+@@ -802,6 +814,11 @@ int copy_huge_pmd(struct mm_struct *dst_mm, struct mm_struct *src_mm,
+ 		pte_free(dst_mm, pgtable);
+ 		goto out_unlock;
+ 	}
++	if (is_huge_zero_pmd(pmd)) {
++		set_huge_zero_page(pgtable, dst_mm, vma, addr, dst_pmd);
++		ret = 0;
++		goto out_unlock;
++	}
+ 	if (unlikely(pmd_trans_splitting(pmd))) {
+ 		/* split huge page running from under us */
+ 		spin_unlock(&src_mm->page_table_lock);
+-- 
+1.7.7.6
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

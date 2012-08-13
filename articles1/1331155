@@ -1,0 +1,147 @@
+Path: news.gmane.org!not-for-mail
+From: Wen Congyang <wency@cn.fujitsu.com>
+Newsgroups: gmane.comp.emulators.kvm.devel,gmane.comp.emulators.qemu,gmane.linux.kernel
+Subject: [PATCH 3/6 v7] add a new runstate: RUN_STATE_GUEST_PANICKED
+Date: Sat, 21 Jul 2012 15:15:39 +0800
+Lines: 84
+Approved: news@gmane.org
+Message-ID: <500A571B.8010109@cn.fujitsu.com>
+References: <500A565A.8080403@cn.fujitsu.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342854666 26337 80.91.229.3 (21 Jul 2012 07:11:06 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 21 Jul 2012 07:11:06 +0000 (UTC)
+To: kvm list <kvm@vger.kernel.org>, qemu-devel <qemu-devel@nongnu.org>,
+	"linux-kernel@vger.kernel.org" <linux-kernel@vger.kernel.org>,
+	Avi Kivity <avi@redhat.com>,
+	"Daniel P. Berrange" <berrange@redhat.com>,
+	KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>,
+	Jan Kiszka <jan.kiszka@siemens.com>,
+	Gleb Natapov <gleb@redhat.com>
+Original-X-From: kvm-owner@vger.kernel.org Sat Jul 21 09:11:05 2012
+Return-path: <kvm-owner@vger.kernel.org>
+Envelope-to: gcekd-kvm-devel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <kvm-owner@vger.kernel.org>)
+	id 1SsTqC-0008VC-By
+	for gcekd-kvm-devel@plane.gmane.org; Sat, 21 Jul 2012 09:11:04 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751772Ab2GUHKs (ORCPT <rfc822;gcekd-kvm-devel@m.gmane.org>);
+	Sat, 21 Jul 2012 03:10:48 -0400
+Original-Received: from cn.fujitsu.com ([222.73.24.84]:37942 "EHLO song.cn.fujitsu.com"
+	rhost-flags-OK-FAIL-OK-OK) by vger.kernel.org with ESMTP
+	id S1751323Ab2GUHKr (ORCPT <rfc822;kvm@vger.kernel.org>);
+	Sat, 21 Jul 2012 03:10:47 -0400
+X-IronPort-AV: E=Sophos;i="4.77,628,1336320000"; 
+   d="scan'208";a="5450283"
+Original-Received: from unknown (HELO tang.cn.fujitsu.com) ([10.167.250.3])
+  by song.cn.fujitsu.com with ESMTP; 21 Jul 2012 15:09:52 +0800
+Original-Received: from fnstmail02.fnst.cn.fujitsu.com (tang.cn.fujitsu.com [127.0.0.1])
+	by tang.cn.fujitsu.com (8.14.3/8.13.1) with ESMTP id q6L7Aj95027718;
+	Sat, 21 Jul 2012 15:10:45 +0800
+Original-Received: from [10.167.225.226] ([10.167.225.226])
+          by fnstmail02.fnst.cn.fujitsu.com (Lotus Domino Release 8.5.3)
+          with ESMTP id 2012072115112537-802085 ;
+          Sat, 21 Jul 2012 15:11:25 +0800 
+User-Agent: Mozilla/5.0 (X11; U; Linux x86_64; en-US; rv:1.9.1.9) Gecko/20100413 Fedora/3.0.4-2.fc13 Thunderbird/3.0.4
+In-Reply-To: <500A565A.8080403@cn.fujitsu.com>
+X-MIMETrack: Itemize by SMTP Server on mailserver/fnst(Release 8.5.3|September 15, 2011) at
+ 2012/07/21 15:11:25,
+	Serialize by Router on mailserver/fnst(Release 8.5.3|September 15, 2011) at
+ 2012/07/21 15:11:25,
+	Serialize complete at 2012/07/21 15:11:25
+Original-Sender: kvm-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <kvm.vger.kernel.org>
+X-Mailing-List: kvm@vger.kernel.org
+Xref: news.gmane.org gmane.comp.emulators.kvm.devel:94809 gmane.comp.emulators.qemu:161020 gmane.linux.kernel:1331155
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331155>
+
+The guest will be in this state when it is panicked.
+
+Signed-off-by: Wen Congyang <wency@cn.fujitsu.com>
+---
+ qapi-schema.json |    6 +++++-
+ qmp.c            |    3 ++-
+ vl.c             |    7 ++++++-
+ 3 files changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/qapi-schema.json b/qapi-schema.json
+index a92adb1..5889af7 100644
+--- a/qapi-schema.json
++++ b/qapi-schema.json
+@@ -119,11 +119,15 @@
+ # @suspended: guest is suspended (ACPI S3)
+ #
+ # @watchdog: the watchdog action is configured to pause and has been triggered
++#
++# @guest-panicked: the panicked action is configured to pause and has been
++# triggered.
+ ##
+ { 'enum': 'RunState',
+   'data': [ 'debug', 'inmigrate', 'internal-error', 'io-error', 'paused',
+             'postmigrate', 'prelaunch', 'finish-migrate', 'restore-vm',
+-            'running', 'save-vm', 'shutdown', 'suspended', 'watchdog' ] }
++            'running', 'save-vm', 'shutdown', 'suspended', 'watchdog',
++            'guest-panicked' ] }
+ 
+ ##
+ # @StatusInfo:
+diff --git a/qmp.c b/qmp.c
+index a111dff..3b0c9bc 100644
+--- a/qmp.c
++++ b/qmp.c
+@@ -148,7 +148,8 @@ void qmp_cont(Error **errp)
+         error_set(errp, QERR_MIGRATION_EXPECTED);
+         return;
+     } else if (runstate_check(RUN_STATE_INTERNAL_ERROR) ||
+-               runstate_check(RUN_STATE_SHUTDOWN)) {
++               runstate_check(RUN_STATE_SHUTDOWN) ||
++               runstate_check(RUN_STATE_GUEST_PANICKED)) {
+         error_set(errp, QERR_RESET_REQUIRED);
+         return;
+     } else if (runstate_check(RUN_STATE_SUSPENDED)) {
+diff --git a/vl.c b/vl.c
+index c7cee31..5e33c97 100644
+--- a/vl.c
++++ b/vl.c
+@@ -361,6 +361,7 @@ static const RunStateTransition runstate_transitions_def[] = {
+     { RUN_STATE_RUNNING, RUN_STATE_SAVE_VM },
+     { RUN_STATE_RUNNING, RUN_STATE_SHUTDOWN },
+     { RUN_STATE_RUNNING, RUN_STATE_WATCHDOG },
++    { RUN_STATE_RUNNING, RUN_STATE_GUEST_PANICKED },
+ 
+     { RUN_STATE_SAVE_VM, RUN_STATE_RUNNING },
+ 
+@@ -375,6 +376,9 @@ static const RunStateTransition runstate_transitions_def[] = {
+     { RUN_STATE_WATCHDOG, RUN_STATE_RUNNING },
+     { RUN_STATE_WATCHDOG, RUN_STATE_FINISH_MIGRATE },
+ 
++    { RUN_STATE_GUEST_PANICKED, RUN_STATE_RUNNING },
++    { RUN_STATE_GUEST_PANICKED, RUN_STATE_FINISH_MIGRATE },
++
+     { RUN_STATE_MAX, RUN_STATE_MAX },
+ };
+ 
+@@ -1531,7 +1535,8 @@ static bool main_loop_should_exit(void)
+         qemu_system_reset(VMRESET_REPORT);
+         resume_all_vcpus();
+         if (runstate_check(RUN_STATE_INTERNAL_ERROR) ||
+-            runstate_check(RUN_STATE_SHUTDOWN)) {
++            runstate_check(RUN_STATE_SHUTDOWN) ||
++            runstate_check(RUN_STATE_GUEST_PANICKED)) {
+             bdrv_iterate(iostatus_bdrv_it, NULL);
+             vm_start();
+         }
+-- 
+1.7.1
+
+--
+To unsubscribe from this list: send the line "unsubscribe kvm" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

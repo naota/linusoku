@@ -1,0 +1,234 @@
+Path: news.gmane.org!not-for-mail
+From: Ming Lei <ming.lei@canonical.com>
+Newsgroups: gmane.linux.kernel
+Subject: [RFC PATCH v1 07/15] firmware loader: introduce cache_firmware and uncache_firmware
+Date: Sat,  4 Aug 2012 12:01:22 +0800
+Lines: 183
+Approved: news@gmane.org
+Message-ID: <1344052890-31935-8-git-send-email-ming.lei@canonical.com>
+References: <1344052890-31935-1-git-send-email-ming.lei@canonical.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344052993 10123 80.91.229.3 (4 Aug 2012 04:03:13 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 4 Aug 2012 04:03:13 +0000 (UTC)
+Cc: "Rafael J. Wysocki" <rjw@sisk.pl>,
+	Borislav Petkov <borislav.petkov@amd.com>,
+	linux-kernel@vger.kernel.org, Ming Lei <ming.lei@canonical.com>
+To: Linus Torvalds <torvalds@linux-foundation.org>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Aug 04 06:03:13 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxVa3-0000nW-Mt
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 04 Aug 2012 06:03:12 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754017Ab2HDECi (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 4 Aug 2012 00:02:38 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:45263 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751136Ab2HDECc (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 4 Aug 2012 00:02:32 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so2344343pbb.19
+        for <linux-kernel@vger.kernel.org>; Fri, 03 Aug 2012 21:02:32 -0700 (PDT)
+Original-Received: by 10.68.195.197 with SMTP id ig5mr2240613pbc.137.1344052952535;
+        Fri, 03 Aug 2012 21:02:32 -0700 (PDT)
+Original-Received: from localhost ([183.37.208.115])
+        by mx.google.com with ESMTPS id qa5sm4197207pbb.19.2012.08.03.21.02.28
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 03 Aug 2012 21:02:31 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1344052890-31935-1-git-send-email-ming.lei@canonical.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337586
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337586>
+
+This patches introduce two kernel APIs of cache_firmware and
+uncache_firmware, both of which take the firmware file name
+as the only parameter.
+
+So any drivers can call cache_firmware to cache the specified
+firmware file into kernel memory, and can use the cached firmware
+in situations which can't request firmware from user space.
+
+Signed-off-by: Ming Lei <ming.lei@canonical.com>
+---
+ drivers/base/firmware_class.c |  100 +++++++++++++++++++++++++++++++++++++----
+ include/linux/firmware.h      |   12 +++++
+ 2 files changed, 104 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/base/firmware_class.c b/drivers/base/firmware_class.c
+index 848ad97..fc119ce 100644
+--- a/drivers/base/firmware_class.c
++++ b/drivers/base/firmware_class.c
+@@ -142,6 +142,17 @@ static struct firmware_buf *__allocate_fw_buf(const char *fw_name,
+ 	return buf;
+ }
+ 
++static struct firmware_buf *__fw_lookup_buf(const char *fw_name)
++{
++	struct firmware_buf *tmp;
++	struct firmware_cache *fwc = &fw_cache;
++
++	list_for_each_entry(tmp, &fwc->head, list)
++		if (!strcmp(tmp->fw_id, fw_name))
++			return tmp;
++	return NULL;
++}
++
+ static int fw_lookup_and_allocate_buf(const char *fw_name,
+ 				      struct firmware_cache *fwc,
+ 				      struct firmware_buf **buf)
+@@ -149,14 +160,13 @@ static int fw_lookup_and_allocate_buf(const char *fw_name,
+ 	struct firmware_buf *tmp;
+ 
+ 	spin_lock(&fwc->lock);
+-	list_for_each_entry(tmp, &fwc->head, list)
+-		if (!strcmp(tmp->fw_id, fw_name)) {
+-			kref_get(&tmp->ref);
+-			spin_unlock(&fwc->lock);
+-			*buf = tmp;
+-			return 1;
+-		}
+-
++	tmp = __fw_lookup_buf(fw_name);
++	if (tmp) {
++		kref_get(&tmp->ref);
++		spin_unlock(&fwc->lock);
++		*buf = tmp;
++		return 1;
++	}
+ 	tmp = __allocate_fw_buf(fw_name, fwc);
+ 	if (tmp)
+ 		list_add(&tmp->list, &fwc->head);
+@@ -167,6 +177,18 @@ static int fw_lookup_and_allocate_buf(const char *fw_name,
+ 	return tmp ? 0 : -ENOMEM;
+ }
+ 
++static struct firmware_buf *fw_lookup_buf(const char *fw_name)
++{
++	struct firmware_buf *tmp;
++	struct firmware_cache *fwc = &fw_cache;
++
++	spin_lock(&fwc->lock);
++	tmp = __fw_lookup_buf(fw_name);
++	spin_unlock(&fwc->lock);
++
++	return tmp;
++}
++
+ static void __fw_free_buf(struct kref *ref)
+ {
+ 	struct firmware_buf *buf = to_fwbuf(ref);
+@@ -852,6 +874,66 @@ request_firmware_nowait(
+ 	return 0;
+ }
+ 
++/**
++ * cache_firmware - cache one firmware image in kernel memory space
++ * @fw_name: the firmware image name
++ *
++ * Cache firmware in kernel memory so that drivers can use it when
++ * system isn't ready for them to request firmware image from userspace.
++ * Once it returns successfully, driver can use request_firmware or its
++ * nowait version to get the cached firmware without any interacting
++ * with userspace
++ *
++ * Return 0 if the firmware image has been cached successfully
++ * Return !0 otherwise
++ *
++ */
++int cache_firmware(const char *fw_name)
++{
++	int ret;
++	const struct firmware *fw;
++
++	pr_debug("%s: %s\n", __func__, fw_name);
++
++	ret = request_firmware(&fw, fw_name, NULL);
++	if (!ret)
++		kfree(fw);
++
++	pr_debug("%s: %s ret=%d\n", __func__, fw_name, ret);
++
++	return ret;
++}
++
++/**
++ * uncache_firmware - remove one cached firmware image
++ * @fw_name: the firmware image name
++ *
++ * Uncache one firmware image which has been cached successfully
++ * before.
++ *
++ * Return 0 if the firmware cache has been removed successfully
++ * Return !0 otherwise
++ *
++ */
++int uncache_firmware(const char *fw_name)
++{
++	struct firmware_buf *buf;
++	struct firmware fw;
++
++	pr_debug("%s: %s\n", __func__, fw_name);
++
++	if (fw_get_builtin_firmware(&fw, fw_name))
++		return 0;
++
++	buf = fw_lookup_buf(fw_name);
++	if (buf) {
++		fw_free_buf(buf);
++		return 0;
++	}
++
++	return -EINVAL;
++}
++
+ static int __init firmware_class_init(void)
+ {
+ 	fw_cache_init();
+@@ -869,3 +951,5 @@ module_exit(firmware_class_exit);
+ EXPORT_SYMBOL(release_firmware);
+ EXPORT_SYMBOL(request_firmware);
+ EXPORT_SYMBOL(request_firmware_nowait);
++EXPORT_SYMBOL_GPL(cache_firmware);
++EXPORT_SYMBOL_GPL(uncache_firmware);
+diff --git a/include/linux/firmware.h b/include/linux/firmware.h
+index e85b771..e4279fe 100644
+--- a/include/linux/firmware.h
++++ b/include/linux/firmware.h
+@@ -47,6 +47,8 @@ int request_firmware_nowait(
+ 	void (*cont)(const struct firmware *fw, void *context));
+ 
+ void release_firmware(const struct firmware *fw);
++int cache_firmware(const char *name);
++int uncache_firmware(const char *name);
+ #else
+ static inline int request_firmware(const struct firmware **fw,
+ 				   const char *name,
+@@ -65,6 +67,16 @@ static inline int request_firmware_nowait(
+ static inline void release_firmware(const struct firmware *fw)
+ {
+ }
++
++static inline int cache_firmware(const char *name)
++{
++	return -ENOENT;
++}
++
++static inline int uncache_firmware(const char *name)
++{
++	return -EINVAL;
++}
+ #endif
+ 
+ #endif
+-- 
+1.7.9.5
+

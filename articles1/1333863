@@ -1,0 +1,99 @@
+Path: news.gmane.org!not-for-mail
+From: Peter Zijlstra <peterz@infradead.org>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel,gmane.linux.kernel.cross-arch
+Subject: Re: [RFC] page-table walkers vs memory order
+Date: Thu, 26 Jul 2012 22:39:29 +0200
+Lines: 31
+Approved: news@gmane.org
+Message-ID: <1343335169.32120.18.camel@twins>
+References: <1343064870.26034.23.camel@twins>
+	 <alpine.LSU.2.00.1207241356350.2094@eggly.anvils>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="ISO-8859-1"
+Content-Transfer-Encoding: quoted-printable
+X-Trace: dough.gmane.org 1343335191 13388 80.91.229.3 (26 Jul 2012 20:39:51 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 20:39:51 +0000 (UTC)
+Cc: Linus Torvalds <torvalds@linux-foundation.org>, "Paul E. McKenney"
+ <paulmck@linux.vnet.ibm.com>, Rik van Riel <riel@redhat.com>, Andrew Morton
+ <akpm@linux-foundation.org>, Nick Piggin <npiggin@kernel.dk>, Andrea
+ Arcangeli <aarcange@redhat.com>, linux-kernel@vger.kernel.org,
+ linux-arch@vger.kernel.org,  linux-mm@kvack.org
+To: Hugh Dickins <hughd@google.com>
+Original-X-From: owner-linux-mm@kvack.org Thu Jul 26 22:39:43 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SuUqP-0005SQ-AK
+	for glkm-linux-mm-2@m.gmane.org; Thu, 26 Jul 2012 22:39:37 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id ADA5C6B0044; Thu, 26 Jul 2012 16:39:35 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 94BC86B005A; Thu, 26 Jul 2012 16:39:35 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 65C206B005D; Thu, 26 Jul 2012 16:39:35 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx149.postini.com [74.125.245.149])
+	by kanga.kvack.org (Postfix) with SMTP id 9C2016B0044
+	for <linux-mm@kvack.org>; Thu, 26 Jul 2012 16:39:34 -0400 (EDT)
+Original-Received: from casper.infradead.org ([85.118.1.10]) (using TLSv1) by na3sys010amx149.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 26 Jul 2012 20:39:34 GMT
+Original-Received: from dhcp-089-099-019-018.chello.nl ([89.99.19.18] helo=twins)
+	by casper.infradead.org with esmtpsa (Exim 4.76 #1 (Red Hat Linux))
+	id 1SuUqJ-0007p5-NJ; Thu, 26 Jul 2012 20:39:31 +0000
+Original-Received: by twins (Postfix, from userid 1000)
+	id 060B88465A2F; Thu, 26 Jul 2012 22:39:30 +0200 (CEST)
+In-Reply-To: <alpine.LSU.2.00.1207241356350.2094@eggly.anvils>
+X-Mailer: Evolution 3.2.2- 
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <peterz@infradead.org> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83036 gmane.linux.kernel:1333863 gmane.linux.kernel.cross-arch:14729
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333863>
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333863>
+
+On Tue, 2012-07-24 at 14:51 -0700, Hugh Dickins wrote:
+> I do love the status quo, but an audit would be welcome.  When
+> it comes to patches, personally I tend to prefer ACCESS_ONCE() and
+> smp_read_barrier_depends() and accompanying comments to be hidden away
+> in the underlying macros or inlines where reasonable, rather than
+> repeated all over; but I may have my priorities wrong on that.
+>=20
+>=20
+Yeah, I was being lazy, and I totally forgot to actually look at the
+alpha code.
+
+How about we do a generic (cribbed from rcu_dereference):
+
+#define page_table_deref(p)					\
+({								\
+	typeof(*p) *______p =3D (typeof(*p) __force *)ACCESS_ONCE(p);\
+	smp_read_barrier_depends();				\
+	((typeof(*p) __force __kernel *)(______p));		\
+})
+
+and use that all over to dereference page-tables. That way all this
+lives in one place. Granted, I'll have to go edit all arch code, but I
+seem to be doing that on a frequent basis anyway :/
+
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

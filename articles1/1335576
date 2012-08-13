@@ -1,0 +1,76 @@
+Path: news.gmane.org!not-for-mail
+From: Al Viro <viro@ZenIV.linux.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.file-systems
+Subject: Re: [vfs:for-next] mnt_want_write: possible circular locking
+ dependency detected
+Date: Tue, 31 Jul 2012 10:41:21 +0100
+Lines: 29
+Approved: news@gmane.org
+Message-ID: <20120731094121.GG6481@ZenIV.linux.org.uk>
+References: <20120731082943.GB14475@localhost>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343727696 16685 80.91.229.3 (31 Jul 2012 09:41:36 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 09:41:36 +0000 (UTC)
+Cc: Jan Kara <jack@suse.cz>, linux-fsdevel@vger.kernel.org,
+	LKML <linux-kernel@vger.kernel.org>
+To: Fengguang Wu <fengguang.wu@intel.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 11:41:36 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sw8xL-0002bN-0d
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 11:41:35 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754849Ab2GaJlZ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 05:41:25 -0400
+Original-Received: from zeniv.linux.org.uk ([195.92.253.2]:35528 "EHLO
+	ZenIV.linux.org.uk" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752887Ab2GaJlY (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 05:41:24 -0400
+Original-Received: from viro by ZenIV.linux.org.uk with local (Exim 4.76 #1 (Red Hat Linux))
+	id 1Sw8x7-0005ss-Q4; Tue, 31 Jul 2012 09:41:21 +0000
+Content-Disposition: inline
+In-Reply-To: <20120731082943.GB14475@localhost>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335576 gmane.linux.file-systems:66347
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335576>
+
+On Tue, Jul 31, 2012 at 04:29:43PM +0800, Fengguang Wu wrote:
+> Hi Jan,
+> 
+> I caught the following warning at this commit. Note that the head
+> commit actually boots OK, so it may either be not 100% reproduciable,
+> or get fixed somewhere in your patchset.
+
+In the next commit, actually.  I'm still not sure about that one -
+is "just ignore atime updates on frozen fs" the right approach?
+
+AFAICS, the situation looks so:
+	* most of the callers can't hold ->i_mutex
+	* main exception is vfs_readdir(); it's not hard to pull that
+file_accessed() outside of ->i_mutex there.  The same goes for one 
+of the similar bits in coda.
+	* another sucker in coda (coda_venus_readdir()) is essentially
+a false positive - we are holding ->i_mutex on a directory inode
+in coda, end up reading from a regular file on normal fs and update
+its atime.  Hell knows; looks more like an annotation problem for me,
+even though I'm not sure how to deal with it cleanly.
+	* hugetlbfs_file_mmap() just needs file_accessed() moved one line
+up.
+	* xfs_file_splice_read() doesn't hold ->i_mutex, but it does
+hold some XFS lock; might or might not be a problem
+	* really ugly one - read request on /dev/loop update atime of
+underlying file.  They might bloody well happen from pagefault path,
+etc., potentially while doing write(2) into the same file and holding
+->i_mutex on it.  Hell knows what's the rigth semantics here...
+

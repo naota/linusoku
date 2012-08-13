@@ -1,0 +1,83 @@
+Path: news.gmane.org!not-for-mail
+From: Tomas Racek <tracek@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH v2] xfs: check for possible overflow in xfs_ioc_trim
+Date: Wed,  1 Aug 2012 15:45:37 +0200
+Lines: 35
+Approved: news@gmane.org
+Message-ID: <1343828737-5324-1-git-send-email-tracek@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343828779 13219 80.91.229.3 (1 Aug 2012 13:46:19 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 1 Aug 2012 13:46:19 +0000 (UTC)
+Cc: lczerner@redhat.com, Tomas Racek <tracek@redhat.com>,
+	Ben Myers <bpm@sgi.com> (supporter:XFS FILESYSTEM),
+	Alex Elder <elder@kernel.org> (supporter:XFS FILESYSTEM),
+	xfs@oss.sgi.com (supporter:XFS FILESYSTEM),
+	linux-kernel@vger.kernel.org (open list)
+To: linux-xfs@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 01 15:46:18 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwZFh-0008Ha-Nx
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 01 Aug 2012 15:46:18 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753966Ab2HANqJ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 1 Aug 2012 09:46:09 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:25600 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753688Ab2HANqG (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 1 Aug 2012 09:46:06 -0400
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q71Dk3K6006569
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Wed, 1 Aug 2012 09:46:04 -0400
+Original-Received: from luke.brq.redhat.com ([10.34.27.4])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q71Dk1Oi009906;
+	Wed, 1 Aug 2012 09:46:01 -0400
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336326
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336326>
+
+If range.start points behind the filesystem, return invalid value error.
+This fixes possible overflow in
+
+start = BTOBB(range.start)
+
+when range.start is nearly ULLONG_MAX.
+
+Signed-off-by: Tomas Racek <tracek@redhat.com>
+---
+ fs/xfs/xfs_discard.c |    5 +++--
+ 1 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/fs/xfs/xfs_discard.c b/fs/xfs/xfs_discard.c
+index f9c3fe3..33d367f 100644
+--- a/fs/xfs/xfs_discard.c
++++ b/fs/xfs/xfs_discard.c
+@@ -179,12 +179,13 @@ xfs_ioc_trim(
+ 	 * used by the fstrim application.  In the end it really doesn't
+ 	 * matter as trimming blocks is an advisory interface.
+ 	 */
++	if (range.start >= XFS_FSB_TO_B(mp, mp->m_sb.sb_dblocks))
++		return -XFS_ERROR(EINVAL);
++
+ 	start = BTOBB(range.start);
+ 	end = start + BTOBBT(range.len) - 1;
+ 	minlen = BTOBB(max_t(u64, granularity, range.minlen));
+ 
+-	if (XFS_BB_TO_FSB(mp, start) >= mp->m_sb.sb_dblocks)
+-		return -XFS_ERROR(EINVAL);
+ 	if (end > XFS_FSB_TO_BB(mp, mp->m_sb.sb_dblocks) - 1)
+ 		end = XFS_FSB_TO_BB(mp, mp->m_sb.sb_dblocks)- 1;
+ 
+-- 
+1.7.7.6
+

@@ -1,0 +1,302 @@
+Path: news.gmane.org!not-for-mail
+From: Jiang Liu <jiang.liu@huawei.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.acpi.devel,gmane.linux.kernel.pci
+Subject: [RFC PATCH v2 11/16] ACPIHP: analyse dependences among ACPI system  device hotplug slots
+Date: Sat, 4 Aug 2012 20:13:58 +0800
+Lines: 235
+Approved: news@gmane.org
+Message-ID: <1344082443-4608-12-git-send-email-jiang.liu@huawei.com>
+References: <1344082443-4608-1-git-send-email-jiang.liu@huawei.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1344082571 28248 80.91.229.3 (4 Aug 2012 12:16:11 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 4 Aug 2012 12:16:11 +0000 (UTC)
+Cc: Jiang Liu <jiang.liu@huawei.com>, Tony Luck <tony.luck@intel.com>,
+	Huang Ying <ying.huang@intel.com>,
+	Bob Moore <robert.moore@intel.com>,
+	Len Brown <lenb@kernel.org>,
+	"Srivatsa S. Bhat" <srivatsa.bhat@linux.vnet.ibm.com>,
+	Bjorn Helgaas <bhelgaas@google.com>,
+	<linux-kernel@vger.kernel.org>, <linux-acpi@vger.kernel.org>,
+	<linux-pci@vger.kernel.org>, Jiang Liu <liuj97@gmail.com>,
+	Hanjun Guo <guohanjun@huawei.com>
+To: Yinghai Lu <yinghai@kernel.org>,
+	Yasuaki Ishimatsu <isimatu.yasuaki@jp.fujitsu.com>,
+	Kenji Kaneshige <kaneshige.kenji@jp.fujitsu.com>,
+	Wen Congyang <wency@cn.fujitsu.com>,
+	Tang Chen <tangchen@cn.fujitsu.com>,
+	Taku Izumi <izumi.taku@jp.fujitsu.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Aug 04 14:16:06 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxdH1-0004dH-OP
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 04 Aug 2012 14:16:04 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753355Ab2HDMPy (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 4 Aug 2012 08:15:54 -0400
+Original-Received: from szxga01-in.huawei.com ([119.145.14.64]:17453 "EHLO
+	szxga01-in.huawei.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753078Ab2HDMO6 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 4 Aug 2012 08:14:58 -0400
+Original-Received: from 172.24.2.119 (EHLO szxeml202-edg.china.huawei.com) ([172.24.2.119])
+	by szxrg01-dlp.huawei.com (MOS 4.3.4-GA FastPath queued)
+	with ESMTP id AMQ61476;
+	Sat, 04 Aug 2012 20:14:38 +0800 (CST)
+Original-Received: from SZXEML405-HUB.china.huawei.com (10.82.67.60) by
+ szxeml202-edg.china.huawei.com (172.24.2.42) with Microsoft SMTP Server (TLS)
+ id 14.1.323.3; Sat, 4 Aug 2012 20:14:23 +0800
+Original-Received: from localhost (10.108.108.229) by szxeml405-hub.china.huawei.com
+ (10.82.67.60) with Microsoft SMTP Server id 14.1.323.3; Sat, 4 Aug 2012
+ 20:14:28 +0800
+X-Mailer: git-send-email 1.7.11.msysgit.1
+In-Reply-To: <1344082443-4608-1-git-send-email-jiang.liu@huawei.com>
+X-Originating-IP: [10.108.108.229]
+X-CFilter-Loop: Reflected
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337658 gmane.linux.acpi.devel:54764 gmane.linux.kernel.pci:16871
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337658>
+
+From: Jiang Liu <jiang.liu@huawei.com>
+
+Some ACPI hotplug slots may have dependencies on other ACPI hotplug slots.
+For example, if a hotpluggable memory board is connected to a hotpluggble
+physical processor, the physical processor must be powered on before
+powering the memory board on.
+
+We could get dependency relationships by analyze ACPI namespace topology
+and evaluate ACPI _EDL method. So this patch implements several functions
+to analyze dependencies among ACPI hotplug slots.
+
+Signed-off-by: Jiang Liu <liuj97@gmail.com>
+Signed-off-by: Hanjun Guo <guohanjun@huawei.com>
+---
+ drivers/acpi/hotplug/Makefile     |    1 +
+ drivers/acpi/hotplug/acpihp_drv.h |   14 ++++
+ drivers/acpi/hotplug/dependency.c |  167 +++++++++++++++++++++++++++++++++++++
+ 3 files changed, 182 insertions(+)
+ create mode 100644 drivers/acpi/hotplug/dependency.c
+
+diff --git a/drivers/acpi/hotplug/Makefile b/drivers/acpi/hotplug/Makefile
+index d69832f..8477c71 100644
+--- a/drivers/acpi/hotplug/Makefile
++++ b/drivers/acpi/hotplug/Makefile
+@@ -11,3 +11,4 @@ acpihp_enum-y					+= slot_enum_ej0.o
+ 
+ obj-$(CONFIG_ACPI_HOTPLUG_DRIVER)		+= acpihp_drv.o
+ acpihp_drv-y					= drv_main.o
++acpihp_drv-y					+= dependency.o
+diff --git a/drivers/acpi/hotplug/acpihp_drv.h b/drivers/acpi/hotplug/acpihp_drv.h
+index 18330f7..c4ff91c 100644
+--- a/drivers/acpi/hotplug/acpihp_drv.h
++++ b/drivers/acpi/hotplug/acpihp_drv.h
+@@ -53,10 +53,24 @@ struct acpihp_slot_drv {
+ 	struct acpihp_cancel_context	cancel_ctx;
+ };
+ 
++struct acpihp_slot_dependency {
++	struct list_head		node;
++	struct acpihp_slot		*slot;
++	u32				opcodes;
++};
++
+ void acpihp_drv_get_data(struct acpihp_slot *slot,
+ 			 struct acpihp_slot_drv **data);
+ int acpihp_drv_enumerate_devices(struct acpihp_slot *slot);
+ void acpihp_drv_update_slot_state(struct acpihp_slot *slot);
+ int acpihp_drv_update_slot_status(struct acpihp_slot *slot);
+ 
++int acpihp_drv_add_slot_to_dependency_list(struct acpihp_slot *slot,
++					   struct list_head *slot_list);
++void acpihp_drv_destroy_dependency_list(struct list_head *slot_list);
++int acpihp_drv_filter_dependency_list(struct list_head *old_head,
++		struct list_head *new_head, u32 opcode);
++int acpihp_drv_generate_dependency_list(struct acpihp_slot *slot,
++		struct list_head *slot_list, enum acpihp_drv_cmd cmd);
++
+ #endif	/* __ACPIHP_DRV_H__ */
+diff --git a/drivers/acpi/hotplug/dependency.c b/drivers/acpi/hotplug/dependency.c
+new file mode 100644
+index 0000000..d2d7dbb
+--- /dev/null
++++ b/drivers/acpi/hotplug/dependency.c
+@@ -0,0 +1,167 @@
++/*
++ * Copyright (C) 2011 Huawei Tech. Co., Ltd.
++ * Copyright (C) 2011 Jiang Liu <jiang.liu@huawei.com>
++ * Copyright (C) 2011 Hanjun Guo <guohanjun@huawei.com>
++ *
++ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ */
++
++#include <linux/kernel.h>
++#include <linux/types.h>
++#include <linux/list.h>
++#include <linux/mutex.h>
++#include <linux/acpi.h>
++#include <acpi/acpi_hotplug.h>
++#include "acpihp_drv.h"
++
++/* Insert a slot into the dependency list at the head */
++int acpihp_drv_add_slot_to_dependency_list(struct acpihp_slot *slot,
++					   struct list_head *slot_list)
++{
++	struct acpihp_slot_dependency *dep;
++
++	list_for_each_entry(dep, slot_list, node)
++		if (dep->slot == slot)
++			return 0;
++
++	dep = kzalloc(sizeof(*dep), GFP_KERNEL);
++	if (!dep) {
++		ACPIHP_DEBUG("fails to allocate memory for %s.\n", slot->name);
++		return -ENOMEM;
++	}
++	dep->slot = slot;
++	list_add(&dep->node, slot_list);
++
++	return 0;
++}
++
++static int acpihp_drv_get_online_dependency(struct acpihp_slot *slot,
++					    struct list_head *slot_list)
++{
++	int ret = 0;
++	struct acpihp_slot *temp;
++
++	for (temp = slot; temp && ret == 0; temp = temp->parent)
++		ret = acpihp_drv_add_slot_to_dependency_list(temp, slot_list);
++
++	return ret;
++}
++
++static int acpihp_drv_for_each_edl(struct acpihp_slot *slot, void *argp,
++	int(*cb)(struct device *dev, void *argp))
++{
++	/* TODO */
++	return 0;
++}
++
++static int acpihp_drv_add_offline_dependency(struct device *dev, void *argp)
++{
++	int ret;
++	struct acpihp_slot *slot;
++	struct list_head *list = argp;
++
++	slot = container_of(dev, struct acpihp_slot, dev);
++	ret = acpihp_drv_add_slot_to_dependency_list(slot, list);
++	if (!ret)
++		ret = device_for_each_child(&slot->dev, argp,
++				&acpihp_drv_add_offline_dependency);
++	if (!ret)
++		ret = acpihp_drv_for_each_edl(slot, argp,
++				&acpihp_drv_add_offline_dependency);
++
++	return ret;
++}
++
++static int acpihp_drv_get_offline_dependency(struct acpihp_slot *slot,
++					     struct list_head *slot_list)
++{
++	return acpihp_drv_add_offline_dependency(&slot->dev, slot_list);
++}
++
++int acpihp_drv_generate_dependency_list(struct acpihp_slot *slot,
++		struct list_head *slot_list, enum acpihp_drv_cmd cmd)
++{
++	int retval;
++
++	switch (cmd) {
++	case ACPIHP_DRV_CMD_POWERON:
++	/* fall through */
++	case ACPIHP_DRV_CMD_CONNECT:
++	/* fall through */
++	case ACPIHP_DRV_CMD_CONFIGURE:
++		retval = acpihp_drv_get_online_dependency(slot, slot_list);
++		break;
++
++	case ACPIHP_DRV_CMD_POWEROFF:
++	/* fall through */
++	case ACPIHP_DRV_CMD_DISCONNECT:
++	/* fall through */
++	case ACPIHP_DRV_CMD_UNCONFIGURE:
++		retval = acpihp_drv_get_offline_dependency(slot, slot_list);
++		break;
++
++	default:
++		retval = -EINVAL;
++		break;
++	}
++
++	return retval;
++}
++
++/*
++ * Generate a new list with slots from the old list which need to
++ * execute a specific operation.
++ */
++int acpihp_drv_filter_dependency_list(struct list_head *old_head,
++		struct list_head *new_head, u32 opcode)
++{
++	struct acpihp_slot_dependency *old_dep, *new_dep;
++
++	/* Initialize new list to empty */
++	INIT_LIST_HEAD(new_head);
++
++	list_for_each_entry(old_dep, old_head, node) {
++		/* Skip if the specified operation is not needed. */
++		if (!(old_dep->opcodes & opcode))
++			continue;
++
++		new_dep = kzalloc(sizeof(*new_dep), GFP_KERNEL);
++		if (!new_dep) {
++			ACPIHP_DEBUG("fails to filter depend list.\n");
++			acpihp_drv_destroy_dependency_list(new_head);
++			return -ENOMEM;
++		}
++
++		new_dep->slot = old_dep->slot;
++		new_dep->opcodes = old_dep->opcodes;
++		list_add_tail(&new_dep->node, new_head);
++	}
++
++	return 0;
++}
++
++void acpihp_drv_destroy_dependency_list(struct list_head *slot_list)
++{
++	struct acpihp_slot_dependency *asd, *temp;
++
++	list_for_each_entry_safe(asd, temp, slot_list, node) {
++		list_del(&asd->node);
++		kfree(asd);
++	}
++}
+-- 
+1.7.9.5
+
+

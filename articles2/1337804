@@ -1,0 +1,99 @@
+Path: news.gmane.org!not-for-mail
+From: Julia Lawall <Julia.Lawall@lip6.fr>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.janitors
+Subject: [PATCH 5/6] drivers/char/tlclk.c: fix error return code
+Date: Sun,  5 Aug 2012 11:52:35 +0200
+Lines: 53
+Approved: news@gmane.org
+Message-ID: <1344160356-387-6-git-send-email-Julia.Lawall@lip6.fr>
+References: <1344160356-387-1-git-send-email-Julia.Lawall@lip6.fr>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344160455 20652 80.91.229.3 (5 Aug 2012 09:54:15 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 5 Aug 2012 09:54:15 +0000 (UTC)
+Cc: kernel-janitors@vger.kernel.org, Arnd Bergmann <arnd@arndb.de>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	linux-kernel@vger.kernel.org, Julia Lawall <julia@diku.dk>
+To: Mark Gross <mark.gross@intel.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Aug 05 11:54:15 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxxXJ-0007jR-CI
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 05 Aug 2012 11:54:13 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754508Ab2HEJx7 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 5 Aug 2012 05:53:59 -0400
+Original-Received: from mail4-relais-sop.national.inria.fr ([192.134.164.105]:9379 "EHLO
+	mail4-relais-sop.national.inria.fr" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1754193Ab2HEJwq (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 5 Aug 2012 05:52:46 -0400
+X-IronPort-AV: E=Sophos;i="4.77,715,1336341600"; 
+   d="scan'208";a="152465607"
+Original-Received: from palace.lip6.fr (HELO localhost.localdomain) ([132.227.105.202])
+  by mail4-relais-sop.national.inria.fr with ESMTP/TLS/DHE-RSA-AES256-SHA; 05 Aug 2012 11:52:42 +0200
+X-Mailer: git-send-email 1.7.8.6
+In-Reply-To: <1344160356-387-1-git-send-email-Julia.Lawall@lip6.fr>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337804 gmane.linux.kernel.janitors:25344
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337804>
+
+From: Julia Lawall <julia@diku.dk>
+
+Convert a 0 error return code to a negative one, as returned elsewhere in the
+function.
+
+A simplified version of the semantic match that finds this problem is as
+follows: (http://coccinelle.lip6.fr/)
+
+// <smpl>
+@@
+identifier ret;
+expression e,e1,e2,e3,e4,x;
+@@
+
+(
+if (\(ret != 0\|ret < 0\) || ...) { ... return ...; }
+|
+ret = 0
+)
+... when != ret = e1
+*x = \(kmalloc\|kzalloc\|kcalloc\|devm_kzalloc\|ioremap\|ioremap_nocache\|devm_ioremap\|devm_ioremap_nocache\)(...);
+... when != x = e2
+    when != ret = e3
+*if (x == NULL || ...)
+{
+  ... when != ret = e4
+*  return ret;
+}
+// </smpl>
+
+Signed-off-by: Julia Lawall <julia@diku.dk>
+
+---
+ drivers/char/tlclk.c |    4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/char/tlclk.c b/drivers/char/tlclk.c
+index ce29e7c..e95e0ab 100644
+--- a/drivers/char/tlclk.c
++++ b/drivers/char/tlclk.c
+@@ -784,8 +784,10 @@ static int __init tlclk_init(void)
+ 	}
+ 	tlclk_major = ret;
+ 	alarm_events = kzalloc( sizeof(struct tlclk_alarms), GFP_KERNEL);
+-	if (!alarm_events)
++	if (!alarm_events) {
++		ret = -ENOMEM;
+ 		goto out1;
++	}
+ 
+ 	/* Read telecom clock IRQ number (Set by BIOS) */
+ 	if (!request_region(TLCLK_BASE, 8, "telco_clock")) {
+

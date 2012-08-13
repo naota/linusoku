@@ -1,0 +1,149 @@
+Path: news.gmane.org!not-for-mail
+From: Axel Lin <axel.lin@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 1/2] regulator: mc13783: Make mc13783_powermisc_rmw() lock
+ protected
+Date: Thu, 19 Jul 2012 11:16:06 +0800
+Lines: 84
+Approved: news@gmane.org
+Message-ID: <1342667766.6294.2.camel@phoenix>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342667818 24635 80.91.229.3 (19 Jul 2012 03:16:58 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 03:16:58 +0000 (UTC)
+Cc: Yong Shen <yong.shen@linaro.org>,
+	Fabio Estevam <fabio.estevam@freescale.com>,
+	Sascha Hauer <s.hauer@pengutronix.de>,
+	Arnaud Patard <arnaud.patard@rtp-net.org>,
+	Liam Girdwood <lrg@ti.com>, linux-kernel@vger.kernel.org
+To: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 05:16:56 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SrhER-0001Xc-PF
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 05:16:52 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752762Ab2GSDQi (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 18 Jul 2012 23:16:38 -0400
+Original-Received: from mail-yw0-f46.google.com ([209.85.213.46]:44126 "EHLO
+	mail-yw0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751852Ab2GSDQQ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 18 Jul 2012 23:16:16 -0400
+Original-Received: by yhmm54 with SMTP id m54so2327674yhm.19
+        for <linux-kernel@vger.kernel.org>; Wed, 18 Jul 2012 20:16:16 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=message-id:subject:from:to:cc:date:content-type:x-mailer
+         :content-transfer-encoding:mime-version;
+        bh=1KLOz/JRWrU6dQxnHGS+PDt2yofwnp/+1VmAZ+NnCaw=;
+        b=fl+bdqbc/hYjd7FiylBYX387OQVfvVN3y/j6U+fOzx0EiReXaorTWyKiZMmjkUpy//
+         UGx67bEFGV75fLzIxZKowI987p5Qe7VfmehejFOmjcwpTjDB9jKdaXw006mT9JcJqc/J
+         GmeazGq6u/dPbcjQSZ1lIpRIOXgfMjEdYHr3sMuICkCMf+PnJTTM5Ac2ESDOzUbOKAXh
+         dkkWyY2h6XdfPsIwWxdq382YODS6QMumOeEMXufcjTbzy0QpkLNq5D3IdyYtIe00q+TA
+         a6sQX8UAgcQBmkGDFKr6HpKLCNQoQ5F5jfkfBtOQnUL/TkAi0365zkcAzHoXNsSij/Dg
+         jStw==
+Original-Received: by 10.43.63.140 with SMTP id xe12mr24113icb.57.1342667775745;
+        Wed, 18 Jul 2012 20:16:15 -0700 (PDT)
+Original-Received: from [114.40.27.92] (114-40-27-92.dynamic.hinet.net. [114.40.27.92])
+        by mx.google.com with ESMTPS id uy3sm15953791igc.14.2012.07.18.20.16.12
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Wed, 18 Jul 2012 20:16:15 -0700 (PDT)
+X-Mailer: Evolution 3.2.3-0ubuntu6 
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330135
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330135>
+
+Then we can remove lock/unlock around the caller.
+
+Signed-off-by: Axel Lin <axel.lin@gmail.com>
+---
+ drivers/regulator/mc13783-regulator.c |   22 ++++++++--------------
+ 1 file changed, 8 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/regulator/mc13783-regulator.c b/drivers/regulator/mc13783-regulator.c
+index 4932e34..2587ea1 100644
+--- a/drivers/regulator/mc13783-regulator.c
++++ b/drivers/regulator/mc13783-regulator.c
+@@ -238,9 +238,10 @@ static int mc13783_powermisc_rmw(struct mc13xxx_regulator_priv *priv, u32 mask,
+ 
+ 	BUG_ON(val & ~mask);
+ 
++	mc13xxx_lock(priv->mc13xxx);
+ 	ret = mc13xxx_reg_read(mc13783, MC13783_REG_POWERMISC, &valread);
+ 	if (ret)
+-		return ret;
++		goto out;
+ 
+ 	/* Update the stored state for Power Gates. */
+ 	priv->powermisc_pwgt_state =
+@@ -253,7 +254,10 @@ static int mc13783_powermisc_rmw(struct mc13xxx_regulator_priv *priv, u32 mask,
+ 	valread = (valread & ~MC13783_REG_POWERMISC_PWGTSPI_M) |
+ 						priv->powermisc_pwgt_state;
+ 
+-	return mc13xxx_reg_write(mc13783, MC13783_REG_POWERMISC, valread);
++	ret = mc13xxx_reg_write(mc13783, MC13783_REG_POWERMISC, valread);
++out:
++	mc13xxx_unlock(priv->mc13xxx);
++	return ret;
+ }
+ 
+ static int mc13783_gpo_regulator_enable(struct regulator_dev *rdev)
+@@ -261,7 +265,6 @@ static int mc13783_gpo_regulator_enable(struct regulator_dev *rdev)
+ 	struct mc13xxx_regulator_priv *priv = rdev_get_drvdata(rdev);
+ 	struct mc13xxx_regulator *mc13xxx_regulators = priv->mc13xxx_regulators;
+ 	int id = rdev_get_id(rdev);
+-	int ret;
+ 	u32 en_val = mc13xxx_regulators[id].enable_bit;
+ 
+ 	dev_dbg(rdev_get_dev(rdev), "%s id: %d\n", __func__, id);
+@@ -271,12 +274,8 @@ static int mc13783_gpo_regulator_enable(struct regulator_dev *rdev)
+ 	    id == MC13783_REG_PWGT2SPI)
+ 		en_val = 0;
+ 
+-	mc13xxx_lock(priv->mc13xxx);
+-	ret = mc13783_powermisc_rmw(priv, mc13xxx_regulators[id].enable_bit,
++	return mc13783_powermisc_rmw(priv, mc13xxx_regulators[id].enable_bit,
+ 					en_val);
+-	mc13xxx_unlock(priv->mc13xxx);
+-
+-	return ret;
+ }
+ 
+ static int mc13783_gpo_regulator_disable(struct regulator_dev *rdev)
+@@ -284,7 +283,6 @@ static int mc13783_gpo_regulator_disable(struct regulator_dev *rdev)
+ 	struct mc13xxx_regulator_priv *priv = rdev_get_drvdata(rdev);
+ 	struct mc13xxx_regulator *mc13xxx_regulators = priv->mc13xxx_regulators;
+ 	int id = rdev_get_id(rdev);
+-	int ret;
+ 	u32 dis_val = 0;
+ 
+ 	dev_dbg(rdev_get_dev(rdev), "%s id: %d\n", __func__, id);
+@@ -294,12 +292,8 @@ static int mc13783_gpo_regulator_disable(struct regulator_dev *rdev)
+ 	    id == MC13783_REG_PWGT2SPI)
+ 		dis_val = mc13xxx_regulators[id].enable_bit;
+ 
+-	mc13xxx_lock(priv->mc13xxx);
+-	ret = mc13783_powermisc_rmw(priv, mc13xxx_regulators[id].enable_bit,
++	return mc13783_powermisc_rmw(priv, mc13xxx_regulators[id].enable_bit,
+ 					dis_val);
+-	mc13xxx_unlock(priv->mc13xxx);
+-
+-	return ret;
+ }
+ 
+ static int mc13783_gpo_regulator_is_enabled(struct regulator_dev *rdev)
+-- 
+1.7.9.5
+
+
+

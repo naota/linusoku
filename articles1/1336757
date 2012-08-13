@@ -1,0 +1,83 @@
+Path: news.gmane.org!not-for-mail
+From: Chanho Min <chanho0207@gmail.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.scsi
+Subject: Re: [PATCH] fix NULL-pointer dereference on scsi_run_queue
+Date: Thu, 2 Aug 2012 18:28:21 +0900
+Lines: 24
+Approved: news@gmane.org
+Message-ID: <CAOAMb1C=fk_Ejm6TwOhoNLhP1TyRJ+QVi93VaqUmxoHsM1iXtQ@mail.gmail.com>
+References: <CAOAMb1D+g0zzKGKjMPPp7V-XEwKB5AYGMDvUUbXNaHaz8ieTVg@mail.gmail.com>
+	<1343897839.5073.7.camel@dabdike.int.hansenpartnership.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1343899730 27080 80.91.229.3 (2 Aug 2012 09:28:50 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 2 Aug 2012 09:28:50 +0000 (UTC)
+Cc: linux-scsi@vger.kernel.org, linux-kernel@vger.kernel.org,
+	Jens Axboe <axboe@kernel.dk>, Tejun Heo <tj@kernel.org>
+To: James Bottomley <James.Bottomley@hansenpartnership.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 02 11:28:49 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Swri0-00025d-DS
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 02 Aug 2012 11:28:44 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753985Ab2HBJ20 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 2 Aug 2012 05:28:26 -0400
+Original-Received: from mail-wg0-f44.google.com ([74.125.82.44]:41009 "EHLO
+	mail-wg0-f44.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753831Ab2HBJ2Z (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 2 Aug 2012 05:28:25 -0400
+Original-Received: by wgbdr13 with SMTP id dr13so7768478wgb.1
+        for <multiple recipients>; Thu, 02 Aug 2012 02:28:23 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=mime-version:in-reply-to:references:date:message-id:subject:from:to
+         :cc:content-type;
+        bh=kzvYGbggKlnd4TxXw3eWPozlrf9zJYvYnxTc8WX4aZU=;
+        b=KWq/MtucWj5pqeqWMe3+CGCjpGYMo/aspoxsxvJn82OGAOAFyZ9Y7mWK6QBcNwXnvh
+         trs/e6ghqrV0x5jeciN30r699vS8vL7f+MG7vX6VNtj8uf0XqlwpmeKquJvPiwOn73fV
+         mPw70txRrcXMotlPzb1opPPLGNeEn7zoJhwIp8fKC1lyNcBi9BW7vvfhLwmJVZdg0c1x
+         OFcEoa6QT2gw0Gk4+kWhBj8M5TYlCIHE9LkCyfhwpIhfeKeMLUvrqEvvUXTvBiF0XtLf
+         qvW9M8i17B2H6ICcgGRUtXttMFyFQ/CLO+EFihS8W7cSQIQj/cDC3eebFLVLQ3piJgxc
+         5Abw==
+Original-Received: by 10.180.109.166 with SMTP id ht6mr3140069wib.11.1343899701579;
+ Thu, 02 Aug 2012 02:28:21 -0700 (PDT)
+Original-Received: by 10.194.31.198 with HTTP; Thu, 2 Aug 2012 02:28:21 -0700 (PDT)
+In-Reply-To: <1343897839.5073.7.camel@dabdike.int.hansenpartnership.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336757 gmane.linux.scsi:76727
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336757>
+
+On Thu, Aug 2, 2012 at 5:57 PM, James Bottomley
+<James.Bottomley@hansenpartnership.com> wrote:
+> On Thu, 2012-08-02 at 17:41 +0900, Chanho Min wrote:
+>> This patch is to fix a oops from a torn down device. When
+>> scsi_run_queue process starved queues, scsi_request_fn can race with
+>> scsi_remove_device. In this case, rarely, scsi_request_fn release the
+>> last reference and set sdev->request_queue to NULL. It result in
+>> NULL-pointer dereference when spin_unlock is tried with (NULL)->
+>> queue_lock. We need to add an extra reference to the device on both
+>> sides of the __blk_run_queue to hold reference until scsi_request_fn
+>> is finished.
+>
+> You need a recent kernel with this patch:
+>
+> commit 940f5d47e2f2e1fa00443921a0abf4822335b54d
+> Author: Bart Van Assche <bvanassche@acm.org>
+> Date:   Fri Jun 29 15:34:26 2012 +0000
+>
+>     [SCSI] Avoid dangling pointer in scsi_requeue_command()
+>
+> James
+It is different from my case. This is occured inside scsi_run_queue
+and on processing starved_list.
+Another sdev is obtained from starved_list.

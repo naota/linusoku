@@ -1,0 +1,126 @@
+Path: news.gmane.org!not-for-mail
+From: Shirley Ma <mashirle@us.ibm.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.network
+Subject: [RFC PATCH 1/1] sched: Add a new API to find the prefer idlest cpu
+Date: Sun, 22 Jul 2012 23:59:43 -0700
+Lines: 62
+Approved: news@gmane.org
+Message-ID: <1343026783.13461.17.camel@oc3660625478.ibm.com>
+References: <1343026634.13461.15.camel@oc3660625478.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343026805 28075 80.91.229.3 (23 Jul 2012 07:00:05 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 07:00:05 +0000 (UTC)
+Cc: netdev@vger.kernel.org, "Michael S. Tsirkin" <mst@redhat.com>,
+	vivek@us.ibm.com, sri@us.ibm.com
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 09:00:02 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StCcX-0001Bp-Ka
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 08:59:57 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753890Ab2GWG7v (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 02:59:51 -0400
+Original-Received: from e1.ny.us.ibm.com ([32.97.182.141]:42593 "EHLO e1.ny.us.ibm.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753154Ab2GWG7t (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 02:59:49 -0400
+Original-Received: from /spool/local
+	by e1.ny.us.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <mashirle@us.ibm.com>;
+	Mon, 23 Jul 2012 02:59:48 -0400
+Original-Received: from d01dlp02.pok.ibm.com (9.56.224.85)
+	by e1.ny.us.ibm.com (192.168.1.101) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Mon, 23 Jul 2012 02:59:46 -0400
+Original-Received: from d01relay06.pok.ibm.com (d01relay06.pok.ibm.com [9.56.227.116])
+	by d01dlp02.pok.ibm.com (Postfix) with ESMTP id 5B04F6E8036;
+	Mon, 23 Jul 2012 02:59:46 -0400 (EDT)
+Original-Received: from d01av02.pok.ibm.com (d01av02.pok.ibm.com [9.56.224.216])
+	by d01relay06.pok.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6N6xjFI55377974;
+	Mon, 23 Jul 2012 02:59:45 -0400
+Original-Received: from d01av02.pok.ibm.com (loopback [127.0.0.1])
+	by d01av02.pok.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6N6xjo4022303;
+	Mon, 23 Jul 2012 03:59:45 -0300
+Original-Received: from [9.65.232.2] (sig-9-65-232-2.mts.ibm.com [9.65.232.2])
+	by d01av02.pok.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6N6xhVv022191;
+	Mon, 23 Jul 2012 03:59:44 -0300
+In-Reply-To: <1343026634.13461.15.camel@oc3660625478.ibm.com>
+X-Mailer: Evolution 2.28.3 (2.28.3-24.el6) 
+X-Content-Scanned: Fidelis XPS MAILER
+x-cbid: 12072306-6078-0000-0000-00000D753FF1
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331634 gmane.linux.network:238134
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331634>
+
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index 64d9df5..46cc4a7 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -2806,4 +2806,6 @@ static inline unsigned long rlimit_max(unsigned int limit)
+ 
+ #endif /* __KERNEL__ */
+ 
++extern int find_idlest_prefer_cpu(struct cpumask *prefer,
++				 struct cpumask *allowed, int prev_cpu);
+ #endif
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index c099cc6..7240868 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -26,6 +26,7 @@
+ #include <linux/slab.h>
+ #include <linux/profile.h>
+ #include <linux/interrupt.h>
++#include <linux/export.h>
+ 
+ #include <trace/events/sched.h>
+ 
+@@ -2809,6 +2810,35 @@ unlock:
+ 
+ 	return new_cpu;
+ }
++
++/*
++ * This API is used to find the most idle cpu from both preferred and
++ * allowed cpuset (such as cgroup controls cpuset). It helps per-cpu thread
++ * model to pick up the allowed local cpu to be scheduled.
++ * If these two cpusets have intersects, the cpu is chose from the intersects,
++ * if there is no intersects, then the cpu is chose from the allowed cpuset.
++ * prev_cpu helps to better local cache when prev_cpu is not busy.
++ */
++int find_idlest_prefer_cpu(struct cpumask *prefer, struct cpumask *allowed,
++			  int prev_cpu)
++{
++	unsigned long load, min_load = ULONG_MAX;
++	int check, i, idlest = -1;
++
++	check = cpumask_intersects(prefer, allowed);
++	/* Traverse only the allowed CPUs */
++	if (check == 0)
++		prefer = allowed;
++	for_each_cpu_and(i, prefer, allowed) {
++		load = weighted_cpuload(i);
++		if (load < min_load || (load == min_load && i == prev_cpu)) {
++			min_load = load;
++			idlest = i;
++		}
++	}
++	return idlest;
++}
++EXPORT_SYMBOL(find_idlest_prefer_cpu);
+ #endif /* CONFIG_SMP */
+ 
+ static unsigned long
+
+Shirley
+

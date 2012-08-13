@@ -1,0 +1,84 @@
+Path: news.gmane.org!not-for-mail
+From: Vladimir Gratinskiy <gratinskiy@ispras.ru>
+Newsgroups: gmane.linux.kernel,gmane.linux.usb.general
+Subject: [PATCH 2/2] usb_gadget: Use GFP_ATOMIC in dma_pool_alloc().
+Date: Wed,  8 Aug 2012 12:42:45 +0400
+Lines: 40
+Approved: news@gmane.org
+Message-ID: <1344415365-10528-1-git-send-email-gratinskiy@ispras.ru>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344417080 7383 80.91.229.3 (8 Aug 2012 09:11:20 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 09:11:20 +0000 (UTC)
+Cc: Vladimir Gratinskiy <gratinskiy@ispras.ru>,
+	"Greg Kroah-Hartman" <gregkh@linuxfoundation.org>,
+	linux-usb@vger.kernel.org, linux-kernel@vger.kernel.org,
+	ldv-project@ispras.ru
+To: "Chao Xie" <chao.xie@marvell.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 11:11:20 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sz2IP-0001lD-Cu
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 11:11:17 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932585Ab2HHJKx (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 05:10:53 -0400
+Original-Received: from smtp.ispras.ru ([83.149.198.202]:51730 "EHLO smtp.ispras.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752505Ab2HHJKw (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 05:10:52 -0400
+X-Greylist: delayed 1752 seconds by postgrey-1.27 at vger.kernel.org; Wed, 08 Aug 2012 05:10:51 EDT
+Original-Received: from vladimir-System-Product-Name.intra.ispras.ru (unknown [83.149.198.253])
+	by smtp.ispras.ru (Postfix) with ESMTP id D56085D4042;
+	Wed,  8 Aug 2012 12:07:25 +0400 (MSD)
+X-Mailer: git-send-email 1.7.9.5
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339914 gmane.linux.usb.general:69103
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339914>
+
+Calling memory allocation function from the context of interrupt:
+request_irq(udc->irq, mv_udc_irq, IRQF_SHARED, driver_name, udc);
+Function
+mv_udc_irq(..) calls:
+irq_process_tr_complete(..) that calls:
+handle_setup_packet(..) that calls:
+ch9setaddress(..) that calls:
+udc_prime_status(..) that calls:
+req_to_dtd(..) that calls:
+build_dtd(..) that calls:
+dma_pool_alloc(udc->dtd_pool, GFP_KERNEL, dma).
+In the case of GFP_KERNEL flag, function execution can be preempted,
+because a greater number of operations to find and allocate memory
+blocks is executed.
+
+The patch change GFP_KERNEL flag to GFP_ATOMIC.
+
+Found by Linux Driver Verification project (linuxtesting.org).
+
+Signed-off-by: Vladimir Gratinskiy <gratinskiy@ispras.ru>
+---
+ drivers/usb/gadget/mv_udc_core.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/usb/gadget/mv_udc_core.c b/drivers/usb/gadget/mv_udc_core.c
+index 75db2c3..ba91f7c 100644
+--- a/drivers/usb/gadget/mv_udc_core.c
++++ b/drivers/usb/gadget/mv_udc_core.c
+@@ -375,7 +375,7 @@ static struct mv_dtd *build_dtd(struct mv_req *req, unsigned *length,
+ 	 * Be careful that no _GFP_HIGHMEM is set,
+ 	 * or we can not use dma_to_virt
+ 	 */
+-	dtd = dma_pool_alloc(udc->dtd_pool, GFP_KERNEL, dma);
++	dtd = dma_pool_alloc(udc->dtd_pool, GFP_ATOMIC, dma);
+ 	if (dtd == NULL)
+ 		return dtd;
+ 
+-- 
+1.7.9.5
+

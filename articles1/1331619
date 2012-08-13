@@ -1,0 +1,95 @@
+Path: news.gmane.org!not-for-mail
+From: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.ppc64.devel
+Subject: More irqdomain problems (Was: next/mmotm unbootable on G5:
+ irqdomain)
+Date: Mon, 23 Jul 2012 16:32:41 +1000
+Lines: 41
+Approved: news@gmane.org
+Message-ID: <1343025161.2957.22.camel@pasglop>
+References: <alpine.LSU.2.00.1207211911160.1585@eggly.anvils>
+	 <1343011543.2957.2.camel@pasglop>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343025220 17303 80.91.229.3 (23 Jul 2012 06:33:40 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 06:33:40 +0000 (UTC)
+Cc: Stephen Rothwell <sfr@canb.auug.org.au>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Thomas Gleixner <tglx@linutronix.de>,
+	Milton Miller <miltonm@bga.com>,
+	Hugh Dickins <hughd@google.com>,
+	ul Mundt <lethal@linux-sh.org>,
+	Rob Herring <rob.herring@calxeda.com>,
+	linux-kernel@vger.kernel.org, linuxppc-dev@lists.ozlabs.org
+To: Grant Likely <grant.likely@secretlab.ca>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 08:33:37 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StCCs-0003Xq-Ua
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 08:33:27 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753061Ab2GWGdO (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 02:33:14 -0400
+Original-Received: from gate.crashing.org ([63.228.1.57]:34768 "EHLO gate.crashing.org"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752543Ab2GWGdM (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 02:33:12 -0400
+Original-Received: from [127.0.0.1] (localhost.localdomain [127.0.0.1])
+	by gate.crashing.org (8.14.1/8.13.8) with ESMTP id q6N6WfnB023840;
+	Mon, 23 Jul 2012 01:32:44 -0500
+In-Reply-To: <1343011543.2957.2.camel@pasglop>
+X-Mailer: Evolution 3.2.3-0ubuntu6 
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331619 gmane.linux.ports.ppc64.devel:83752
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331619>
+
+Allright, another one Grant:
+
+unsigned int irq_find_mapping(struct irq_domain *domain,
+			      irq_hw_number_t hwirq)
+{
+	struct irq_data *data;
+
+	/* Look for default domain if nececssary */
+	if (domain == NULL)
+		domain = irq_default_domain;
+	if (domain == NULL)
+		return 0;
+
+	switch (domain->revmap_type) {
+	case IRQ_DOMAIN_MAP_LEGACY:
+		return irq_domain_legacy_revmap(domain, hwirq);
+	case IRQ_DOMAIN_MAP_LINEAR:
+		return irq_linear_revmap(domain, hwirq);
+	case IRQ_DOMAIN_MAP_TREE:
+		rcu_read_lock();
+		data = radix_tree_lookup(&domain->revmap_data.tree, hwirq);
+		rcu_read_unlock();
+		if (data)
+			return data->irq;
+-               break;
++               return 0;
+	case IRQ_DOMAIN_MAP_NOMAP:
+
+Please, stick a proper commit message and my s-o-b and see if you can fix
+your tree before you ask Linus to pull because that's not pretty on any
+pseries .... irq_find_mapping() does get called for all interrupt the
+first time it's mapped to check if there's a pre-existing mapping, so
+the case of the thing being unpopulated is absolutely legit.
+
+the NOMAP case has a similar dubious exit case but since I'm not that
+familiar with NOMAP I haven't touched it.
+
+Cheers,
+Ben.
+
+

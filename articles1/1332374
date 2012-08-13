@@ -1,0 +1,97 @@
+Path: news.gmane.org!not-for-mail
+From: Djalal Harouni <tixxdz@opendz.org>
+Newsgroups: gmane.linux.kernel.hardened.devel,gmane.linux.kernel
+Subject: [PATCH v2 0/2] proc: /proc/<pid>/environ offset fixes
+Date: Tue, 24 Jul 2012 16:29:00 +0100
+Lines: 51
+Approved: news@gmane.org
+Message-ID: <1343143742-31229-1-git-send-email-tixxdz@opendz.org>
+Reply-To: kernel-hardening@lists.openwall.com
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343143787 22655 80.91.229.3 (24 Jul 2012 15:29:47 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 15:29:47 +0000 (UTC)
+Cc: Djalal Harouni <tixxdz@opendz.org>
+To: linux-kernel@vger.kernel.org,
+	kernel-hardening@lists.openwall.com,
+	Al Viro <viro@zeniv.linux.org.uk>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Vasiliy Kulikov <segoon@openwall.com>,
+	WANG Cong <xiyou.wangcong@gmail.com>,
+	Oleg Nesterov <oleg@redhat.com>,
+	Solar Designer <solar@openwall.com>,
+	Kees Cook <keescook@chromium.org>,
+	David Rientjes <rientjes@google.com>,
+	Brad Spengler <spender@grsecurity.net>
+Original-X-From: kernel-hardening-return-1340-glkh-kernel-hardening=m.gmane.org@lists.openwall.com Tue Jul 24 17:29:43 2012
+Return-path: <kernel-hardening-return-1340-glkh-kernel-hardening=m.gmane.org@lists.openwall.com>
+Envelope-to: glkh-kernel-hardening@plane.gmane.org
+Original-Received: from mother.openwall.net ([195.42.179.200])
+	by plane.gmane.org with smtp (Exim 4.69)
+	(envelope-from <kernel-hardening-return-1340-glkh-kernel-hardening=m.gmane.org@lists.openwall.com>)
+	id 1Sth3O-0007N5-Ij
+	for glkh-kernel-hardening@plane.gmane.org; Tue, 24 Jul 2012 17:29:42 +0200
+Original-Received: (qmail 7308 invoked by uid 550); 24 Jul 2012 15:29:40 -0000
+Mailing-List: contact kernel-hardening-help@lists.openwall.com; run by ezmlm
+Precedence: bulk
+List-Post: <mailto:kernel-hardening@lists.openwall.com>
+List-Help: <mailto:kernel-hardening-help@lists.openwall.com>
+List-Unsubscribe: <mailto:kernel-hardening-unsubscribe@lists.openwall.com>
+List-Subscribe: <mailto:kernel-hardening-subscribe@lists.openwall.com>
+Delivered-To: mailing list kernel-hardening@lists.openwall.com
+Original-Received: (qmail 7269 invoked from network); 24 Jul 2012 15:29:40 -0000
+X-Mailer: git-send-email 1.7.1
+Xref: news.gmane.org gmane.linux.kernel.hardened.devel:477 gmane.linux.kernel:1332374
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332374>
+
+Hi,
+
+This is the V2 to correctly check offsets on /proc/<pid>/environ before
+reading. This was previously discussed here:
+http://lkml.org/lkml/2012/7/22/79
+
+Due to incorrect offset checks, currently one can read from aribtrary
+addresses on /proc/<pid>/environ, not only the environment address range
+as shown here (the same thread):
+http://lkml.org/lkml/2012/7/22/163
+
+The bug is in environ_read().
+
+
+That first patch was not complete as noted by Oleg Nestrov, since even
+with positive offsets we can perhaps overflow the address from where to
+read the environment variables, or perhaps we can make multiple lseek()
+calls with a positive offset set to 0x7fffffff, this will pass the
+fs/read_write.c:lseek_execute() checks, and one can make the
+'mm->env_addr + offset' point to another VMA. This will make
+/proc/<pid>/environ to act like /proc/<pid>/mem.
+
+The first version removed only negative offsets which when converted to
+unsigned long will overflow the 'mm->env_addr + offset' the address from
+where to start to read the environment variables, and will also pass all
+the fs/read_write.c:lseek_execute() and environ_read() checks.
+
+As suggested by Oleg Nesterov this version makes sure to fix the offset
+checks, then it removes negative offsets support on /proc/<pid>/environ
+since it does not need them.
+
+
+Thanks to patch 'proc: clean up /proc/<pid>/environ handling'
+commit b409e578d9a4ec95913e ,this is not a security issue since at
+->open() there is: the ptrace check + save the current 'mm' for next
+operations.
+
+
+Djalal Harouni (2):
+  proc: environ_read() make sure offset points to environment address range
+  proc: do not allow negative offsets on /proc/<pid>/environ
+
+ fs/proc/base.c |   22 +++++++++++++---------
+  1 files changed, 13 insertions(+), 9 deletions(-)
+
+
+V2:
+ * Added the [PATCH 1/2] to make sure that the offset points to the
+   environment address range as suggested by Oleg Nesterov.
+ * Updated the [PATCH 2/2] changelog entry since we have added [PATCH 1/2]
+

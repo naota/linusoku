@@ -1,0 +1,142 @@
+Path: news.gmane.org!not-for-mail
+From: Jiri Slaby <jslaby@suse.cz>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 28/41] TTY: synclink_cs, use dynamic tty devices
+Date: Tue,  7 Aug 2012 21:47:53 +0200
+Lines: 98
+Approved: news@gmane.org
+Message-ID: <1344368886-24033-29-git-send-email-jslaby@suse.cz>
+References: <1344368886-24033-1-git-send-email-jslaby@suse.cz>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344369532 1527 80.91.229.3 (7 Aug 2012 19:58:52 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 19:58:52 +0000 (UTC)
+Cc: alan@linux.intel.com, linux-kernel@vger.kernel.org,
+	jirislaby@gmail.com
+To: gregkh@linuxfoundation.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 21:58:50 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SypvO-0007ko-Fu
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 21:58:42 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756486Ab2HGT6Y (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 15:58:24 -0400
+Original-Received: from mail.pripojeni.net ([178.22.112.14]:49935 "EHLO
+	smtp.pripojeni.net" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756466Ab2HGT6V (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 15:58:21 -0400
+Original-Received: from localhost.localdomain ([178.22.113.142])
+	by smtp.pripojeni.net (Kerio Connect 7.2.2);
+	Tue, 7 Aug 2012 21:48:18 +0200
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1344368886-24033-1-git-send-email-jslaby@suse.cz>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339338
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339338>
+
+This allows us to provide the tty layer with information about
+tty_port for each link. And it also allows us to get rid of the
+remove_device loop in synclink_cs_exit because we had to reorder
+pcmcia and tty driver registration in init. This was because we need
+to have serial_driver initialized when calling
+tty_port_register_device from pcmcia ->probe.
+
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ drivers/char/pcmcia/synclink_cs.c |   27 +++++++++++++++------------
+ 1 file changed, 15 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/char/pcmcia/synclink_cs.c b/drivers/char/pcmcia/synclink_cs.c
+index 0606586..ce277f7 100644
+--- a/drivers/char/pcmcia/synclink_cs.c
++++ b/drivers/char/pcmcia/synclink_cs.c
+@@ -2731,6 +2731,8 @@ static void mgslpc_add_device(MGSLPC_INFO *info)
+ #if SYNCLINK_GENERIC_HDLC
+ 	hdlcdev_init(info);
+ #endif
++	tty_port_register_device(&info->port, serial_driver, info->line,
++			&info->p_dev.dev);
+ }
+ 
+ static void mgslpc_remove_device(MGSLPC_INFO *remove_info)
+@@ -2744,6 +2746,7 @@ static void mgslpc_remove_device(MGSLPC_INFO *remove_info)
+ 				last->next_device = info->next_device;
+ 			else
+ 				mgslpc_device_list = info->next_device;
++			tty_unregister_device(serial_driver, info->line);
+ #if SYNCLINK_GENERIC_HDLC
+ 			hdlcdev_exit(info);
+ #endif
+@@ -2807,13 +2810,12 @@ static int __init synclink_cs_init(void)
+ 	    BREAKPOINT();
+     }
+ 
+-    if ((rc = pcmcia_register_driver(&mgslpc_driver)) < 0)
+-	    return rc;
+-
+-    serial_driver = alloc_tty_driver(MAX_DEVICE_COUNT);
++    serial_driver = tty_alloc_driver(MAX_DEVICE_COUNT,
++		    TTY_DRIVER_REAL_RAW |
++		    TTY_DRIVER_DYNAMIC_DEV);
+     if (!serial_driver) {
+ 	    rc = -ENOMEM;
+-	    goto err_pcmcia_drv;
++	    goto err;
+     }
+ 
+     /* Initialize the tty_driver structure */
+@@ -2827,7 +2829,6 @@ static int __init synclink_cs_init(void)
+     serial_driver->init_termios = tty_std_termios;
+     serial_driver->init_termios.c_cflag =
+ 	    B9600 | CS8 | CREAD | HUPCL | CLOCAL;
+-    serial_driver->flags = TTY_DRIVER_REAL_RAW;
+     tty_set_operations(serial_driver, &mgslpc_ops);
+ 
+     if ((rc = tty_register_driver(serial_driver)) < 0) {
+@@ -2836,26 +2837,28 @@ static int __init synclink_cs_init(void)
+ 	    goto err_put_tty;
+     }
+ 
++	rc = pcmcia_register_driver(&mgslpc_driver);
++	if (rc < 0)
++		goto err_unreg_tty;
++
+     printk("%s %s, tty major#%d\n",
+ 	   driver_name, driver_version,
+ 	   serial_driver->major);
+ 
+ 	return 0;
++err_unreg_tty:
++	tty_unregister_driver(serial_driver);
+ err_put_tty:
+ 	put_tty_driver(serial_driver);
+-err_pcmcia_drv:
+-	pcmcia_unregister_driver(&mgslpc_driver);
++err:
+ 	return rc;
+ }
+ 
+ static void __exit synclink_cs_exit(void)
+ {
+-	while (mgslpc_device_list)
+-		mgslpc_remove_device(mgslpc_device_list);
+-
++	pcmcia_unregister_driver(&mgslpc_driver);
+ 	tty_unregister_driver(serial_driver);
+ 	put_tty_driver(serial_driver);
+-	pcmcia_unregister_driver(&mgslpc_driver);
+ }
+ 
+ module_init(synclink_cs_init);
+-- 
+1.7.10.4
+
+

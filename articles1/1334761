@@ -1,0 +1,119 @@
+Path: news.gmane.org!not-for-mail
+From: Oleg Nesterov <oleg@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 02/14] uprobes: __replace_page() should not use
+	page_address_in_vma()
+Date: Sun, 29 Jul 2012 20:22:16 +0200
+Lines: 64
+Approved: news@gmane.org
+Message-ID: <20120729182216.GA20311@redhat.com>
+References: <20120729182128.GA20269@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343586333 26942 80.91.229.3 (29 Jul 2012 18:25:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 29 Jul 2012 18:25:33 +0000 (UTC)
+Cc: Anton Arapov <anton@redhat.com>,
+	Srikar Dronamraju <srikar@linux.vnet.ibm.com>,
+	linux-kernel@vger.kernel.org
+To: Ingo Molnar <mingo@elte.hu>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 29 20:25:31 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvYBC-0006GL-Ff
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 29 Jul 2012 20:25:26 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753390Ab2G2SZS (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 29 Jul 2012 14:25:18 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:26563 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753343Ab2G2SZQ (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 29 Jul 2012 14:25:16 -0400
+Original-Received: from int-mx01.intmail.prod.int.phx2.redhat.com (int-mx01.intmail.prod.int.phx2.redhat.com [10.5.11.11])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6TIP9BY030766
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Sun, 29 Jul 2012 14:25:09 -0400
+Original-Received: from tranklukator.englab.brq.redhat.com (dhcp-1-232.brq.redhat.com [10.34.1.232])
+	by int-mx01.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with SMTP id q6TIP7ki013165;
+	Sun, 29 Jul 2012 14:25:08 -0400
+Original-Received: by tranklukator.englab.brq.redhat.com (nbSMTP-1.00) for uid 500
+	oleg@redhat.com; Sun, 29 Jul 2012 20:22:17 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <20120729182128.GA20269@redhat.com>
+User-Agent: Mutt/1.5.18 (2008-05-17)
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.11
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334761
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334761>
+
+page_address_in_vma(old_page) in __replace_page() is ugly and wrong.
+The caller already knows the correct virtual address, this page was
+found by get_user_pages(vaddr).
+
+However, page_address_in_vma() can actually fail if page->mapping was
+cleared by __delete_from_page_cache() after get_user_pages() returns.
+But this means the race with page reclaim, write_opcode() should not
+fail, it should retry and read this page again. Probably the race with
+remove_mapping() is not possible due to page_freeze_refs() logic, but
+afaics at least shmem_writepage()->shmem_delete_from_page_cache() can
+clear ->mapping.
+
+We could change __replace_page() to return -EAGAIN in this case, but
+it would be better to simply use the caller's vaddr and rely on
+page_check_address().
+
+Signed-off-by: Oleg Nesterov <oleg@redhat.com>
+Acked-by: Srikar Dronamraju <srikar.vnet.ibm.com>
+---
+ kernel/events/uprobes.c |   11 ++++-------
+ 1 files changed, 4 insertions(+), 7 deletions(-)
+
+diff --git a/kernel/events/uprobes.c b/kernel/events/uprobes.c
+index 8b3603a..fbb4188 100644
+--- a/kernel/events/uprobes.c
++++ b/kernel/events/uprobes.c
+@@ -127,22 +127,19 @@ static loff_t vma_address(struct vm_area_struct *vma, loff_t offset)
+  * based on replace_page in mm/ksm.c
+  *
+  * @vma:      vma that holds the pte pointing to page
++ * @addr:     address the old @page is mapped at
+  * @page:     the cowed page we are replacing by kpage
+  * @kpage:    the modified page we replace page by
+  *
+  * Returns 0 on success, -EFAULT on failure.
+  */
+-static int __replace_page(struct vm_area_struct *vma, struct page *page, struct page *kpage)
++static int __replace_page(struct vm_area_struct *vma, unsigned long addr,
++				struct page *page, struct page *kpage)
+ {
+ 	struct mm_struct *mm = vma->vm_mm;
+-	unsigned long addr;
+ 	spinlock_t *ptl;
+ 	pte_t *ptep;
+ 
+-	addr = page_address_in_vma(page, vma);
+-	if (addr == -EFAULT)
+-		return -EFAULT;
+-
+ 	ptep = page_check_address(page, mm, addr, &ptl, 0);
+ 	if (!ptep)
+ 		return -EAGAIN;
+@@ -243,7 +240,7 @@ retry:
+ 		goto unlock_out;
+ 
+ 	lock_page(new_page);
+-	ret = __replace_page(vma, old_page, new_page);
++	ret = __replace_page(vma, vaddr, old_page, new_page);
+ 	unlock_page(new_page);
+ 
+ unlock_out:
+-- 
+1.5.5.1
+

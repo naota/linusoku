@@ -1,0 +1,112 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 18/70] net: feed /dev/random with the MAC address when registering a device
+Date: Tue, 07 Aug 2012 04:28:13 +0100
+Lines: 59
+Approved: news@gmane.org
+Message-ID: <20120807032758.679038817@decadent.org.uk>
+References: <20120807032755.803571133@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344311715 24358 80.91.229.3 (7 Aug 2012 03:55:15 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 03:55:15 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Theodore Tso <tytso@mit.edu>,
+	David Miller <davem@davemloft.net>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 05:55:14 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Syasz-0006cx-Uo
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 05:55:14 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757310Ab2HGDyh (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 23:54:37 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:59636 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1757260Ab2HGDiL (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 23:38:11 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1SyacG-00081v-SA; Tue, 07 Aug 2012 04:37:56 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Syaby-0002ne-KB; Tue, 07 Aug 2012 04:37:38 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120807032755.803571133@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338779 gmane.linux.kernel.stable:29220
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338779>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Theodore Ts'o <tytso@mit.edu>
+
+commit 7bf2357524408b97fec58344caf7397f8140c3fd upstream.
+
+Cc: David Miller <davem@davemloft.net>
+Cc: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ net/core/dev.c       |    3 +++
+ net/core/rtnetlink.c |    1 +
+ 2 files changed, 4 insertions(+)
+
+diff --git a/net/core/dev.c b/net/core/dev.c
+index 6df2140..bdd1e88 100644
+--- a/net/core/dev.c
++++ b/net/core/dev.c
+@@ -1172,6 +1172,7 @@ static int __dev_open(struct net_device *dev)
+ 		net_dmaengine_get();
+ 		dev_set_rx_mode(dev);
+ 		dev_activate(dev);
++		add_device_randomness(dev->dev_addr, dev->addr_len);
+ 	}
+ 
+ 	return ret;
+@@ -4763,6 +4764,7 @@ int dev_set_mac_address(struct net_device *dev, struct sockaddr *sa)
+ 	err = ops->ndo_set_mac_address(dev, sa);
+ 	if (!err)
+ 		call_netdevice_notifiers(NETDEV_CHANGEADDR, dev);
++	add_device_randomness(dev->dev_addr, dev->addr_len);
+ 	return err;
+ }
+ EXPORT_SYMBOL(dev_set_mac_address);
+@@ -5541,6 +5543,7 @@ int register_netdevice(struct net_device *dev)
+ 	dev_init_scheduler(dev);
+ 	dev_hold(dev);
+ 	list_netdevice(dev);
++	add_device_randomness(dev->dev_addr, dev->addr_len);
+ 
+ 	/* Notify protocols, that a new device appeared. */
+ 	ret = call_netdevice_notifiers(NETDEV_REGISTER, dev);
+diff --git a/net/core/rtnetlink.c b/net/core/rtnetlink.c
+index 21318d1..f058e59 100644
+--- a/net/core/rtnetlink.c
++++ b/net/core/rtnetlink.c
+@@ -1378,6 +1378,7 @@ static int do_setlink(struct net_device *dev, struct ifinfomsg *ifm,
+ 			goto errout;
+ 		send_addr_notify = 1;
+ 		modified = 1;
++		add_device_randomness(dev->dev_addr, dev->addr_len);
+ 	}
+ 
+ 	if (tb[IFLA_MTU]) {
+
+

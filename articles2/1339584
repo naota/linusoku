@@ -1,0 +1,124 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 09/49] SCSI: Avoid dangling pointer in scsi_requeue_command()
+Date: Tue,  7 Aug 2012 15:44:27 -0700
+Lines: 58
+Approved: news@gmane.org
+Message-ID: <20120807222027.701673149@linuxfoundation.org>
+References: <20120807222026.848194739@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344380275 26173 80.91.229.3 (7 Aug 2012 22:57:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:57:55 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Mike Christie <michaelc@cs.wisc.edu>,
+	Bart Van Assche <bvanassche@acm.org>,
+	Tejun Heo <tj@kernel.org>,
+	James Bottomley <JBottomley@Parallels.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:57:54 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sysin-0000OF-1R
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:57:53 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1031246Ab2HGW5n (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:57:43 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:53839 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1031049Ab2HGWps (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:45:48 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so368883pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:45:48 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=NFKOAn4KdoV3HbTy/y3j9KsYt3pVyJSPHyksiZc/l6E=;
+        b=QenEm+W2jeUXC8hYkU4rJOzgEvcSerk5KzqNdK4ALl6ph0IdUBNHJiZajZ9OWDHpqV
+         hK4igEJCnjMeaBefJ9AL7TCAmmH1WMdcjTVpszOGUIKdgbVBBSdwcHrWBqgKKY7Tzrtk
+         9pUEC5Y2bxIwU4gs6pLqg2+Q7SaHdHBHcpgST8MfOo9zVodK6fA//0qdUXDDPwMGLG3y
+         BBm8JfhKx9Mg588Khp92Lnrbx/aMUBEtavVOaudejciQc02Rncx71kB4zFZ8tBMaxBrr
+         wxKa1ycprDkmLI7svcdI11Dt+uXXBluMzTjq42NwsMfXENV45vkAohYmRAcmeB6ycSlh
+         aLJg==
+Original-Received: by 10.68.231.39 with SMTP id td7mr31233732pbc.3.1344379548183;
+        Tue, 07 Aug 2012 15:45:48 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id na7sm8568945pbc.65.2012.08.07.15.45.46
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:45:47 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222026.848194739@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQkWY+fGDWW593NsOCXCUUFflosJzuqK77FACFjZxI0Fo3lrk9+iN7Q44Dq3M91Kcv6cScpn
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339584 gmane.linux.kernel.stable:29417
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339584>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Bart Van Assche <bvanassche@acm.org>
+
+commit 940f5d47e2f2e1fa00443921a0abf4822335b54d upstream.
+
+When we call scsi_unprep_request() the command associated with the request
+gets destroyed and therefore drops its reference on the device.  If this was
+the only reference, the device may get released and we end up with a NULL
+pointer deref when we call blk_requeue_request.
+
+Reported-by: Mike Christie <michaelc@cs.wisc.edu>
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Reviewed-by: Mike Christie <michaelc@cs.wisc.edu>
+Reviewed-by: Tejun Heo <tj@kernel.org>
+[jejb: enhance commend and add commit log for stable]
+Signed-off-by: James Bottomley <JBottomley@Parallels.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ drivers/scsi/scsi_lib.c |   11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+--- a/drivers/scsi/scsi_lib.c
++++ b/drivers/scsi/scsi_lib.c
+@@ -481,15 +481,26 @@ void scsi_requeue_run_queue(struct work_
+  */
+ static void scsi_requeue_command(struct request_queue *q, struct scsi_cmnd *cmd)
+ {
++	struct scsi_device *sdev = cmd->device;
+ 	struct request *req = cmd->request;
+ 	unsigned long flags;
+ 
++	/*
++	 * We need to hold a reference on the device to avoid the queue being
++	 * killed after the unlock and before scsi_run_queue is invoked which
++	 * may happen because scsi_unprep_request() puts the command which
++	 * releases its reference on the device.
++	 */
++	get_device(&sdev->sdev_gendev);
++
+ 	spin_lock_irqsave(q->queue_lock, flags);
+ 	scsi_unprep_request(req);
+ 	blk_requeue_request(q, req);
+ 	spin_unlock_irqrestore(q->queue_lock, flags);
+ 
+ 	scsi_run_queue(q);
++
++	put_device(&sdev->sdev_gendev);
+ }
+ 
+ void scsi_next_command(struct scsi_cmnd *cmd)
+
+

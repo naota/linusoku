@@ -1,0 +1,139 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 036/109] rtlwifi: rtl8192cu: Change buffer allocation for synchronous reads
+Date: Tue,  7 Aug 2012 15:34:55 -0700
+Lines: 75
+Approved: news@gmane.org
+Message-ID: <20120807222046.271339876@linuxfoundation.org>
+References: <20120807222043.089735600@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344379151 17573 80.91.229.3 (7 Aug 2012 22:39:11 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:39:11 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Larry Finger <Larry.Finger@lwfinger.net>,
+	"John W. Linville" <linville@tuxdriver.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:39:09 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysQe-0003EK-Hm
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:39:08 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S933004Ab2HGWiJ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:38:09 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:56801 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S932989Ab2HGWiE (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:38:04 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so358011pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:38:04 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=WVuFUL/J0wPxko4ywMCECrp5zSQPQzuk6cOJ8mB5820=;
+        b=PBvpH7uGvjbyfcVFxHUYGAtrYdZ4S4pIPf0kwm33FCkF8f2PmPTFE+HyfP61whxo5h
+         V2LDbFV4iJTB3BG+mOiYNPRs3gPBM6OfgjV9QRvtJvlPaydhYe/upLYzQFz8OO3w4uhx
+         uP1iAAwqebJ0TOknM4P7tEY5QNQbCnmAbuvlYDylZ+XLH9+Ffe5T5zZOnqgZCA3KH4Pr
+         eCDBj+3F9PbOY3t9Mha+LU7H7bYiEgOzpO4VFlH2QTe2W9GKe3uVzhuE7jGHlTNfed4R
+         wKfH/5hct5WKBKW3QPWSUJl8RCuHOOGJ8q6nD5lmR+keufHfpXfo9GCXs8nokLlHm5Gj
+         ySBg==
+Original-Received: by 10.68.223.198 with SMTP id qw6mr31173440pbc.94.1344379084284;
+        Tue, 07 Aug 2012 15:38:04 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id rd7sm8549156pbc.70.2012.08.07.15.38.01
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:38:03 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222043.089735600@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQlane8uEUqbGZHVG1cAf+/td6DIunmkPDLfvmcT+X99jwgjKpurqFzbRjfoDBscp9NXpQ6C
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339482 gmane.linux.kernel.stable:29321
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339482>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.4-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Larry Finger <Larry.Finger@lwfinger.net>
+
+commit 3ce4d85b76010525adedcc2555fa164bf706a2f3 upstream.
+
+In commit a7959c1, the USB part of rtlwifi was switched to convert
+_usb_read_sync() to using a preallocated buffer rather than one
+that has been acquired using kmalloc. Although this routine is named
+as though it were synchronous, there seem to be simultaneous users,
+and the selection of the index to the data buffer is not multi-user
+safe. This situation is addressed by adding a new spinlock. The routine
+cannot sleep, thus a mutex is not allowed.
+
+Signed-off-by: Larry Finger <Larry.Finger@lwfinger.net>
+Signed-off-by: John W. Linville <linville@tuxdriver.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ drivers/net/wireless/rtlwifi/usb.c  |   14 +++++++++++---
+ drivers/net/wireless/rtlwifi/wifi.h |    1 +
+ 2 files changed, 12 insertions(+), 3 deletions(-)
+
+--- a/drivers/net/wireless/rtlwifi/usb.c
++++ b/drivers/net/wireless/rtlwifi/usb.c
+@@ -131,15 +131,19 @@ static u32 _usb_read_sync(struct rtl_pri
+ 	u8 request;
+ 	u16 wvalue;
+ 	u16 index;
+-	__le32 *data = &rtlpriv->usb_data[rtlpriv->usb_data_index];
++	__le32 *data;
++	unsigned long flags;
+ 
++	spin_lock_irqsave(&rtlpriv->locks.usb_lock, flags);
++	if (++rtlpriv->usb_data_index >= RTL_USB_MAX_RX_COUNT)
++		rtlpriv->usb_data_index = 0;
++	data = &rtlpriv->usb_data[rtlpriv->usb_data_index];
++	spin_unlock_irqrestore(&rtlpriv->locks.usb_lock, flags);
+ 	request = REALTEK_USB_VENQT_CMD_REQ;
+ 	index = REALTEK_USB_VENQT_CMD_IDX; /* n/a */
+ 
+ 	wvalue = (u16)addr;
+ 	_usbctrl_vendorreq_sync_read(udev, request, wvalue, index, data, len);
+-	if (++rtlpriv->usb_data_index >= RTL_USB_MAX_RX_COUNT)
+-		rtlpriv->usb_data_index = 0;
+ 	return le32_to_cpu(*data);
+ }
+ 
+@@ -951,6 +955,10 @@ int __devinit rtl_usb_probe(struct usb_i
+ 				    GFP_KERNEL);
+ 	if (!rtlpriv->usb_data)
+ 		return -ENOMEM;
++
++	/* this spin lock must be initialized early */
++	spin_lock_init(&rtlpriv->locks.usb_lock);
++
+ 	rtlpriv->usb_data_index = 0;
+ 	init_completion(&rtlpriv->firmware_loading_complete);
+ 	SET_IEEE80211_DEV(hw, &intf->dev);
+--- a/drivers/net/wireless/rtlwifi/wifi.h
++++ b/drivers/net/wireless/rtlwifi/wifi.h
+@@ -1555,6 +1555,7 @@ struct rtl_locks {
+ 	spinlock_t rf_ps_lock;
+ 	spinlock_t rf_lock;
+ 	spinlock_t waitq_lock;
++	spinlock_t usb_lock;
+ 
+ 	/*Dual mac*/
+ 	spinlock_t cck_and_rw_pagea_lock;
+
+

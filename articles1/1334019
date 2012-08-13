@@ -1,0 +1,486 @@
+Path: news.gmane.org!not-for-mail
+From: "Andrew Stiegmann (stieg)" <astiegmann@vmware.com>
+Newsgroups: gmane.linux.kernel.virtualization,gmane.linux.kernel
+Subject: [vmw_vmci 07/11] Apply VMCI hash table
+Date: Thu, 26 Jul 2012 16:39:36 -0700
+Lines: 412
+Approved: news@gmane.org
+Message-ID: <1343345980-32397-8-git-send-email-astiegmann@vmware.com>
+References: <1343345980-32397-1-git-send-email-astiegmann@vmware.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343346095 16825 80.91.229.3 (26 Jul 2012 23:41:35 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 23:41:35 +0000 (UTC)
+Cc: pv-drivers@vmware.com, vm-crosstalk@vmware.com,
+	"Andrew Stiegmann \(stieg\)" <astiegmann@vmware.com>,
+	cschamp@vmware.com, gregkh@linuxfoundation.org
+To: linux-kernel@vger.kernel.org,
+	virtualization@lists.linux-foundation.org
+Original-X-From: virtualization-bounces@lists.linux-foundation.org Fri Jul 27 01:41:34 2012
+Return-path: <virtualization-bounces@lists.linux-foundation.org>
+Envelope-to: glkv-virtualization@gmane.org
+Original-Received: from mail.linuxfoundation.org ([140.211.169.12])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <virtualization-bounces@lists.linux-foundation.org>)
+	id 1SuXgS-0003Lk-KY
+	for glkv-virtualization@gmane.org; Fri, 27 Jul 2012 01:41:33 +0200
+Original-Received: from mail.linux-foundation.org (localhost [IPv6:::1])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id 2F5F9D42;
+	Thu, 26 Jul 2012 23:40:21 +0000 (UTC)
+X-Original-To: virtualization@lists.linux-foundation.org
+Delivered-To: virtualization@mail.linuxfoundation.org
+Original-Received: from smtp1.linuxfoundation.org (smtp1.linux-foundation.org
+	[172.17.192.35])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id 336A1D3C
+	for <virtualization@lists.linux-foundation.org>;
+	Thu, 26 Jul 2012 23:40:19 +0000 (UTC)
+X-Greylist: domain auto-whitelisted by SQLgrey-1.7.6
+Original-Received: from smtp-outbound-2.vmware.com (smtp-outbound-2.vmware.com
+	[208.91.2.13])
+	by smtp1.linuxfoundation.org (Postfix) with ESMTP id 605B61F9A4
+	for <virtualization@lists.linux-foundation.org>;
+	Thu, 26 Jul 2012 23:40:18 +0000 (UTC)
+Original-Received: from sc9-mailhost2.vmware.com (sc9-mailhost2.vmware.com
+	[10.113.161.72])
+	by smtp-outbound-2.vmware.com (Postfix) with ESMTP id 37C2028472;
+	Thu, 26 Jul 2012 16:40:18 -0700 (PDT)
+Original-Received: from localhost.localdomain (stieg-dev1.eng.vmware.com [10.20.87.164])
+	by sc9-mailhost2.vmware.com (Postfix) with ESMTP id 2EA09B0374;
+	Thu, 26 Jul 2012 16:40:18 -0700 (PDT)
+X-Mailer: git-send-email 1.7.0.4
+In-Reply-To: <1343345980-32397-1-git-send-email-astiegmann@vmware.com>
+X-Spam-Status: No, score=-6.9 required=5.0 tests=BAYES_00,RCVD_IN_DNSWL_HI,
+	T_RP_MATCHES_RCVD autolearn=ham version=3.3.1
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on
+	smtp1.linux-foundation.org
+X-BeenThere: virtualization@lists.linux-foundation.org
+X-Mailman-Version: 2.1.12
+Precedence: list
+List-Id: Linux virtualization <virtualization.lists.linux-foundation.org>
+List-Unsubscribe: <https://lists.linuxfoundation.org/mailman/options/virtualization>,
+	<mailto:virtualization-request@lists.linux-foundation.org?subject=unsubscribe>
+List-Archive: <http://lists.linuxfoundation.org/pipermail/virtualization/>
+List-Post: <mailto:virtualization@lists.linux-foundation.org>
+List-Help: <mailto:virtualization-request@lists.linux-foundation.org?subject=help>
+List-Subscribe: <https://lists.linuxfoundation.org/mailman/listinfo/virtualization>,
+	<mailto:virtualization-request@lists.linux-foundation.org?subject=subscribe>
+Original-Sender: virtualization-bounces@lists.linux-foundation.org
+Errors-To: virtualization-bounces@lists.linux-foundation.org
+Xref: news.gmane.org gmane.linux.kernel.virtualization:16314 gmane.linux.kernel:1334019
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334019>
+
+Implements a hash table for VMCI's use.
+
+Signed-off-by: Andrew Stiegmann (stieg) <astiegmann@vmware.com>
+---
+ drivers/misc/vmw_vmci/vmci_hash_table.c |  332 +++++++++++++++++++++++++++++++
+ drivers/misc/vmw_vmci/vmci_hash_table.h |   56 +++++
+ 2 files changed, 388 insertions(+), 0 deletions(-)
+ create mode 100644 drivers/misc/vmw_vmci/vmci_hash_table.c
+ create mode 100644 drivers/misc/vmw_vmci/vmci_hash_table.h
+
+diff --git a/drivers/misc/vmw_vmci/vmci_hash_table.c b/drivers/misc/vmw_vmci/vmci_hash_table.c
+new file mode 100644
+index 0000000..a7423df
+--- /dev/null
++++ b/drivers/misc/vmw_vmci/vmci_hash_table.c
+@@ -0,0 +1,332 @@
++/*
++ * VMware VMCI Driver
++ *
++ * Copyright (C) 2012 VMware, Inc. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License as published by the
++ * Free Software Foundation version 2 and no later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
++ * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++ */
++
++#include <linux/vmw_vmci_defs.h>
++
++#include "vmci_context.h"
++#include "vmci_common_int.h"
++#include "vmci_driver.h"
++#include "vmci_hash_table.h"
++
++#define VMCI_HANDLE_TO_CONTEXT_ID(_handle) ((_handle).context)
++#define VMCI_HANDLE_TO_RESOURCE_ID(_handle) ((_handle).resource)
++#define VMCI_HASHTABLE_HASH(_h, _sz)				\
++	vmci_hash_calc(VMCI_HANDLE_TO_RESOURCE_ID(_h), (_sz))
++
++struct vmci_hash_table *vmci_hash_create(int size)
++{
++	struct vmci_hash_table *table;
++
++	table = kmalloc(sizeof *table, GFP_KERNEL);
++	if (table == NULL)
++		return NULL;
++
++	table->entries = kcalloc(size, sizeof *table->entries, GFP_KERNEL);
++	if (table->entries == NULL) {
++		kfree(table);
++		return NULL;
++	}
++
++	table->size = size;
++	spin_lock_init(&table->lock);
++
++	return table;
++}
++
++/*
++ * This function should be called at module exit time.
++ * We rely on the module ref count to insure that no one is accessing any
++ * hash table entries at this point in time. Hence we should be able to just
++ * remove all entries from the hash table.
++ */
++void vmci_hash_destroy(struct vmci_hash_table *table)
++{
++	ASSERT(table);
++
++	spin_lock_bh(&table->lock);
++	kfree(table->entries);
++	table->entries = NULL;
++	spin_unlock_bh(&table->lock);
++	kfree(table);
++}
++
++void vmci_hash_init_entry(struct vmci_hash_entry *entry,
++			  struct vmci_handle handle)
++{
++	ASSERT(entry);
++	entry->handle = handle;
++	entry->refCount = 0;
++}
++
++/*
++ * Unlocked version of vmci_hash_exists.
++ * True if handle already in hashtable. false otherwise.
++ */
++static bool hash_exists_locked(struct vmci_hash_table *table,
++			       struct vmci_handle handle)
++{
++	struct vmci_hash_entry *entry;
++	int idx;
++
++	ASSERT(table);
++
++	idx = VMCI_HASHTABLE_HASH(handle, table->size);
++
++	for (entry = table->entries[idx]; entry; entry = entry->next) {
++		if (VMCI_HANDLE_TO_RESOURCE_ID(entry->handle) ==
++		    VMCI_HANDLE_TO_RESOURCE_ID(handle) &&
++		    ((VMCI_HANDLE_TO_CONTEXT_ID(entry->handle) ==
++		      VMCI_HANDLE_TO_CONTEXT_ID(handle)) ||
++		     (VMCI_INVALID_ID == VMCI_HANDLE_TO_CONTEXT_ID(handle))
++		     || (VMCI_INVALID_ID ==
++			 VMCI_HANDLE_TO_CONTEXT_ID(entry->handle)))) {
++			return true;
++		}
++	}
++
++	return false;
++}
++
++/*
++ * Assumes caller holds table lock.
++ */
++static int hash_unlink(struct vmci_hash_table *table,
++		       struct vmci_hash_entry *entry)
++{
++	int result;
++	struct vmci_hash_entry *prev, *cur;
++	const int idx = VMCI_HASHTABLE_HASH(entry->handle, table->size);
++
++	prev = NULL;
++	cur = table->entries[idx];
++	while (true) {
++		if (cur == NULL) {
++			result = VMCI_ERROR_NOT_FOUND;
++			break;
++		}
++		if (VMCI_HANDLE_EQUAL(cur->handle, entry->handle)) {
++			ASSERT(cur == entry);
++
++			/* Remove entry and break. */
++			if (prev)
++				prev->next = cur->next;
++			else
++				table->entries[idx] = cur->next;
++
++			cur->next = NULL;
++			result = VMCI_SUCCESS;
++			break;
++		}
++		prev = cur;
++		cur = cur->next;
++	}
++
++	return result;
++}
++
++int vmci_hash_add(struct vmci_hash_table *table,
++		  struct vmci_hash_entry *entry)
++{
++	int idx;
++
++	ASSERT(entry);
++	ASSERT(table);
++
++	spin_lock_bh(&table->lock);
++
++	/* Creation of a new hashtable entry is always allowed. */
++	if (hash_exists_locked(table, entry->handle)) {
++		pr_devel("Entry (handle=0x%x:0x%x) already exists.",
++			 entry->handle.context, entry->handle.resource);
++		spin_unlock_bh(&table->lock);
++		return VMCI_ERROR_DUPLICATE_ENTRY;
++	}
++
++	idx = VMCI_HASHTABLE_HASH(entry->handle, table->size);
++	ASSERT(idx < table->size);
++
++	/* New entry is added to top/front of hash bucket. */
++	entry->refCount++;
++	entry->next = table->entries[idx];
++	table->entries[idx] = entry;
++	spin_unlock_bh(&table->lock);
++
++	return VMCI_SUCCESS;
++}
++
++int vmci_hash_remove(struct vmci_hash_table *table,
++		     struct vmci_hash_entry *entry)
++{
++	int result;
++
++	ASSERT(table);
++	ASSERT(entry);
++
++	spin_lock_bh(&table->lock);
++
++	/* First unlink the entry. */
++	result = hash_unlink(table, entry);
++	if (result == VMCI_SUCCESS) {
++		/* Decrement refcount and check if this is last reference. */
++		entry->refCount--;
++		if (entry->refCount == 0)
++			result = VMCI_SUCCESS_ENTRY_DEAD;
++	}
++
++	spin_unlock_bh(&table->lock);
++
++	return result;
++}
++
++/*
++ * Looks up an entry in the hash table, that is already locked.
++ * If the element is found, a pointer to the element is returned.
++ * Else NULL.
++ */
++static struct vmci_hash_entry *hash_get_locked(struct vmci_hash_table *table,
++					       struct vmci_handle handle)
++{
++	struct vmci_hash_entry *cur = NULL;
++	int idx;
++
++	ASSERT(!VMCI_HANDLE_EQUAL(handle, VMCI_INVALID_HANDLE));
++	ASSERT(table);
++
++	idx = VMCI_HASHTABLE_HASH(handle, table->size);
++
++	for (cur = table->entries[idx]; cur != NULL; cur = cur->next) {
++		if (VMCI_HANDLE_TO_RESOURCE_ID(cur->handle) ==
++		    VMCI_HANDLE_TO_RESOURCE_ID(handle) &&
++		    ((VMCI_HANDLE_TO_CONTEXT_ID(cur->handle) ==
++		      VMCI_HANDLE_TO_CONTEXT_ID(handle)) ||
++		     (VMCI_INVALID_ID ==
++		      VMCI_HANDLE_TO_CONTEXT_ID(cur->handle)))) {
++			cur->refCount++;
++			break;
++		}
++	}
++
++	return cur;
++}
++
++struct vmci_hash_entry *vmci_hash_get(struct vmci_hash_table *table,
++				      struct vmci_handle handle)
++{
++	struct vmci_hash_entry *entry;
++
++	if (VMCI_HANDLE_EQUAL(handle, VMCI_INVALID_HANDLE))
++		return NULL;
++
++	ASSERT(table);
++
++	spin_lock_bh(&table->lock);
++	entry = hash_get_locked(table, handle);
++	spin_unlock_bh(&table->lock);
++
++	return entry;
++}
++
++/*
++ * Hold the given entry.  This will increment the entry's reference count.
++ * This is like a GetEntry() but without having to lookup the entry by
++ * handle.
++ */
++void vmci_hash_hold(struct vmci_hash_table *table,
++		    struct vmci_hash_entry *entry)
++{
++	ASSERT(table);
++	ASSERT(entry);
++
++	spin_lock_bh(&table->lock);
++	entry->refCount++;
++	spin_unlock_bh(&table->lock);
++}
++
++/*
++ * Releases an element previously obtained with hash_get_locked.
++ * If the entry is removed from the hash table, VMCI_SUCCESS_ENTRY_DEAD
++ * is returned. Otherwise, VMCI_SUCCESS is returned.
++ */
++static int hash_release_locked(struct vmci_hash_table *table,
++			       struct vmci_hash_entry *entry)
++{
++	int result = VMCI_SUCCESS;
++
++	ASSERT(table);
++	ASSERT(entry);
++
++	entry->refCount--;
++	/* Check if this is last reference and report if so. */
++	if (entry->refCount == 0) {
++		/*
++		 * Remove entry from hash table if not already
++		 * removed. This could have happened already because
++		 * vmci_hash_remove was called to unlink it. We ignore
++		 * if it is not found. Datagram handles will often
++		 * have RemoveEntry called, whereas SharedMemory
++		 * regions rely on ReleaseEntry to unlink the entry,
++		 * since the creator does not call RemoveEntry when it
++		 * detaches.
++		 */
++		hash_unlink(table, entry);
++		result = VMCI_SUCCESS_ENTRY_DEAD;
++	}
++
++	return result;
++}
++
++int vmci_hash_release(struct vmci_hash_table *table,
++		      struct vmci_hash_entry *entry)
++{
++	int result;
++
++	spin_lock_bh(&table->lock);
++	result = hash_release_locked(table, entry);
++	spin_unlock_bh(&table->lock);
++
++	return result;
++}
++
++bool vmci_hash_exists(struct vmci_hash_table *table,
++		      struct vmci_handle handle)
++{
++	bool exists;
++
++	spin_lock_bh(&table->lock);
++	exists = hash_exists_locked(table, handle);
++	spin_unlock_bh(&table->lock);
++
++	return exists;
++}
++
++/*
++ * Hash function used by the Simple Datagram API. Hashes only a VMCI id
++ * (not the full VMCI handle) Based on the djb2 hash function by
++ * Dan Bernstein.
++ */
++int vmci_hash_calc(uint32_t id, unsigned size)
++{
++	unsigned i;
++	int hash = 5381;
++
++	for (i = 0; i < sizeof id; i++)
++		hash = ((hash << 5) + hash) + (uint8_t) (id >> (i * 8));
++
++	return hash & (size - 1);
++}
+diff --git a/drivers/misc/vmw_vmci/vmci_hash_table.h b/drivers/misc/vmw_vmci/vmci_hash_table.h
+new file mode 100644
+index 0000000..8e5c83b
+--- /dev/null
++++ b/drivers/misc/vmw_vmci/vmci_hash_table.h
+@@ -0,0 +1,56 @@
++/*
++ * VMware VMCI Driver
++ *
++ * Copyright (C) 2012 VMware, Inc. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License as published by the
++ * Free Software Foundation version 2 and no later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
++ * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++ */
++
++#ifndef _VMCI_HASH_TABLE_H_
++#define _VMCI_HASH_TABLE_H_
++
++#include <linux/vmw_vmci_defs.h>
++
++struct vmci_hash_entry {
++	struct vmci_handle handle;
++	int refCount;
++	struct vmci_hash_entry *next;
++};
++
++struct vmci_hash_table {
++	struct vmci_hash_entry **entries;
++	int size;		/* Number of buckets in above array. */
++	spinlock_t lock;
++};
++
++struct vmci_hash_table *vmci_hash_create(int size);
++void vmci_hash_destroy(struct vmci_hash_table *table);
++void vmci_hash_init_entry(struct vmci_hash_entry *entry,
++			  struct vmci_handle handle);
++int vmci_hash_add(struct vmci_hash_table *table,
++		  struct vmci_hash_entry *entry);
++int vmci_hash_remove(struct vmci_hash_table *table,
++		     struct vmci_hash_entry *entry);
++struct vmci_hash_entry *vmci_hash_get(struct vmci_hash_table
++				      *table,
++				      struct vmci_handle handle);
++void vmci_hash_hold(struct vmci_hash_table *table,
++		    struct vmci_hash_entry *entry);
++int vmci_hash_release(struct vmci_hash_table *table,
++		      struct vmci_hash_entry *entry);
++bool vmci_hash_exists(struct vmci_hash_table *table,
++		      struct vmci_handle handle);
++int vmci_hash_calc(uint32_t id, unsigned size);
++
++#endif /* _VMCI_HASH_TABLE_H_ */
+-- 
+1.7.0.4

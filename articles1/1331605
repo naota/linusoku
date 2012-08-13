@@ -1,0 +1,153 @@
+Path: news.gmane.org!not-for-mail
+From: xufeng zhang <xufeng.zhang@windriver.com>
+Newsgroups: gmane.linux.network,gmane.linux.kernel
+Subject: Re: [PATCH] sctp: Make "Invalid Stream Identifier" ERROR follows
+ SACK when bundling
+Date: Mon, 23 Jul 2012 13:16:37 +0800
+Lines: 102
+Approved: news@gmane.org
+Message-ID: <500CDE35.6000009@windriver.com>
+References: <1342677450-21810-1-git-send-email-xufengzhang.main@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="ISO-8859-1"; format=flowed
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343020241 18797 80.91.229.3 (23 Jul 2012 05:10:41 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 05:10:41 +0000 (UTC)
+Cc: <xufengzhang.main@gmail.com>, <linux-sctp@vger.kernel.org>,
+	<netdev@vger.kernel.org>, <linux-kernel@vger.kernel.org>
+To: <vyasevich@gmail.com>, <sri@us.ibm.com>, <davem@davemloft.net>
+Original-X-From: netdev-owner@vger.kernel.org Mon Jul 23 07:10:39 2012
+Return-path: <netdev-owner@vger.kernel.org>
+Envelope-to: linux-netdev-2@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <netdev-owner@vger.kernel.org>)
+	id 1StAul-0004oL-7O
+	for linux-netdev-2@plane.gmane.org; Mon, 23 Jul 2012 07:10:39 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753057Ab2GWFJ1 (ORCPT <rfc822;linux-netdev-2@m.gmane.org>);
+	Mon, 23 Jul 2012 01:09:27 -0400
+Original-Received: from mail1.windriver.com ([147.11.146.13]:33686 "EHLO
+	mail1.windriver.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752967Ab2GWFJ0 (ORCPT
+	<rfc822;netdev@vger.kernel.org>); Mon, 23 Jul 2012 01:09:26 -0400
+Original-Received: from ALA-HCA.corp.ad.wrs.com (ala-hca [147.11.189.40])
+	by mail1.windriver.com (8.14.5/8.14.3) with ESMTP id q6N59Kum003069
+	(version=TLSv1/SSLv3 cipher=AES128-SHA bits=128 verify=FAIL);
+	Sun, 22 Jul 2012 22:09:20 -0700 (PDT)
+Original-Received: from [128.224.163.210] (128.224.163.210) by ALA-HCA.corp.ad.wrs.com
+ (147.11.189.50) with Microsoft SMTP Server id 14.1.255.0; Sun, 22 Jul 2012
+ 22:09:21 -0700
+User-Agent: Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9.1.10) Gecko/20100512 Thunderbird/3.0.5 ThunderBrowse/3.3.5
+In-Reply-To: <1342677450-21810-1-git-send-email-xufengzhang.main@gmail.com>
+Original-Sender: netdev-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <netdev.vger.kernel.org>
+X-Mailing-List: netdev@vger.kernel.org
+Xref: news.gmane.org gmane.linux.network:238125 gmane.linux.kernel:1331605
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331605>
+
+On 07/19/2012 01:57 PM, xufengzhang.main@gmail.com wrote:
+> When "Invalid Stream Identifier" ERROR happens after process the
+> received DATA chunks, this ERROR chunk is enqueued into outqueue
+> before SACK chunk, so when bundling ERROR chunk with SACK chunk,
+> the ERROR chunk is always placed first in the packet because of
+> the chunk's position in the outqueue.
+> This violates sctp specification:
+>      RFC 4960 6.5. Stream Identifier and Stream Sequence Number
+>      ...The endpoint may bundle the ERROR chunk in the same
+>      packet as the SACK as long as the ERROR follows the SACK.
+> So we must place SACK first when bundling "Invalid Stream Identifier"
+> ERROR and SACK in one packet.
+> Although we can do that by enqueue SACK chunk into outqueue before
+> ERROR chunk, it will violate the side-effect interpreter processing.
+> It's easy to do this job when dequeue chunks from the outqueue,
+> by this way, we introduce a flag 'has_isi_err' which indicate
+> whether or not the "Invalid Stream Identifier" ERROR happens.
+>
+> Signed-off-by: Xufeng Zhang<xufeng.zhang@windriver.com>
+> ---
+>   include/net/sctp/structs.h |    2 ++
+>   net/sctp/output.c          |   26 ++++++++++++++++++++++++++
+>   2 files changed, 28 insertions(+), 0 deletions(-)
+>
+> diff --git a/include/net/sctp/structs.h b/include/net/sctp/structs.h
+> index 88949a9..5adf4de 100644
+> --- a/include/net/sctp/structs.h
+> +++ b/include/net/sctp/structs.h
+> @@ -842,6 +842,8 @@ struct sctp_packet {
+>   	    has_sack:1,		/* This packet contains a SACK chunk. */
+>   	    has_auth:1,		/* This packet contains an AUTH chunk */
+>   	    has_data:1,		/* This packet contains at least 1 DATA chunk */
+> +	    has_isi_err:1,	/* This packet contains a "Invalid Stream
+> +				 * Identifier" ERROR chunk */
+>   	    ipfragok:1,		/* So let ip fragment this packet */
+>   	    malloced:1;		/* Is it malloced? */
+>   };
+> diff --git a/net/sctp/output.c b/net/sctp/output.c
+> index 817174e..77fb1ae 100644
+> --- a/net/sctp/output.c
+> +++ b/net/sctp/output.c
+> @@ -79,6 +79,7 @@ static void sctp_packet_reset(struct sctp_packet *packet)
+>   	packet->has_sack = 0;
+>   	packet->has_data = 0;
+>   	packet->has_auth = 0;
+> +	packet->has_isi_err = 0;
+>   	packet->ipfragok = 0;
+>   	packet->auth = NULL;
+>   }
+> @@ -267,6 +268,7 @@ static sctp_xmit_t sctp_packet_bundle_sack(struct sctp_packet *pkt,
+>   sctp_xmit_t sctp_packet_append_chunk(struct sctp_packet *packet,
+>   				     struct sctp_chunk *chunk)
+>   {
+> +	struct sctp_chunk *lchunk;
+>   	sctp_xmit_t retval = SCTP_XMIT_OK;
+>   	__u16 chunk_len = WORD_ROUND(ntohs(chunk->chunk_hdr->length));
+>
+> @@ -316,7 +318,31 @@ sctp_xmit_t sctp_packet_append_chunk(struct sctp_packet *packet,
+>   		packet->has_cookie_echo = 1;
+>   		break;
+>
+> +	    case SCTP_CID_ERROR:
+> +		if (chunk->subh.err_hdr->cause&  SCTP_ERROR_INV_STRM)
+> +			packet->has_isi_err = 1;
+> +		break;
+> +
+>   	    case SCTP_CID_SACK:
+> +		/* RFC 4960
+> +		 * 6.5 Stream Identifier and Stream Sequence Number
+> +		 * The endpoint may bundle the ERROR chunk in the same
+> +		 * packet as the SACK as long as the ERROR follows the SACK.
+> +		 */
+> +		if (packet->has_isi_err) {
+> +			if (list_is_singular(&packet->chunk_list))
+> +				list_add(&chunk->list,&packet->chunk_list);
+> +			else {
+> +				lchunk = list_first_entry(&packet->chunk_list,
+> +						struct sctp_chunk, list);
+> +				list_add(&chunk->list,&lchunk->list);
+> +			}
+>    
+And I should clarify the above judgment code.
+AFAIK, there should be two cases for the bundling when invalid stream 
+identifier error happens:
+1). COOKIE_ACK ERROR SACK
+2). ERROR SACK
+So I need to deal with the two cases differently.
+
+
+Thanks,
+Xufeng Zhang
+> +			packet->size += chunk_len;
+> +			chunk->transport = packet->transport;
+> +			packet->has_sack = 1;
+> +			goto finish;
+> +		}
+> +
+>   		packet->has_sack = 1;
+>   		break;
+>
+>    
+

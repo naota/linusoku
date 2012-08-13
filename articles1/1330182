@@ -1,0 +1,86 @@
+Path: news.gmane.org!not-for-mail
+From: Chen Gong <gong.chen@linux.intel.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 2/5] x86: mce: Serialize mce injection
+Date: Thu, 19 Jul 2012 13:59:38 -0400
+Lines: 39
+Approved: news@gmane.org
+Message-ID: <1342720781-4729-3-git-send-email-gong.chen@linux.intel.com>
+References: <1342720781-4729-1-git-send-email-gong.chen@linux.intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342677561 19062 80.91.229.3 (19 Jul 2012 05:59:21 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 05:59:21 +0000 (UTC)
+Cc: tony.luck@intel.com, bp@amd64.org, x86@kernel.org,
+	linux-kernel@vger.kernel.org
+To: tglx@linutronix.de
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 07:59:20 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Srjlf-0008Vp-Dx
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 07:59:19 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752980Ab2GSF7I (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 01:59:08 -0400
+Original-Received: from mga02.intel.com ([134.134.136.20]:40789 "EHLO mga02.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751152Ab2GSF7F (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 01:59:05 -0400
+Original-Received: from orsmga001.jf.intel.com ([10.7.209.18])
+  by orsmga101.jf.intel.com with ESMTP; 18 Jul 2012 22:58:49 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.67,352,1309762800"; 
+   d="scan'208";a="168319257"
+Original-Received: from gchen-sby.bj.intel.com (HELO localhost) ([10.238.158.78])
+  by orsmga001.jf.intel.com with ESMTP; 18 Jul 2012 22:58:48 -0700
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1342720781-4729-1-git-send-email-gong.chen@linux.intel.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330182
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330182>
+
+From: Thomas Gleixner <tglx@linutronix.de>
+
+raise_mce() fiddles with global state, but lacks any kind of
+serialization.
+
+Add a mutex around the raise_mce() call, so concurrent writers do not
+stomp on each other toes.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+---
+ arch/x86/kernel/cpu/mcheck/mce-inject.c |    4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/arch/x86/kernel/cpu/mcheck/mce-inject.c b/arch/x86/kernel/cpu/mcheck/mce-inject.c
+index 753746f..ddc72f8 100644
+--- a/arch/x86/kernel/cpu/mcheck/mce-inject.c
++++ b/arch/x86/kernel/cpu/mcheck/mce-inject.c
+@@ -78,6 +78,7 @@ static void raise_exception(struct mce *m, struct pt_regs *pregs)
+ }
+ 
+ static cpumask_var_t mce_inject_cpumask;
++static DEFINE_MUTEX(mce_inject_mutex);
+ 
+ static int mce_raise_notify(unsigned int cmd, struct pt_regs *regs)
+ {
+@@ -229,7 +230,10 @@ static ssize_t mce_write(struct file *filp, const char __user *ubuf,
+ 	 * so do it a jiffie or two later everywhere.
+ 	 */
+ 	schedule_timeout(2);
++
++	mutex_lock(&mce_inject_mutex);
+ 	raise_mce(&m);
++	mutex_unlock(&mce_inject_mutex);
+ 	return usize;
+ }
+ 
+-- 
+1.7.10.4
+

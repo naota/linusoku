@@ -1,0 +1,124 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton@redhat.com>
+Newsgroups: gmane.linux.file-systems,gmane.linux.nfs,gmane.linux.kernel
+Subject: [PATCH v5 10/19] vfs: fix symlinkat to retry on ESTALE errors
+Date: Wed,  8 Aug 2012 09:21:33 -0400
+Lines: 62
+Approved: news@gmane.org
+Message-ID: <1344432102-22312-11-git-send-email-jlayton@redhat.com>
+References: <1344432102-22312-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344432262 32027 80.91.229.3 (8 Aug 2012 13:24:22 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 13:24:22 +0000 (UTC)
+Cc: linux-fsdevel@vger.kernel.org, linux-nfs@vger.kernel.org,
+	linux-kernel@vger.kernel.org, michael.brantley@deshaw.com,
+	hch@infradead.org, miklos@szeredi.hu, pstaubach@exagrid.com
+To: viro@ZenIV.linux.org.uk
+Original-X-From: linux-fsdevel-owner@vger.kernel.org Wed Aug 08 15:24:20 2012
+Return-path: <linux-fsdevel-owner@vger.kernel.org>
+Envelope-to: lnx-linux-fsdevel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-fsdevel-owner@vger.kernel.org>)
+	id 1Sz6FH-0000LJ-EF
+	for lnx-linux-fsdevel@plane.gmane.org; Wed, 08 Aug 2012 15:24:19 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1758470Ab2HHNWI (ORCPT <rfc822;lnx-linux-fsdevel@m.gmane.org>);
+	Wed, 8 Aug 2012 09:22:08 -0400
+Original-Received: from mail-yx0-f174.google.com ([209.85.213.174]:61298 "EHLO
+	mail-yx0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1758465Ab2HHNWC (ORCPT
+	<rfc822;linux-fsdevel@vger.kernel.org>);
+	Wed, 8 Aug 2012 09:22:02 -0400
+Original-Received: by yenl2 with SMTP id l2so730880yen.19
+        for <linux-fsdevel@vger.kernel.org>; Wed, 08 Aug 2012 06:22:01 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:x-gm-message-state;
+        bh=8itxrKmhHi3Mr7aVc7aJTVWZUfbAmbEjtf5jrnQUvQc=;
+        b=Hxs/iuw9TeEJ9D1tqKTmBFvOYn7D4yXtOLxbiXn1lR+3K3TTUiiRNbfrPU1h0RmY2n
+         S3m162JLV6Kb7cN6KPJVpu4UEaj+OMDPbpjjGW/jkSFut6JXT5ozHa2FpHoOWxgUQm/v
+         BHGInD4im/SKTBHbNyGoWXHsssB4mxFrpcvyeqChImLg46WY8dCrOax03qKH5fOS51mo
+         IAssuHDZ3EJIypUS9dAh/at/RVOX54/ni4N+Se1KNKgOhb110c3RBaiaj8dYw47tqo2m
+         6hErhEp2DVwklTI+OY66gSYwhIt6TjNC+acDj4PkffPjnykHwBpk1m/WnpL0cPQZWL57
+         U/8g==
+Original-Received: by 10.236.78.3 with SMTP id f3mr16601221yhe.34.1344432121739;
+        Wed, 08 Aug 2012 06:22:01 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-069-134-145-027.nc.res.rr.com. [69.134.145.27])
+        by mx.google.com with ESMTPS id l1sm24418002yhm.19.2012.08.08.06.22.00
+        (version=SSLv3 cipher=OTHER);
+        Wed, 08 Aug 2012 06:22:01 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1344432102-22312-1-git-send-email-jlayton@redhat.com>
+X-Gm-Message-State: ALoCoQmHTddbmXybzQSvvKWaLjJTC9oPcxhTzWc/SHn34mAAhr/x1uGSgSCBA7fVQX/KHDs5KxeQ
+Original-Sender: linux-fsdevel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-fsdevel.vger.kernel.org>
+X-Mailing-List: linux-fsdevel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.file-systems:66466 gmane.linux.nfs:51370 gmane.linux.kernel:1340046
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340046>
+
+Signed-off-by: Jeff Layton <jlayton@redhat.com>
+---
+ fs/namei.c | 30 ++++++++++++++++++++----------
+ 1 file changed, 20 insertions(+), 10 deletions(-)
+
+diff --git a/fs/namei.c b/fs/namei.c
+index 9fd5163..9986117 100644
+--- a/fs/namei.c
++++ b/fs/namei.c
+@@ -3468,24 +3468,34 @@ SYSCALL_DEFINE3(symlinkat, const char __user *, oldname,
+ 		int, newdfd, const char __user *, newname)
+ {
+ 	int error;
+-	char *from;
++	char *from, *to;
+ 	struct dentry *dentry;
+ 	struct path path;
++	unsigned int try = 0;
+ 
+ 	from = getname(oldname);
+ 	if (IS_ERR(from))
+ 		return PTR_ERR(from);
+ 
+-	dentry = user_path_create(newdfd, newname, &path, 0);
+-	error = PTR_ERR(dentry);
+-	if (IS_ERR(dentry))
+-		goto out_putname;
++	to = getname(newname);
++	if (IS_ERR(to)) {
++		putname(from);
++		return PTR_ERR(to);
++	}
+ 
+-	error = security_path_symlink(&path, dentry, from);
+-	if (!error)
+-		error = vfs_symlink(path.dentry->d_inode, dentry, from);
+-	done_path_create(&path, dentry);
+-out_putname:
++	do {
++		dentry = kern_path_create(newdfd, to, &path, 0, try);
++		if (IS_ERR(dentry)) {
++			error = PTR_ERR(dentry);
++			break;
++		}
++
++		error = security_path_symlink(&path, dentry, from);
++		if (!error)
++			error = vfs_symlink(path.dentry->d_inode, dentry, from);
++		done_path_create(&path, dentry);
++	} while (retry_estale(error, try++));
++	putname(to);
+ 	putname(from);
+ 	return error;
+ }
+-- 
+1.7.11.2
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

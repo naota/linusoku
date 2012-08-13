@@ -1,0 +1,114 @@
+Path: news.gmane.org!not-for-mail
+From: Devendra Naga <develkernel412222@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 2/2] lp8727_charger: unregister power supply at error path of lp8727_register_psy
+Date: Sun, 29 Jul 2012 23:31:55 +0545
+Lines: 56
+Approved: news@gmane.org
+Message-ID: <1343584015-30344-1-git-send-email-develkernel412222@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343584052 11110 80.91.229.3 (29 Jul 2012 17:47:32 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 29 Jul 2012 17:47:32 +0000 (UTC)
+Cc: Devendra Naga <develkernel412222@gmail.com>
+To: Anton Vorontsov <cbou@mail.ru>,
+	David Woodhouse <dwmw2@infradead.org>,
+	linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 29 19:47:28 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvXaO-00031u-Ms
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 29 Jul 2012 19:47:25 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753382Ab2G2RrF (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 29 Jul 2012 13:47:05 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:53255 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753322Ab2G2RrC (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 29 Jul 2012 13:47:02 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so8430100pbb.19
+        for <linux-kernel@vger.kernel.org>; Sun, 29 Jul 2012 10:47:01 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer;
+        bh=Af918cXgHR0lXu7KHtoeoO7WD8IsPxwJqsvIms8nASI=;
+        b=Vis3MZozVJzwUHr46kEM1wvPgoDEZPeGEKd4MUHq983K4egLHlDneyHmgUeayuJ8uY
+         z+1Kb4Cag4lONgipgv//egEEVueZfA85omuWcUx+/wpyTkisDhHfg4t1G/TBoQ0Hs8mV
+         DUcJMOh/0tBDqESNA7CG2ZtCSmIYWWgF96uC5uq2NiafaB9SJ2taNrNM/fAzg7hfWBwU
+         RzX3Ija5zy+xou6zTWlAdZ1K5qB84ukdbw3sPTxel2nPXrLcV2j/eY44TP/vlYuc7bCd
+         oEG+o9oW89A9CUFR5qd4dDXfdi7SropzXRdwQXdIR4XrePYAKUDgWkPSNERckAGpszRz
+         +Eew==
+Original-Received: by 10.68.132.201 with SMTP id ow9mr28887582pbb.160.1343584021642;
+        Sun, 29 Jul 2012 10:47:01 -0700 (PDT)
+Original-Received: from localhost.localdomain ([122.172.19.132])
+        by mx.google.com with ESMTPS id wa14sm6185002pbc.10.2012.07.29.10.46.59
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Sun, 29 Jul 2012 10:47:01 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9.5
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334758
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334758>
+
+if usb power supply registration fails,
+	we wont unregister the ac power supply
+if battery power supply registration fails,
+	we wont unregister the usb, and ac supply,
+
+take care of those things and also no need of goto -err_mem: at the fail case of
+kzalloc simply can have return -ENOMEM
+
+Signed-off-by: Devendra Naga <develkernel412222@gmail.com>
+---
+ drivers/power/lp8727_charger.c |   12 +++++++-----
+ 1 file changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/power/lp8727_charger.c b/drivers/power/lp8727_charger.c
+index 699f0ef..401b66e 100644
+--- a/drivers/power/lp8727_charger.c
++++ b/drivers/power/lp8727_charger.c
+@@ -362,7 +362,7 @@ static int lp8727_register_psy(struct lp8727_chg *pchg)
+ 
+ 	psy = kzalloc(sizeof(*psy), GFP_KERNEL);
+ 	if (!psy)
+-		goto err_mem;
++		return -ENOMEM;
+ 
+ 	pchg->psy = psy;
+ 
+@@ -386,7 +386,7 @@ static int lp8727_register_psy(struct lp8727_chg *pchg)
+ 	psy->usb.num_supplicants = ARRAY_SIZE(battery_supplied_to);
+ 
+ 	if (power_supply_register(pchg->dev, &psy->usb))
+-		goto err_psy;
++		goto err_psy_ac;
+ 
+ 	psy->batt.name = "main_batt";
+ 	psy->batt.type = POWER_SUPPLY_TYPE_BATTERY;
+@@ -396,12 +396,14 @@ static int lp8727_register_psy(struct lp8727_chg *pchg)
+ 	psy->batt.external_power_changed = lp8727_charger_changed;
+ 
+ 	if (power_supply_register(pchg->dev, &psy->batt))
+-		goto err_psy;
++		goto err_psy_usb;
+ 
+ 	return 0;
+ 
+-err_mem:
+-	return -ENOMEM;
++err_psy_usb:
++	power_supply_unregister(&psy->usb);
++err_psy_ac:
++	power_supply_unregister(&psy->ac);
+ err_psy:
+ 	kfree(psy);
+ 	return -EPERM;
+-- 
+1.7.9.5
+

@@ -1,0 +1,157 @@
+Path: news.gmane.org!not-for-mail
+From: Stanislav Kinsbursky <skinsbursky-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+Newsgroups: gmane.linux.nfs,gmane.linux.network,gmane.linux.kernel,gmane.linux.openvz.devel
+Subject: [RFC PATCH 1/2] unix sockets: add ability for search for peer from
+	passed root
+Date: Fri, 10 Aug 2012 16:57:30 +0400
+Lines: 107
+Approved: news@gmane.org
+Message-ID: <20120810125730.7115.96005.stgit@localhost.localdomain>
+References: <20120810125701.7115.71612.stgit@localhost.localdomain>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344603610 3941 80.91.229.3 (10 Aug 2012 13:00:10 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 13:00:10 +0000 (UTC)
+Cc: linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, eric.dumazet-Re5JQEeQqe8AvxtiuMwx3w@public.gmane.org,
+	xemul-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org, netdev-u79uwXL29TY76Z2rM5mHXA@public.gmane.org,
+	linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, bfields-uC3wQj2KruNg9hUCZPvPmw@public.gmane.org,
+	viro-RmSDqhL/yNMiFSDQTTA3OLVCufUGDwFn@public.gmane.org, tim.c.chen-VuQAYsv1563Yd54FQh9/CA@public.gmane.org,
+	devel-GEFAQzZX7r8dnm+yROfE0A@public.gmane.org
+To: Trond.Myklebust-HgOvQuBEEgTQT0dZR+AlfA@public.gmane.org, davem-fT/PcQaiUtIeIZ0/mPfg9Q@public.gmane.org
+Original-X-From: linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org Fri Aug 10 15:00:09 2012
+Return-path: <linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Envelope-to: glN-linux-nfs-wOFGN7rlS/M9smdsby/KFg@public.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>)
+	id 1Szooy-0000LF-Hp
+	for glN-linux-nfs-wOFGN7rlS/M9smdsby/KFg@public.gmane.org; Fri, 10 Aug 2012 15:00:08 +0200
+Original-Received: (majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org) by vger.kernel.org via listexpand
+	id S1755046Ab2HJNAE (ORCPT <rfc822;glN-linux-nfs@m.gmane.org>);
+	Fri, 10 Aug 2012 09:00:04 -0400
+Original-Received: from mailhub.sw.ru ([195.214.232.25]:11938 "EHLO relay.sw.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751502Ab2HJNAD (ORCPT <rfc822;linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>);
+	Fri, 10 Aug 2012 09:00:03 -0400
+Original-Received: from localhost.localdomain ([10.30.21.131])
+	by relay.sw.ru (8.13.4/8.13.4) with ESMTP id q7ACxSw0029192;
+	Fri, 10 Aug 2012 16:59:28 +0400 (MSK)
+In-Reply-To: <20120810125701.7115.71612.stgit-bi+AKbBUZKY6gyzm1THtWbp2dZbC/Bob@public.gmane.org>
+User-Agent: StGit/0.16
+Original-Sender: linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Precedence: bulk
+List-ID: <linux-nfs.vger.kernel.org>
+X-Mailing-List: linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Xref: news.gmane.org gmane.linux.nfs:51484 gmane.linux.network:239727 gmane.linux.kernel:1341269 gmane.linux.openvz.devel:1976
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341269>
+
+This helper is used stream sockets yet.
+All is simple: if non-NULL struct path was passed to unix_find_other(), then
+vfs_path_lookup() is called instead of kern_path().
+
+Signed-off-by: Stanislav Kinsbursky <skinsbursky-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+---
+ include/net/af_unix.h |    2 ++
+ net/unix/af_unix.c    |   25 ++++++++++++++++++-------
+ 2 files changed, 20 insertions(+), 7 deletions(-)
+
+diff --git a/include/net/af_unix.h b/include/net/af_unix.h
+index 2ee33da..559467e 100644
+--- a/include/net/af_unix.h
++++ b/include/net/af_unix.h
+@@ -67,6 +67,8 @@ struct unix_sock {
+ 
+ long unix_inq_len(struct sock *sk);
+ long unix_outq_len(struct sock *sk);
++int unix_stream_connect_root(struct path *root, struct socket *sock,
++			     struct sockaddr *uaddr, int addr_len, int flags);
+ 
+ #ifdef CONFIG_SYSCTL
+ extern int unix_sysctl_register(struct net *net);
+diff --git a/net/unix/af_unix.c b/net/unix/af_unix.c
+index 641f2e4..a790ebc 100644
+--- a/net/unix/af_unix.c
++++ b/net/unix/af_unix.c
+@@ -759,7 +759,7 @@ out:	mutex_unlock(&u->readlock);
+ 	return err;
+ }
+ 
+-static struct sock *unix_find_other(struct net *net,
++static struct sock *unix_find_other(struct net *net, struct path *root,
+ 				    struct sockaddr_un *sunname, int len,
+ 				    int type, unsigned int hash, int *error)
+ {
+@@ -769,7 +769,11 @@ static struct sock *unix_find_other(struct net *net,
+ 
+ 	if (sunname->sun_path[0]) {
+ 		struct inode *inode;
+-		err = kern_path(sunname->sun_path, LOOKUP_FOLLOW, &path);
++
++		if (root)
++			err = vfs_path_lookup(root->dentry, root->mnt, sunname->sun_path, LOOKUP_FOLLOW, &path);
++		else
++			err = kern_path(sunname->sun_path, LOOKUP_FOLLOW, &path);
+ 		if (err)
+ 			goto fail;
+ 		inode = path.dentry->d_inode;
+@@ -979,7 +983,7 @@ static int unix_dgram_connect(struct socket *sock, struct sockaddr *addr,
+ 			goto out;
+ 
+ restart:
+-		other = unix_find_other(net, sunaddr, alen, sock->type, hash, &err);
++		other = unix_find_other(net, NULL, sunaddr, alen, sock->type, hash, &err);
+ 		if (!other)
+ 			goto out;
+ 
+@@ -1053,8 +1057,8 @@ static long unix_wait_for_peer(struct sock *other, long timeo)
+ 	return timeo;
+ }
+ 
+-static int unix_stream_connect(struct socket *sock, struct sockaddr *uaddr,
+-			       int addr_len, int flags)
++int unix_stream_connect_root(struct path *root, struct socket *sock,
++			     struct sockaddr *uaddr, int addr_len, int flags)
+ {
+ 	struct sockaddr_un *sunaddr = (struct sockaddr_un *)uaddr;
+ 	struct sock *sk = sock->sk;
+@@ -1098,7 +1102,7 @@ static int unix_stream_connect(struct socket *sock, struct sockaddr *uaddr,
+ 
+ restart:
+ 	/*  Find listening sock. */
+-	other = unix_find_other(net, sunaddr, addr_len, sk->sk_type, hash, &err);
++	other = unix_find_other(net, root, sunaddr, addr_len, sk->sk_type, hash, &err);
+ 	if (!other)
+ 		goto out;
+ 
+@@ -1227,6 +1231,13 @@ out:
+ 		sock_put(other);
+ 	return err;
+ }
++EXPORT_SYMBOL_GPL(unix_stream_connect_root);
++
++static int unix_stream_connect(struct socket *sock, struct sockaddr *uaddr,
++				    int addr_len, int flags)
++{
++	return unix_stream_connect_root(NULL, sock, uaddr, addr_len, flags);
++}
+ 
+ static int unix_socketpair(struct socket *socka, struct socket *sockb)
+ {
+@@ -1508,7 +1519,7 @@ restart:
+ 		if (sunaddr == NULL)
+ 			goto out_free;
+ 
+-		other = unix_find_other(net, sunaddr, namelen, sk->sk_type,
++		other = unix_find_other(net, NULL, sunaddr, namelen, sk->sk_type,
+ 					hash, &err);
+ 		if (other == NULL)
+ 			goto out_free;
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-nfs" in
+the body of a message to majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

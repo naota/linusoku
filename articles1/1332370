@@ -1,0 +1,146 @@
+Path: news.gmane.org!not-for-mail
+From: Rik van Riel <riel@redhat.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH -mm] remove __GFP_NO_KSWAPD
+Date: Tue, 24 Jul 2012 11:12:22 -0400
+Organization: Red Hat, Inc.
+Lines: 80
+Approved: news@gmane.org
+Message-ID: <20120724111222.2c5e6b30@annuminas.surriel.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=US-ASCII
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343142775 13644 80.91.229.3 (24 Jul 2012 15:12:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 15:12:55 +0000 (UTC)
+Cc: Andrea Arcangeli <aarcange@redhat.com>,
+        lkml
+ <linux-kernel@vger.kernel.org>,
+        Andrew Morton <akpm@linux-foundation.org>, Mel Gorman <mel@csn.ul.ie>
+To: linux-mm@kvack.org
+Original-X-From: owner-linux-mm@kvack.org Tue Jul 24 17:12:55 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Stgn8-0003mW-39
+	for glkm-linux-mm-2@m.gmane.org; Tue, 24 Jul 2012 17:12:54 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 7BBA56B004D; Tue, 24 Jul 2012 11:12:52 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 62E546B005A; Tue, 24 Jul 2012 11:12:52 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 2ED156B005D; Tue, 24 Jul 2012 11:12:52 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx159.postini.com [74.125.245.159])
+	by kanga.kvack.org (Postfix) with SMTP id 773C26B004D
+	for <linux-mm@kvack.org>; Tue, 24 Jul 2012 11:12:51 -0400 (EDT)
+Original-Received: from mx1.redhat.com ([209.132.183.28]) (using TLSv1) by na3sys010amx159.postini.com ([74.125.244.10]) with SMTP;
+	Tue, 24 Jul 2012 15:12:51 GMT
+Original-Received: from int-mx11.intmail.prod.int.phx2.redhat.com (int-mx11.intmail.prod.int.phx2.redhat.com [10.5.11.24])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6OFCRES019041
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Tue, 24 Jul 2012 11:12:28 -0400
+Original-Received: from annuminas.surriel.com (ovpn-113-30.phx2.redhat.com [10.3.113.30])
+	by int-mx11.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6OFCPAq002519;
+	Tue, 24 Jul 2012 11:12:25 -0400
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.24
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:59.56550/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <riel@redhat.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82947 gmane.linux.kernel:1332370
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332370>
+
+When transparent huge pages were introduced, memory compaction and
+swap storms were an issue, and the kernel had to be careful to not
+make THP allocations cause pageout or compaction.
+
+Now that we have working compaction deferral, kswapd is smart enough
+to invoke compaction and the quadratic behaviour around isolate_free_pages
+has been fixed, it should be safe to remove __GFP_NO_KSWAPD.
+
+Signed-off-by: Rik van Riel <riel@redhat.com>
+---
+This has been running fine on my system for a while, but my system
+only has 12GB and moderate memory pressure. I propose we keep this
+in -mm and -next for a while, and merge it for 3.7 if nobody complains.
+
+ include/linux/gfp.h |    5 +----
+ mm/page_alloc.c     |    7 +++----
+ 2 files changed, 4 insertions(+), 8 deletions(-)
+
+diff --git a/include/linux/gfp.h b/include/linux/gfp.h
+index 581e74b..4f3d4d2 100644
+--- a/include/linux/gfp.h
++++ b/include/linux/gfp.h
+@@ -34,7 +34,6 @@ struct vm_area_struct;
+ #else
+ #define ___GFP_NOTRACK		0
+ #endif
+-#define ___GFP_NO_KSWAPD	0x400000u
+ #define ___GFP_OTHER_NODE	0x800000u
+ #define ___GFP_WRITE		0x1000000u
+ 
+@@ -84,7 +83,6 @@ struct vm_area_struct;
+ #define __GFP_RECLAIMABLE ((__force gfp_t)___GFP_RECLAIMABLE) /* Page is reclaimable */
+ #define __GFP_NOTRACK	((__force gfp_t)___GFP_NOTRACK)  /* Don't track with kmemcheck */
+ 
+-#define __GFP_NO_KSWAPD	((__force gfp_t)___GFP_NO_KSWAPD)
+ #define __GFP_OTHER_NODE ((__force gfp_t)___GFP_OTHER_NODE) /* On behalf of other node */
+ #define __GFP_WRITE	((__force gfp_t)___GFP_WRITE)	/* Allocator intends to dirty page */
+ 
+@@ -114,8 +112,7 @@ struct vm_area_struct;
+ 				 __GFP_MOVABLE)
+ #define GFP_IOFS	(__GFP_IO | __GFP_FS)
+ #define GFP_TRANSHUGE	(GFP_HIGHUSER_MOVABLE | __GFP_COMP | \
+-			 __GFP_NOMEMALLOC | __GFP_NORETRY | __GFP_NOWARN | \
+-			 __GFP_NO_KSWAPD)
++			 __GFP_NOMEMALLOC | __GFP_NORETRY | __GFP_NOWARN)
+ 
+ #ifdef CONFIG_NUMA
+ #define GFP_THISNODE	(__GFP_THISNODE | __GFP_NOWARN | __GFP_NORETRY)
+diff --git a/mm/page_alloc.c b/mm/page_alloc.c
+index a13ded1..87b7721 100644
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -2217,9 +2217,8 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
+ 		goto nopage;
+ 
+ restart:
+-	if (!(gfp_mask & __GFP_NO_KSWAPD))
+-		wake_all_kswapd(order, zonelist, high_zoneidx,
+-						zone_idx(preferred_zone));
++	wake_all_kswapd(order, zonelist, high_zoneidx,
++					zone_idx(preferred_zone));
+ 
+ 	/*
+ 	 * OK, we're below the kswapd watermark and have kicked background
+@@ -2286,7 +2285,7 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
+ 	 * has requested the system not be heavily disrupted, fail the
+ 	 * allocation now instead of entering direct reclaim
+ 	 */
+-	if (deferred_compaction && (gfp_mask & __GFP_NO_KSWAPD))
++	if (deferred_compaction)
+ 		goto nopage;
+ 
+ 	/* Try direct reclaim and then allocating */
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

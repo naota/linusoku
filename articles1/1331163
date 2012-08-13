@@ -1,0 +1,105 @@
+Path: news.gmane.org!not-for-mail
+From: Denis Efremov <yefremov.denis@gmail.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.usb.general
+Subject: [PATCH] usb: otg: twl4030-usb: spin_unlock_irq in interrupt handler
+Date: Sat, 21 Jul 2012 11:40:18 +0400
+Lines: 47
+Approved: news@gmane.org
+Message-ID: <1342856418-1451-1-git-send-email-yefremov.denis@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342856273 3213 80.91.229.3 (21 Jul 2012 07:37:53 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 21 Jul 2012 07:37:53 +0000 (UTC)
+Cc: Denis Efremov <yefremov.denis@gmail.com>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	linux-usb@vger.kernel.org, linux-kernel@vger.kernel.org
+To: Felipe Balbi <balbi@ti.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Jul 21 09:37:50 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsUFt-0007Cl-2G
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 21 Jul 2012 09:37:37 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751743Ab2GUHhO (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 21 Jul 2012 03:37:14 -0400
+Original-Received: from mail-lb0-f174.google.com ([209.85.217.174]:49211 "EHLO
+	mail-lb0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750766Ab2GUHhL (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 21 Jul 2012 03:37:11 -0400
+Original-Received: by lbbgm6 with SMTP id gm6so5980968lbb.19
+        for <multiple recipients>; Sat, 21 Jul 2012 00:37:10 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer;
+        bh=4q76dTFz5yZBgR8y2c0FrFf2XLe7ZoBTf0y3EbaGMUw=;
+        b=dk8HopU47wGb0eq/a54+tBkRa6Zs/oi8z28yoOGBm5jYLB6h6gmCjWPFQIzihu3Pgv
+         iGHwu/qbtx73blvao9dacx31oTh831gl1TSKWfaV9LgcP4HZTX2bMqbfC0CCPKY2f4+b
+         XQLl3igEEDvkyf7RLDPw+YeQCp8hK6qQ6SoUq5C9EJBYobt7b1QZlNkK7dFeDp6Sg1sb
+         QlVrtcd/nEnNxVLak017PRT/I1Pkw9kSMuf8L9lZBTi5eIfPOcbrwZIv26/XVatdt6Qy
+         VjEad2Y1uBz3jQ/xP4TkNqmmpJF8POBTgzZ0j6zJaIf041lx1Mmty4hxKcT+bsE+iXUt
+         zbHw==
+Original-Received: by 10.152.131.37 with SMTP id oj5mr9051048lab.14.1342856230111;
+        Sat, 21 Jul 2012 00:37:10 -0700 (PDT)
+Original-Received: from localhost.localdomain ([176.14.3.137])
+        by mx.google.com with ESMTPS id h9sm1549586lbi.9.2012.07.21.00.37.09
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Sat, 21 Jul 2012 00:37:09 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331163 gmane.linux.usb.general:68028
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331163>
+
+The replacement of spin_lock_irq/spin_unlock_irq pair in
+twl4030_usb_linkstat function by
+spin_lock_irqsave/spin_lock_irqrestore pair.
+The twl4030_usb_linkstat function is called from twl4030_usb_irq
+interrupt handler. Therefore reenabling of handler interrupt line
+should be avoided.
+
+Found by Linux Driver Verification project (linuxtesting.org).
+
+Signed-off-by: Denis Efremov <yefremov.denis@gmail.com>
+---
+ drivers/usb/otg/twl4030-usb.c |    5 +++--
+ 1 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/usb/otg/twl4030-usb.c b/drivers/usb/otg/twl4030-usb.c
+index c4a86da..c89a2f5 100644
+--- a/drivers/usb/otg/twl4030-usb.c
++++ b/drivers/usb/otg/twl4030-usb.c
+@@ -251,6 +251,7 @@ static enum usb_phy_events twl4030_usb_linkstat(struct twl4030_usb *twl)
+ 	int	status;
+ 	int	linkstat = USB_EVENT_NONE;
+ 	struct usb_otg *otg = twl->phy.otg;
++	unsigned long flags;
+ 
+ 	twl->vbus_supplied = false;
+ 
+@@ -288,7 +289,7 @@ static enum usb_phy_events twl4030_usb_linkstat(struct twl4030_usb *twl)
+ 	 * are registered, and that both are active...
+ 	 */
+ 
+-	spin_lock_irq(&twl->lock);
++	spin_lock_irqsave(&twl->lock, flags);
+ 	twl->linkstat = linkstat;
+ 	if (linkstat == USB_EVENT_ID) {
+ 		otg->default_a = true;
+@@ -297,7 +298,7 @@ static enum usb_phy_events twl4030_usb_linkstat(struct twl4030_usb *twl)
+ 		otg->default_a = false;
+ 		twl->phy.state = OTG_STATE_B_IDLE;
+ 	}
+-	spin_unlock_irq(&twl->lock);
++	spin_unlock_irqrestore(&twl->lock, flags);
+ 
+ 	return linkstat;
+ }
+-- 
+1.7.7
+

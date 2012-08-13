@@ -1,0 +1,107 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 059/122] cgroup: cgroup_rm_files() was calling simple_unlink() with the wrong inode
+Date: Tue,  7 Aug 2012 15:25:47 -0700
+Lines: 42
+Approved: news@gmane.org
+Message-ID: <20120807221953.610036857@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344382316 7690 80.91.229.3 (7 Aug 2012 23:31:56 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 23:31:56 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Tejun Heo <tj@kernel.org>,
+	Al Viro <viro@ZenIV.linux.org.uk>,
+	Li Zefan <lizefan@huawei.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 01:31:54 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SytFg-0007Kn-6k
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 01:31:52 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S964866Ab2HGXbo (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 19:31:44 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:63658 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S932610Ab2HGWaa (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:30:30 -0400
+Original-Received: by ghrr11 with SMTP id r11so159118ghr.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:30:29 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=tSoMxHJqZn8++xCc8zyeA9iZz3AuuUAsTwlNNdDG3po=;
+        b=cHUgczO9FuomRNO/h/j+SJg9uKLbJeGmNYdOH+b38LCVaJpUYs6gtFkGZnoWek6zZ3
+         nDn/ST10UMSzo6hxsUJqSa3Jmmsr2OT1BgQE8dPtQN7fvdQs4egMnwV+N4RPUmTY9X4N
+         yQs/iROg+PKGuUCIWgYHGrX/f66+1QkR8klpWimEjXOH1dxZNYgMT/0y7gCNsatvDoJa
+         XKjtnAkQqOoml32ftpAjJTWnvVZQtQBDGOBIrFfz58pVD6OlZjEq8u+bcY/5xssCy63N
+         By3y5sCuBO0YPL2tICGiW1MmVHg0etioAD/oRBBFrXAbEIp+reQZ+UNQiFd4Pfio5Zxu
+         tkQg==
+Original-Received: by 10.66.75.162 with SMTP id d2mr29182788paw.59.1344378629354;
+        Tue, 07 Aug 2012 15:30:29 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id qp6sm11955102pbc.55.2012.08.07.15.30.27
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:30:28 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQmCU+x43oSP43REbhSjlCwkEaDfxR/P84W1v8MnnJDFdh56+i2As82EvIltrqiwkF8idOSl
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339671 gmane.linux.kernel.stable:29496
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339671>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Tejun Heo <tj@kernel.org>
+
+commit ce27e317ba22b359bde02216afab934dac3af095 upstream.
+
+While refactoring cgroup file removal path, 05ef1d7c4a "cgroup:
+introduce struct cfent" incorrectly changed the @dir argument of
+simple_unlink() to the inode of the file being deleted instead of that
+of the containing directory.
+
+The effect of this bug is minor - ctime and mtime of the parent
+weren't properly updated on file deletion.
+
+Fix it by using @cgrp->dentry->d_inode instead.
+
+Signed-off-by: Tejun Heo <tj@kernel.org>
+Reported-by: Al Viro <viro@ZenIV.linux.org.uk>
+Acked-by: Li Zefan <lizefan@huawei.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ kernel/cgroup.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/kernel/cgroup.c
++++ b/kernel/cgroup.c
+@@ -954,7 +954,7 @@ static int cgroup_rm_file(struct cgroup
+ 
+ 		dget(d);
+ 		d_delete(d);
+-		simple_unlink(d->d_inode, d);
++		simple_unlink(cgrp->dentry->d_inode, d);
+ 		list_del_init(&cfe->node);
+ 		dput(d);
+ 
+
+

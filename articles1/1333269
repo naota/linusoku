@@ -1,0 +1,102 @@
+Path: news.gmane.org!not-for-mail
+From: Ankit Jain <jankit@suse.de>
+Newsgroups: gmane.linux.kernel.aio.general,gmane.linux.file-systems,gmane.linux.kernel
+Subject: Re: [RFC][PATCH] Make io_submit non-blocking
+Date: Thu, 26 Jul 2012 01:47:24 +0530
+Lines: 41
+Approved: news@gmane.org
+Message-ID: <50105454.5080400@suse.de>
+References: <500E89D1.9010303@suse.de> <20120724223702.GB6723@lenny.home.zabbo.net>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343247469 21755 80.91.229.3 (25 Jul 2012 20:17:49 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 20:17:49 +0000 (UTC)
+Cc: Al Viro <viro@zeniv.linux.org.uk>, bcrl@kvack.org,
+	linux-fsdevel@vger.kernel.org, linux-aio@kvack.org,
+	linux-kernel@vger.kernel.org, Jan Kara <jack@suse.cz>
+To: Zach Brown <zab@zabbo.net>
+Original-X-From: owner-linux-aio@kvack.org Wed Jul 25 22:17:48 2012
+Return-path: <owner-linux-aio@kvack.org>
+Envelope-to: gla-linux-aio@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-aio@kvack.org>)
+	id 1Su81k-0003FT-9Q
+	for gla-linux-aio@m.gmane.org; Wed, 25 Jul 2012 22:17:48 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 3D21B6B0062; Wed, 25 Jul 2012 16:17:47 -0400 (EDT)
+Delivered-To: linux-aio-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 2E8416B0069; Wed, 25 Jul 2012 16:17:47 -0400 (EDT)
+X-Original-To: int-list-linux-aio@kvack.org
+Delivered-To: int-list-linux-aio@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 015A86B006C; Wed, 25 Jul 2012 16:17:46 -0400 (EDT)
+X-Original-To: linux-aio@kvack.org
+Delivered-To: linux-aio@kvack.org
+Original-Received: from psmtp.com (na3sys010amx157.postini.com [74.125.245.157])
+	by kanga.kvack.org (Postfix) with SMTP id 6F9BA6B0062;
+	Wed, 25 Jul 2012 16:17:45 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx157.postini.com ([74.125.244.10]) with SMTP;
+	Wed, 25 Jul 2012 20:17:45 GMT
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 6679EA38EA;
+	Wed, 25 Jul 2012 22:17:43 +0200 (CEST)
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120601 Thunderbird/13.0
+In-Reply-To: <20120724223702.GB6723@lenny.home.zabbo.net>
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-aio@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-aio.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.aio.general:3150 gmane.linux.file-systems:66220 gmane.linux.kernel:1333269
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333269>
+
+On 07/25/2012 04:07 AM, Zach Brown wrote:
+> On Tue, Jul 24, 2012 at 05:11:05PM +0530, Ankit Jain wrote:
+[snip]
+>> With this patch, io_submit prepares all the kiocbs and then
+>> adds (kicks) them to ctx->run_list (kicked) in one go and then
+>> schedules the workqueue. The actual operations are not executed
+>> on io_submit's process context, so it can return very quickly.
+> 
+> Strong nack; this isn't safe without having done the work to ensure that
+> all the task_struct references under the f_op->aio_*() paths won't be
+> horribly confused to find a kernel thread instead of the process that
+> called io_submit().
+> 
+> The one-off handling of the submitters's cred is an indication that
+> there might be other cases to worry about :).
+
+Makes sense, I will try to look into this.
+
+>> 3. Also, I tried not using aio_queue_work from io_submit call, and instead
+>> depending on an already scheduled one or the iocbs being run when
+>> io_getevents gets called. This seemed to give improved perfomance. But
+>> does this constitute as change of api semantics?
+> 
+> You can't rely on io_getevents() being called for forward progress.  Its
+> perfectly reasonable for a task to wait for io completion by polling an
+> eventfd that aio_complete() notifies, for instance.
+
+Ah okay, didn't realize that.
+
+Thanks,
+-- 
+Ankit Jain
+SUSE Labs
+
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-aio' in
+the body to majordomo@kvack.org.  For more info on Linux AIO,
+see: http://www.kvack.org/aio/
+Don't email: <a href=mailto:"aart@kvack.org">aart@kvack.org</a>
+

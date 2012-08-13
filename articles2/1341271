@@ -1,0 +1,152 @@
+Path: news.gmane.org!not-for-mail
+From: Stanislav Kinsbursky <skinsbursky@parallels.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.nfs,gmane.linux.network,gmane.linux.openvz.devel
+Subject: [RFC PATCH 2/2] SUNRPC: connect local transports with
+	unix_stream_connect_root() helper
+Date: Fri, 10 Aug 2012 16:57:35 +0400
+Lines: 102
+Approved: news@gmane.org
+Message-ID: <20120810125735.7115.62993.stgit@localhost.localdomain>
+References: <20120810125701.7115.71612.stgit@localhost.localdomain>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344603659 4322 80.91.229.3 (10 Aug 2012 13:00:59 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 13:00:59 +0000 (UTC)
+Cc: linux-nfs@vger.kernel.org, eric.dumazet@gmail.com,
+	xemul@parallels.com, netdev@vger.kernel.org,
+	linux-kernel@vger.kernel.org, bfields@fieldses.org,
+	viro@zeniv.linux.org.uk, tim.c.chen@linux.intel.com,
+	devel@openvz.org
+To: Trond.Myklebust@netapp.com, davem@davemloft.net
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 10 15:00:57 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Szopi-0001bc-O5
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 10 Aug 2012 15:00:55 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756220Ab2HJNAu (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 10 Aug 2012 09:00:50 -0400
+Original-Received: from mailhub.sw.ru ([195.214.232.25]:22129 "EHLO relay.sw.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1756052Ab2HJNAp (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 10 Aug 2012 09:00:45 -0400
+Original-Received: from localhost.localdomain ([10.30.21.131])
+	by relay.sw.ru (8.13.4/8.13.4) with ESMTP id q7ACxXJt007527;
+	Fri, 10 Aug 2012 16:59:33 +0400 (MSK)
+In-Reply-To: <20120810125701.7115.71612.stgit@localhost.localdomain>
+User-Agent: StGit/0.16
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341271 gmane.linux.nfs:51487 gmane.linux.network:239729 gmane.linux.openvz.devel:1978
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341271>
+
+Today, there is a problem in connecting of local SUNRPC thansports. These
+transports uses UNIX sockets and connection itself is done by rpciod
+workqueue.
+But UNIX sockets lookup is done in context of process file system root. I.e.
+all local thunsports are connecting in rpciod context.
+This works nice until we will try to mount NFS from process with other root -
+for example in container. This container can have it's own (nested) root and
+rcpbind process, listening on it's own unix sockets. But NFS mount attempt in
+this container will register new service (Lockd for example) in global rpcbind
+- not containers's one.
+This patch solves the problem by using special helper
+unix_stream_connect_root(), which lookup socket file starting from passed
+root.
+
+Signed-off-by: Stanislav Kinsbursky <skinsbursky@parallels.com>
+---
+ net/sunrpc/xprtsock.c |   28 +++++++++++++++++++++++++---
+ 1 files changed, 25 insertions(+), 3 deletions(-)
+
+diff --git a/net/sunrpc/xprtsock.c b/net/sunrpc/xprtsock.c
+index 890b03f..01a6f2a 100644
+--- a/net/sunrpc/xprtsock.c
++++ b/net/sunrpc/xprtsock.c
+@@ -37,6 +37,7 @@
+ #include <linux/sunrpc/svcsock.h>
+ #include <linux/sunrpc/xprtsock.h>
+ #include <linux/file.h>
++#include <linux/fs_struct.h>
+ #ifdef CONFIG_SUNRPC_BACKCHANNEL
+ #include <linux/sunrpc/bc_xprt.h>
+ #endif
+@@ -45,6 +46,7 @@
+ #include <net/checksum.h>
+ #include <net/udp.h>
+ #include <net/tcp.h>
++#include <net/af_unix.h>
+ 
+ #include "sunrpc.h"
+ 
+@@ -255,6 +257,11 @@ struct sock_xprt {
+ 	void			(*old_state_change)(struct sock *);
+ 	void			(*old_write_space)(struct sock *);
+ 	void			(*old_error_report)(struct sock *);
++
++	/*
++	 * Saved transport creator root. Required for local transports only.
++	 */
++	struct path		root;
+ };
+ 
+ /*
+@@ -1873,7 +1880,8 @@ static int xs_local_finish_connecting(struct rpc_xprt *xprt,
+ 	/* Tell the socket layer to start connecting... */
+ 	xprt->stat.connect_count++;
+ 	xprt->stat.connect_start = jiffies;
+-	return kernel_connect(sock, xs_addr(xprt), xprt->addrlen, 0);
++	return unix_stream_connect_root(&transport->root, sock, xs_addr(xprt),
++					xprt->addrlen, 0);
+ }
+ 
+ /**
+@@ -2213,6 +2221,18 @@ static void xs_connect(struct rpc_task *task)
+ 	}
+ }
+ 
++static void xs_local_destroy(struct rpc_xprt *xprt)
++{
++	struct sock_xprt *transport = container_of(xprt, struct sock_xprt, xprt);
++	struct path root = transport->root;
++
++	dprintk("RPC:       xs_local_destroy xprt %p\n", xprt);
++
++	xs_destroy(xprt);
++
++	path_put(&root);
++}
++
+ /**
+  * xs_local_print_stats - display AF_LOCAL socket-specifc stats
+  * @xprt: rpc_xprt struct containing statistics
+@@ -2431,7 +2451,7 @@ static struct rpc_xprt_ops xs_local_ops = {
+ 	.send_request		= xs_local_send_request,
+ 	.set_retrans_timeout	= xprt_set_retrans_timeout_def,
+ 	.close			= xs_close,
+-	.destroy		= xs_destroy,
++	.destroy		= xs_local_destroy,
+ 	.print_stats		= xs_local_print_stats,
+ };
+ 
+@@ -2607,8 +2627,10 @@ static struct rpc_xprt *xs_setup_local(struct xprt_create *args)
+ 	dprintk("RPC:       set up xprt to %s via AF_LOCAL\n",
+ 			xprt->address_strings[RPC_DISPLAY_ADDR]);
+ 
+-	if (try_module_get(THIS_MODULE))
++	if (try_module_get(THIS_MODULE)) {
++		get_fs_root(current->fs, &transport->root);
+ 		return xprt;
++	}
+ 	ret = ERR_PTR(-EINVAL);
+ out_err:
+ 	xprt_free(xprt);
+

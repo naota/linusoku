@@ -1,0 +1,183 @@
+Path: news.gmane.org!not-for-mail
+From: Mel Gorman <mgorman@suse.de>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel.stable,gmane.linux.kernel
+Subject: [PATCH 15/34] mm: migration: clean up unmap_and_move()
+Date: Mon, 23 Jul 2012 14:38:28 +0100
+Lines: 123
+Approved: news@gmane.org
+Message-ID: <1343050727-3045-16-git-send-email-mgorman@suse.de>
+References: <1343050727-3045-1-git-send-email-mgorman@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343050792 20790 80.91.229.3 (23 Jul 2012 13:39:52 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 13:39:52 +0000 (UTC)
+Cc: Linux-MM <linux-mm@kvack.org>,
+	LKML <linux-kernel@vger.kernel.org>, Mel Gorman <mgorman@suse.de>
+To: Stable <stable@vger.kernel.org>
+Original-X-From: owner-linux-mm@kvack.org Mon Jul 23 15:39:52 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1StIrX-0006ig-LG
+	for glkm-linux-mm-2@m.gmane.org; Mon, 23 Jul 2012 15:39:51 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 791B36B0070; Mon, 23 Jul 2012 09:39:18 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id D90566B0088; Mon, 23 Jul 2012 09:39:12 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 9637C6B0070; Mon, 23 Jul 2012 09:39:06 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx179.postini.com [74.125.245.179])
+	by kanga.kvack.org (Postfix) with SMTP id 678C36B0081
+	for <linux-mm@kvack.org>; Mon, 23 Jul 2012 09:38:59 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx179.postini.com ([74.125.244.10]) with SMTP;
+	Mon, 23 Jul 2012 13:38:59 GMT
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id AC8E1A3EBF;
+	Mon, 23 Jul 2012 15:38:57 +0200 (CEST)
+X-Mailer: git-send-email 1.7.9.2
+In-Reply-To: <1343050727-3045-1-git-send-email-mgorman@suse.de>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mgorman@suse.de> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82867 gmane.linux.kernel.stable:28743 gmane.linux.kernel:1331758
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331758>
+
+commit 0dabec93de633a87adfbbe1d800a4c56cd19d73b upstream.
+
+Stable note: Not tracked in Bugzilla. This patch makes later patches
+	easier to apply but has no other impact.
+
+unmap_and_move() is one a big messy function.  Clean it up.
+
+Signed-off-by: Minchan Kim <minchan.kim@gmail.com>
+Reviewed-by: KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>
+Cc: Johannes Weiner <hannes@cmpxchg.org>
+Cc: KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>
+Cc: Mel Gorman <mgorman@suse.de>
+Cc: Rik van Riel <riel@redhat.com>
+Cc: Michal Hocko <mhocko@suse.cz>
+Cc: Andrea Arcangeli <aarcange@redhat.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+---
+ mm/migrate.c |   59 ++++++++++++++++++++++++++++++++--------------------------
+ 1 file changed, 33 insertions(+), 26 deletions(-)
+
+diff --git a/mm/migrate.c b/mm/migrate.c
+index 14d0a6a..e58ab66 100644
+--- a/mm/migrate.c
++++ b/mm/migrate.c
+@@ -621,38 +621,18 @@ static int move_to_new_page(struct page *newpage, struct page *page,
+ 	return rc;
+ }
+ 
+-/*
+- * Obtain the lock on page, remove all ptes and migrate the page
+- * to the newly allocated page in newpage.
+- */
+-static int unmap_and_move(new_page_t get_new_page, unsigned long private,
+-			struct page *page, int force, bool offlining, bool sync)
++static int __unmap_and_move(struct page *page, struct page *newpage,
++				int force, bool offlining, bool sync)
+ {
+-	int rc = 0;
+-	int *result = NULL;
+-	struct page *newpage = get_new_page(page, private, &result);
++	int rc = -EAGAIN;
+ 	int remap_swapcache = 1;
+ 	int charge = 0;
+ 	struct mem_cgroup *mem;
+ 	struct anon_vma *anon_vma = NULL;
+ 
+-	if (!newpage)
+-		return -ENOMEM;
+-
+-	if (page_count(page) == 1) {
+-		/* page was freed from under us. So we are done. */
+-		goto move_newpage;
+-	}
+-	if (unlikely(PageTransHuge(page)))
+-		if (unlikely(split_huge_page(page)))
+-			goto move_newpage;
+-
+-	/* prepare cgroup just returns 0 or -ENOMEM */
+-	rc = -EAGAIN;
+-
+ 	if (!trylock_page(page)) {
+ 		if (!force || !sync)
+-			goto move_newpage;
++			goto out;
+ 
+ 		/*
+ 		 * It's not safe for direct compaction to call lock_page.
+@@ -668,7 +648,7 @@ static int unmap_and_move(new_page_t get_new_page, unsigned long private,
+ 		 * altogether.
+ 		 */
+ 		if (current->flags & PF_MEMALLOC)
+-			goto move_newpage;
++			goto out;
+ 
+ 		lock_page(page);
+ 	}
+@@ -785,8 +765,35 @@ uncharge:
+ 		mem_cgroup_end_migration(mem, page, newpage, rc == 0);
+ unlock:
+ 	unlock_page(page);
++out:
++	return rc;
++}
+ 
+-move_newpage:
++/*
++ * Obtain the lock on page, remove all ptes and migrate the page
++ * to the newly allocated page in newpage.
++ */
++static int unmap_and_move(new_page_t get_new_page, unsigned long private,
++			struct page *page, int force, bool offlining, bool sync)
++{
++	int rc = 0;
++	int *result = NULL;
++	struct page *newpage = get_new_page(page, private, &result);
++
++	if (!newpage)
++		return -ENOMEM;
++
++	if (page_count(page) == 1) {
++		/* page was freed from under us. So we are done. */
++		goto out;
++	}
++
++	if (unlikely(PageTransHuge(page)))
++		if (unlikely(split_huge_page(page)))
++			goto out;
++
++	rc = __unmap_and_move(page, newpage, force, offlining, sync);
++out:
+ 	if (rc != -EAGAIN) {
+  		/*
+  		 * A page that has been migrated has all references
+-- 
+1.7.9.2
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

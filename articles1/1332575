@@ -1,0 +1,76 @@
+Path: news.gmane.org!not-for-mail
+From: Alex Williamson <alex.williamson@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.kvm.devel
+Subject: [PATCH v7 0/2] kvm: level irqfd and new eoifd
+Date: Tue, 24 Jul 2012 14:43:05 -0600
+Lines: 27
+Approved: news@gmane.org
+Message-ID: <20120724203628.21081.56884.stgit@bling.home>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343162603 21344 80.91.229.3 (24 Jul 2012 20:43:23 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 20:43:23 +0000 (UTC)
+Cc: gleb@redhat.com, kvm@vger.kernel.org, linux-kernel@vger.kernel.org,
+	jan.kiszka@siemens.com
+To: avi@redhat.com, mst@redhat.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 22:43:22 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Stlwt-0004x3-Ui
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 22:43:20 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755684Ab2GXUnJ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 16:43:09 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:19430 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754722Ab2GXUnI (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 16:43:08 -0400
+Original-Received: from int-mx02.intmail.prod.int.phx2.redhat.com (int-mx02.intmail.prod.int.phx2.redhat.com [10.5.11.12])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6OKh6rN002999
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Tue, 24 Jul 2012 16:43:06 -0400
+Original-Received: from bling.home (ovpn-113-63.phx2.redhat.com [10.3.113.63])
+	by int-mx02.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with ESMTP id q6OKh5vB017155;
+	Tue, 24 Jul 2012 16:43:05 -0400
+User-Agent: StGIT/0.14.3
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.12
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332575 gmane.comp.emulators.kvm.devel:94977
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332575>
+
+v7:
+
+Just a minor change from v6 to fix locking.  In v6 we called
+f_op->poll under eoifds.lock to install the eventfd waitqueue
+function.  This creates a eoifds.lock --> ctx->wqh lock ordering.
+When our wakeup function gets called it's under ctx->wqh and
+acquires eoifds.lock.  Badness.  To fix this we can move the
+poll call to before the lock because we only do anything on
+POLLHUP which won't occur as long as we have a reference to the
+file.  Thanks,
+
+Alex
+
+---
+
+Alex Williamson (2):
+      kvm: KVM_EOIFD, an eventfd for EOIs
+      kvm: Extend irqfd to support level interrupts
+
+
+ Documentation/virtual/kvm/api.txt |   32 ++-
+ arch/x86/kvm/x86.c                |    3 
+ include/linux/kvm.h               |   18 +
+ include/linux/kvm_host.h          |   17 +
+ virt/kvm/eventfd.c                |  464 ++++++++++++++++++++++++++++++++++++-
+ virt/kvm/kvm_main.c               |   11 +
+ 6 files changed, 537 insertions(+), 8 deletions(-)

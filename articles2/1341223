@@ -1,0 +1,111 @@
+Path: news.gmane.org!not-for-mail
+From: kps mailme <kps.mailme@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: Issues with ioremap
+Date: Fri, 10 Aug 2012 15:59:07 +0530
+Lines: 58
+Approved: news@gmane.org
+Message-ID: <CAM3X=jOq+1uNZtwPh0am00jq0nsHu+bdVUPvpsyb+qr=5opTjA@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1344594558 29698 80.91.229.3 (10 Aug 2012 10:29:18 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 10:29:18 +0000 (UTC)
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 10 12:29:19 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzmSz-0003pi-By
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 10 Aug 2012 12:29:17 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1760085Ab2HJK3M (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 10 Aug 2012 06:29:12 -0400
+Original-Received: from mail-vb0-f46.google.com ([209.85.212.46]:35163 "EHLO
+	mail-vb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751317Ab2HJK3I (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 10 Aug 2012 06:29:08 -0400
+Original-Received: by vbbff1 with SMTP id ff1so958543vbb.19
+        for <linux-kernel@vger.kernel.org>; Fri, 10 Aug 2012 03:29:08 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=mime-version:date:message-id:subject:from:to:content-type;
+        bh=Bl1gZhCehNgVeb/R7Z5o2xtK/BIq5SP6rQBTOSYuwQk=;
+        b=OxMOK8fp9W+Uu9LUziR39zsKu0hsUaQ3SZNLpODZpd4KCFQ3Pvys+WyFL4qAIoceMQ
+         q2NSg+hrJ5+jnRMETqrCM1sfTjtpd90F3WGac4+zFX1BdVq/j4esekQbJzMxUni43BTU
+         zFGo2DEG0tR59lGdHR6dWyfBhQifXEKLRo8U0GboWOhTz+1vnnXguhVgoQBUZxT6UIWf
+         GocVUHOCQ+sJZh8knBjexZd96JnIWLreVL2ngTBQb9usMooNoyJSUqHrLSokbMzrK+N9
+         Ho+zx+HV7rqX2E5yBnUBUOUyfdkHkUYTb5RUy9aex1R0BHPXp4Utn7yCNjiNdpK8DxB5
+         0K7Q==
+Original-Received: by 10.220.155.203 with SMTP id t11mr2028791vcw.36.1344594547954;
+ Fri, 10 Aug 2012 03:29:07 -0700 (PDT)
+Original-Received: by 10.58.190.2 with HTTP; Fri, 10 Aug 2012 03:29:07 -0700 (PDT)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341223
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341223>
+
+Hello,
+I have a ARM926 based development board. I am trying to remap 23 MB of
+IO memory using ioremap and access with the code snippet below, mm
+throws an exception most of the times -
+#define MRAM_SIZE 23068672
+
+    while(1)
+    {
+        offset = test_random() % MRAM_SIZE;
+        virt_addr = mmem + offset;
+        page = virt_to_page (virt_addr);
+        get_page(page);
+        /* do something */
+        put_page(page);
+    }
+Exception in linux-kernel ver - 3.1-
+[  116.390625] [<bf0120a4>] (test_init+0xa4/0x114 [test]) from
+[<c0008770>] (do_one_initcall+0x94/0x16c)
+[  116.390625] [<c0008770>] (do_one_initcall+0x94/0x16c) from
+[<c0043f50>] (sys_init_module+0xd8c/0xfdc)
+[  116.390625] [<c0043f50>] (sys_init_module+0xd8c/0xfdc) from
+[<c0009280>] (ret_fast_syscall+0x0/0x2c)
+[  116.390625] Code: e7933280 e3130902 0a000008 e594301c (e5932010)
+
+0xa4 is in test_init (include/linux/mm.h:386).
+381            /*
+382             * This is safe only because
+383             * __split_huge_page_refcount can't run under
+384             * get_page().
+385             */
+386            VM_BUG_ON(atomic_read(&page->first_page->_count) < 0);
+387            atomic_inc(&page->first_page->_count);
+388        }
+389    }
+
+
+Exception in linux-kernel ver - 3.4.3 -
+[  108.640625] [<c0063ce4>] (__get_page_tail+0x20/0xb0) from
+[<bf012084>] (test_init+0x84/0x100 [test])
+[  108.640625] [<bf012084>] (test_init+0x84/0x100 [test]) from
+[<c0008770>] (do_one_initcall+0x94/0x16c)
+[  108.640625] [<c0008770>] (do_one_initcall+0x94/0x16c) from
+[<c0045330>] (sys_init_module+0x70/0x18c)
+[  108.640625] [<c0045330>] (sys_init_module+0x70/0x18c) from
+[<c0009320>] (ret_fast_syscall+0x0/0x2c)
+[  108.640625] Code: 0a000023 e590001c e1530000 0a000020 (e5902010)
+
+Is there a limitation on the size of memory that can be mapped using
+ioremap? Looks like, first_page is not configured correctly for memory
+mapped using ioremap.
+This is a shared memory used by a network device to read and write ip
+packets. Can someone please confirm? Any pointers on how to debug and
+fix this issue are much appreciated.
+
+Thank you!
+Regards, Pratik
+
+[Note: I tried using iotable but situation does not improve.]

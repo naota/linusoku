@@ -1,0 +1,131 @@
+Path: news.gmane.org!not-for-mail
+From: David Ahern <dsahern@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 10/11] perf tool: give user better message if precise is not supported
+Date: Fri, 20 Jul 2012 17:25:55 -0600
+Lines: 69
+Approved: news@gmane.org
+Message-ID: <1342826756-64663-11-git-send-email-dsahern@gmail.com>
+References: <1342826756-64663-1-git-send-email-dsahern@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342826837 2084 80.91.229.3 (20 Jul 2012 23:27:17 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 23:27:17 +0000 (UTC)
+Cc: David Ahern <dsahern@gmail.com>, Ingo Molnar <mingo@kernel.org>,
+	Jiri Olsa <jolsa@redhat.com>,
+	Namhyung Kim <namhyung@kernel.org>,
+	Frederic Weisbecker <fweisbec@gmail.com>,
+	Peter Zijlstra <peterz@infradead.org>
+To: acme@ghostprotocols.net, linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Jul 21 01:27:15 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsMbJ-0004tP-Hs
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 21 Jul 2012 01:27:13 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753150Ab2GTX0c (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 19:26:32 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:33091 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753113Ab2GTX02 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 19:26:28 -0400
+Original-Received: by pbbrp8 with SMTP id rp8so6890138pbb.19
+        for <linux-kernel@vger.kernel.org>; Fri, 20 Jul 2012 16:26:28 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=I3Z8n8CN99r3Op3HefMWPQps9KyFYUj4uRYtCOvBsrE=;
+        b=tDcZkx77uhm1rdLhn7upgOpYXzqDSvD96pbk7+r7ECCWeTIxsDCS3vT9Nk6uwDwIe6
+         VuBEyCV7e4Yi598Z1UOv8QgnJm5wWrz3hicRmaWbRNZFiXcQs4CdAx2t+MvDMlmYh2rZ
+         2gQ4+dl/JpNnJSNZdbYTaHQZBZudjnwITDLuz/PDC8MvY9YLbFsTOYexOKz0NTiZz4sT
+         0cRDCs/0t1pUeCzIBSfXpC8NoUc5WJyxI6rnhxmW+A4zO69jRCg2EVUVoEgDHmo1qwu3
+         FqJIsNxqQinrYIVBsqiTnt4SCUaoQvOqNtbv2iTYFPKuh4OdD9lQp5vRhYg4J/CkSXg0
+         0maA==
+Original-Received: by 10.68.234.225 with SMTP id uh1mr17334322pbc.89.1342826788426;
+        Fri, 20 Jul 2012 16:26:28 -0700 (PDT)
+Original-Received: from sjc-daahern-8912.cisco.com (128-107-239-233.cisco.com. [128.107.239.233])
+        by mx.google.com with ESMTPS id sh3sm4831220pbc.16.2012.07.20.16.26.26
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 20 Jul 2012 16:26:27 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1
+In-Reply-To: <1342826756-64663-1-git-send-email-dsahern@gmail.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331098
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331098>
+
+If the PEBS is not supported (e.g., a VM) and the precise modifier is
+set the user is given a confusing error message:
+
+  $ perf top -e cycles:p
+
+  The sys_perf_event_open() syscall returned with 95 (Operation not supported).
+/bin/dmesg may provide additional information.
+  No CONFIG_PERF_EVENTS=y kernel support configured?
+
+  $ perf record -e cycles:p -a -- sleep 1
+
+  Error: sys_perf_event_open() syscall returned with 95 (Operation not
+supported).  /bin/dmesg may provide additional information.
+
+  Fatal: No hardware sampling interrupt available. No APIC? If so then you can
+boot the kernel with the "lapic" boot parameter to force-enable it.
+
+Which in no way conveys the real error. With this patch:
+  $ perf top -e cycles:p
+  PEBS request not supported. Try removing 'p' modifier
+
+  $ perf record -e cycles:p -a -- sleep 1
+  PEBS request not supported. Try removing 'p' modifier
+
+Signed-off-by: David Ahern <dsahern@gmail.com>
+Cc: Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
+Cc: Ingo Molnar <mingo@kernel.org>
+Cc: Jiri Olsa <jolsa@redhat.com>
+Cc: Namhyung Kim <namhyung@kernel.org>
+Cc: Frederic Weisbecker <fweisbec@gmail.com>
+Cc: Peter Zijlstra <peterz@infradead.org>
+---
+ tools/perf/builtin-record.c |    4 ++++
+ tools/perf/builtin-top.c    |    4 ++++
+ 2 files changed, 8 insertions(+)
+
+diff --git a/tools/perf/builtin-record.c b/tools/perf/builtin-record.c
+index f5a6452..911e300 100644
+--- a/tools/perf/builtin-record.c
++++ b/tools/perf/builtin-record.c
+@@ -267,6 +267,10 @@ try_again:
+ 				ui__error("The %s event is not supported.\n",
+ 					  perf_evsel__name(pos));
+ 				exit(EXIT_FAILURE);
++			} else if ((err == ENOTSUP) && (attr->precise_ip)) {
++				ui__error("PEBS request not supported. "
++					  "Try removing 'p' modifier\n");
++				exit(EXIT_FAILURE);
+ 			}
+ 
+ 			printf("\n");
+diff --git a/tools/perf/builtin-top.c b/tools/perf/builtin-top.c
+index 0ce665c..1706dc9 100644
+--- a/tools/perf/builtin-top.c
++++ b/tools/perf/builtin-top.c
+@@ -968,6 +968,10 @@ try_again:
+ 				ui__error("Too many events are opened.\n"
+ 					    "Try again after reducing the number of events\n");
+ 				goto out_err;
++			} else if ((err == ENOTSUP) && (attr->precise_ip)) {
++				ui__error("PEBS request not supported. "
++					    "Try removing 'p' modifier\n");
++				goto out_err;
+ 			}
+ 
+ 			ui__error("The sys_perf_event_open() syscall "
+-- 
+1.7.10.1
+

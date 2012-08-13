@@ -1,0 +1,151 @@
+Path: news.gmane.org!not-for-mail
+From: Mel Gorman <mgorman@suse.de>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel.stable,gmane.linux.kernel
+Subject: [PATCH 31/34] cpusets: avoid looping when storing to mems_allowed if one node remains set
+Date: Thu, 19 Jul 2012 15:36:41 +0100
+Lines: 91
+Approved: news@gmane.org
+Message-ID: <1342708604-26540-32-git-send-email-mgorman@suse.de>
+References: <1342708604-26540-1-git-send-email-mgorman@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342708717 12859 80.91.229.3 (19 Jul 2012 14:38:37 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 14:38:37 +0000 (UTC)
+Cc: "Linux-MM <linux-mm"@kvack.org,
+	LKML <linux-kernel@vger.kernel.org>, Mel Gorman <mgorman@suse.de>
+To: Stable <stable@vger.kernel.org>
+Original-X-From: owner-linux-mm@kvack.org Thu Jul 19 16:38:36 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SrrsB-0007BB-0K
+	for glkm-linux-mm-2@m.gmane.org; Thu, 19 Jul 2012 16:38:35 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id D2DDF6B007D; Thu, 19 Jul 2012 10:37:24 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id C40126B006E; Thu, 19 Jul 2012 10:37:21 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id BC3626B009D; Thu, 19 Jul 2012 10:37:17 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx153.postini.com [74.125.245.153])
+	by kanga.kvack.org (Postfix) with SMTP id DB3A36B009D
+	for <linux-mm@kvack.org>; Thu, 19 Jul 2012 10:37:06 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx153.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 19 Jul 2012 14:37:07 GMT
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 3FE40A329D;
+	Thu, 19 Jul 2012 16:37:05 +0200 (CEST)
+X-Mailer: git-send-email 1.7.9.2
+In-Reply-To: <1342708604-26540-1-git-send-email-mgorman@suse.de>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mgorman@suse.de> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82722 gmane.linux.kernel.stable:28562 gmane.linux.kernel:1330395
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330395>
+
+From: David Rientjes <rientjes@google.com>
+
+commit 89e8a244b97e48f1f30e898b6f32acca477f2a13 upstream.
+
+Stable note: Not tracked in Bugzilla. [get|put]_mems_allowed() is
+	extremely expensive and severely impacted page allocator performance.
+	This is part of a series of patches that reduce page allocator
+	overhead.
+
+{get,put}_mems_allowed() exist so that general kernel code may locklessly
+access a task's set of allowable nodes without having the chance that a
+concurrent write will cause the nodemask to be empty on configurations
+where MAX_NUMNODES > BITS_PER_LONG.
+
+This could incur a significant delay, however, especially in low memory
+conditions because the page allocator is blocking and reclaim requires
+get_mems_allowed() itself.  It is not atypical to see writes to
+cpuset.mems take over 2 seconds to complete, for example.  In low memory
+conditions, this is problematic because it's one of the most imporant
+times to change cpuset.mems in the first place!
+
+The only way a task's set of allowable nodes may change is through cpusets
+by writing to cpuset.mems and when attaching a task to a generic code is
+not reading the nodemask with get_mems_allowed() at the same time, and
+then clearing all the old nodes.  This prevents the possibility that a
+reader will see an empty nodemask at the same time the writer is storing a
+new nodemask.
+
+If at least one node remains unchanged, though, it's possible to simply
+set all new nodes and then clear all the old nodes.  Changing a task's
+nodemask is protected by cgroup_mutex so it's guaranteed that two threads
+are not changing the same task's nodemask at the same time, so the
+nodemask is guaranteed to be stored before another thread changes it and
+determines whether a node remains set or not.
+
+Signed-off-by: David Rientjes <rientjes@google.com>
+Cc: Miao Xie <miaox@cn.fujitsu.com>
+Cc: KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>
+Cc: Nick Piggin <npiggin@kernel.dk>
+Cc: Paul Menage <paul@paulmenage.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+---
+ kernel/cpuset.c |    9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/kernel/cpuset.c b/kernel/cpuset.c
+index 9c9b754..a995893 100644
+--- a/kernel/cpuset.c
++++ b/kernel/cpuset.c
+@@ -949,6 +949,8 @@ static void cpuset_migrate_mm(struct mm_struct *mm, const nodemask_t *from,
+ static void cpuset_change_task_nodemask(struct task_struct *tsk,
+ 					nodemask_t *newmems)
+ {
++	bool masks_disjoint = !nodes_intersects(*newmems, tsk->mems_allowed);
++
+ repeat:
+ 	/*
+ 	 * Allow tasks that have access to memory reserves because they have
+@@ -963,7 +965,6 @@ repeat:
+ 	nodes_or(tsk->mems_allowed, tsk->mems_allowed, *newmems);
+ 	mpol_rebind_task(tsk, newmems, MPOL_REBIND_STEP1);
+ 
+-
+ 	/*
+ 	 * ensure checking ->mems_allowed_change_disable after setting all new
+ 	 * allowed nodes.
+@@ -980,9 +981,11 @@ repeat:
+ 
+ 	/*
+ 	 * Allocation of memory is very fast, we needn't sleep when waiting
+-	 * for the read-side.
++	 * for the read-side.  No wait is necessary, however, if at least one
++	 * node remains unchanged.
+ 	 */
+-	while (ACCESS_ONCE(tsk->mems_allowed_change_disable)) {
++	while (masks_disjoint &&
++			ACCESS_ONCE(tsk->mems_allowed_change_disable)) {
+ 		task_unlock(tsk);
+ 		if (!task_curr(tsk))
+ 			yield();
+-- 
+1.7.9.2
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

@@ -1,0 +1,119 @@
+Path: news.gmane.org!not-for-mail
+From: Filipe Brandenburger <filbranden@gmail.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.file-systems
+Subject: [PATCHv3] locks: prevent side-effects of locks_release_private before file_lock is initialized
+Date: Fri, 27 Jul 2012 00:42:52 -0400
+Lines: 58
+Approved: news@gmane.org
+Message-ID: <1343364172-1763-1-git-send-email-filbranden@gmail.com>
+References: <20120707190451.GA17049@fieldses.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343364215 4098 80.91.229.3 (27 Jul 2012 04:43:35 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 04:43:35 +0000 (UTC)
+Cc: linux-fsdevel@vger.kernel.org, linux-kernel@vger.kernel.org,
+	Filipe Brandenburger <filbranden@gmail.com>
+To: "J. Bruce Fields" <bfields@fieldses.org>,
+	Al Viro <viro@zeniv.linux.org.uk>,
+	Matthew Wilcox <matthew@wil.cx>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 06:43:34 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SucOj-0003nU-UU
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 06:43:34 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753410Ab2G0EnZ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 00:43:25 -0400
+Original-Received: from mail-qa0-f46.google.com ([209.85.216.46]:58985 "EHLO
+	mail-qa0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753345Ab2G0EnX (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 00:43:23 -0400
+Original-Received: by qadb17 with SMTP id b17so3723015qad.19
+        for <multiple recipients>; Thu, 26 Jul 2012 21:43:23 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=49JzH3MIGld+KODx9Be4pCpaMZU6CJCtonRq9kBxWxU=;
+        b=vJDABK3jzApX4WlmLoU+MtFfLeLsc5JFRRgvcsjriEwoOKk6L3+zF53r6eJ00AQIUm
+         +nCFMaxaXb7sucm7672chS8+PwiQAakrAI99MSG5K7seS/n72QFXx/vHmn8eMLRfDEd0
+         vao4IQ2QGPSwqoQk2A4zyq+YtQjYH/iWUsewX6cv/tzE8bfQT61hm0Pb4QPqJhEbvwaW
+         QU0lfCUSo2BYEtv/5UzVbEqANND6a6eH8r/dCPrdLrshQFHASIINiZNKNsU8ZADo4f1/
+         +sDPVsoJLHY5AvohoqfJVRCmeRfaBK05Kw8kv6hvWqY2zc6XMud7pesfcVnHMI1gJmEU
+         CkSQ==
+Original-Received: by 10.224.71.73 with SMTP id g9mr6732792qaj.12.1343364202897;
+        Thu, 26 Jul 2012 21:43:22 -0700 (PDT)
+Original-Received: from rawhide.lan (modemcable110.84-202-24.mc.videotron.ca. [24.202.84.110])
+        by mx.google.com with ESMTPS id he6sm1176828qab.13.2012.07.26.21.43.21
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 21:43:21 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7.6
+In-Reply-To: <20120707190451.GA17049@fieldses.org>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334100 gmane.linux.file-systems:66268
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334100>
+
+When calling fcntl(fd, F_SETLEASE, lck) [with lck=F_WRLCK or F_RDLCK],
+the custom signal or owner (if any were previously set using F_SETSIG
+or F_SETOWN fcntls) would be reset when F_SETLEASE was called for the
+second time on the same file descriptor.
+
+This bug is a regression of 2.6.37 and is described here:
+https://bugzilla.kernel.org/show_bug.cgi?id=43336
+
+This patch reverts a commit from Oct 2004 (with subject "nfs4 lease:
+move the f_delown processing") which originally introduced the
+lm_release_private callback.
+
+Signed-off-by: Filipe Brandenburger <filbranden@gmail.com>
+---
+ fs/locks.c |   17 ++++++-----------
+ 1 files changed, 6 insertions(+), 11 deletions(-)
+
+diff --git a/fs/locks.c b/fs/locks.c
+index 82c3533..6595882 100644
+--- a/fs/locks.c
++++ b/fs/locks.c
+@@ -427,18 +427,8 @@ static void lease_break_callback(struct file_lock *fl)
+ 	kill_fasync(&fl->fl_fasync, SIGIO, POLL_MSG);
+ }
+ 
+-static void lease_release_private_callback(struct file_lock *fl)
+-{
+-	if (!fl->fl_file)
+-		return;
+-
+-	f_delown(fl->fl_file);
+-	fl->fl_file->f_owner.signum = 0;
+-}
+-
+ static const struct lock_manager_operations lease_manager_ops = {
+ 	.lm_break = lease_break_callback,
+-	.lm_release_private = lease_release_private_callback,
+ 	.lm_change = lease_modify,
+ };
+ 
+@@ -1155,8 +1145,13 @@ int lease_modify(struct file_lock **before, int arg)
+ 		return error;
+ 	lease_clear_pending(fl, arg);
+ 	locks_wake_up_blocks(fl);
+-	if (arg == F_UNLCK)
++	if (arg == F_UNLCK) {
++		struct file *filp = fl->fl_file;
++
++		f_delown(filp);
++		filp->f_owner.signum = 0;
+ 		locks_delete_lock(before);
++	}
+ 	return 0;
+ }
+ 
+-- 
+1.7.7.6
+

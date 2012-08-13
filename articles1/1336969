@@ -1,0 +1,144 @@
+Path: news.gmane.org!not-for-mail
+From: Vikram Pandita <vikram.pandita@ti.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] printk: add option to print cpu id
+Date: Thu, 2 Aug 2012 12:46:04 -0700
+Lines: 86
+Approved: news@gmane.org
+Message-ID: <1343936764-6461-1-git-send-email-vikram.pandita@ti.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1343936786 18806 80.91.229.3 (2 Aug 2012 19:46:26 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 2 Aug 2012 19:46:26 +0000 (UTC)
+Cc: <linux-kernel@vger.kernel.org>,
+	Vikram Pandita <vikram.pandita@ti.com>,
+	Mike Turquette <mturquette@linaro.org>,
+	Vimarsh Zutshi <vimarsh.zutshi@gmail.com>
+To: <gregkh@linuxfoundation.org>, <kay@vrfy.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 02 21:46:25 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sx1Lk-0005Gv-6P
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 02 Aug 2012 21:46:24 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752664Ab2HBTqQ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 2 Aug 2012 15:46:16 -0400
+Original-Received: from devils.ext.ti.com ([198.47.26.153]:44551 "EHLO
+	devils.ext.ti.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751268Ab2HBTqO (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 2 Aug 2012 15:46:14 -0400
+Original-Received: from dlelxv30.itg.ti.com ([172.17.2.17])
+	by devils.ext.ti.com (8.13.7/8.13.7) with ESMTP id q72Jk8hB021027;
+	Thu, 2 Aug 2012 14:46:08 -0500
+Original-Received: from DFLE73.ent.ti.com (dfle73.ent.ti.com [128.247.5.110])
+	by dlelxv30.itg.ti.com (8.13.8/8.13.8) with ESMTP id q72Jk8jI004814;
+	Thu, 2 Aug 2012 14:46:08 -0500
+Original-Received: from dlelxv23.itg.ti.com (172.17.1.198) by dfle73.ent.ti.com
+ (128.247.5.110) with Microsoft SMTP Server id 14.1.323.3; Thu, 2 Aug 2012
+ 14:46:08 -0500
+Original-Received: from legion.dal.design.ti.com (legion.dal.design.ti.com
+ [128.247.22.53])	by dlelxv23.itg.ti.com (8.13.8/8.13.8) with ESMTP id
+ q72Jk7Nm004490;	Thu, 2 Aug 2012 14:46:07 -0500
+Original-Received: from localhost (aeolius.nsc.com [10.188.36.207])	by
+ legion.dal.design.ti.com (8.11.7p1+Sun/8.11.7) with ESMTP id q72Jk7r21777;
+	Thu, 2 Aug 2012 14:46:07 -0500 (CDT)
+X-Mailer: git-send-email 1.7.9.5
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336969
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336969>
+
+From: Vikram Pandita <vikram.pandita@ti.com>
+
+Introduce config option to enable CPU id reporting for printk() calls.
+
+Its sometimes very useful to have printk also print the CPU Identifier
+that executed the call. This has helped to debug various SMP issues on shipping
+products.
+
+Known limitation is, if the system gets preempted between function call and
+actual printk, the reported cpu-id might not be accurate. But most of the
+times its seen to give a good feel of how the N cpu's in the system are
+getting loaded.
+
+Signed-off-by: Vikram Pandita <vikram.pandita@ti.com>
+Cc: Mike Turquette <mturquette@linaro.org>
+Cc: Vimarsh Zutshi <vimarsh.zutshi@gmail.com>
+---
+ kernel/printk.c   |   20 ++++++++++++++++++++
+ lib/Kconfig.debug |   13 +++++++++++++
+ 2 files changed, 33 insertions(+)
+
+diff --git a/kernel/printk.c b/kernel/printk.c
+index 6a76ab9..50feb82 100644
+--- a/kernel/printk.c
++++ b/kernel/printk.c
+@@ -855,6 +855,25 @@ static size_t print_time(u64 ts, char *buf)
+ 		       (unsigned long)ts, rem_nsec / 1000);
+ }
+ 
++#if defined(CONFIG_PRINTK_CPUID)
++static bool printk_cpuid = 1;
++#else
++static bool printk_cpuid;
++#endif
++module_param_named(cpuid, printk_cpuid, bool, S_IRUGO | S_IWUSR);
++
++static size_t print_cpuid(char *buf)
++{
++
++	if (!printk_cpuid)
++		return 0;
++
++	if (!buf)
++		return 4;
++
++	return sprintf(buf, "[%1d] ", smp_processor_id());
++}
++
+ static size_t print_prefix(const struct log *msg, bool syslog, char *buf)
+ {
+ 	size_t len = 0;
+@@ -874,6 +893,7 @@ static size_t print_prefix(const struct log *msg, bool syslog, char *buf)
+ 		}
+ 	}
+ 
++	len += print_cpuid(buf ? buf + len : NULL);
+ 	len += print_time(msg->ts_nsec, buf ? buf + len : NULL);
+ 	return len;
+ }
+diff --git a/lib/Kconfig.debug b/lib/Kconfig.debug
+index 2403a63..139b2b1 100644
+--- a/lib/Kconfig.debug
++++ b/lib/Kconfig.debug
+@@ -14,6 +14,19 @@ config PRINTK_TIME
+ 	  The behavior is also controlled by the kernel command line
+ 	  parameter printk.time=1. See Documentation/kernel-parameters.txt
+ 
++config PRINTK_CPUID
++	bool "Show cpu id information on printks"
++	depends on PRINTK
++	help
++	  Selecting this option causes cpu identifier to be added to the
++	  output of the syslog() system call and at the console.
++
++	  This flag just specifies if the cpu-id should
++	  be included.
++
++	  The behavior is also controlled by the kernel command line
++	  parameter printk.cpuid=1.
++
+ config DEFAULT_MESSAGE_LOGLEVEL
+ 	int "Default message log level (1-7)"
+ 	range 1 7
+-- 
+1.7.9.5
+

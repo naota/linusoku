@@ -1,0 +1,193 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 095/122] ext4: fix hole punch failure when depth is greater than 0
+Date: Tue,  7 Aug 2012 15:26:23 -0700
+Lines: 127
+Approved: news@gmane.org
+Message-ID: <20120807221957.947661811@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344381963 5445 80.91.229.3 (7 Aug 2012 23:26:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 23:26:03 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	Ashish Sangwan <ashish.sangwan2@gmail.com>,
+	Namjae Jeon <linkinjeon@gmail.com>,
+	Lukas Czerner <lczerner@redhat.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 01:26:01 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Syt9z-0000Ze-1l
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 01:25:59 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932857Ab2HGXZu (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 19:25:50 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:57899 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030291Ab2HGWcA (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:32:00 -0400
+Original-Received: by mail-gh0-f174.google.com with SMTP id r11so160262ghr.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:31:59 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=Y4VQ2Rnxv5u/XLTSTq/FEBdl5x2QxrgGnbEjyLFZ+8c=;
+        b=DKnm3/Tu+QlGiSmvDaXpJ+YEj+ox/hqRPS4LibHAnJYGdeAGDD1+nZP8pEQJVr0QP9
+         U94tBxsIeFiadovv3vYdDw18XRsVaPSrUVbeyYSRjgWaXcXuFnlZNGqKowvk4Gw3l18a
+         fRJbW9G5jiFZfxWORDpJoCUydZRNBcGnuqTreBjcEoIvJ1cDpkN4NHSKShLd6zVkFrmY
+         CX1yma2zUCtx2dVyv4VhTWxizymGrOhy2gNwg9Mkg7FVeZsb2IBCSVUS1K6ztYGnAXsc
+         HLGbL6V4TF1Hz/lGVzSOACXeKP40e9CyrWGvJHBIE52xzkCZm/GubWCskmVGC7nLNMWa
+         8j0w==
+Original-Received: by 10.66.76.135 with SMTP id k7mr29222623paw.2.1344378719010;
+        Tue, 07 Aug 2012 15:31:59 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id kc7sm1793134pbb.5.2012.08.07.15.31.56
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:31:58 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQm2ZU61CZjBB9JRZAyCBBpf/pFzrQUDwO8MN16VcQRnoAy32ErSMPhqSHnh9jCVWyFcqiOE
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339656 gmane.linux.kernel.stable:29482
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339656>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Ashish Sangwan <ashishsangwan2@gmail.com>
+
+commit 968dee77220768a5f52cf8b21d0bdb73486febef upstream.
+
+Whether to continue removing extents or not is decided by the return
+value of function ext4_ext_more_to_rm() which checks 2 conditions:
+a) if there are no more indexes to process.
+b) if the number of entries are decreased in the header of "depth -1".
+
+In case of hole punch, if the last block to be removed is not part of
+the last extent index than this index will not be deleted, hence the
+number of valid entries in the extent header of "depth - 1" will
+remain as it is and ext4_ext_more_to_rm will return 0 although the
+required blocks are not yet removed.
+
+This patch fixes the above mentioned problem as instead of removing
+the extents from the end of file, it starts removing the blocks from
+the particular extent from which removing blocks is actually required
+and continue backward until done.
+
+Signed-off-by: Ashish Sangwan <ashish.sangwan2@gmail.com>
+Signed-off-by: Namjae Jeon <linkinjeon@gmail.com>
+Reviewed-by: Lukas Czerner <lczerner@redhat.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ fs/ext4/extents.c |   48 ++++++++++++++++++++++++++++++------------------
+ 1 file changed, 30 insertions(+), 18 deletions(-)
+
+--- a/fs/ext4/extents.c
++++ b/fs/ext4/extents.c
+@@ -2570,10 +2570,10 @@ static int ext4_ext_remove_space(struct
+ {
+ 	struct super_block *sb = inode->i_sb;
+ 	int depth = ext_depth(inode);
+-	struct ext4_ext_path *path;
++	struct ext4_ext_path *path = NULL;
+ 	ext4_fsblk_t partial_cluster = 0;
+ 	handle_t *handle;
+-	int i, err;
++	int i = 0, err;
+ 
+ 	ext_debug("truncate since %u to %u\n", start, end);
+ 
+@@ -2606,8 +2606,12 @@ again:
+ 		}
+ 		depth = ext_depth(inode);
+ 		ex = path[depth].p_ext;
+-		if (!ex)
++		if (!ex) {
++			ext4_ext_drop_refs(path);
++			kfree(path);
++			path = NULL;
+ 			goto cont;
++		}
+ 
+ 		ee_block = le32_to_cpu(ex->ee_block);
+ 
+@@ -2637,8 +2641,6 @@ again:
+ 			if (err < 0)
+ 				goto out;
+ 		}
+-		ext4_ext_drop_refs(path);
+-		kfree(path);
+ 	}
+ cont:
+ 
+@@ -2647,19 +2649,27 @@ cont:
+ 	 * after i_size and walking into the tree depth-wise.
+ 	 */
+ 	depth = ext_depth(inode);
+-	path = kzalloc(sizeof(struct ext4_ext_path) * (depth + 1), GFP_NOFS);
+-	if (path == NULL) {
+-		ext4_journal_stop(handle);
+-		return -ENOMEM;
+-	}
+-	path[0].p_depth = depth;
+-	path[0].p_hdr = ext_inode_hdr(inode);
+-
+-	if (ext4_ext_check(inode, path[0].p_hdr, depth)) {
+-		err = -EIO;
+-		goto out;
++	if (path) {
++		int k = i = depth;
++		while (--k > 0)
++			path[k].p_block =
++				le16_to_cpu(path[k].p_hdr->eh_entries)+1;
++	} else {
++		path = kzalloc(sizeof(struct ext4_ext_path) * (depth + 1),
++			       GFP_NOFS);
++		if (path == NULL) {
++			ext4_journal_stop(handle);
++			return -ENOMEM;
++		}
++		path[0].p_depth = depth;
++		path[0].p_hdr = ext_inode_hdr(inode);
++
++		if (ext4_ext_check(inode, path[0].p_hdr, depth)) {
++			err = -EIO;
++			goto out;
++		}
+ 	}
+-	i = err = 0;
++	err = 0;
+ 
+ 	while (i >= 0 && err == 0) {
+ 		if (i == depth) {
+@@ -2773,8 +2783,10 @@ cont:
+ out:
+ 	ext4_ext_drop_refs(path);
+ 	kfree(path);
+-	if (err == -EAGAIN)
++	if (err == -EAGAIN) {
++		path = NULL;
+ 		goto again;
++	}
+ 	ext4_journal_stop(handle);
+ 
+ 	return err;
+
+

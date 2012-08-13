@@ -1,0 +1,161 @@
+Path: news.gmane.org!not-for-mail
+From: Lai Jiangshan <laijs-BthXqXjhjHXQFUHtdCDX3A@public.gmane.org>
+Newsgroups: gmane.linux.kernel.containers,gmane.linux.kernel,gmane.linux.kernel.cgroups,gmane.linux.kernel.mm,gmane.linux.documentation
+Subject: [RFC PATCH 15/23 V2] memory_hotplug: fix missing nodemask management
+Date: Thu, 2 Aug 2012 10:53:03 +0800
+Lines: 66
+Approved: news@gmane.org
+Message-ID: <1343875991-7533-16-git-send-email-laijs@cn.fujitsu.com>
+References: <1343875991-7533-1-git-send-email-laijs@cn.fujitsu.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343876303 27689 80.91.229.3 (2 Aug 2012 02:58:23 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 2 Aug 2012 02:58:23 +0000 (UTC)
+Cc: Christoph Lameter <cl-de/tnXTf+JLsfHDXvbKv3WD2FQJk+8+b@public.gmane.org>, Jiri Kosina <jkosina-AlSwsSmVLrQ@public.gmane.org>,
+	Dan Magenheimer <dan.magenheimer-QHcLZuEGTsvQT0dZR+AlfA@public.gmane.org>,
+	linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, Michal Hocko <mhocko-AlSwsSmVLrQ@public.gmane.org>,
+	Paul Gortmaker <paul.gortmaker-CWA4WttNNZF54TAoqtyWWQ@public.gmane.org>,
+	Konstantin Khlebnikov <khlebnikov-GEFAQzZX7r8dnm+yROfE0A@public.gmane.org>,
+	"H. Peter Anvin" <hpa-YMNOUZJC4hwAvxtiuMwx3w@public.gmane.org>, Sam Ravnborg <sam-uyr5N9Q2VtJg9hUCZPvPmw@public.gmane.org>,
+	Gavin Shan <shangw-23VcF4HTsmIX0ybBhKVfKdBPR1lH4CV8@public.gmane.org>,
+	Rik van Riel <riel-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org>, cgroups-u79uwXL29TY76Z2rM5mHXA@public.gmane.org,
+	x86-DgEjT+Ai2ygdnm+yROfE0A@public.gmane.org, Hugh Dickins <hughd-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>,
+	Ingo Molnar <mingo-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org>, Mel Gorman <mgorman-l3A5Bk7waGM@public.gmane.org>,
+	KOSAKI Motohiro <kosaki.motohiro-+CUm20s59erQFUHtdCDX3A@public.gmane.org>,
+	David Rientjes <rientjes-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>,
+	Petr Holasek <pholasek-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org>, linux-mm-Bw31MaZKKs3YtjvyW6yDsg@public.gmane.org,
+	Wanlong Gao <gaowanlong-BthXqXjhjHXQFUHtdCDX3A@public.gmane.org>,
+	Djalal Harouni <tixxdz-Umm1ozX2/EEdnm+yROfE0A@public.gmane.org>, Rusty Russell <rusty-8n+1lVoiYb80n/F98K4Iww@public.gmane.org>,
+	Wen Congyang <wency-BthXqXjhjHXQFUHtdCDX3A@public.gmane.org>,
+	Peter Zijlstra <a.p.zijlstra@ch
+To: Mel Gorman <mel-wPRd99KPJ+uzQB+pC5nmwQ@public.gmane.org>
+Original-X-From: containers-bounces-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org Thu Aug 02 04:58:11 2012
+Return-path: <containers-bounces-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org>
+Envelope-to: glc-containers-Uylq5CNFT+jYtjvyW6yDsg@public.gmane.org
+Original-Received: from mail.linuxfoundation.org ([140.211.169.12])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <containers-bounces-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org>)
+	id 1Swlc1-0007Sl-5q
+	for glc-containers-Uylq5CNFT+jYtjvyW6yDsg@public.gmane.org; Thu, 02 Aug 2012 04:58:09 +0200
+Original-Received: from mail.linux-foundation.org (localhost [IPv6:::1])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id 49E17C4C;
+	Thu,  2 Aug 2012 02:57:54 +0000 (UTC)
+X-Original-To: containers-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org
+Delivered-To: containers-i9wRM+HIrmnmtl4Z8vJ8Kg761KYD1DLY@public.gmane.org
+Original-Received: from smtp1.linuxfoundation.org (smtp1.linux-foundation.org
+	[172.17.192.35])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id 6FF999EE
+	for <containers-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org>;
+	Thu,  2 Aug 2012 02:57:53 +0000 (UTC)
+X-Greylist: domain auto-whitelisted by SQLgrey-1.7.6
+Original-Received: from song.cn.fujitsu.com (unknown [222.73.24.84])
+	by smtp1.linuxfoundation.org (Postfix) with ESMTP id C8BEA1F7D2
+	for <containers-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org>;
+	Thu,  2 Aug 2012 02:57:52 +0000 (UTC)
+X-IronPort-AV: E=Sophos;i="4.77,697,1336320000"; 
+   d="scan'208";a="5532918"
+Original-Received: from unknown (HELO tang.cn.fujitsu.com) ([10.167.250.3])
+	by song.cn.fujitsu.com with ESMTP; 02 Aug 2012 10:56:51 +0800
+Original-Received: from fnstmail02.fnst.cn.fujitsu.com (tang.cn.fujitsu.com [127.0.0.1])
+	by tang.cn.fujitsu.com (8.14.3/8.13.1) with ESMTP id q722qfHo031180;
+	Thu, 2 Aug 2012 10:52:46 +0800
+Original-Received: from localhost.localdomain ([10.167.226.126])
+	by fnstmail02.fnst.cn.fujitsu.com (Lotus Domino Release 8.5.3)
+	with ESMTP id 2012080210531251-75019 ;
+	Thu, 2 Aug 2012 10:53:12 +0800 
+X-Mailer: git-send-email 1.7.4.4
+In-Reply-To: <1343875991-7533-1-git-send-email-laijs-BthXqXjhjHXQFUHtdCDX3A@public.gmane.org>
+X-MIMETrack: Itemize by SMTP Server on mailserver/fnst(Release 8.5.3|September
+	15, 2011) at 2012/08/02 10:53:12,
+	Serialize by Router on mailserver/fnst(Release 8.5.3|September 15,
+	2011) at 2012/08/02 10:53:18,
+	Serialize complete at 2012/08/02 10:53:18
+X-Spam-Status: No, score=-2.6 required=5.0 tests=BAYES_00,RCVD_IN_DNSWL_LOW,
+	SINGLE_HEADER_2K,T_RP_MATCHES_RCVD autolearn=ham version=3.3.1
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on
+	smtp1.linux-foundation.org
+X-BeenThere: containers-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org
+X-Mailman-Version: 2.1.12
+Precedence: list
+List-Id: Linux Containers <containers.lists.linux-foundation.org>
+List-Unsubscribe: <https://lists.linuxfoundation.org/mailman/options/containers>, 
+	<mailto:containers-request-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org?subject=unsubscribe>
+List-Archive: <http://lists.linuxfoundation.org/pipermail/containers/>
+List-Post: <mailto:containers-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org>
+List-Help: <mailto:containers-request-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org?subject=help>
+List-Subscribe: <https://lists.linuxfoundation.org/mailman/listinfo/containers>,
+	<mailto:containers-request-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org?subject=subscribe>
+Original-Sender: containers-bounces-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org
+Errors-To: containers-bounces-cunTk1MwBs9QetFLy7KEm3xJsTq8ys+cHZ5vskTnxNA@public.gmane.org
+Xref: news.gmane.org gmane.linux.kernel.containers:23510 gmane.linux.kernel:1336632 gmane.linux.kernel.cgroups:3520 gmane.linux.kernel.mm:83364 gmane.linux.documentation:5961
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336632>
+
+Currently memory_hotplug only manages the node_states[N_HIGH_MEMORY],
+it forgot to manage node_states[N_NORMAL_MEMORY]. fix it.
+
+Signed-off-by: Lai Jiangshan <laijs-BthXqXjhjHXQFUHtdCDX3A@public.gmane.org>
+---
+ Documentation/memory-hotplug.txt |    2 +-
+ mm/memory_hotplug.c              |   23 +++++++++++++++++++++--
+ 2 files changed, 22 insertions(+), 3 deletions(-)
+
+diff --git a/Documentation/memory-hotplug.txt b/Documentation/memory-hotplug.txt
+index 6d0c251..89f21b2 100644
+--- a/Documentation/memory-hotplug.txt
++++ b/Documentation/memory-hotplug.txt
+@@ -382,7 +382,7 @@ struct memory_notify {
+ 
+ start_pfn is start_pfn of online/offline memory.
+ nr_pages is # of pages of online/offline memory.
+-status_change_nid is set node id when N_HIGH_MEMORY of nodemask is (will be)
++status_change_nid is set node id when N_MEMORY of nodemask is (will be)
+ set/clear. It means a new(memoryless) node gets new memory by online and a
+ node loses all memory. If this is -1, then nodemask status is not changed.
+ If status_changed_nid >= 0, callback should create/discard structures for the
+diff --git a/mm/memory_hotplug.c b/mm/memory_hotplug.c
+index 427bb29..c44b39e 100644
+--- a/mm/memory_hotplug.c
++++ b/mm/memory_hotplug.c
+@@ -522,8 +522,18 @@ int __ref online_pages(unsigned long pfn, unsigned long nr_pages)
+ 	init_per_zone_wmark_min();
+ 
+ 	if (onlined_pages) {
++		enum zone_type zoneid = zone_idx(zone);
++
+ 		kswapd_run(zone_to_nid(zone));
+-		node_set_state(zone_to_nid(zone), N_HIGH_MEMORY);
++
++		node_set_state(nid, N_MEMORY);
++		if (zoneid <= ZONE_NORMAL && N_NORMAL_MEMORY != N_MEMORY)
++			node_set_state(nid, N_NORMAL_MEMORY);
++#ifdef CONFIG_HIGMEM
++		if (zoneid <= ZONE_HIGHMEM && N_HIGH_MEMORY != N_MEMORY)
++			node_set_state(nid, N_HIGH_MEMORY);
++#endif
++
+ 	}
+ 
+ 	vm_total_pages = nr_free_pagecache_pages();
+@@ -966,7 +976,16 @@ repeat:
+ 	init_per_zone_wmark_min();
+ 
+ 	if (!node_present_pages(node)) {
+-		node_clear_state(node, N_HIGH_MEMORY);
++		enum zone_type zoneid = zone_idx(zone);
++
++		node_clear_state(node, N_MEMORY);
++		if (zoneid <= ZONE_NORMAL && N_NORMAL_MEMORY != N_MEMORY)
++			node_clear_state(node, N_NORMAL_MEMORY);
++#ifdef CONFIG_HIGMEM
++		if (zoneid <= ZONE_HIGHMEM && N_HIGH_MEMORY != N_MEMORY)
++			node_clear_state(node, N_HIGH_MEMORY);
++#endif
++
+ 		kswapd_stop(node);
+ 	}
+ 
+-- 
+1.7.1

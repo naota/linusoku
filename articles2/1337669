@@ -1,0 +1,213 @@
+Path: news.gmane.org!not-for-mail
+From: Jiang Liu <jiang.liu@huawei.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.acpi.devel,gmane.linux.kernel.pci
+Subject: [RFC PATCH v2 08/16] ACPIHP: provide interfaces to associate driver  specific data to hotplug slots
+Date: Sat, 4 Aug 2012 20:13:55 +0800
+Lines: 146
+Approved: news@gmane.org
+Message-ID: <1344082443-4608-9-git-send-email-jiang.liu@huawei.com>
+References: <1344082443-4608-1-git-send-email-jiang.liu@huawei.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1344082890 30262 80.91.229.3 (4 Aug 2012 12:21:30 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 4 Aug 2012 12:21:30 +0000 (UTC)
+Cc: Jiang Liu <jiang.liu@huawei.com>, Tony Luck <tony.luck@intel.com>,
+	Huang Ying <ying.huang@intel.com>,
+	Bob Moore <robert.moore@intel.com>,
+	Len Brown <lenb@kernel.org>,
+	"Srivatsa S. Bhat" <srivatsa.bhat@linux.vnet.ibm.com>,
+	Bjorn Helgaas <bhelgaas@google.com>,
+	<linux-kernel@vger.kernel.org>, <linux-acpi@vger.kernel.org>,
+	<linux-pci@vger.kernel.org>, Jiang Liu <liuj97@gmail.com>,
+	Gaohuai Han <hangaohuai@huawei.com>
+To: Yinghai Lu <yinghai@kernel.org>,
+	Yasuaki Ishimatsu <isimatu.yasuaki@jp.fujitsu.com>,
+	Kenji Kaneshige <kaneshige.kenji@jp.fujitsu.com>,
+	Wen Congyang <wency@cn.fujitsu.com>,
+	Tang Chen <tangchen@cn.fujitsu.com>,
+	Taku Izumi <izumi.taku@jp.fujitsu.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Aug 04 14:21:26 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxdM4-0007X9-3i
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 04 Aug 2012 14:21:16 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753842Ab2HDMVG (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 4 Aug 2012 08:21:06 -0400
+Original-Received: from szxga02-in.huawei.com ([119.145.14.65]:53008 "EHLO
+	szxga02-in.huawei.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753729Ab2HDMUs (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 4 Aug 2012 08:20:48 -0400
+Original-Received: from 172.24.2.119 (EHLO szxeml213-edg.china.huawei.com) ([172.24.2.119])
+	by szxrg02-dlp.huawei.com (MOS 4.3.4-GA FastPath queued)
+	with ESMTP id AMY70103;
+	Sat, 04 Aug 2012 20:20:30 +0800 (CST)
+Original-Received: from SZXEML401-HUB.china.huawei.com (10.82.67.31) by
+ szxeml213-edg.china.huawei.com (172.24.2.30) with Microsoft SMTP Server (TLS)
+ id 14.1.323.3; Sat, 4 Aug 2012 20:14:29 +0800
+Original-Received: from localhost (10.108.108.229) by szxeml401-hub.china.huawei.com
+ (10.82.67.31) with Microsoft SMTP Server id 14.1.323.3; Sat, 4 Aug 2012
+ 20:14:25 +0800
+X-Mailer: git-send-email 1.7.11.msysgit.1
+In-Reply-To: <1344082443-4608-1-git-send-email-jiang.liu@huawei.com>
+X-Originating-IP: [10.108.108.229]
+X-CFilter-Loop: Reflected
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337669 gmane.linux.acpi.devel:54775 gmane.linux.kernel.pci:16882
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337669>
+
+From: Jiang Liu <jiang.liu@huawei.com>
+
+This patch provides interfaces to attach/detach/get class driver specific data
+to/from ACPI hotplug slots.
+
+Signed-off-by: Jiang Liu <liuj97@gmail.com>
+Signed-off-by: Gaohuai Han <hangaohuai@huawei.com>
+---
+ drivers/acpi/hotplug/core.c |   88 +++++++++++++++++++++++++++++++++++++++++++
+ include/acpi/acpi_hotplug.h |    8 ++++
+ 2 files changed, 96 insertions(+)
+
+diff --git a/drivers/acpi/hotplug/core.c b/drivers/acpi/hotplug/core.c
+index 14b3d61..5e78867 100644
+--- a/drivers/acpi/hotplug/core.c
++++ b/drivers/acpi/hotplug/core.c
+@@ -34,11 +34,18 @@
+ #include <acpi/acpi_bus.h>
+ #include <acpi/acpi_hotplug.h>
+ 
++struct acpihp_drv_data {
++	struct list_head		node;
++	struct class_interface		*key;
++	void				*data;
++};
++
+ #define to_acpihp_slot(d) container_of(d, struct acpihp_slot, dev)
+ 
+ extern struct acpi_device *acpi_root;
+ 
+ static DEFINE_MUTEX(acpihp_mutex);
++static DEFINE_MUTEX(acpihp_drvdata_mutex);
+ static int acpihp_class_count;
+ static struct kset *acpihp_slot_kset;
+ 
+@@ -407,6 +414,87 @@ char *acpihp_get_slot_type_name(enum acpihp_slot_type type)
+ }
+ EXPORT_SYMBOL_GPL(acpihp_get_slot_type_name);
+ 
++int acpihp_slot_attach_drv_data(struct acpihp_slot *slot,
++				struct class_interface *drv, void *data)
++{
++	struct acpihp_drv_data *dp, *cp;
++
++	if (slot == NULL || drv == NULL) {
++		ACPIHP_DEBUG("invalid parameters.\n");
++		return -EINVAL;
++	}
++
++	dp = kzalloc(sizeof(*dp), GFP_KERNEL);
++	if (dp == NULL)
++		return -ENOMEM;
++
++	INIT_LIST_HEAD(&dp->node);
++	dp->key = drv;
++	dp->data = data;
++
++	mutex_lock(&acpihp_drvdata_mutex);
++	list_for_each_entry(cp, &slot->drvdata_list, node)
++		if (cp->key == drv) {
++			mutex_unlock(&acpihp_drvdata_mutex);
++			kfree(dp);
++			return -EEXIST;
++		}
++	list_add(&dp->node, &slot->drvdata_list);
++	mutex_unlock(&acpihp_drvdata_mutex);
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(acpihp_slot_attach_drv_data);
++
++int acpihp_slot_detach_drv_data(struct acpihp_slot *slot,
++				struct class_interface *drv, void **data)
++{
++	struct acpihp_drv_data *cp;
++
++	if (slot == NULL || drv == NULL || data == NULL) {
++		ACPIHP_DEBUG("invalid parameters.\n");
++		return -EINVAL;
++	}
++
++	mutex_lock(&acpihp_drvdata_mutex);
++	list_for_each_entry(cp, &slot->drvdata_list, node)
++		if (cp->key == drv) {
++			list_del(&cp->node);
++			*data = cp->data;
++			mutex_unlock(&acpihp_drvdata_mutex);
++			kfree(cp);
++			return 0;
++		}
++	mutex_unlock(&acpihp_drvdata_mutex);
++
++	return -ENOENT;
++}
++EXPORT_SYMBOL_GPL(acpihp_slot_detach_drv_data);
++
++int acpihp_slot_get_drv_data(struct acpihp_slot *slot,
++			     struct class_interface *drv, void **data)
++{
++	int ret = -ENOENT;
++	struct acpihp_drv_data *cp;
++
++	if (slot == NULL || drv == NULL || data == NULL) {
++		ACPIHP_DEBUG("invalid parameters.\n");
++		return -EINVAL;
++	}
++
++	mutex_lock(&acpihp_drvdata_mutex);
++	list_for_each_entry(cp, &slot->drvdata_list, node)
++		if (cp->key == drv) {
++			*data = cp->data;
++			ret = 0;
++			break;
++		}
++	mutex_unlock(&acpihp_drvdata_mutex);
++
++	return ret;
++}
++EXPORT_SYMBOL_GPL(acpihp_slot_get_drv_data);
++
+ /*
+  * slot_ops should be valid during the life cycle of a slot, so no protection.
+  */
+diff --git a/include/acpi/acpi_hotplug.h b/include/acpi/acpi_hotplug.h
+index 2589ccb..1d43079 100644
+--- a/include/acpi/acpi_hotplug.h
++++ b/include/acpi/acpi_hotplug.h
+@@ -256,6 +256,14 @@ extern acpi_status acpihp_slot_get_capabilities(struct acpihp_slot *slot,
+ extern acpi_status acpihp_slot_poweron(struct acpihp_slot *slot);
+ extern acpi_status acpihp_slot_poweroff(struct acpihp_slot *slot);
+ 
++/* Help routines to assoicate driver data with hotplug slot devices. */
++extern int acpihp_slot_attach_drv_data(struct acpihp_slot *slot,
++			struct class_interface *drv, void *data);
++extern int acpihp_slot_detach_drv_data(struct acpihp_slot *slot,
++			struct class_interface *drv, void **data);
++extern int acpihp_slot_get_drv_data(struct acpihp_slot *slot,
++			struct class_interface *drv, void **data);
++
+ /*
+  * Add devices for ACPI objects connecting to an ACPI hotplug slot,
+  * and don't cross the hotplug slot boundary.
+-- 
+1.7.9.5
+
+

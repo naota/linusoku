@@ -1,0 +1,116 @@
+Path: news.gmane.org!not-for-mail
+From: Julia Lawall <Julia.Lawall@lip6.fr>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.janitors
+Subject: [PATCH 4/6] drivers/gpio/gpio-langwell.c: fix error return code
+Date: Sun,  5 Aug 2012 11:52:34 +0200
+Lines: 70
+Approved: news@gmane.org
+Message-ID: <1344160356-387-5-git-send-email-Julia.Lawall@lip6.fr>
+References: <1344160356-387-1-git-send-email-Julia.Lawall@lip6.fr>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344160399 20314 80.91.229.3 (5 Aug 2012 09:53:19 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 5 Aug 2012 09:53:19 +0000 (UTC)
+Cc: kernel-janitors@vger.kernel.org,
+	Linus Walleij <linus.walleij@stericsson.com>,
+	linux-kernel@vger.kernel.org, Julia Lawall <julia@diku.dk>
+To: Grant Likely <grant.likely@secretlab.ca>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Aug 05 11:53:18 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxxWO-0007EQ-Rk
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 05 Aug 2012 11:53:17 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754376Ab2HEJwv (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 5 Aug 2012 05:52:51 -0400
+Original-Received: from mail4-relais-sop.national.inria.fr ([192.134.164.105]:9396 "EHLO
+	mail4-relais-sop.national.inria.fr" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1754216Ab2HEJwp (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 5 Aug 2012 05:52:45 -0400
+X-IronPort-AV: E=Sophos;i="4.77,715,1336341600"; 
+   d="scan'208";a="152465606"
+Original-Received: from palace.lip6.fr (HELO localhost.localdomain) ([132.227.105.202])
+  by mail4-relais-sop.national.inria.fr with ESMTP/TLS/DHE-RSA-AES256-SHA; 05 Aug 2012 11:52:42 +0200
+X-Mailer: git-send-email 1.7.8.6
+In-Reply-To: <1344160356-387-1-git-send-email-Julia.Lawall@lip6.fr>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337801 gmane.linux.kernel.janitors:25341
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337801>
+
+From: Julia Lawall <julia@diku.dk>
+
+Convert a 0 error return code to a negative one, as returned elsewhere in the
+function.
+
+A simplified version of the semantic match that finds this problem is as
+follows: (http://coccinelle.lip6.fr/)
+
+// <smpl>
+@@
+identifier ret;
+expression e,e1,e2,e3,e4,x;
+@@
+
+(
+if (\(ret != 0\|ret < 0\) || ...) { ... return ...; }
+|
+ret = 0
+)
+... when != ret = e1
+*x = \(kmalloc\|kzalloc\|kcalloc\|devm_kzalloc\|ioremap\|ioremap_nocache\|devm_ioremap\|devm_ioremap_nocache\)(...);
+... when != x = e2
+    when != ret = e3
+*if (x == NULL || ...)
+{
+  ... when != ret = e4
+*  return ret;
+}
+// </smpl>
+
+Signed-off-by: Julia Lawall <julia@diku.dk>
+
+---
+ drivers/gpio/gpio-langwell.c |    7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpio/gpio-langwell.c b/drivers/gpio/gpio-langwell.c
+index a1c8754..202a992 100644
+--- a/drivers/gpio/gpio-langwell.c
++++ b/drivers/gpio/gpio-langwell.c
+@@ -339,7 +339,7 @@ static int __devinit lnw_gpio_probe(struct pci_dev *pdev,
+ 	resource_size_t start, len;
+ 	struct lnw_gpio *lnw;
+ 	u32 gpio_base;
+-	int retval = 0;
++	int retval;
+ 	int ngpio = id->driver_data;
+ 
+ 	retval = pci_enable_device(pdev);
+@@ -357,6 +357,7 @@ static int __devinit lnw_gpio_probe(struct pci_dev *pdev,
+ 	base = ioremap_nocache(start, len);
+ 	if (!base) {
+ 		dev_err(&pdev->dev, "error mapping bar1\n");
++		retval = -EFAULT;
+ 		goto err3;
+ 	}
+ 	gpio_base = *((u32 *)base + 1);
+@@ -381,8 +382,10 @@ static int __devinit lnw_gpio_probe(struct pci_dev *pdev,
+ 
+ 	lnw->domain = irq_domain_add_linear(pdev->dev.of_node, ngpio,
+ 					    &lnw_gpio_irq_ops, lnw);
+-	if (!lnw->domain)
++	if (!lnw->domain) {
++		retval = -ENOMEM;
+ 		goto err3;
++	}
+ 
+ 	lnw->reg_base = base;
+ 	lnw->chip.label = dev_name(&pdev->dev);
+

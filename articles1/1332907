@@ -1,0 +1,105 @@
+Path: news.gmane.org!not-for-mail
+From: Sen Wang <kelvin.xupt@gmail.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.scsi
+Subject: Re: [PATCH] scsi: virtio-scsi: Fix address translation failure of
+ HighMem pages used by sg list
+Date: Wed, 25 Jul 2012 19:48:24 +0800
+Lines: 42
+Approved: news@gmane.org
+Message-ID: <CAKviJvWpiAoAdy2weDrJ8=_baBhfFofGDiZxSt4Do7HMBxE52g@mail.gmail.com>
+References: <1343204966-23560-1-git-send-email-senwang@linux.vnet.ibm.com>
+	<500FB1DE.1000100@redhat.com>
+	<20120725104138.GA11098@stefanha-thinkpad.localdomain>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1343216916 17489 80.91.229.3 (25 Jul 2012 11:48:36 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 11:48:36 +0000 (UTC)
+Cc: Paolo Bonzini <pbonzini@redhat.com>,
+	Wang Sen <senwang@linux.vnet.ibm.com>,
+	linux-scsi@vger.kernel.org, JBottomley@parallels.com,
+	mc@linux.vnet.ibm.com, linux-kernel@vger.kernel.org
+To: Stefan Hajnoczi <stefanha@linux.vnet.ibm.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 13:48:35 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su04w-0000ag-TI
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 13:48:35 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756569Ab2GYLs1 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 07:48:27 -0400
+Original-Received: from mail-we0-f174.google.com ([74.125.82.174]:38685 "EHLO
+	mail-we0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754465Ab2GYLs0 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 07:48:26 -0400
+Original-Received: by weyx8 with SMTP id x8so460536wey.19
+        for <multiple recipients>; Wed, 25 Jul 2012 04:48:24 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=mime-version:in-reply-to:references:date:message-id:subject:from:to
+         :cc:content-type;
+        bh=DqEIQh5s95p1Hq1ziWMtub6QGmCIXc5IPd+chLEmKZE=;
+        b=OjM+VA1HRVnISi6Dj4YKweDWhMkM1GkocTL05lklAc3QAoeVVuZAF+TbXgxpkt3VYa
+         sunuLuqBJy2r72hzrkVfGWq8w72i6w/dXqS7UOVK1l6bOatOKw5luhwkTkSRfjKtL7aA
+         ZN4YwWJ81QU7Vc3RgVpg7qfBTkGrDF2zOHim7zMCg8lLvE+nf1VoujQ6qvryB+Z1DIZP
+         eeJR+O7pDzfv38UMjHV7vIxikEvKlOHuIu/Ww03bBQTjsJDJ0DLzb24UOuBfFi6Zof+o
+         uzpmw1X+ToxS4mAjmbQlaT+PJOvrJaFUZ2b5nYEmZFkvvlN7Gpy5FsQ7DxMy3CUnPSDf
+         MkCA==
+Original-Received: by 10.180.100.131 with SMTP id ey3mr3936842wib.15.1343216904620;
+ Wed, 25 Jul 2012 04:48:24 -0700 (PDT)
+Original-Received: by 10.194.41.202 with HTTP; Wed, 25 Jul 2012 04:48:24 -0700 (PDT)
+In-Reply-To: <20120725104138.GA11098@stefanha-thinkpad.localdomain>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332907 gmane.linux.scsi:76533
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332907>
+
+2012/7/25 Stefan Hajnoczi <stefanha@linux.vnet.ibm.com>:
+> On Wed, Jul 25, 2012 at 10:44:14AM +0200, Paolo Bonzini wrote:
+>> Il 25/07/2012 10:29, Wang Sen ha scritto:
+>> > When using the commands below to write some data to a virtio-scsi LUN of the
+>> > QEMU guest(32-bit) with 1G physical memory(qemu -m 1024), the qemu will crash.
+>> >
+>> >     # sudo mkfs.ext4 /dev/sdb  (/dev/sdb is the virtio-scsi LUN.)
+>> >     # sudo mount /dev/sdb /mnt
+>> >     # dd if=/dev/zero of=/mnt/file bs=1M count=1024
+>> >
+>> > In current implementation, sg_set_buf is called to add buffers to sg list which
+>> > is put into the virtqueue eventually. But there are some HighMem pages in
+>> > table->sgl can not get virtual address by sg_virt. So, sg_virt(sg_elem) may
+>> > return NULL value. This will cause QEMU exit when virtqueue_map_sg is called
+>> > in QEMU because an invalid GPA is passed by virtqueue.
+>>
+>> Heh, I was compiling (almost) the same patch as we speak. :)
+>>
+>> I've never seen QEMU crash; the VM would more likely just fail to boot
+>> with a panic.  But it's the same bug anyway.
+>
+> It's not a segfault "crash", I think it hits an abort(3) in QEMU's
+> virtio code when trying to map an invalid guest physical address.
+
+How the guest boot fail? I never met this case.
+
+>
+> Stefan
+>
+> --
+> To unsubscribe from this list: send the line "unsubscribe linux-scsi" in
+> the body of a message to majordomo@vger.kernel.org
+> More majordomo info at  http://vger.kernel.org/majordomo-info.html
+
+
+
+-- 
+------------------------------------------
+Wang Sen
+Addr: XUPT,Xi'an,Shaanxi,China
+Email: kelvin.xupt@gmail.com
+------------------------------------------

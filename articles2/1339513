@@ -1,0 +1,124 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 109/109] futex: Forbid uaddr == uaddr2 in futex_wait_requeue_pi()
+Date: Tue,  7 Aug 2012 15:36:08 -0700
+Lines: 59
+Approved: news@gmane.org
+Message-ID: <20120807222052.636170866@linuxfoundation.org>
+References: <20120807222043.089735600@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344379338 18971 80.91.229.3 (7 Aug 2012 22:42:18 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:42:18 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Darren Hart <dvhart@linux.intel.com>,
+	Dave Jones <davej@redhat.com>,
+	Thomas Gleixner <tglx@linutronix.de>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:42:12 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysTZ-0006mc-UA
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:42:10 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030911Ab2HGWly (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:41:54 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:41610 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030897Ab2HGWlu (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:41:50 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so358014pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:41:49 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=KvSQgdQ2WpaXT2VpqEDiR4aSOjhuTvd/ZldQT5BlJ8o=;
+        b=GO5wXoUoNKLkXkXbzdfWiAeK9Ru0qPMfYxPoNAPFqwknxhtszXkPM9hrIiKTTZ2tI0
+         0lU2BPylpj/soydnOhZOjP3XDlQIVK4NMOKjs+aphkPr25FoERXBB2slE+QEONzAbo5g
+         ZKBGDrCKw+G1gDIrmA+lqOze6kVi9fXzxJPY/l2NGtp160tDsY/L3Cu0lDvJHr7kE1UG
+         5+4zEyO2Xe9uXBWDo09uxf/BqMPu9ViCcFC+OxSUMxMiccA4VzT9I3almh46CC62JEUV
+         /ooCdANKfHB/EhCgOcKtdYCp2Xc/cuXc9gnpkPHCcs93c3arShz3fwhbhcva27f0w5Tq
+         qJDQ==
+Original-Received: by 10.68.195.97 with SMTP id id1mr31747229pbc.91.1344379309868;
+        Tue, 07 Aug 2012 15:41:49 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id oo6sm8554522pbc.22.2012.08.07.15.41.47
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:41:48 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222043.089735600@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQkM0LMowQ7N9zHxM1AsFyK5hzk6n0xEC9qx3+BwiFYmW3j8PXDty3/7O0uNE6Zt+YcaKUTn
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339513 gmane.linux.kernel.stable:29352
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339513>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.4-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Darren Hart <dvhart@linux.intel.com>
+
+commit 6f7b0a2a5c0fb03be7c25bd1745baa50582348ef upstream.
+
+If uaddr == uaddr2, then we have broken the rule of only requeueing
+from a non-pi futex to a pi futex with this call. If we attempt this,
+as the trinity test suite manages to do, we miss early wakeups as
+q.key is equal to key2 (because they are the same uaddr). We will then
+attempt to dereference the pi_mutex (which would exist had the futex_q
+been properly requeued to a pi futex) and trigger a NULL pointer
+dereference.
+
+Signed-off-by: Darren Hart <dvhart@linux.intel.com>
+Cc: Dave Jones <davej@redhat.com>
+Link: http://lkml.kernel.org/r/ad82bfe7f7d130247fbe2b5b4275654807774227.1342809673.git.dvhart@linux.intel.com
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ kernel/futex.c |   13 ++++++++-----
+ 1 file changed, 8 insertions(+), 5 deletions(-)
+
+--- a/kernel/futex.c
++++ b/kernel/futex.c
+@@ -2231,11 +2231,11 @@ int handle_early_requeue_pi_wakeup(struc
+  * @uaddr2:	the pi futex we will take prior to returning to user-space
+  *
+  * The caller will wait on uaddr and will be requeued by futex_requeue() to
+- * uaddr2 which must be PI aware.  Normal wakeup will wake on uaddr2 and
+- * complete the acquisition of the rt_mutex prior to returning to userspace.
+- * This ensures the rt_mutex maintains an owner when it has waiters; without
+- * one, the pi logic wouldn't know which task to boost/deboost, if there was a
+- * need to.
++ * uaddr2 which must be PI aware and unique from uaddr.  Normal wakeup will wake
++ * on uaddr2 and complete the acquisition of the rt_mutex prior to returning to
++ * userspace.  This ensures the rt_mutex maintains an owner when it has waiters;
++ * without one, the pi logic would not know which task to boost/deboost, if
++ * there was a need to.
+  *
+  * We call schedule in futex_wait_queue_me() when we enqueue and return there
+  * via the following:
+@@ -2272,6 +2272,9 @@ static int futex_wait_requeue_pi(u32 __u
+ 	struct futex_q q = futex_q_init;
+ 	int res, ret;
+ 
++	if (uaddr == uaddr2)
++		return -EINVAL;
++
+ 	if (!bitset)
+ 		return -EINVAL;
+ 
+
+

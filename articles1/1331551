@@ -1,0 +1,93 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 087/108] r8169: call netif_napi_del at errpaths and at driver unload
+Date: Mon, 23 Jul 2012 02:08:18 +0100
+Lines: 40
+Approved: news@gmane.org
+Message-ID: <20120723010704.685500627@decadent.org.uk>
+References: <20120723010651.408577075@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343009024 19662 80.91.229.3 (23 Jul 2012 02:03:44 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 02:03:44 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Devendra Naga <devendra.aaru@gmail.com>,
+	"David S. Miller" <davem@davemloft.net>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 04:03:42 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1St7zl-0000Es-Pg
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 04:03:38 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753657Ab2GWCD2 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 22:03:28 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:54105 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1753141Ab2GWBml (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 21:42:41 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7fB-0008Rs-V4; Mon, 23 Jul 2012 02:42:22 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7ej-0008Fk-IW; Mon, 23 Jul 2012 02:41:53 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120723010651.408577075@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331551 gmane.linux.kernel.stable:28697
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331551>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Devendra Naga <devendra.aaru@gmail.com>
+
+commit ad1be8d345416a794dea39761a374032aa471a76 upstream.
+
+when register_netdev fails, the init'ed NAPIs by netif_napi_add must be
+deleted with netif_napi_del, and also when driver unloads, it should
+delete the NAPI before unregistering netdevice using unregister_netdev.
+
+Signed-off-by: Devendra Naga <devendra.aaru@gmail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ drivers/net/ethernet/realtek/r8169.c |    3 +++
+ 1 file changed, 3 insertions(+)
+
+--- a/drivers/net/ethernet/realtek/r8169.c
++++ b/drivers/net/ethernet/realtek/r8169.c
+@@ -4185,6 +4185,7 @@ out:
+ 	return rc;
+ 
+ err_out_msi_4:
++	netif_napi_del(&tp->napi);
+ 	rtl_disable_msi(pdev, tp);
+ 	iounmap(ioaddr);
+ err_out_free_res_3:
+@@ -4210,6 +4211,8 @@ static void __devexit rtl8169_remove_one
+ 
+ 	cancel_delayed_work_sync(&tp->task);
+ 
++	netif_napi_del(&tp->napi);
++
+ 	unregister_netdev(dev);
+ 
+ 	rtl_release_firmware(tp);
+
+

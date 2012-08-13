@@ -1,0 +1,122 @@
+Path: news.gmane.org!not-for-mail
+From: "zhenzhong.duan" <zhenzhong.duan@oracle.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 1/2] Check dmi version when get system uuid
+Date: Wed, 25 Jul 2012 19:04:57 +0800
+Organization: oracle
+Lines: 64
+Approved: news@gmane.org
+Message-ID: <500FD2D9.4050007@oracle.com>
+Reply-To: zhenzhong.duan@oracle.com
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=GB2312
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343214279 27607 80.91.229.3 (25 Jul 2012 11:04:39 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 11:04:39 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, Feng Jin <joe.jin@oracle.com>
+To: akpm@linux-foundation.org, khali@linux-fr.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 13:04:38 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StzOP-0005WH-25
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 13:04:37 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755609Ab2GYLE3 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 07:04:29 -0400
+Original-Received: from rcsinet15.oracle.com ([148.87.113.117]:37566 "EHLO
+	rcsinet15.oracle.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753872Ab2GYLE1 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 07:04:27 -0400
+Original-Received: from acsinet21.oracle.com (acsinet21.oracle.com [141.146.126.237])
+	by rcsinet15.oracle.com (Sentrion-MTA-4.2.2/Sentrion-MTA-4.2.2) with ESMTP id q6PB4FUq006504
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Wed, 25 Jul 2012 11:04:16 GMT
+Original-Received: from acsmt358.oracle.com (acsmt358.oracle.com [141.146.40.158])
+	by acsinet21.oracle.com (8.14.4+Sun/8.14.4) with ESMTP id q6PB4EII004450
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Wed, 25 Jul 2012 11:04:15 GMT
+Original-Received: from abhmt103.oracle.com (abhmt103.oracle.com [141.146.116.55])
+	by acsmt358.oracle.com (8.12.11.20060308/8.12.11) with ESMTP id q6PB4ERT027770;
+	Wed, 25 Jul 2012 06:04:14 -0500
+Original-Received: from [10.191.11.1] (/10.191.11.1)
+	by default (Oracle Beehive Gateway v4.0)
+	with ESMTP ; Wed, 25 Jul 2012 04:04:14 -0700
+User-Agent: Mozilla/5.0 (Windows NT 5.1; rv:12.0) Gecko/20120428 Thunderbird/12.0.1
+X-Source-IP: acsinet21.oracle.com [141.146.126.237]
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332872
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332872>
+
+As of version 2.6 of the SMBIOS specification, the first 3
+fields of the UUID are supposed to be encoded on little-endian.
+
+Also a minor fix to match variable meaning and mute checkpatch.pl
+
+Signed-off-by: Zhenzhong Duan <zhenzhong.duan@oracle.com>
+---
+ drivers/firmware/dmi_scan.c |   19 ++++++++++++++++---
+ 1 files changed, 16 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/firmware/dmi_scan.c b/drivers/firmware/dmi_scan.c
+index 153980b..d8c804d 100644
+--- a/drivers/firmware/dmi_scan.c
++++ b/drivers/firmware/dmi_scan.c
+@@ -15,6 +15,7 @@
+  */
+ static char dmi_empty_string[] = "        ";
+ 
++static u16  __initdata dmi_ver;
+ /*
+  * Catch too early calls to dmi_check_system():
+  */
+@@ -158,8 +159,10 @@ static void __init dmi_save_uuid(const struct dmi_header *dm, int slot, int inde
+ 		return;
+ 
+ 	for (i = 0; i < 16 && (is_ff || is_00); i++) {
+-		if(d[i] != 0x00) is_ff = 0;
+-		if(d[i] != 0xFF) is_00 = 0;
++		if (d[i] != 0x00)
++			is_00 = 0;
++		if (d[i] != 0xFF)
++			is_ff = 0;
+ 	}
+ 
+ 	if (is_ff || is_00)
+@@ -169,7 +172,16 @@ static void __init dmi_save_uuid(const struct dmi_header *dm, int slot, int inde
+ 	if (!s)
+ 		return;
+ 
+-	sprintf(s, "%pUB", d);
++	/*
++	 * As of version 2.6 of the SMBIOS specification, the first 3
++	 * fields of the UUID are supposed to be encoded on little-endian.
++	 * The specification says that this is the defacto standard,
++	 * update kernel code to match dmidecode data.
++	*/
++	if (dmi_ver >= 0x0206)
++		sprintf(s, "%pUL", d);
++	else
++		sprintf(s, "%pUB", d);
+ 
+         dmi_ident[slot] = s;
+ }
+@@ -411,6 +423,7 @@ static int __init dmi_present(const char __iomem *p)
+ 		 * DMI version 0.0 means that the real version is taken from
+ 		 * the SMBIOS version, which we don't know at this point.
+ 		 */
++		dmi_ver = (buf[14] & 0xf0) << 4 | (buf[14] & 0x0f);
+ 		if (buf[14] != 0)
+ 			printk(KERN_INFO "DMI %d.%d present.\n",
+ 			       buf[14] >> 4, buf[14] & 0xF);
+-- 
+1.7.3
+

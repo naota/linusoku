@@ -1,0 +1,107 @@
+Path: news.gmane.org!not-for-mail
+From: Mel Gorman <mgorman@suse.de>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel.stable,gmane.linux.kernel
+Subject: [PATCH 01/34] mm: vmstat: cache align vm_stat
+Date: Mon, 23 Jul 2012 14:38:14 +0100
+Lines: 47
+Approved: news@gmane.org
+Message-ID: <1343050727-3045-2-git-send-email-mgorman@suse.de>
+References: <1343050727-3045-1-git-send-email-mgorman@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343050738 20290 80.91.229.3 (23 Jul 2012 13:38:58 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 13:38:58 +0000 (UTC)
+Cc: Linux-MM <linux-mm@kvack.org>,
+	LKML <linux-kernel@vger.kernel.org>, Mel Gorman <mgorman@suse.de>
+To: Stable <stable@vger.kernel.org>
+Original-X-From: owner-linux-mm@kvack.org Mon Jul 23 15:38:56 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1StIqe-0005Y5-0N
+	for glkm-linux-mm-2@m.gmane.org; Mon, 23 Jul 2012 15:38:56 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id BDFA16B006C; Mon, 23 Jul 2012 09:38:52 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 850716B006E; Mon, 23 Jul 2012 09:38:52 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id F182A6B006C; Mon, 23 Jul 2012 09:38:51 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx120.postini.com [74.125.245.120])
+	by kanga.kvack.org (Postfix) with SMTP id D40856B005A
+	for <linux-mm@kvack.org>; Mon, 23 Jul 2012 09:38:50 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx120.postini.com ([74.125.244.10]) with SMTP;
+	Mon, 23 Jul 2012 13:38:51 GMT
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 2D02AA3E1C;
+	Mon, 23 Jul 2012 15:38:49 +0200 (CEST)
+X-Mailer: git-send-email 1.7.9.2
+In-Reply-To: <1343050727-3045-1-git-send-email-mgorman@suse.de>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:86.84736/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mgorman@suse.de> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82853 gmane.linux.kernel.stable:28729 gmane.linux.kernel:1331743
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331743>
+
+From: Dimitri Sivanich <sivanich@sgi.com>
+
+commit a1cb2c60ddc98ff4e5246f410558805401ceee67 upstream.
+
+Stable note: Not tracked on Bugzilla. This patch is known to make a big
+	difference to tmpfs performance on larger machines.
+
+Avoid false sharing of the vm_stat array. This was found to adversely
+affect tmpfs I/O performance.
+
+Tests run on a 640 cpu UV system.
+
+With 120 threads doing parallel writes, each to different tmpfs mounts:
+No patch:		~300 MB/sec
+With vm_stat alignment:	~430 MB/sec
+
+Signed-off-by: Dimitri Sivanich <sivanich@sgi.com>
+Acked-by: Christoph Lameter <cl@gentwo.org>
+Acked-by: Mel Gorman <mel@csn.ul.ie>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+---
+ mm/vmstat.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/mm/vmstat.c b/mm/vmstat.c
+index 20c18b7..6559013 100644
+--- a/mm/vmstat.c
++++ b/mm/vmstat.c
+@@ -78,7 +78,7 @@ void vm_events_fold_cpu(int cpu)
+  *
+  * vm_stat contains the global counters
+  */
+-atomic_long_t vm_stat[NR_VM_ZONE_STAT_ITEMS];
++atomic_long_t vm_stat[NR_VM_ZONE_STAT_ITEMS] __cacheline_aligned_in_smp;
+ EXPORT_SYMBOL(vm_stat);
+ 
+ #ifdef CONFIG_SMP
+-- 
+1.7.9.2
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

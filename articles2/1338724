@@ -1,0 +1,107 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 22/70] mfd: wm831x: Feed the device UUID into device_add_randomness()
+Date: Tue, 07 Aug 2012 04:28:17 +0100
+Lines: 53
+Approved: news@gmane.org
+Message-ID: <20120807032759.231443632@decadent.org.uk>
+References: <20120807032755.803571133@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344310792 18439 80.91.229.3 (7 Aug 2012 03:39:52 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 03:39:52 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	Mark Brown <broonie@opensource.wolfsonmicro.com>,
+	Theodore Tso <tytso@mit.edu>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 05:39:51 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Syae6-0003Rn-H6
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 05:39:50 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030183Ab2HGDjh (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 23:39:37 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:59927 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S964865Ab2HGDjD (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 23:39:03 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1SyadI-00081n-P2; Tue, 07 Aug 2012 04:39:00 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Syabz-0002nx-5L; Tue, 07 Aug 2012 04:37:39 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120807032755.803571133@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338724 gmane.linux.kernel.stable:29166
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338724>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Mark Brown <broonie@opensource.wolfsonmicro.com>
+
+commit 27130f0cc3ab97560384da437e4621fc4e94f21c upstream.
+
+wm831x devices contain a unique ID value. Feed this into the newly added
+device_add_randomness() to add some per device seed data to the pool.
+
+Signed-off-by: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ drivers/mfd/wm831x-otp.c |    8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/mfd/wm831x-otp.c b/drivers/mfd/wm831x-otp.c
+index f742745..b90f3e0 100644
+--- a/drivers/mfd/wm831x-otp.c
++++ b/drivers/mfd/wm831x-otp.c
+@@ -18,6 +18,7 @@
+ #include <linux/bcd.h>
+ #include <linux/delay.h>
+ #include <linux/mfd/core.h>
++#include <linux/random.h>
+ 
+ #include <linux/mfd/wm831x/core.h>
+ #include <linux/mfd/wm831x/otp.h>
+@@ -66,6 +67,7 @@ static DEVICE_ATTR(unique_id, 0444, wm831x_unique_id_show, NULL);
+ 
+ int wm831x_otp_init(struct wm831x *wm831x)
+ {
++	char uuid[WM831X_UNIQUE_ID_LEN];
+ 	int ret;
+ 
+ 	ret = device_create_file(wm831x->dev, &dev_attr_unique_id);
+@@ -73,6 +75,12 @@ int wm831x_otp_init(struct wm831x *wm831x)
+ 		dev_err(wm831x->dev, "Unique ID attribute not created: %d\n",
+ 			ret);
+ 
++	ret = wm831x_unique_id_read(wm831x, uuid);
++	if (ret == 0)
++		add_device_randomness(uuid, sizeof(uuid));
++	else
++		dev_err(wm831x->dev, "Failed to read UUID: %d\n", ret);
++
+ 	return ret;
+ }
+ 
+
+

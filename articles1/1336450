@@ -1,0 +1,113 @@
+Path: news.gmane.org!not-for-mail
+From: John Stultz <john.stultz@linaro.org>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH 1/2] [RFC] time: Fix problem with large timespecs & ktime_get_update_offsets
+Date: Wed, 01 Aug 2012 09:49:36 -0700
+Lines: 45
+Approved: news@gmane.org
+Message-ID: <50195E20.90704@linaro.org>
+References: <1343716548-38742-1-git-send-email-john.stultz@linaro.org> <1343716548-38742-2-git-send-email-john.stultz@linaro.org> <alpine.LFD.2.02.1208010850510.32033@ionos>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1; format=flowed
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343839826 15171 80.91.229.3 (1 Aug 2012 16:50:26 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 1 Aug 2012 16:50:26 +0000 (UTC)
+Cc: linux-kernel <linux-kernel@vger.kernel.org>,
+	Ingo Molnar <mingo@kernel.org>,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Prarit Bhargava <prarit@redhat.com>,
+	Zhouping Liu <zliu@redhat.com>, CAI Qian <caiqian@redhat.com>
+To: Thomas Gleixner <tglx@linutronix.de>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 01 18:50:24 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Swc7q-0007kQ-Rk
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 01 Aug 2012 18:50:23 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753027Ab2HAQuL (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 1 Aug 2012 12:50:11 -0400
+Original-Received: from e32.co.us.ibm.com ([32.97.110.150]:47823 "EHLO
+	e32.co.us.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750902Ab2HAQuJ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 1 Aug 2012 12:50:09 -0400
+Original-Received: from /spool/local
+	by e32.co.us.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <john.stultz@linaro.org>;
+	Wed, 1 Aug 2012 10:50:08 -0600
+Original-Received: from d03dlp01.boulder.ibm.com (9.17.202.177)
+	by e32.co.us.ibm.com (192.168.1.132) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Wed, 1 Aug 2012 10:50:05 -0600
+Original-Received: from d03relay03.boulder.ibm.com (d03relay03.boulder.ibm.com [9.17.195.228])
+	by d03dlp01.boulder.ibm.com (Postfix) with ESMTP id B374E1FF001A
+	for <linux-kernel@vger.kernel.org>; Wed,  1 Aug 2012 16:49:59 +0000 (WET)
+Original-Received: from d03av02.boulder.ibm.com (d03av02.boulder.ibm.com [9.17.195.168])
+	by d03relay03.boulder.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q71Gnrdd016250
+	for <linux-kernel@vger.kernel.org>; Wed, 1 Aug 2012 10:49:53 -0600
+Original-Received: from d03av02.boulder.ibm.com (loopback [127.0.0.1])
+	by d03av02.boulder.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q71GnfUC030754
+	for <linux-kernel@vger.kernel.org>; Wed, 1 Aug 2012 10:49:46 -0600
+Original-Received: from [9.49.148.209] (sig-9-49-148-209.mts.ibm.com [9.49.148.209])
+	by d03av02.boulder.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q71GnbYI030151;
+	Wed, 1 Aug 2012 10:49:39 -0600
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:14.0) Gecko/20120714 Thunderbird/14.0
+In-Reply-To: <alpine.LFD.2.02.1208010850510.32033@ionos>
+X-Content-Scanned: Fidelis XPS MAILER
+x-cbid: 12080116-2356-0000-0000-000000E588CD
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336450
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336450>
+
+On 07/31/2012 11:52 PM, Thomas Gleixner wrote:
+> On Tue, 31 Jul 2012, John Stultz wrote:
+>> There's currently a slight difference in ktime_get_update_offsets()
+>> vs ktime_get() which can result in boot time crashes when booting
+>> with insane CMOS clock values larger then ~2264.
+>>
+>> ktime_get() does basically the following:
+>>          return timespec_to_ktime(timespec_add(xtime, wall_to_monotonic))
+>>
+>> Where as ktime_get_update_offsets does approximately:
+>>          return ktime_sub(timespec_to_ktime(xtime), realtime_offset);
+>>
+>> The problem is, at boot we set xtime = year 8200 and
+>> wall_to_monotonic = year -8200,  ktime_get adds both values, mostly
+>> nulling the difference out (leaving only how long the system has been
+>> up), then converts that relatively small value to a ktime_t properly
+>> without losing any information.
+>>
+>> ktime_get_update_offsets however, since it converts xtime (again set
+>> to some value greater then year 8200), to a ktime, it gets clamped at
+>> KTIME_MAX, then we subtract realtime_offset, which is _also_ clamped
+>> at KTIME_MAX, resulting in us always returning almost[1] zero. This
+>> causes us to stop expiring timers.
+>>
+>> Now, one of the reasons Thomas and I changed the logic was that using
+>> the precalculated realtime_offset was slightly more efficient then
+>> re-adding xtime and wall_to_monotonic's components separately. But
+>> how valuable this unmeasured slight efficiency is vs extra
+>> robustness for crazy time values is questionable.
+>>
+>> So switch back to the ktime_get implementation for
+>> ktime_get_update_offsets
+> NAK.
+>
+> You're papering over the real problem: Using crap values without
+> sanity checking them in the first place.
+>
+> All your patch does is papering over the problem. Heck, year 8200 is
+> obvious bullshit, so we can detect and reject it.
+
+Ok, sounds good. I'll drop this one and just keep the sanity checking patch.
+
+thanks
+-john
+

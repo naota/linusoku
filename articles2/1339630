@@ -1,0 +1,159 @@
+Path: news.gmane.org!not-for-mail
+From: Tony Luck <tony.luck@intel.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 5/6] x86/mce: Provide an option to keep cmci_reenable() quiet
+Date: Tue, 7 Aug 2012 13:46:56 -0700
+Lines: 114
+Approved: news@gmane.org
+Message-ID: <2afe0125e4a9724f9cf22f03b0a1747ce67cdc8c.1344379657.git.tony.luck@intel.com>
+References: <20120806214336.GA11726@gchen.bj.intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344381378 1538 80.91.229.3 (7 Aug 2012 23:16:18 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 23:16:18 +0000 (UTC)
+Cc: bp@amd64.org, x86@kernel.org, linux-kernel@vger.kernel.org
+To: Chen Gong <gong.chen@linux.intel.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 01:16:19 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Syt0c-0005lU-9U
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 01:16:18 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757398Ab2HGXQG (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 19:16:06 -0400
+Original-Received: from mga03.intel.com ([143.182.124.21]:32941 "EHLO mga03.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S932899Ab2HGXPw (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 19:15:52 -0400
+Original-Received: from azsmga001.ch.intel.com ([10.2.17.19])
+  by azsmga101.ch.intel.com with ESMTP; 07 Aug 2012 16:15:52 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="178106485"
+Original-Received: from agluck-desk.sc.intel.com (HELO agluck-desktop.sc.intel.com) ([10.3.52.68])
+  by azsmga001.ch.intel.com with SMTP; 07 Aug 2012 16:15:51 -0700
+In-Reply-To: <20120806214336.GA11726@gchen.bj.intel.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339630
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339630>
+
+cmci_reenable() calls cmci_discover() to look at which machine check
+banks are shared between processors. It ensure that only one cpu takes
+ownership of each shared bank. At boot time cmci_discover() is muted,
+but during hot add events it provides some output which may be helpful
+to ensure that all banks have an owner.
+
+We want to use cmci_reenable() when a CMCI storm subsides. In this case
+the topology has not changed, so we do not need any commentary as it
+goes about its business.
+
+Add a "quiet" argument to cmci_reenable() that it passes to cmci_discover().
+
+Signed-off-by: Tony Luck <tony.luck@intel.com>
+---
+
+[Patches 1-4 remain as previously posted. This is a new patch to
+ help tidy console messages. Old patch 5 becomes patch 6 (and has
+ a few cleanups]
+
+ arch/x86/include/asm/mce.h             |  4 ++--
+ arch/x86/kernel/cpu/mcheck/mce.c       |  4 ++--
+ arch/x86/kernel/cpu/mcheck/mce_intel.c | 10 +++++-----
+ 3 files changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/arch/x86/include/asm/mce.h b/arch/x86/include/asm/mce.h
+index 441520e..bf79a0f 100644
+--- a/arch/x86/include/asm/mce.h
++++ b/arch/x86/include/asm/mce.h
+@@ -165,13 +165,13 @@ extern int mce_cmci_disabled;
+ extern int mce_ignore_ce;
+ void mce_intel_feature_init(struct cpuinfo_x86 *c);
+ void cmci_clear(void);
+-void cmci_reenable(void);
++void cmci_reenable(int quiet);
+ void cmci_rediscover(int dying);
+ void cmci_recheck(void);
+ #else
+ static inline void mce_intel_feature_init(struct cpuinfo_x86 *c) { }
+ static inline void cmci_clear(void) {}
+-static inline void cmci_reenable(void) {}
++static inline void cmci_reenable(int quiet) {}
+ static inline void cmci_rediscover(int dying) {}
+ static inline void cmci_recheck(void) {}
+ #endif
+diff --git a/arch/x86/kernel/cpu/mcheck/mce.c b/arch/x86/kernel/cpu/mcheck/mce.c
+index b4dde15..826dd21 100644
+--- a/arch/x86/kernel/cpu/mcheck/mce.c
++++ b/arch/x86/kernel/cpu/mcheck/mce.c
+@@ -1994,7 +1994,7 @@ static void mce_enable_ce(void *all)
+ {
+ 	if (!mce_available(__this_cpu_ptr(&cpu_info)))
+ 		return;
+-	cmci_reenable();
++	cmci_reenable(0);
+ 	cmci_recheck();
+ 	if (all)
+ 		__mcheck_cpu_init_timer();
+@@ -2246,7 +2246,7 @@ static void __cpuinit mce_reenable_cpu(void *h)
+ 		return;
+ 
+ 	if (!(action & CPU_TASKS_FROZEN))
+-		cmci_reenable();
++		cmci_reenable(0);
+ 	for (i = 0; i < banks; i++) {
+ 		struct mce_bank *b = &mce_banks[i];
+ 
+diff --git a/arch/x86/kernel/cpu/mcheck/mce_intel.c b/arch/x86/kernel/cpu/mcheck/mce_intel.c
+index 38e49bc..e652cde 100644
+--- a/arch/x86/kernel/cpu/mcheck/mce_intel.c
++++ b/arch/x86/kernel/cpu/mcheck/mce_intel.c
+@@ -78,7 +78,7 @@ static void print_update(char *type, int *hdr, int num)
+  * on this CPU. Use the algorithm recommended in the SDM to discover shared
+  * banks.
+  */
+-static void cmci_discover(int banks, int boot)
++static void cmci_discover(int banks, int quiet)
+ {
+ 	unsigned long *owned = (void *)&__get_cpu_var(mce_banks_owned);
+ 	unsigned long flags;
+@@ -96,7 +96,7 @@ static void cmci_discover(int banks, int boot)
+ 
+ 		/* Already owned by someone else? */
+ 		if (val & MCI_CTL2_CMCI_EN) {
+-			if (test_and_clear_bit(i, owned) && !boot)
++			if (test_and_clear_bit(i, owned) && !quiet)
+ 				print_update("SHD", &hdr, i);
+ 			__clear_bit(i, __get_cpu_var(mce_poll_banks));
+ 			continue;
+@@ -109,7 +109,7 @@ static void cmci_discover(int banks, int boot)
+ 
+ 		/* Did the enable bit stick? -- the bank supports CMCI */
+ 		if (val & MCI_CTL2_CMCI_EN) {
+-			if (!test_and_set_bit(i, owned) && !boot)
++			if (!test_and_set_bit(i, owned) && !quiet)
+ 				print_update("CMCI", &hdr, i);
+ 			__clear_bit(i, __get_cpu_var(mce_poll_banks));
+ 		} else {
+@@ -196,11 +196,11 @@ void cmci_rediscover(int dying)
+ /*
+  * Reenable CMCI on this CPU in case a CPU down failed.
+  */
+-void cmci_reenable(void)
++void cmci_reenable(int quiet)
+ {
+ 	int banks;
+ 	if (cmci_supported(&banks))
+-		cmci_discover(banks, 0);
++		cmci_discover(banks, quiet);
+ }
+ 
+ static void intel_init_cmci(void)
+-- 
+1.7.10.2.552.gaa3bb87
+

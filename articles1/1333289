@@ -1,0 +1,159 @@
+Path: news.gmane.org!not-for-mail
+From: "Paul E. McKenney" <paulmck@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH RFC] sched: Make migration_call() safe for
+ stop_machine()-free hotplug
+Date: Wed, 25 Jul 2012 14:51:26 -0700
+Lines: 92
+Approved: news@gmane.org
+Message-ID: <20120725215126.GA7350@linux.vnet.ibm.com>
+Reply-To: paulmck@linux.vnet.ibm.com
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343253112 32465 80.91.229.3 (25 Jul 2012 21:51:52 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 21:51:52 +0000 (UTC)
+Cc: mingo@kernel.org, a.p.zijlstra@chello.nl, pjt@google.com,
+	tglx@linutronix.de, seto.hidetoshi@jp.fujitsu.com
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 23:51:50 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su9Uk-0001Zd-GB
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 23:51:50 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752830Ab2GYVvg (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 17:51:36 -0400
+Original-Received: from e31.co.us.ibm.com ([32.97.110.149]:53505 "EHLO
+	e31.co.us.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751066Ab2GYVve (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 17:51:34 -0400
+Original-Received: from /spool/local
+	by e31.co.us.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <paulmck@linux.vnet.ibm.com>;
+	Wed, 25 Jul 2012 15:51:34 -0600
+Original-Received: from d03dlp03.boulder.ibm.com (9.17.202.179)
+	by e31.co.us.ibm.com (192.168.1.131) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Wed, 25 Jul 2012 15:51:31 -0600
+Original-Received: from d03relay01.boulder.ibm.com (d03relay01.boulder.ibm.com [9.17.195.226])
+	by d03dlp03.boulder.ibm.com (Postfix) with ESMTP id 8AD0919D803F
+	for <linux-kernel@vger.kernel.org>; Wed, 25 Jul 2012 21:51:27 +0000 (WET)
+Original-Received: from d03av01.boulder.ibm.com (d03av01.boulder.ibm.com [9.17.195.167])
+	by d03relay01.boulder.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6PLpTNQ122984
+	for <linux-kernel@vger.kernel.org>; Wed, 25 Jul 2012 15:51:30 -0600
+Original-Received: from d03av01.boulder.ibm.com (loopback [127.0.0.1])
+	by d03av01.boulder.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6PLpRbn021907
+	for <linux-kernel@vger.kernel.org>; Wed, 25 Jul 2012 15:51:29 -0600
+Original-Received: from paulmck-ThinkPad-W500 ([9.47.24.210])
+	by d03av01.boulder.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6PLpQkP021840;
+	Wed, 25 Jul 2012 15:51:27 -0600
+Original-Received: by paulmck-ThinkPad-W500 (Postfix, from userid 1000)
+	id 70B63E50E4; Wed, 25 Jul 2012 14:51:26 -0700 (PDT)
+Content-Disposition: inline
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Content-Scanned: Fidelis XPS MAILER
+x-cbid: 12072521-7282-0000-0000-00000B4EE47D
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333289
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333289>
+
+The CPU_DYING branch of migration_call() relies on the fact that
+CPU-hotplug offline operations use stop_machine().  This commit therefore
+attempts to remedy this situation by acquiring the relevant runqueue
+locks.  Note that sched_ttwu_pending() remains outside of the scope of
+these new runqueue-lock critical sections because (1) sched_ttwu_pending()
+does its own runqueue-lock acquisition and (2) sched_ttwu_pending() handles
+pending wakeups, and no further wakeups can select this CPU because it
+is already marked as offline.
+
+It is quite possible that migrate_nr_uninterruptible() and
+calc_global_load_remove() somehow don't need runqueue-lock protection,
+but I was not able to prove this to myself.
+
+Signed-off-by: Paul E. McKenney <paul.mckenney@linaro.org>
+Signed-off-by: Paul E. McKenney <paulmck@linux.vnet.ibm.com>
+---
+
+ core.c |   21 +++++++++++----------
+ 1 file changed, 11 insertions(+), 10 deletions(-)
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index eaead2d..2e7797a 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -5175,10 +5175,8 @@ void idle_task_exit(void)
+  * their home CPUs. So we just add the counter to another CPU's counter,
+  * to keep the global sum constant after CPU-down:
+  */
+-static void migrate_nr_uninterruptible(struct rq *rq_src)
++static void migrate_nr_uninterruptible(struct rq *rq_src, struct rq *rq_dest)
+ {
+-	struct rq *rq_dest = cpu_rq(cpumask_any(cpu_active_mask));
+-
+ 	rq_dest->nr_uninterruptible += rq_src->nr_uninterruptible;
+ 	rq_src->nr_uninterruptible = 0;
+ }
+@@ -5200,7 +5198,7 @@ static void calc_global_load_remove(struct rq *rq)
+  * there's no concurrency possible, we hold the required locks anyway
+  * because of lock validation efforts.
+  */
+-static void migrate_tasks(unsigned int dead_cpu)
++static void migrate_tasks(unsigned int dead_cpu, struct rq *rq_dest)
+ {
+ 	struct rq *rq = cpu_rq(dead_cpu);
+ 	struct task_struct *next, *stop = rq->stop;
+@@ -5234,11 +5232,11 @@ static void migrate_tasks(unsigned int dead_cpu)
+ 
+ 		/* Find suitable destination for @next, with force if needed. */
+ 		dest_cpu = select_fallback_rq(dead_cpu, next);
+-		raw_spin_unlock(&rq->lock);
++		double_rq_unlock(rq, rq_dest);
+ 
+ 		__migrate_task(next, dead_cpu, dest_cpu);
+ 
+-		raw_spin_lock(&rq->lock);
++		double_rq_lock(rq, rq_dest);
+ 	}
+ 
+ 	rq->stop = stop;
+@@ -5452,6 +5450,7 @@ migration_call(struct notifier_block *nfb, unsigned long action, void *hcpu)
+ 	int cpu = (long)hcpu;
+ 	unsigned long flags;
+ 	struct rq *rq = cpu_rq(cpu);
++	struct rq *rq_dest = cpu_rq(cpumask_any(cpu_active_mask));
+ 
+ 	switch (action & ~CPU_TASKS_FROZEN) {
+ 
+@@ -5474,17 +5473,19 @@ migration_call(struct notifier_block *nfb, unsigned long action, void *hcpu)
+ 	case CPU_DYING:
+ 		sched_ttwu_pending();
+ 		/* Update our root-domain */
+-		raw_spin_lock_irqsave(&rq->lock, flags);
++		local_irq_save(flags);
++		double_rq_lock(rq, rq_dest);
+ 		if (rq->rd) {
+ 			BUG_ON(!cpumask_test_cpu(cpu, rq->rd->span));
+ 			set_rq_offline(rq);
+ 		}
+-		migrate_tasks(cpu);
++		migrate_tasks(cpu, rq_dest);
+ 		BUG_ON(rq->nr_running != 1); /* the migration thread */
+-		raw_spin_unlock_irqrestore(&rq->lock, flags);
+ 
+-		migrate_nr_uninterruptible(rq);
++		migrate_nr_uninterruptible(rq, rq_dest);
+ 		calc_global_load_remove(rq);
++		double_rq_unlock(rq, rq_dest);
++		local_irq_restore(flags);
+ 		break;
+ #endif
+ 	}
+

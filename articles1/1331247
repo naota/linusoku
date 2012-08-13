@@ -1,0 +1,147 @@
+Path: news.gmane.org!not-for-mail
+From: "Rafael J. Wysocki" <rjw@sisk.pl>
+Newsgroups: gmane.linux.kernel,gmane.linux.usb.general
+Subject: Re: [RFC] firmware load: defer request_firmware during early boot and resume
+Date: Sat, 21 Jul 2012 23:33:05 +0200
+Lines: 88
+Approved: news@gmane.org
+Message-ID: <201207212333.05911.rjw@sisk.pl>
+References: <CACVXFVNWOcrR9tYhU1wVUSJ_DJ8x+SCk993Sn9dYDe2kzJBDuQ@mail.gmail.com> <201207211949.13944.rjw@sisk.pl> <CACVXFVM+yJeDanZaSVc-snxu6edaOy+47oMSmcDr8zngUw4DnA@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain;
+  charset="iso-8859-1"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342906105 2755 80.91.229.3 (21 Jul 2012 21:28:25 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 21 Jul 2012 21:28:25 +0000 (UTC)
+Cc: Linux Kernel Mailing List <linux-kernel@vger.kernel.org>,
+	"linux-usb" <linux-usb@vger.kernel.org>,
+	Alan Stern <stern@rowland.harvard.edu>,
+	"Greg Kroah-Hartman" <gregkh@linuxfoundation.org>,
+	Oliver Neukum <oneukum@suse.de>
+To: Ming Lei <tom.leiming@gmail.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Jul 21 23:28:24 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SshDr-0000Km-Hs
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 21 Jul 2012 23:28:23 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752019Ab2GUV11 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 21 Jul 2012 17:27:27 -0400
+Original-Received: from ogre.sisk.pl ([193.178.161.156]:50921 "EHLO ogre.sisk.pl"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751396Ab2GUV10 (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 21 Jul 2012 17:27:26 -0400
+Original-Received: from localhost (localhost.localdomain [127.0.0.1])
+	by ogre.sisk.pl (Postfix) with ESMTP id D94251D92EB;
+	Sat, 21 Jul 2012 23:22:42 +0200 (CEST)
+Original-Received: from ogre.sisk.pl ([127.0.0.1])
+ by localhost (ogre.sisk.pl [127.0.0.1]) (amavisd-new, port 10024) with ESMTP
+ id 31337-09; Sat, 21 Jul 2012 23:22:32 +0200 (CEST)
+Original-Received: from ferrari.rjw.lan (62-121-64-87.home.aster.pl [62.121.64.87])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by ogre.sisk.pl (Postfix) with ESMTP id 873621D88E7;
+	Sat, 21 Jul 2012 23:22:32 +0200 (CEST)
+User-Agent: KMail/1.13.6 (Linux/3.5.0-rc5+; KDE/4.6.0; x86_64; ; )
+In-Reply-To: <CACVXFVM+yJeDanZaSVc-snxu6edaOy+47oMSmcDr8zngUw4DnA@mail.gmail.com>
+X-Virus-Scanned: amavisd-new at ogre.sisk.pl using MkS_Vir for Linux
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331247 gmane.linux.usb.general:68050
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331247>
+
+On Saturday, July 21, 2012, Ming Lei wrote:
+> On Sun, Jul 22, 2012 at 1:49 AM, Rafael J. Wysocki <rjw@sisk.pl> wrote:
+> > On Friday, July 20, 2012, Ming Lei wrote:
+> 
+> >> +     if (system_state != SYSTEM_RUNNING)
+> >> +             return -EPROBE_DEFER;
+> >
+> > You can't just return here, _request_firmware_cleanup() has to be done still.
+> 
+> Good catch, thanks.
+> 
+> >
+> >> +
+> >>       ret = usermodehelper_read_trylock();
+> >
+> > So why don't you do this here, actually, like:
+> >
+> >         if (ret) {
+> >                 ret = -EPROBE_DEFER;
+> 
+> The problem is that the 'ret' is zero for early boot situation.
+
+If you don't use SYSTEM_SUSPEND, you could just leave your !SYSTEM_RUNNING
+check above and use this one to cover the suspend/resume case.
+
+However, this is all moot in the face of the Linus' objection.
+
+> >         } else {
+> >
+> > instead of the WARN_ON()?
+> >
+> > Arguably, all cases in which usermodehelper_read_trylock() returns error
+> > codes will require deferred probing.
+> 
+> Yes, looks !SYSTEM_RUNNING has covered all the cases already.
+
+Well, not really.
+
+> >
+> >>       if (WARN_ON(ret)) {
+> >>               dev_err(device, "firmware: %s will not be loaded\n", name);
+> >> diff --git a/include/linux/device.h b/include/linux/device.h
+> >> index d0e4d99..a63d3171 100644
+> >> --- a/include/linux/device.h
+> >> +++ b/include/linux/device.h
+> >> @@ -244,7 +244,7 @@ extern struct device_driver *driver_find(const char *name,
+> >>                                        struct bus_type *bus);
+> >>  extern int driver_probe_done(void);
+> >>  extern void wait_for_device_probe(void);
+> >> -
+> >> +extern void driver_deferred_probe_trigger(void);
+> >>
+> >>  /* sysfs interface for exporting driver attributes */
+> >>
+> >> diff --git a/include/linux/kernel.h b/include/linux/kernel.h
+> >> index e07f5e0..c8d74c6 100644
+> >> --- a/include/linux/kernel.h
+> >> +++ b/include/linux/kernel.h
+> >> @@ -378,6 +378,7 @@ extern enum system_states {
+> >>       SYSTEM_POWER_OFF,
+> >>       SYSTEM_RESTART,
+> >>       SYSTEM_SUSPEND_DISK,
+> >> +     SYSTEM_SUSPEND,
+> >
+> > First off, SYSTEM_SUSPEND_DISK is not used and probably should be removed.
+> > Second, both SYSTEM_SUSPEND and SYSTEM_SUSPEND_DISK would require the same
+> > kind of handling in the respect of device probing, so it is not sufficient
+> > to change the state in suspend_devices_and_enter().
+> 
+> suspend_devices_and_enter is used by hibernation too,
+
+No now look for the second time and then tell me what you got wrong.  OK?
+
+> and the state is just updated to RUNNING after suspend_finish.
+
+No, it is not.
+
+> > Moreover, there are other situations in which tasks are frozen and
+> > request_firmware() won't work just as well, so I don't think using
+> > system_state for that is going to work in general.
+> 
+> Looks system_state becoming SYSTEM_RUNNING means all tasks has
+> been thawed completely.
+
+No, it doesn't.
+
+Thanks,
+Rafael

@@ -1,0 +1,238 @@
+Path: news.gmane.org!not-for-mail
+From: Len Brown <lenb@kernel.org>
+Newsgroups: gmane.linux.acpi.devel,gmane.linux.power-management.general,gmane.linux.kernel
+Subject: [PATCH 21/52] ACPI: Add _OST support for sysfs eject
+Date: Tue, 24 Jul 2012 23:41:17 -0400
+Organization: Intel Open Source Technology Center
+Lines: 175
+Approved: news@gmane.org
+Message-ID: <c4753e57b78b213f2384fa0dbafa348b087114fa.1343187617.git.len.brown@intel.com>
+References: <1343187708-19532-1-git-send-email-lenb@kernel.org>
+Reply-To: Len Brown <lenb@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343187843 28816 80.91.229.3 (25 Jul 2012 03:44:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 03:44:03 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, Toshi Kani <toshi.kani@hp.com>,
+	Len Brown <len.brown@intel.com>
+To: linux-acpi@vger.kernel.org, linux-pm@lists.linux-foundation.org
+Original-X-From: linux-acpi-owner@vger.kernel.org Wed Jul 25 05:43:59 2012
+Return-path: <linux-acpi-owner@vger.kernel.org>
+Envelope-to: glad-acpi-devel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-acpi-owner@vger.kernel.org>)
+	id 1StsVu-0001yK-5j
+	for glad-acpi-devel@plane.gmane.org; Wed, 25 Jul 2012 05:43:54 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932873Ab2GYDmn (ORCPT <rfc822;glad-acpi-devel@m.gmane.org>);
+	Tue, 24 Jul 2012 23:42:43 -0400
+Original-Received: from mail-qa0-f53.google.com ([209.85.216.53]:33308 "EHLO
+	mail-qa0-f53.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S932845Ab2GYDmm (ORCPT
+	<rfc822;linux-acpi@vger.kernel.org>); Tue, 24 Jul 2012 23:42:42 -0400
+Original-Received: by mail-qa0-f53.google.com with SMTP id s11so247411qaa.19
+        for <multiple recipients>; Tue, 24 Jul 2012 20:42:42 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:in-reply-to:references:reply-to:organization;
+        bh=dRTTKJ3TIu3LRz6bjnor8PL5dRtUHi18bn37SyRJa9M=;
+        b=jaFNqh7NiQ4QSwWgX2Swh5qwfTyibpI3stLslft7loacVJfYDWXizaIklEY4OUmTIN
+         lJbxC8/b85Wc1Q1MlD18yU/ybYflfyzeY9AgPZyQbocuk5RvzScdyOUgJWJIOmS3K74p
+         tctfVr2mKfIx8dBhqP4kFV89U2t8ObjYyLHew8Wwwdu/vY2Tf78BMYcU/wIeR8y1xXa7
+         MBeFgkOnOexP4pIqGH00Yof9G3/fs8L7kN9IQj0K8Rn6xB93Vbi3Gss1BvVFi+w2ebL5
+         c7lFmdLiO+M3DReE/2s4WIpNQzV4YtVb8LfDqSQ6uFJ6ifLYaaedfJIvuQ1D+10oCyz3
+         vDTg==
+Original-Received: by 10.229.135.209 with SMTP id o17mr10439750qct.4.1343187761906;
+        Tue, 24 Jul 2012 20:42:41 -0700 (PDT)
+Original-Received: from x980.localdomain6 (h184-61-125-197.altnnh.dsl.dynamic.tds.net. [184.61.125.197])
+        by mx.google.com with ESMTPS id et6sm15489186qab.8.2012.07.24.20.42.40
+        (version=SSLv3 cipher=OTHER);
+        Tue, 24 Jul 2012 20:42:41 -0700 (PDT)
+X-Mailer: git-send-email 1.7.12.rc0
+In-Reply-To: <1343187708-19532-1-git-send-email-lenb@kernel.org>
+In-Reply-To: <6af1c4fc5227af65092ebc848989693562bfa3e8.1343187617.git.len.brown@intel.com>
+Original-References: <6af1c4fc5227af65092ebc848989693562bfa3e8.1343187617.git.len.brown@intel.com>
+Original-Sender: linux-acpi-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-acpi.vger.kernel.org>
+X-Mailing-List: linux-acpi@vger.kernel.org
+Xref: news.gmane.org gmane.linux.acpi.devel:54478 gmane.linux.power-management.general:27892 gmane.linux.kernel:1332691
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332691>
+
+From: Toshi Kani <toshi.kani@hp.com>
+
+Changed acpi_bus_hot_remove_device() to support _OST. This function is
+also changed to global so that it can be called from hotplug notify
+handlers to perform hot-remove operation.
+
+Changed acpi_eject_store(), which is the sysfs eject handler. It checks
+eject_pending to see if the request was originated from ACPI eject
+notification. If not, it calls _OST(0x103,84,) per Figure 6-37 in ACPI
+5.0 spec.
+
+Added eject_pending bit to acpi_device_flags. This bit is set when the
+kernel has received an ACPI eject notification, but does not initiate
+its hot-remove operation by itself.
+
+Added struct acpi_eject_event. This structure is used to pass extended
+information to acpi_bus_hot_remove_device(), which has a single argument
+to support asynchronous call
+
+Signed-off-by: Toshi Kani <toshi.kani@hp.com>
+Signed-off-by: Len Brown <len.brown@intel.com>
+---
+ drivers/acpi/scan.c     | 58 +++++++++++++++++++++++++++++++++++++++++--------
+ include/acpi/acpi_bus.h |  9 +++++++-
+ 2 files changed, 57 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/acpi/scan.c b/drivers/acpi/scan.c
+index 85cbfdc..bea3ab6 100644
+--- a/drivers/acpi/scan.c
++++ b/drivers/acpi/scan.c
+@@ -83,19 +83,29 @@ acpi_device_modalias_show(struct device *dev, struct device_attribute *attr, cha
+ }
+ static DEVICE_ATTR(modalias, 0444, acpi_device_modalias_show, NULL);
+ 
+-static void acpi_bus_hot_remove_device(void *context)
++/**
++ * acpi_bus_hot_remove_device: hot-remove a device and its children
++ * @context: struct acpi_eject_event pointer (freed in this func)
++ *
++ * Hot-remove a device and its children. This function frees up the
++ * memory space passed by arg context, so that the caller may call
++ * this function asynchronously through acpi_os_hotplug_execute().
++ */
++void acpi_bus_hot_remove_device(void *context)
+ {
++	struct acpi_eject_event *ej_event = (struct acpi_eject_event *) context;
+ 	struct acpi_device *device;
+-	acpi_handle handle = context;
++	acpi_handle handle = ej_event->handle;
+ 	struct acpi_object_list arg_list;
+ 	union acpi_object arg;
+ 	acpi_status status = AE_OK;
++	u32 ost_code = ACPI_OST_SC_NON_SPECIFIC_FAILURE; /* default */
+ 
+ 	if (acpi_bus_get_device(handle, &device))
+-		return;
++		goto err_out;
+ 
+ 	if (!device)
+-		return;
++		goto err_out;
+ 
+ 	ACPI_DEBUG_PRINT((ACPI_DB_INFO,
+ 		"Hot-removing device %s...\n", dev_name(&device->dev)));
+@@ -103,7 +113,7 @@ static void acpi_bus_hot_remove_device(void *context)
+ 	if (acpi_bus_trim(device, 1)) {
+ 		printk(KERN_ERR PREFIX
+ 				"Removing device failed\n");
+-		return;
++		goto err_out;
+ 	}
+ 
+ 	/* power off device */
+@@ -129,10 +139,21 @@ static void acpi_bus_hot_remove_device(void *context)
+ 	 * TBD: _EJD support.
+ 	 */
+ 	status = acpi_evaluate_object(handle, "_EJ0", &arg_list, NULL);
+-	if (ACPI_FAILURE(status))
+-		printk(KERN_WARNING PREFIX
+-				"Eject device failed\n");
++	if (ACPI_FAILURE(status)) {
++		if (status != AE_NOT_FOUND)
++			printk(KERN_WARNING PREFIX
++					"Eject device failed\n");
++		goto err_out;
++	}
++
++	kfree(context);
++	return;
+ 
++err_out:
++	/* Inform firmware the hot-remove operation has completed w/ error */
++	(void) acpi_evaluate_hotplug_ost(handle,
++				ej_event->event, ost_code, NULL);
++	kfree(context);
+ 	return;
+ }
+ 
+@@ -144,6 +165,7 @@ acpi_eject_store(struct device *d, struct device_attribute *attr,
+ 	acpi_status status;
+ 	acpi_object_type type = 0;
+ 	struct acpi_device *acpi_device = to_acpi_device(d);
++	struct acpi_eject_event *ej_event;
+ 
+ 	if ((!count) || (buf[0] != '1')) {
+ 		return -EINVAL;
+@@ -160,7 +182,25 @@ acpi_eject_store(struct device *d, struct device_attribute *attr,
+ 		goto err;
+ 	}
+ 
+-	acpi_os_hotplug_execute(acpi_bus_hot_remove_device, acpi_device->handle);
++	ej_event = kmalloc(sizeof(*ej_event), GFP_KERNEL);
++	if (!ej_event) {
++		ret = -ENOMEM;
++		goto err;
++	}
++
++	ej_event->handle = acpi_device->handle;
++	if (acpi_device->flags.eject_pending) {
++		/* event originated from ACPI eject notification */
++		ej_event->event = ACPI_NOTIFY_EJECT_REQUEST;
++		acpi_device->flags.eject_pending = 0;
++	} else {
++		/* event originated from user */
++		ej_event->event = ACPI_OST_EC_OSPM_EJECT;
++		(void) acpi_evaluate_hotplug_ost(ej_event->handle,
++			ej_event->event, ACPI_OST_SC_EJECT_IN_PROGRESS, NULL);
++	}
++
++	acpi_os_hotplug_execute(acpi_bus_hot_remove_device, (void *)ej_event);
+ err:
+ 	return ret;
+ }
+diff --git a/include/acpi/acpi_bus.h b/include/acpi/acpi_bus.h
+index 1139f3a..62eb514 100644
+--- a/include/acpi/acpi_bus.h
++++ b/include/acpi/acpi_bus.h
+@@ -182,7 +182,8 @@ struct acpi_device_flags {
+ 	u32 suprise_removal_ok:1;
+ 	u32 power_manageable:1;
+ 	u32 performance_manageable:1;
+-	u32 reserved:24;
++	u32 eject_pending:1;
++	u32 reserved:23;
+ };
+ 
+ /* File System */
+@@ -334,6 +335,11 @@ struct acpi_bus_event {
+ 	u32 data;
+ };
+ 
++struct acpi_eject_event {
++	acpi_handle	handle;
++	u32		event;
++};
++
+ extern struct kobject *acpi_kobj;
+ extern int acpi_bus_generate_netlink_event(const char*, const char*, u8, int);
+ void acpi_bus_private_data_handler(acpi_handle, void *);
+@@ -371,6 +377,7 @@ int acpi_bus_register_driver(struct acpi_driver *driver);
+ void acpi_bus_unregister_driver(struct acpi_driver *driver);
+ int acpi_bus_add(struct acpi_device **child, struct acpi_device *parent,
+ 		 acpi_handle handle, int type);
++void acpi_bus_hot_remove_device(void *context);
+ int acpi_bus_trim(struct acpi_device *start, int rmdevice);
+ int acpi_bus_start(struct acpi_device *device);
+ acpi_status acpi_bus_get_ejd(acpi_handle handle, acpi_handle * ejd);
+-- 
+1.7.12.rc0
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-acpi" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

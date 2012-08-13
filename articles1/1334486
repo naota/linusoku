@@ -1,0 +1,190 @@
+Path: news.gmane.org!not-for-mail
+From: Joonsoo Kim <js1304@gmail.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH] slub: remove one code path and reduce lock contention in __slab_free()
+Date: Sat, 28 Jul 2012 05:17:51 +0900
+Lines: 117
+Approved: news@gmane.org
+Message-ID: <1343420271-3825-1-git-send-email-js1304@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343420347 29277 80.91.229.3 (27 Jul 2012 20:19:07 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 20:19:07 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org,
+	linux-mm@kvack.org,
+	Joonsoo Kim <js1304@gmail.com>,
+	Christoph Lameter <cl@linux.com>
+To: Pekka Enberg <penberg@kernel.org>
+Original-X-From: owner-linux-mm@kvack.org Fri Jul 27 22:19:06 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Sur06-0006un-7Y
+	for glkm-linux-mm-2@m.gmane.org; Fri, 27 Jul 2012 22:19:06 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id EA01E6B004D; Fri, 27 Jul 2012 16:19:04 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id D95EA6B005A; Fri, 27 Jul 2012 16:19:04 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 971516B005D; Fri, 27 Jul 2012 16:19:04 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx107.postini.com [74.125.245.107])
+	by kanga.kvack.org (Postfix) with SMTP id F33916B004D
+	for <linux-mm@kvack.org>; Fri, 27 Jul 2012 16:19:03 -0400 (EDT)
+Original-Received: from mail-pb0-f41.google.com ([209.85.160.41]) (using TLSv1) by na3sys010amx107.postini.com ([74.125.244.10]) with SMTP;
+	Fri, 27 Jul 2012 20:19:04 GMT
+Original-Received: by pbbrp2 with SMTP id rp2so6335261pbb.14
+        for <linux-mm@kvack.org>; Fri, 27 Jul 2012 13:19:03 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer;
+        bh=l2JqOg0WGhxKRIobONFba0OgXYWDs5RD/IIrZnirEMw=;
+        b=hH41smTRz5WUFnSBmEimsqlqAFztRQBAaaZUUUxjIkiCy5CXP0775y23kUxMSP1iT1
+         tWueLF4jjT+TytKBS2LKXFMq7ElWAMayBZavsbMrooLM3RbvlKmYrddZQIe9WHH0VAd3
+         0mZEZhE+Xpsd1M/HDlPJRDAGbydbicCtgBM9yWeiXFgktTDcSWI6Y3mzm9RAirADsFiW
+         gOucvHaEGftqJQ31oT+xq4Jk4v3BPh1XepStF4l94osLjmXrDWsWtbtFMmeY6IJaLscq
+         K9RHXL7RmNcWK8qNrf9e9AZqEpFFHDTK8Yn7edbQz6EQrutWfYSk6nGoGMIQWdgls6mf
+         3LLQ==
+Original-Received: by 10.68.232.232 with SMTP id tr8mr16464329pbc.73.1343420343248;
+        Fri, 27 Jul 2012 13:19:03 -0700 (PDT)
+Original-Received: from localhost.localdomain ([119.69.155.222])
+        by mx.google.com with ESMTPS id oo6sm2510358pbc.22.2012.07.27.13.19.00
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 27 Jul 2012 13:19:02 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9.5
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 1 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0100) s cv GT3 gt2 gt1 r p m c 
+X-pstn-addresses: from <js1304@gmail.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83126 gmane.linux.kernel:1334486
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334486>
+
+When we try to free object, there is some of case that we need
+to take a node lock. This is the necessary step for preventing a race.
+After taking a lock, then we try to cmpxchg_double_slab().
+But, there is a possible scenario that cmpxchg_double_slab() is failed.
+Following example explains this.
+
+CPU A               CPU B
+need lock
+...                 need lock
+...                 lock!!
+lock..but spin      free success
+spin...             unlock
+lock!!
+free fail
+
+In this case, retry with taking a lock is occured in CPU A.
+
+I think that in this case,
+"release a lock first, and re-take a lock if necessary" is preferable way.
+There are two reasons for this.
+First, this makes __slab_free()'s logic somehow simple.
+Second, it may reduce lock contention.
+When we do retrying, status of slab is already changed,
+so we don't need a lock anymore in almost every case.
+"release a lock first, and re-take a lock if necessary" policy is
+helpful to this.
+
+Signed-off-by: Joonsoo Kim <js1304@gmail.com>
+Cc: Christoph Lameter <cl@linux.com>
+---
+This is v2 of "slub: release a lock if freeing object with a lock is failed in __slab_free()"
+Subject and commit log are changed from v1.
+Code is same as v1.
+
+diff --git a/mm/slub.c b/mm/slub.c
+index ca778e5..efce427 100644
+--- a/mm/slub.c
++++ b/mm/slub.c
+@@ -2421,7 +2421,6 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
+ 	void *prior;
+ 	void **object = (void *)x;
+ 	int was_frozen;
+-	int inuse;
+ 	struct page new;
+ 	unsigned long counters;
+ 	struct kmem_cache_node *n = NULL;
+@@ -2433,13 +2432,17 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
+ 		return;
+ 
+ 	do {
++		if (unlikely(n)) {
++			spin_unlock_irqrestore(&n->list_lock, flags);
++			n = NULL;
++		}
+ 		prior = page->freelist;
+ 		counters = page->counters;
+ 		set_freepointer(s, object, prior);
+ 		new.counters = counters;
+ 		was_frozen = new.frozen;
+ 		new.inuse--;
+-		if ((!new.inuse || !prior) && !was_frozen && !n) {
++		if ((!new.inuse || !prior) && !was_frozen) {
+ 
+ 			if (!kmem_cache_debug(s) && !prior)
+ 
+@@ -2464,7 +2467,6 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
+ 
+ 			}
+ 		}
+-		inuse = new.inuse;
+ 
+ 	} while (!cmpxchg_double_slab(s, page,
+ 		prior, counters,
+@@ -2490,25 +2492,17 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
+                 return;
+         }
+ 
++	if (unlikely(!new.inuse && n->nr_partial > s->min_partial))
++		goto slab_empty;
++
+ 	/*
+-	 * was_frozen may have been set after we acquired the list_lock in
+-	 * an earlier loop. So we need to check it here again.
++	 * Objects left in the slab. If it was not on the partial list before
++	 * then add it.
+ 	 */
+-	if (was_frozen)
+-		stat(s, FREE_FROZEN);
+-	else {
+-		if (unlikely(!inuse && n->nr_partial > s->min_partial))
+-                        goto slab_empty;
+-
+-		/*
+-		 * Objects left in the slab. If it was not on the partial list before
+-		 * then add it.
+-		 */
+-		if (unlikely(!prior)) {
+-			remove_full(s, page);
+-			add_partial(n, page, DEACTIVATE_TO_TAIL);
+-			stat(s, FREE_ADD_PARTIAL);
+-		}
++	if (kmem_cache_debug(s) && unlikely(!prior)) {
++		remove_full(s, page);
++		add_partial(n, page, DEACTIVATE_TO_TAIL);
++		stat(s, FREE_ADD_PARTIAL);
+ 	}
+ 	spin_unlock_irqrestore(&n->list_lock, flags);
+ 	return;
+-- 
+1.7.9.5
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

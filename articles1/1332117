@@ -1,0 +1,209 @@
+Path: news.gmane.org!not-for-mail
+From: Yoshihiro YUNOMAE <yoshihiro.yunomae.ez@hitachi.com>
+Newsgroups: gmane.linux.kernel.virtualization,gmane.linux.kernel,gmane.comp.emulators.qemu
+Subject: [RFC PATCH 5/6] virtio/console: Allocate scatterlist according to the
+	current pipe size
+Date: Tue, 24 Jul 2012 11:37:48 +0900
+Lines: 107
+Approved: news@gmane.org
+Message-ID: <20120724023748.6600.25898.stgit@ltc189.sdl.hitachi.co.jp>
+References: <20120724023657.6600.52706.stgit@ltc189.sdl.hitachi.co.jp>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343097492 5542 80.91.229.3 (24 Jul 2012 02:38:12 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 02:38:12 +0000 (UTC)
+Cc: Herbert Xu <herbert@gondor.apana.org.au>, Arnd Bergmann <arnd@arndb.de>,
+	Frederic Weisbecker <fweisbec@gmail.com>,
+	yrl.pp-manager.tt@hitachi.com, qemu-devel@nongnu.org,
+	Borislav Petkov <bp@amd64.org>, virtualization@lists.linux-foundation.org,
+	Masami Hiramatsu <masami.hiramatsu.pt@hitachi.com>,
+	"Franch Ch. Eigler" <fche@redhat.com>, Ingo Molnar <mingo@redhat.com>,
+	Mathieu Desnoyers <mathieu.desnoyers@efficios.com>,
+	Steven Rostedt <rostedt@goodmis.org>,
+	Anthony Liguori <anthony@codemonkey.ws>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	Amit Shah <amit.shah@redhat.com>
+To: linux-kernel@vger.kernel.org
+Original-X-From: virtualization-bounces@lists.linux-foundation.org Tue Jul 24 04:38:08 2012
+Return-path: <virtualization-bounces@lists.linux-foundation.org>
+Envelope-to: glkv-virtualization@gmane.org
+Original-Received: from mail.linuxfoundation.org ([140.211.169.12])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <virtualization-bounces@lists.linux-foundation.org>)
+	id 1StV0g-0002Ek-Ju
+	for glkv-virtualization@gmane.org; Tue, 24 Jul 2012 04:38:06 +0200
+Original-Received: from mail.linux-foundation.org (localhost [IPv6:::1])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id A146B9E2;
+	Tue, 24 Jul 2012 02:38:05 +0000 (UTC)
+X-Original-To: virtualization@lists.linux-foundation.org
+Delivered-To: virtualization@mail.linuxfoundation.org
+Original-Received: from smtp1.linuxfoundation.org (smtp1.linux-foundation.org
+	[172.17.192.35])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id 347AA5A8
+	for <virtualization@lists.linux-foundation.org>;
+	Tue, 24 Jul 2012 02:38:04 +0000 (UTC)
+X-Greylist: domain auto-whitelisted by SQLgrey-1.7.6
+Original-Received: from mail9.hitachi.co.jp (mail9.hitachi.co.jp [133.145.228.44])
+	by smtp1.linuxfoundation.org (Postfix) with ESMTP id 891C91F950
+	for <virtualization@lists.linux-foundation.org>;
+	Tue, 24 Jul 2012 02:38:03 +0000 (UTC)
+Original-Received: from mlsv7.hitachi.co.jp (unknown [133.144.234.166])
+	by mail9.hitachi.co.jp (Postfix) with ESMTP id 0DAC137C82;
+	Tue, 24 Jul 2012 11:38:03 +0900 (JST)
+Original-Received: from mfilter04.hitachi.co.jp by mlsv7.hitachi.co.jp (8.13.1/8.13.1)
+	id q6O2c3X1032262; Tue, 24 Jul 2012 11:38:03 +0900
+Original-Received: from vshuts2.hitachi.co.jp (vshuts2.hitachi.co.jp [10.201.6.71])
+	by mfilter04.hitachi.co.jp (Switch-3.3.4/Switch-3.3.4) with ESMTP id
+	q6O2bxsX009644; Tue, 24 Jul 2012 11:38:02 +0900
+X-AuditID: b753bd60-918efba000004f2e-f7-500e0a8719df
+Original-Received: from hsdlmain.sdl.hitachi.co.jp (unknown [133.144.14.194])
+	by vshuts2.hitachi.co.jp (Symantec Mail Security) with ESMTP id
+	8B5C38B034D; Tue, 24 Jul 2012 11:37:59 +0900 (JST)
+Original-Received: from hsdlvgate2.sdl.hitachi.co.jp by hsdlmain.sdl.hitachi.co.jp
+	(8.13.8/3.7W11021512) id q6O2bx9s028216;
+	Tue, 24 Jul 2012 11:37:59 +0900
+X-AuditID: b753bd60-918efba000004f2e-f7-500e0a8719df
+Original-Received: from sdl99w.sdl.hitachi.co.jp (sdl99w.sdl.hitachi.co.jp
+	[133.144.14.250])
+	by hsdlvgate2.sdl.hitachi.co.jp (Symantec Mail Security) with ESMTP id
+	27941236561; Tue, 24 Jul 2012 11:37:58 +0900 (JST)
+Original-Received: from maild.sdl.hitachi.co.jp (sdl99d.sdl.hitachi.co.jp
+	[133.144.14.199])
+	by sdl99w.sdl.hitachi.co.jp (Postfix) with ESMTP id 268C453C1FA;
+	Tue, 24 Jul 2012 11:37:59 +0900 (JST)
+Original-Received: from ltc189.sdl.hitachi.co.jp (unknown [10.232.28.60])
+	by maild.sdl.hitachi.co.jp (Postfix) with ESMTP id DCEA8495B93;
+	Tue, 24 Jul 2012 11:37:58 +0900 (JST)
+In-Reply-To: <20120724023657.6600.52706.stgit@ltc189.sdl.hitachi.co.jp>
+User-Agent: StGIT/0.14.3
+X-Brightmail-Tracker: AAAAAA==
+X-Spam-Status: No, score=-2.6 required=5.0 tests=BAYES_00,RCVD_IN_DNSWL_LOW
+	autolearn=ham version=3.3.1
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on
+	smtp1.linux-foundation.org
+X-BeenThere: virtualization@lists.linux-foundation.org
+X-Mailman-Version: 2.1.12
+Precedence: list
+List-Id: Linux virtualization <virtualization.lists.linux-foundation.org>
+List-Unsubscribe: <https://lists.linuxfoundation.org/mailman/options/virtualization>,
+	<mailto:virtualization-request@lists.linux-foundation.org?subject=unsubscribe>
+List-Archive: <http://lists.linuxfoundation.org/pipermail/virtualization/>
+List-Post: <mailto:virtualization@lists.linux-foundation.org>
+List-Help: <mailto:virtualization-request@lists.linux-foundation.org?subject=help>
+List-Subscribe: <https://lists.linuxfoundation.org/mailman/listinfo/virtualization>,
+	<mailto:virtualization-request@lists.linux-foundation.org?subject=subscribe>
+Original-Sender: virtualization-bounces@lists.linux-foundation.org
+Errors-To: virtualization-bounces@lists.linux-foundation.org
+Xref: news.gmane.org gmane.linux.kernel.virtualization:16209 gmane.linux.kernel:1332117 gmane.comp.emulators.qemu:161344
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332117>
+
+From: Masami Hiramatsu <masami.hiramatsu.pt@hitachi.com>
+
+Allocate scatterlist according to the current pipe size.
+This allows splicing bigger buffer if the pipe size has
+been changed by fcntl.
+
+Signed-off-by: Masami Hiramatsu <masami.hiramatsu.pt@hitachi.com>
+Cc: Amit Shah <amit.shah@redhat.com>
+Cc: Arnd Bergmann <arnd@arndb.de>
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+
+ drivers/char/virtio_console.c |   23 ++++++++++++-----------
+ 1 files changed, 12 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/char/virtio_console.c b/drivers/char/virtio_console.c
+index e49d435..f5063d5 100644
+--- a/drivers/char/virtio_console.c
++++ b/drivers/char/virtio_console.c
+@@ -229,7 +229,6 @@ struct port {
+ 	bool guest_connected;
+ };
+ 
+-#define MAX_SPLICE_PAGES	32
+ /* This is the very early arch-specified put chars function. */
+ static int (*early_put_chars)(u32, const char *, int);
+ 
+@@ -482,15 +481,16 @@ struct buffer_token {
+ 		void *buf;
+ 		struct scatterlist *sg;
+ 	} u;
+-	bool sgpages;
++	/* If sgpages == 0 then buf is used, else sg is used */
++	unsigned int sgpages;
+ };
+ 
+-static void reclaim_sg_pages(struct scatterlist *sg)
++static void reclaim_sg_pages(struct scatterlist *sg, unsigned int nrpages)
+ {
+ 	int i;
+ 	struct page *page;
+ 
+-	for (i = 0; i < MAX_SPLICE_PAGES; i++) {
++	for (i = 0; i < nrpages; i++) {
+ 		page = sg_page(&sg[i]);
+ 		if (!page)
+ 			break;
+@@ -511,7 +511,7 @@ static void reclaim_consumed_buffers(struct port *port)
+ 	}
+ 	while ((tok = virtqueue_get_buf(port->out_vq, &len))) {
+ 		if (tok->sgpages)
+-			reclaim_sg_pages(tok->u.sg);
++			reclaim_sg_pages(tok->u.sg, tok->sgpages);
+ 		else
+ 			kfree(tok->u.buf);
+ 		kfree(tok);
+@@ -581,7 +581,7 @@ static ssize_t send_buf(struct port *port, void *in_buf, size_t in_count,
+ 	tok = kmalloc(sizeof(*tok), GFP_ATOMIC);
+ 	if (!tok)
+ 		return -ENOMEM;
+-	tok->sgpages = false;
++	tok->sgpages = 0;
+ 	tok->u.buf = in_buf;
+ 
+ 	sg_init_one(sg, in_buf, in_count);
+@@ -597,7 +597,7 @@ static ssize_t send_pages(struct port *port, struct scatterlist *sg, int nents,
+ 	tok = kmalloc(sizeof(*tok), GFP_ATOMIC);
+ 	if (!tok)
+ 		return -ENOMEM;
+-	tok->sgpages = true;
++	tok->sgpages = nents;
+ 	tok->u.sg = sg;
+ 
+ 	return __send_to_port(port, sg, nents, in_count, tok, nonblock);
+@@ -797,6 +797,7 @@ out:
+ 
+ struct sg_list {
+ 	unsigned int n;
++	unsigned int size;
+ 	size_t len;
+ 	struct scatterlist *sg;
+ };
+@@ -807,7 +808,7 @@ static int pipe_to_sg(struct pipe_inode_info *pipe, struct pipe_buffer *buf,
+ 	struct sg_list *sgl = sd->u.data;
+ 	unsigned int offset, len;
+ 
+-	if (sgl->n == MAX_SPLICE_PAGES)
++	if (sgl->n == sgl->size)
+ 		return 0;
+ 
+ 	/* Try lock this page */
+@@ -868,12 +869,12 @@ static ssize_t port_fops_splice_write(struct pipe_inode_info *pipe,
+ 
+ 	sgl.n = 0;
+ 	sgl.len = 0;
+-	sgl.sg = kmalloc(sizeof(struct scatterlist) * MAX_SPLICE_PAGES,
+-			 GFP_ATOMIC);
++	sgl.size = pipe->nrbufs;
++	sgl.sg = kmalloc(sizeof(struct scatterlist) * sgl.size, GFP_ATOMIC);
+ 	if (unlikely(!sgl.sg))
+ 		return -ENOMEM;
+ 
+-	sg_init_table(sgl.sg, MAX_SPLICE_PAGES);
++	sg_init_table(sgl.sg, sgl.size);
+ 	ret = __splice_from_pipe(pipe, &sd, pipe_to_sg);
+ 	if (likely(ret > 0))
+ 		ret = send_pages(port, sgl.sg, sgl.n, sgl.len, true);

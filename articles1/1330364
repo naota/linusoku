@@ -1,0 +1,100 @@
+Path: news.gmane.org!not-for-mail
+From: Dan Carpenter <dan.carpenter@oracle.com>
+Newsgroups: gmane.linux.kernel
+Subject: re: pstore/ram: Add ftrace messages handling
+Date: Thu, 19 Jul 2012 17:28:56 +0300
+Lines: 44
+Approved: news@gmane.org
+Message-ID: <20120719142856.GA25184@elgon.mountain>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1342708157 7677 80.91.229.3 (19 Jul 2012 14:29:17 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 14:29:17 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, devel@driverdev.osuosl.org
+To: anton.vorontsov@linaro.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 16:29:17 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SrrjA-0002vD-Id
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 16:29:16 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751704Ab2GSO3H (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 10:29:07 -0400
+Original-Received: from rcsinet15.oracle.com ([148.87.113.117]:44852 "EHLO
+	rcsinet15.oracle.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750832Ab2GSO3F (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 10:29:05 -0400
+Original-Received: from ucsinet21.oracle.com (ucsinet21.oracle.com [156.151.31.93])
+	by rcsinet15.oracle.com (Sentrion-MTA-4.2.2/Sentrion-MTA-4.2.2) with ESMTP id q6JET31P026162
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Thu, 19 Jul 2012 14:29:03 GMT
+Original-Received: from acsmt356.oracle.com (acsmt356.oracle.com [141.146.40.156])
+	by ucsinet21.oracle.com (8.14.4+Sun/8.14.4) with ESMTP id q6JET2OS021301
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Thu, 19 Jul 2012 14:29:02 GMT
+Original-Received: from abhmt120.oracle.com (abhmt120.oracle.com [141.146.116.72])
+	by acsmt356.oracle.com (8.12.11.20060308/8.12.11) with ESMTP id q6JET1q0000940;
+	Thu, 19 Jul 2012 09:29:01 -0500
+Original-Received: from elgon.mountain (/41.139.221.94)
+	by default (Oracle Beehive Gateway v4.0)
+	with ESMTP ; Thu, 19 Jul 2012 07:29:01 -0700
+Content-Disposition: inline
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Source-IP: ucsinet21.oracle.com [156.151.31.93]
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330364
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330364>
+
+Hello Anton Vorontsov,
+
+This is a semi-automatic email about new static checker warnings.
+
+The patch a694d1b5916a: "pstore/ram: Add ftrace messages handling" 
+from Jul 9, 2012, leads to the following Smatch complaint:
+
+fs/pstore/ram.c:423 ramoops_probe()
+	 error: we previously assumed 'cxt->cprz' could be null (see line 408)
+
+fs/pstore/ram.c
+   407	
+   408		if (!cxt->przs && !cxt->cprz && !cxt->fprz) {
+                                  ^^^^^^^^^^
+
+Checked here.
+
+   409			pr_err("memory size too small, minimum is %lu\n",
+   410				cxt->console_size + cxt->record_size +
+   411				cxt->ftrace_size);
+   412			goto fail_cnt;
+   413		}
+   414	
+   415		cxt->pstore.data = cxt;
+   416		/*
+   417		 * Console can handle any buffer size, so prefer dumps buffer
+   418		 * size since usually it is smaller.
+   419		 */
+   420		if (cxt->przs)
+   421			cxt->pstore.bufsize = cxt->przs[0]->buffer_size;
+   422		else
+   423			cxt->pstore.bufsize = cxt->cprz->buffer_size;
+                                              ^^^^^^^^^
+Dereferenced here.  What about if only "cxt->fprz" is non-NULL?
+
+Also these are crap variable names, "przs" and "cprz" look so similar.
+It makes my head hurt to keep them appart.
+
+   424		cxt->pstore.buf = kmalloc(cxt->pstore.bufsize, GFP_KERNEL);
+   425		spin_lock_init(&cxt->pstore.buf_lock);
+
+regards,
+dan carpenter
+

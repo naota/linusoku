@@ -1,0 +1,88 @@
+Path: news.gmane.org!not-for-mail
+From: Denis Yefremov <yefremov.denis@gmail.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.wireless.general,gmane.linux.network
+Subject: wlcore: might_sleep operation in interrupt handler
+Date: Tue, 31 Jul 2012 22:28:14 +0400
+Lines: 30
+Approved: news@gmane.org
+Message-ID: <CADKZ3FKDw78ac9JPXJuw0s7Mqg1RrVfonbjXZ6zHmtwF2i5HoQ@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1343759307 26682 80.91.229.3 (31 Jul 2012 18:28:27 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 18:28:27 +0000 (UTC)
+Cc: "John W. Linville" <linville@tuxdriver.com>,
+	Eliad Peller <eliad@wizery.com>,
+	Arik Nemtsov <arik@wizery.com>, Eyal Shapira <eyal@wizery.com>,
+	linux-wireless@vger.kernel.org, netdev@vger.kernel.org,
+	linux-kernel@vger.kernel.org, ldv-project@ispras.ru
+To: Luciano Coelho <coelho@ti.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 20:28:25 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwHB9-0003Gd-UO
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 20:28:24 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756078Ab2GaS2S (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 14:28:18 -0400
+Original-Received: from mail-wi0-f170.google.com ([209.85.212.170]:40091 "EHLO
+	mail-wi0-f170.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755756Ab2GaS2Q (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 14:28:16 -0400
+Original-Received: by wibhq12 with SMTP id hq12so3601976wib.1
+        for <multiple recipients>; Tue, 31 Jul 2012 11:28:14 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=mime-version:date:message-id:subject:from:to:cc:content-type;
+        bh=QeYbRQK5eoRIYp6KlTwLSMT1a29shKb1FRTOGVq0PCs=;
+        b=r0GqHjrcFsDx7fPMEeK2rG+HBcAA9JAngwFMCzjB7FxXT4Tyx+KJrcCXxrq522tiqG
+         rQlokZr/CJxUaa1aXSp54d0ys9Nyb8fyt6oo0xs/3Pf4V+3ulK7IaJwkUxVuTvTpzm6I
+         2Uz38dOe6MGm+t0u3SHZDyVOS7IynzrIOo8G38YCEvRMZouIOAnXZQNDvIh+NCbPls0X
+         qp+3vnhDVPu/iLA/0Jg3c3dQ/NM0wNWfHhIdLbY6SeHYSLz9meZp8GpJqWbvYN9DbEk+
+         rhwAgb2ZHEuT75NX8NqygSR9Y4BH5jJaxjVPPekS2V5jj2kJ2t5lLNcxKicV1xqoCrtJ
+         rDXQ==
+Original-Received: by 10.180.78.135 with SMTP id b7mr9273701wix.11.1343759294232; Tue,
+ 31 Jul 2012 11:28:14 -0700 (PDT)
+Original-Received: by 10.223.133.136 with HTTP; Tue, 31 Jul 2012 11:28:14 -0700 (PDT)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335949 gmane.linux.kernel.wireless.general:95602 gmane.linux.network:238824
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335949>
+
+Interrupt handler wlcore_irq in wlcore/main.c file
+invokes mutex_lock that is might sleep operation.
+
+Found by Linux Driver Verification project (linuxtesting.org)
+within my participation in the GSoC 2012 program.
+
+drivers/net/wireless/ti/wlcore/main.c
+
+static irqreturn_t wlcore_irq(int irq, void *cookie)
+{
+        int ret;
+        unsigned long flags;
+        struct wl1271 *wl = cookie;
+
+        /* TX might be handled here, avoid redundant work */
+        set_bit(WL1271_FLAG_TX_PENDING, &wl->flags);
+        cancel_work_sync(&wl->tx_work);
+
+        mutex_lock(&wl->mutex);
+...
+}
+
+int __devinit wlcore_probe(struct wl1271 *wl, struct platform_device *pdev)
+{
+...
+        ret = request_threaded_irq(wl->irq, wl12xx_hardirq, wlcore_irq,
+                                   irqflags,
+                                   pdev->name, wl);
+...
+}

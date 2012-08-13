@@ -1,0 +1,117 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 098/122] ext4: use proper csum calculation in ext4_rename
+Date: Tue,  7 Aug 2012 15:26:26 -0700
+Lines: 52
+Approved: news@gmane.org
+Message-ID: <20120807221958.306955276@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344381862 4816 80.91.229.3 (7 Aug 2012 23:24:22 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 23:24:22 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Tao Ma <boyu.mt@taobao.com>,
+	"Theodore Tso" <tytso@mit.edu>,
+	"Darrick J. Wong" <djwong@us.ibm.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 01:24:20 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Syt8N-0006zF-Dv
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 01:24:19 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757568Ab2HGXYI (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 19:24:08 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:64363 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030247Ab2HGWcI (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:32:08 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so346923pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:32:08 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=O63BOTQFcrN88LH3bzn9iayNJqxT4P4dfnRUhC0QPZE=;
+        b=VaDUsV1m7vPS+/OJMSdCFB1LYnJwN3RmSeaAvbUO33JLutOucLmHKBIet9Ws2oqQys
+         cmvsoTIEBXN742IrkWU2HKvYlyAck4Tn66PcpdzahWNYjVQZy0yqyzWWwjOsxcUWbM/2
+         SUOUGO+HDCTdbLidU7Rsq8STIAXQ6r3Ecu85yC7JB86MTybzlEzp0Lm21kcZy9Z2xRy9
+         mdv15lKImTE26+Ih5fU6RMk2vpWiXm2T3vn/PvTToMahqaydoyHkickUkgr3EmnY/AhC
+         pzpVlhm5borUWJyE+BlpZG/5+I7fkLZzZ7bCRIf9apVN8SVlUk5ivBvwEpTaAUTiRhRR
+         7mNA==
+Original-Received: by 10.68.224.133 with SMTP id rc5mr27171711pbc.130.1344378728538;
+        Tue, 07 Aug 2012 15:32:08 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id ph1sm11960027pbb.45.2012.08.07.15.32.06
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:32:07 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQnKO/EPHzbp98hxUU2wrMl3CU8C51uVVHDhIrwoC0ayFpxUmu3CvJ0U4bSN3+wD6rT2cBM9
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339651 gmane.linux.kernel.stable:29480
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339651>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Tao Ma <boyu.mt@taobao.com>
+
+commit ef58f69c3c34f6377f1e21d3533c806dbd980ad0 upstream.
+
+In ext4_rename, when the old name is a dir, we need to
+change ".." to its new parent and journal the change, so
+with metadata_csum enabled, we have to re-calc the csum.
+
+As the first block of the dir can be either a htree root
+or a normal directory block and we have different csum
+calculation for these 2 types, we have to choose the right
+one in ext4_rename.
+
+btw, it is found by xfstests 013.
+
+Signed-off-by: Tao Ma <boyu.mt@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Acked-by: Darrick J. Wong <djwong@us.ibm.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ fs/ext4/namei.c |   11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -2918,8 +2918,15 @@ static int ext4_rename(struct inode *old
+ 		PARENT_INO(dir_bh->b_data, new_dir->i_sb->s_blocksize) =
+ 						cpu_to_le32(new_dir->i_ino);
+ 		BUFFER_TRACE(dir_bh, "call ext4_handle_dirty_metadata");
+-		retval = ext4_handle_dirty_dirent_node(handle, old_inode,
+-						       dir_bh);
++		if (is_dx(old_inode)) {
++			retval = ext4_handle_dirty_dx_node(handle,
++							   old_inode,
++							   dir_bh);
++		} else {
++			retval = ext4_handle_dirty_dirent_node(handle,
++							       old_inode,
++							       dir_bh);
++		}
+ 		if (retval) {
+ 			ext4_std_error(old_dir->i_sb, retval);
+ 			goto end_rename;
+
+

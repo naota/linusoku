@@ -1,0 +1,91 @@
+Path: news.gmane.org!not-for-mail
+From: Sarah Sharp <sarah.a.sharp-VuQAYsv1563Yd54FQh9/CA@public.gmane.org>
+Newsgroups: gmane.linux.usb.general,gmane.linux.kernel
+Subject: Re: [PATCH 2/2] xhci: EHCI/XHCI ports switching on Intense-PC.
+Date: Tue, 7 Aug 2012 10:35:32 -0700
+Lines: 37
+Approved: news@gmane.org
+Message-ID: <20120807173532.GD10298@xanatos>
+References: <5004454E.9030903@compulab.co.il>
+ <20120717045416.GJ7599@xanatos>
+ <50065E5A.2040103@compulab.co.il>
+ <20120718165916.GA30828@xanatos>
+ <500D3998.7010705@compulab.co.il>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344360954 17682 80.91.229.3 (7 Aug 2012 17:35:54 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 17:35:54 +0000 (UTC)
+Cc: linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, linux-usb-u79uwXL29TY76Z2rM5mHXA@public.gmane.org,
+	Greg Kroah-Hartman <gregkh-hQyY1W1yCW8ekmWlsbkhG0B+6BGkLq7r@public.gmane.org>
+To: Denis Turischev <denis-UTxiZqZC01RS1MOuV/RT9w@public.gmane.org>
+Original-X-From: linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org Tue Aug 07 19:35:54 2012
+Return-path: <linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Envelope-to: glug-linux-usb-wOFGN7rlS/M9smdsby/KFg@public.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>)
+	id 1SynhB-0000xS-W7
+	for glug-linux-usb-wOFGN7rlS/M9smdsby/KFg@public.gmane.org; Tue, 07 Aug 2012 19:35:54 +0200
+Original-Received: (majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org) by vger.kernel.org via listexpand
+	id S1755538Ab2HGRfg (ORCPT <rfc822;glug-linux-usb@m.gmane.org>);
+	Tue, 7 Aug 2012 13:35:36 -0400
+Original-Received: from mga11.intel.com ([192.55.52.93]:45924 "EHLO mga11.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755499Ab2HGRfe (ORCPT <rfc822;linux-usb-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>);
+	Tue, 7 Aug 2012 13:35:34 -0400
+Original-Received: from fmsmga002.fm.intel.com ([10.253.24.26])
+  by fmsmga102.fm.intel.com with ESMTP; 07 Aug 2012 10:35:33 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="204234916"
+Original-Received: from unknown (HELO xanatos) ([10.255.12.206])
+  by fmsmga002.fm.intel.com with ESMTP; 07 Aug 2012 10:35:32 -0700
+Content-Disposition: inline
+In-Reply-To: <500D3998.7010705-UTxiZqZC01RS1MOuV/RT9w@public.gmane.org>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Precedence: bulk
+List-ID: <linux-usb.vger.kernel.org>
+X-Mailing-List: linux-usb-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Xref: news.gmane.org gmane.linux.usb.general:69055 gmane.linux.kernel:1339207
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339207>
+
+Hi Denis,
+
+I found a couple issues with your second patch.  There are non-PCI xHCI
+host controllers, so we can't assume the xHCI host is a PCI host.  So
+this code can't run in the generic xHCI shutdown method:
+
+>  void xhci_shutdown(struct usb_hcd *hcd)
+>  {
+> +	struct pci_dev *pdev;
+> +	const char *brd_name;
+>  	struct xhci_hcd *xhci = hcd_to_xhci(hcd);
+> 
+> +	pdev = to_pci_dev(hcd->self.controller);
+> +
+> +	if (usb_is_intel_switchable_xhci(pdev)) {
+> +		brd_name = dmi_get_system_info(DMI_BOARD_NAME);
+> +
+> +		/* quirk for Compulab's Intense-PC board */
+> +		if (brd_name && strstr(brd_name, "Intense-PC"))
+> +			usb_disable_xhci_ports(pdev);
+> +	}
+> +
+>  	spin_lock_irq(&xhci->lock);
+>  	xhci_halt(xhci);
+>  	spin_unlock_irq(&xhci->lock);
+
+I think the to_pci_dev call will oops if this isn't a PCI host.  Plus,
+I've found out from the BIOS and chipset folks that this quirk needs to
+be more broadly applied.  I'll send you a revised patch.  Can you test
+it and make sure it works for you?
+
+Sarah Sharp
+--
+To unsubscribe from this list: send the line "unsubscribe linux-usb" in
+the body of a message to majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

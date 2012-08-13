@@ -1,0 +1,170 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 046/108] block: fix infinite loop in __getblk_slow
+Date: Mon, 23 Jul 2012 02:07:37 +0100
+Lines: 116
+Approved: news@gmane.org
+Message-ID: <20120723010658.437358318@decadent.org.uk>
+References: <20120723010651.408577075@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343008262 15447 80.91.229.3 (23 Jul 2012 01:51:02 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 01:51:02 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Jeff Moyer <jmoyer@redhat.com>,
+	"Richard W.M. Jones" <rjones@redhat.com>,
+	Josh Boyer <jwboyer@redhat.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 03:51:01 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1St7nY-0007a7-Lu
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 03:51:00 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753533Ab2GWBuf (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 21:50:35 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:54399 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1753500Ab2GWBn0 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 21:43:26 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7gB-0008Rf-FS; Mon, 23 Jul 2012 02:43:23 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7eb-0008Bi-Ke; Mon, 23 Jul 2012 02:41:45 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120723010651.408577075@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331502 gmane.linux.kernel.stable:28654
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331502>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Jeff Moyer <jmoyer@redhat.com>
+
+commit 91f68c89d8f35fe98ea04159b9a3b42d0149478f upstream.
+
+Commit 080399aaaf35 ("block: don't mark buffers beyond end of disk as
+mapped") exposed a bug in __getblk_slow that causes mount to hang as it
+loops infinitely waiting for a buffer that lies beyond the end of the
+disk to become uptodate.
+
+The problem was initially reported by Torsten Hilbrich here:
+
+    https://lkml.org/lkml/2012/6/18/54
+
+and also reported independently here:
+
+    http://www.sysresccd.org/forums/viewtopic.php?f=13&t=4511
+
+and then Richard W.M.  Jones and Marcos Mello noted a few separate
+bugzillas also associated with the same issue.  This patch has been
+confirmed to fix:
+
+    https://bugzilla.redhat.com/show_bug.cgi?id=835019
+
+The main problem is here, in __getblk_slow:
+
+        for (;;) {
+                struct buffer_head * bh;
+                int ret;
+
+                bh = __find_get_block(bdev, block, size);
+                if (bh)
+                        return bh;
+
+                ret = grow_buffers(bdev, block, size);
+                if (ret < 0)
+                        return NULL;
+                if (ret == 0)
+                        free_more_memory();
+        }
+
+__find_get_block does not find the block, since it will not be marked as
+mapped, and so grow_buffers is called to fill in the buffers for the
+associated page.  I believe the for (;;) loop is there primarily to
+retry in the case of memory pressure keeping grow_buffers from
+succeeding.  However, we also continue to loop for other cases, like the
+block lying beond the end of the disk.  So, the fix I came up with is to
+only loop when grow_buffers fails due to memory allocation issues
+(return value of 0).
+
+The attached patch was tested by myself, Torsten, and Rich, and was
+found to resolve the problem in call cases.
+
+Signed-off-by: Jeff Moyer <jmoyer@redhat.com>
+Reported-and-Tested-by: Torsten Hilbrich <torsten.hilbrich@secunet.com>
+Tested-by: Richard W.M. Jones <rjones@redhat.com>
+Reviewed-by: Josh Boyer <jwboyer@redhat.com>
+[ Jens is on vacation, taking this directly  - Linus ]
+--
+Stable Notes: this patch requires backport to 3.0, 3.2 and 3.3.
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ fs/buffer.c |   22 +++++++++++++---------
+ 1 file changed, 13 insertions(+), 9 deletions(-)
+
+diff --git a/fs/buffer.c b/fs/buffer.c
+index 838a9cf..c7062c8 100644
+--- a/fs/buffer.c
++++ b/fs/buffer.c
+@@ -1036,6 +1036,9 @@ grow_buffers(struct block_device *bdev, sector_t block, int size)
+ static struct buffer_head *
+ __getblk_slow(struct block_device *bdev, sector_t block, int size)
+ {
++	int ret;
++	struct buffer_head *bh;
++
+ 	/* Size must be multiple of hard sectorsize */
+ 	if (unlikely(size & (bdev_logical_block_size(bdev)-1) ||
+ 			(size < 512 || size > PAGE_SIZE))) {
+@@ -1048,20 +1051,21 @@ __getblk_slow(struct block_device *bdev, sector_t block, int size)
+ 		return NULL;
+ 	}
+ 
+-	for (;;) {
+-		struct buffer_head * bh;
+-		int ret;
++retry:
++	bh = __find_get_block(bdev, block, size);
++	if (bh)
++		return bh;
+ 
++	ret = grow_buffers(bdev, block, size);
++	if (ret == 0) {
++		free_more_memory();
++		goto retry;
++	} else if (ret > 0) {
+ 		bh = __find_get_block(bdev, block, size);
+ 		if (bh)
+ 			return bh;
+-
+-		ret = grow_buffers(bdev, block, size);
+-		if (ret < 0)
+-			return NULL;
+-		if (ret == 0)
+-			free_more_memory();
+ 	}
++	return NULL;
+ }
+ 
+ /*
+
+

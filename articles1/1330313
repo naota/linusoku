@@ -1,0 +1,119 @@
+Path: news.gmane.org!not-for-mail
+From: Devendra Naga <devendra.aaru@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] staging/sbe-2t3e3: error path cleanup in t3e3_init_channel
+Date: Thu, 19 Jul 2012 18:00:01 +0530
+Lines: 61
+Approved: news@gmane.org
+Message-ID: <1342701001-5424-1-git-send-email-devendra.aaru@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342701027 7609 80.91.229.3 (19 Jul 2012 12:30:27 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 12:30:27 +0000 (UTC)
+Cc: Devendra Naga <devendra.aaru@gmail.com>
+To: Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	Devendra Naga <devendra.aaru@gmail.com>,
+	devel@driverdev.osuosl.org, linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 14:30:26 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Srps8-00066C-Hw
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 14:30:25 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751683Ab2GSMaQ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 08:30:16 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:43421 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750832Ab2GSMaN (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 08:30:13 -0400
+Original-Received: by ghrr11 with SMTP id r11so2677866ghr.19
+        for <linux-kernel@vger.kernel.org>; Thu, 19 Jul 2012 05:30:13 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer;
+        bh=Uako/d7teO+T6mcjcj6TtQ31GLXkhmjjYKk64pT88Qg=;
+        b=ez9M5WMYgjh1WGHW927eMgf5vj3TNbFAaT62dFeOEKVEbBJbT5Iyy+Ie4KoDPv0YHA
+         kz7g2qfINrgWgCY67WlU+Wm7Kgxqf4yMlSUQ6cJJOadgyNo08/e0dCtVwyljOyKhnPt6
+         5ceg9XhV78gqrz999h7AQGQ609kRVs7MoL+WVOjMxZTM9Cr6bc8WRcy6+sguXCQqTaUy
+         5YeHM2+FCUSeRAR4W36qx7L0s1ldYnD+EgQFC/LgKtQmECixw1TAqvdOj5MwQN5mA5LZ
+         zLcGRiWlc0XgDRg/vL43VVEh7+ZzZUB7TwqIGeTH54ljimAfaQp4fCrZF15/exEV2mO1
+         cMjg==
+Original-Received: by 10.66.83.164 with SMTP id r4mr3536217pay.18.1342701012939;
+        Thu, 19 Jul 2012 05:30:12 -0700 (PDT)
+Original-Received: from localhost.localdomain ([122.172.28.37])
+        by mx.google.com with ESMTPS id oy8sm1713379pbc.52.2012.07.19.05.30.10
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 19 Jul 2012 05:30:12 -0700 (PDT)
+X-Mailer: git-send-email 1.7.0.4
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330313
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330313>
+
+    a) if alloc_hdlcdev fails, we are going into the free_regions,
+and returning out the err (which is 0 by the prev call),
+       return -ENOMEM if this function fail.
+
+    b) setup_device also can fail, as it calls around the register_hdlc_dev which
+is again a macro of the register_netdev.
+
+       take the error from the setup_device and return it out in error condition
+
+    c) request_irq when fails, we are freeing requested mem regions and disabling
+the pci device(?) and returning err which is agian 0 here.
+
+      take the error from request_irq and err path will take care of returning it.
+
+as if we return 0 , at the init function, t3e3_init_card, we have a success case
+and if there are two channels we call this function again, having the result of
+it completely unknown.
+
+This result in having the probe return 0, unloading the driver may (not) cause
+ambigous result.
+
+Signed-off-by: Devendra Naga <devendra.aaru@gmail.com>
+---
+ drivers/staging/sbe-2t3e3/module.c |    7 +++++--
+ 1 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/staging/sbe-2t3e3/module.c b/drivers/staging/sbe-2t3e3/module.c
+index cd778b3..1a1a9be 100644
+--- a/drivers/staging/sbe-2t3e3/module.c
++++ b/drivers/staging/sbe-2t3e3/module.c
+@@ -66,6 +66,7 @@ static int __devinit t3e3_init_channel(struct channel *channel, struct pci_dev *
+ 
+ 	dev = alloc_hdlcdev(channel);
+ 	if (!dev) {
++		err = -ENOMEM;
+ 		printk(KERN_ERR "SBE 2T3E3" ": Out of memory\n");
+ 		goto free_regions;
+ 	}
+@@ -82,7 +83,8 @@ static int __devinit t3e3_init_channel(struct channel *channel, struct pci_dev *
+ 	else
+ 		channel->h.slot = 0;
+ 
+-	if (setup_device(dev, channel))
++	err = setup_device(dev, channel);
++	if (err)
+ 		goto free_regions;
+ 
+ 	pci_read_config_dword(channel->pdev, 0x40, &val); /* mask sleep mode */
+@@ -92,7 +94,8 @@ static int __devinit t3e3_init_channel(struct channel *channel, struct pci_dev *
+ 	pci_read_config_dword(channel->pdev, PCI_COMMAND, &channel->h.command);
+ 	t3e3_init(channel);
+ 
+-	if (request_irq(dev->irq, &t3e3_intr, IRQF_SHARED, dev->name, dev)) {
++	err = request_irq(dev->irq, &t3e3_intr, IRQF_SHARED, dev->name, dev);
++	if (err) {
+ 		printk(KERN_WARNING "%s: could not get irq: %d\n", dev->name, dev->irq);
+ 		goto free_regions;
+ 	}
+-- 
+1.7.0.4
+

@@ -1,0 +1,147 @@
+Path: news.gmane.org!not-for-mail
+From: "Srivatsa S. Bhat" <srivatsa.bhat@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH v2] x86, mm: only wait for flushes from online cpus
+Date: Thu, 19 Jul 2012 11:59:59 +0530
+Lines: 78
+Approved: news@gmane.org
+Message-ID: <5007A967.1040402@linux.vnet.ibm.com>
+References: <1340402778-28939-1-git-send-email-msb@chromium.org> <500727F1.4000609@linux.vnet.ibm.com> <20120718221301.GG3465@google.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342679518 32248 80.91.229.3 (19 Jul 2012 06:31:58 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 06:31:58 +0000 (UTC)
+Cc: Ingo Molnar <mingo@redhat.com>, linux-kernel@vger.kernel.org,
+	Shaohua Li <shaohua.li@intel.com>,
+	Yinghai Lu <yinghai@kernel.org>,
+	Thomas Gleixner <tglx@linutronix.de>,
+	"H. Peter Anvin" <hpa@zytor.com>, x86@kernel.org,
+	Tejun Heo <tj@kernel.org>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Stephen Rothwell <sfr@canb.auug.org.au>,
+	Christoph Lameter <cl@gentwo.org>,
+	Olof Johansson <olofj@chromium.org>
+To: Mandeep Singh Baines <msb@chromium.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 08:31:55 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SrkH7-0000g2-NC
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 08:31:50 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752647Ab2GSGbq (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 02:31:46 -0400
+Original-Received: from e28smtp03.in.ibm.com ([122.248.162.3]:60829 "EHLO
+	e28smtp03.in.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752410Ab2GSGbl (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 02:31:41 -0400
+Original-Received: from /spool/local
+	by e28smtp03.in.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <srivatsa.bhat@linux.vnet.ibm.com>;
+	Thu, 19 Jul 2012 12:01:39 +0530
+Original-Received: from d28relay03.in.ibm.com (9.184.220.60)
+	by e28smtp03.in.ibm.com (192.168.1.133) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Thu, 19 Jul 2012 12:01:06 +0530
+Original-Received: from d28av02.in.ibm.com (d28av02.in.ibm.com [9.184.220.64])
+	by d28relay03.in.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6J6V5ZM65994884
+	for <linux-kernel@vger.kernel.org>; Thu, 19 Jul 2012 12:01:06 +0530
+Original-Received: from d28av02.in.ibm.com (loopback [127.0.0.1])
+	by d28av02.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6JC1ih3030171
+	for <linux-kernel@vger.kernel.org>; Thu, 19 Jul 2012 22:01:46 +1000
+Original-Received: from [9.124.35.244] (srivatsabhat.in.ibm.com [9.124.35.244])
+	by d28av02.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6JC1hhV030107;
+	Thu, 19 Jul 2012 22:01:44 +1000
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120605 Thunderbird/13.0
+In-Reply-To: <20120718221301.GG3465@google.com>
+x-cbid: 12071906-3864-0000-0000-000003D4E5BF
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330193
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330193>
+
+On 07/19/2012 03:43 AM, Mandeep Singh Baines wrote:
+> Srivatsa S. Bhat (srivatsa.bhat@linux.vnet.ibm.com) wrote:
+>> On 06/23/2012 03:36 AM, Mandeep Singh Baines wrote:
+>>> A cpu in the mm_cpumask could go offline before we send the invalidate
+>>> IPI causing us to wait forever. Avoid this by only waiting for online
+>>> cpus.
+>>>
+[...]
+>> This function is always called with preempt_disabled() right?
+>> In that case, _while_ this function is running, a CPU cannot go offline
+>> because of stop_machine(). (I understand that it might go offline in between
+>> calculating that cpumask and calling preempt_disable() - which is the race
+>> you are trying to handle).
+>>
+> 
+> Ah. Good point. A cpu cannot be remove from the cpu_online_mask while
+> preemption is disabled because stop_machine() can't run until
+> preemption is enabled.
+> 
+> ./kernel/cpu.c: err = __stop_machine(take_cpu_down, &tcd_param, cpumask_of(cpu));
+> 
+>> So, why not take the offline cpus out of the way even before sending that IPI?
+>> That way, we need not modify the while loop below.
+>>
+> 
+> Acked-off-by: Mandeep Singh Baines <msb@chromium.org>
+> 
+> Do you mind re-sending you're patch with a proper sign-off.
+>
+
+Sure, will do. I'll post it in a separate thread.
+
+Thanks!
+
+Regards,
+Srivatsa S. Bhat
+
+> 
+>>> -		while (!cpumask_empty(to_cpumask(f->flush_cpumask)))
+>>> +		/* Only wait for online cpus */
+>>> +		do {
+>>> +			cpumask_and(to_cpumask(tmp_cpumask),
+>>> +				    to_cpumask(f->flush_cpumask),
+>>> +				    cpu_online_mask);
+>>>  			cpu_relax();
+>>> +		} while (!cpumask_empty(to_cpumask(tmp_cpumask)));
+>>>  	}
+>>>
+>>>  	f->flush_mm = NULL;
+>>>
+>>
+>> That is, how about something like this:
+>>
+>> diff --git a/arch/x86/mm/tlb.c b/arch/x86/mm/tlb.c
+>> index 5e57e11..9d387a9 100644
+>> --- a/arch/x86/mm/tlb.c
+>> +++ b/arch/x86/mm/tlb.c
+>> @@ -186,7 +186,11 @@ static void flush_tlb_others_ipi(const struct cpumask *cpumask,
+>>  
+>>         f->flush_mm = mm;
+>>         f->flush_va = va;
+>> -       if (cpumask_andnot(to_cpumask(f->flush_cpumask), cpumask, cpumask_of(smp_processor_id()))) {
+>> +
+>> +       cpumask_and(to_cpumask(f->flush_cpumask), cpumask, cpu_online_mask);
+>> +       cpumask_clear_cpu(smp_processor_id(), to_cpumask(f->flush_cpumask));
+>> +
+>> +       if (!cpumask_empty(to_cpumask(f->flush_cpumask))) {
+>>                 /*
+>>                  * We have to send the IPI only to
+>>                  * CPUs affected.
+>>
+>>
+>> Regards,
+>> Srivatsa S. Bhat
+>> IBM Linux Technology Center
+>>
+> 
+

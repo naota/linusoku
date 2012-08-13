@@ -1,0 +1,449 @@
+Path: news.gmane.org!not-for-mail
+From: Ming Lei <ming.lei@canonical.com>
+Newsgroups: gmane.linux.kernel
+Subject: [RFC PATCH v1 06/15] firmware loader: always let firmware_buf own the pages buffer
+Date: Sat,  4 Aug 2012 12:01:21 +0800
+Lines: 398
+Approved: news@gmane.org
+Message-ID: <1344052890-31935-7-git-send-email-ming.lei@canonical.com>
+References: <1344052890-31935-1-git-send-email-ming.lei@canonical.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344052956 9906 80.91.229.3 (4 Aug 2012 04:02:36 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 4 Aug 2012 04:02:36 +0000 (UTC)
+Cc: "Rafael J. Wysocki" <rjw@sisk.pl>,
+	Borislav Petkov <borislav.petkov@amd.com>,
+	linux-kernel@vger.kernel.org, Ming Lei <ming.lei@canonical.com>
+To: Linus Torvalds <torvalds@linux-foundation.org>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Aug 04 06:02:35 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxVZS-0000a4-QF
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 04 Aug 2012 06:02:35 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753857Ab2HDEC3 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 4 Aug 2012 00:02:29 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:45263 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751136Ab2HDECZ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 4 Aug 2012 00:02:25 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so2344343pbb.19
+        for <linux-kernel@vger.kernel.org>; Fri, 03 Aug 2012 21:02:25 -0700 (PDT)
+Original-Received: by 10.68.212.138 with SMTP id nk10mr2263755pbc.93.1344052945536;
+        Fri, 03 Aug 2012 21:02:25 -0700 (PDT)
+Original-Received: from localhost ([183.37.208.115])
+        by mx.google.com with ESMTPS id se9sm4195630pbc.25.2012.08.03.21.02.21
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 03 Aug 2012 21:02:24 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1344052890-31935-1-git-send-email-ming.lei@canonical.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337585
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337585>
+
+This patch always let firmware_buf own the pages buffer allocated
+inside firmware_data_write, and add all instances of firmware_buf
+into the firmware cache global list. Also introduce one private field
+in 'struct firmware', so release_firmware will see the instance of
+firmware_buf associated with the current firmware instance, then just
+'free' the instance of firmware_buf.
+
+The firmware_buf instance represents one pages buffer for one
+firmware image, so lots of firmware loading requests can share
+the same firmware_buf instance if they request the same firmware
+image file.
+
+This patch will make implementation of the following cache_firmware/
+uncache_firmware very easy and simple.
+
+In fact, the patch improves request_formware/release_firmware:
+
+        - only request userspace to write firmware image once if
+	several devices share one same firmware image and its drivers
+	call request_firmware concurrently.
+
+Signed-off-by: Ming Lei <ming.lei@canonical.com>
+---
+ drivers/base/firmware_class.c |  240 +++++++++++++++++++++++++++++------------
+ include/linux/firmware.h      |    3 +
+ 2 files changed, 174 insertions(+), 69 deletions(-)
+
+diff --git a/drivers/base/firmware_class.c b/drivers/base/firmware_class.c
+index 5f2076e..848ad97 100644
+--- a/drivers/base/firmware_class.c
++++ b/drivers/base/firmware_class.c
+@@ -21,6 +21,7 @@
+ #include <linux/firmware.h>
+ #include <linux/slab.h>
+ #include <linux/sched.h>
++#include <linux/list.h>
+ 
+ MODULE_AUTHOR("Manuel Estrada Sainz");
+ MODULE_DESCRIPTION("Multi purpose firmware loading support");
+@@ -85,13 +86,17 @@ static inline long firmware_loading_timeout(void)
+ 	return loading_timeout > 0 ? loading_timeout * HZ : MAX_SCHEDULE_TIMEOUT;
+ }
+ 
+-/* fw_lock could be moved to 'struct firmware_priv' but since it is just
+- * guarding for corner cases a global lock should be OK */
+-static DEFINE_MUTEX(fw_lock);
++struct firmware_cache {
++	/* firmware_buf instance will be added into the below list */
++	spinlock_t lock;
++	struct list_head head;
++};
+ 
+ struct firmware_buf {
++	struct kref ref;
++	struct list_head list;
+ 	struct completion completion;
+-	struct firmware *fw;
++	struct firmware_cache *fwc;
+ 	unsigned long status;
+ 	void *data;
+ 	size_t size;
+@@ -106,8 +111,94 @@ struct firmware_priv {
+ 	bool nowait;
+ 	struct device dev;
+ 	struct firmware_buf *buf;
++	struct firmware *fw;
+ };
+ 
++#define to_fwbuf(d) container_of(d, struct firmware_buf, ref)
++
++/* fw_lock could be moved to 'struct firmware_priv' but since it is just
++ * guarding for corner cases a global lock should be OK */
++static DEFINE_MUTEX(fw_lock);
++
++static struct firmware_cache fw_cache;
++
++static struct firmware_buf *__allocate_fw_buf(const char *fw_name,
++					      struct firmware_cache *fwc)
++{
++	struct firmware_buf *buf;
++
++	buf = kzalloc(sizeof(*buf) + strlen(fw_name) + 1 , GFP_ATOMIC);
++
++	if (!buf)
++		return buf;
++
++	kref_init(&buf->ref);
++	strcpy(buf->fw_id, fw_name);
++	buf->fwc = fwc;
++	init_completion(&buf->completion);
++
++	pr_debug("%s: fw-%s buf=%p\n", __func__, fw_name, buf);
++
++	return buf;
++}
++
++static int fw_lookup_and_allocate_buf(const char *fw_name,
++				      struct firmware_cache *fwc,
++				      struct firmware_buf **buf)
++{
++	struct firmware_buf *tmp;
++
++	spin_lock(&fwc->lock);
++	list_for_each_entry(tmp, &fwc->head, list)
++		if (!strcmp(tmp->fw_id, fw_name)) {
++			kref_get(&tmp->ref);
++			spin_unlock(&fwc->lock);
++			*buf = tmp;
++			return 1;
++		}
++
++	tmp = __allocate_fw_buf(fw_name, fwc);
++	if (tmp)
++		list_add(&tmp->list, &fwc->head);
++	spin_unlock(&fwc->lock);
++
++	*buf = tmp;
++
++	return tmp ? 0 : -ENOMEM;
++}
++
++static void __fw_free_buf(struct kref *ref)
++{
++	struct firmware_buf *buf = to_fwbuf(ref);
++	struct firmware_cache *fwc = buf->fwc;
++	int i;
++
++	pr_debug("%s: fw-%s buf=%p data=%p size=%u\n",
++		 __func__, buf->fw_id, buf, buf->data,
++		 (unsigned int)buf->size);
++
++	spin_lock(&fwc->lock);
++	list_del(&buf->list);
++	spin_unlock(&fwc->lock);
++
++	vunmap(buf->data);
++	for (i = 0; i < buf->nr_pages; i++)
++		__free_page(buf->pages[i]);
++	kfree(buf->pages);
++	kfree(buf);
++}
++
++static void fw_free_buf(struct firmware_buf *buf)
++{
++	kref_put(&buf->ref, __fw_free_buf);
++}
++
++static void __init fw_cache_init(void)
++{
++	spin_lock_init(&fw_cache.lock);
++	INIT_LIST_HEAD(&fw_cache.head);
++}
++
+ static struct firmware_priv *to_firmware_priv(struct device *dev)
+ {
+ 	return container_of(dev, struct firmware_priv, dev);
+@@ -118,7 +209,7 @@ static void fw_load_abort(struct firmware_priv *fw_priv)
+ 	struct firmware_buf *buf = fw_priv->buf;
+ 
+ 	set_bit(FW_STATUS_ABORT, &buf->status);
+-	complete(&buf->completion);
++	complete_all(&buf->completion);
+ }
+ 
+ static ssize_t firmware_timeout_show(struct class *class,
+@@ -158,18 +249,6 @@ static struct class_attribute firmware_class_attrs[] = {
+ 	__ATTR_NULL
+ };
+ 
+-static void fw_free_buf(struct firmware_buf *buf)
+-{
+-	int i;
+-
+-	if (!buf)
+-		return;
+-
+-	for (i = 0; i < buf->nr_pages; i++)
+-		__free_page(buf->pages[i]);
+-	kfree(buf->pages);
+-}
+-
+ static void fw_dev_release(struct device *dev)
+ {
+ 	struct firmware_priv *fw_priv = to_firmware_priv(dev);
+@@ -212,13 +291,8 @@ static ssize_t firmware_loading_show(struct device *dev,
+ /* firmware holds the ownership of pages */
+ static void firmware_free_data(const struct firmware *fw)
+ {
+-	int i;
+-	vunmap(fw->data);
+-	if (fw->pages) {
+-		for (i = 0; i < PFN_UP(fw->size); i++)
+-			__free_page(fw->pages[i]);
+-		kfree(fw->pages);
+-	}
++	WARN_ON(!fw->priv);
++	fw_free_buf(fw->priv);
+ }
+ 
+ /* Some architectures don't have PAGE_KERNEL_RO */
+@@ -269,7 +343,7 @@ static ssize_t firmware_loading_store(struct device *dev,
+ 		if (test_bit(FW_STATUS_LOADING, &fw_buf->status)) {
+ 			set_bit(FW_STATUS_DONE, &fw_buf->status);
+ 			clear_bit(FW_STATUS_LOADING, &fw_buf->status);
+-			complete(&fw_buf->completion);
++			complete_all(&fw_buf->completion);
+ 			break;
+ 		}
+ 		/* fallthrough */
+@@ -448,7 +522,6 @@ fw_create_instance(struct firmware *firmware, const char *fw_name,
+ 		   struct device *device, bool uevent, bool nowait)
+ {
+ 	struct firmware_priv *fw_priv;
+-	struct firmware_buf *buf;
+ 	struct device *f_dev;
+ 
+ 	fw_priv = kzalloc(sizeof(*fw_priv), GFP_KERNEL);
+@@ -458,21 +531,10 @@ fw_create_instance(struct firmware *firmware, const char *fw_name,
+ 		goto exit;
+ 	}
+ 
+-	buf = kzalloc(sizeof(*buf) + strlen(fw_name) + 1, GFP_KERNEL);
+-	if (!buf) {
+-		dev_err(device, "%s: kmalloc failed\n", __func__);
+-		kfree(fw_priv);
+-		fw_priv = ERR_PTR(-ENOMEM);
+-		goto exit;
+-	}
+-
+-	buf->fw = firmware;
+-	fw_priv->buf = buf;
+ 	fw_priv->nowait = nowait;
++	fw_priv->fw = firmware;
+ 	setup_timer(&fw_priv->timeout,
+ 		    firmware_class_timeout, (u_long) fw_priv);
+-	strcpy(buf->fw_id, fw_name);
+-	init_completion(&buf->completion);
+ 
+ 	f_dev = &fw_priv->dev;
+ 
+@@ -484,12 +546,42 @@ exit:
+ 	return fw_priv;
+ }
+ 
++/* one pages buffer is mapped/unmapped only once */
++static int fw_map_pages_buf(struct firmware_buf *buf)
++{
++	buf->data = vmap(buf->pages, buf->nr_pages, 0, PAGE_KERNEL_RO);
++	if (!buf->data)
++		return -ENOMEM;
++	return 0;
++}
++
++/* store the pages buffer info firmware from buf */
++static void fw_set_page_data(struct firmware_buf *buf, struct firmware *fw)
++{
++	fw->priv = buf;
++	fw->pages = buf->pages;
++	fw->size = buf->size;
++	fw->data = buf->data;
++
++	pr_debug("%s: fw-%s buf=%p data=%p size=%u\n",
++		 __func__, buf->fw_id, buf, buf->data,
++		 (unsigned int)buf->size);
++}
++
++static void _request_firmware_cleanup(const struct firmware **firmware_p)
++{
++	release_firmware(*firmware_p);
++	*firmware_p = NULL;
++}
++
+ static struct firmware_priv *
+ _request_firmware_prepare(const struct firmware **firmware_p, const char *name,
+ 			  struct device *device, bool uevent, bool nowait)
+ {
+ 	struct firmware *firmware;
+-	struct firmware_priv *fw_priv;
++	struct firmware_priv *fw_priv = NULL;
++	struct firmware_buf *buf;
++	int ret;
+ 
+ 	if (!firmware_p)
+ 		return ERR_PTR(-EINVAL);
+@@ -506,35 +598,45 @@ _request_firmware_prepare(const struct firmware **firmware_p, const char *name,
+ 		return NULL;
+ 	}
+ 
+-	fw_priv = fw_create_instance(firmware, name, device, uevent, nowait);
+-	if (IS_ERR(fw_priv)) {
+-		release_firmware(firmware);
++	ret = fw_lookup_and_allocate_buf(name, &fw_cache, &buf);
++	if (!ret)
++		fw_priv = fw_create_instance(firmware, name, device,
++				uevent, nowait);
++
++	if (IS_ERR(fw_priv) || ret < 0) {
++		kfree(firmware);
+ 		*firmware_p = NULL;
++		return ERR_PTR(-ENOMEM);
++	} else if (fw_priv) {
++		fw_priv->buf = buf;
++
++		/*
++		 * bind with 'buf' now to avoid warning in failure path
++		 * of requesting firmware.
++		 */
++		firmware->priv = buf;
++		return fw_priv;
+ 	}
+-	return fw_priv;
+-}
+-
+-static void _request_firmware_cleanup(const struct firmware **firmware_p)
+-{
+-	release_firmware(*firmware_p);
+-	*firmware_p = NULL;
+-}
+ 
+-/* transfer the ownership of pages to firmware */
+-static int fw_set_page_data(struct firmware_buf *buf)
+-{
+-	struct firmware *fw = buf->fw;
+-
+-	buf->data = vmap(buf->pages, buf->nr_pages, 0, PAGE_KERNEL_RO);
+-	if (!buf->data)
+-		return -ENOMEM;
+-
+-	fw->data = buf->data;
+-	fw->pages = buf->pages;
+-	fw->size = buf->size;
+-	WARN_ON(PFN_UP(fw->size) != buf->nr_pages);
++	/* share the cached buf, which is inprogessing or completed */
++ check_status:
++	mutex_lock(&fw_lock);
++	if (test_bit(FW_STATUS_ABORT, &buf->status)) {
++		fw_priv = ERR_PTR(-ENOENT);
++		_request_firmware_cleanup(firmware_p);
++		goto exit;
++	} else if (test_bit(FW_STATUS_DONE, &buf->status)) {
++		fw_priv = NULL;
++		fw_set_page_data(buf, firmware);
++		goto exit;
++	}
++	mutex_unlock(&fw_lock);
++	wait_for_completion(&buf->completion);
++	goto check_status;
+ 
+-	return 0;
++exit:
++	mutex_unlock(&fw_lock);
++	return fw_priv;
+ }
+ 
+ static int _request_firmware_load(struct firmware_priv *fw_priv, bool uevent,
+@@ -585,13 +687,12 @@ static int _request_firmware_load(struct firmware_priv *fw_priv, bool uevent,
+ 	if (!buf->size || test_bit(FW_STATUS_ABORT, &buf->status))
+ 		retval = -ENOENT;
+ 
+-	/* transfer pages ownership at the last minute */
+ 	if (!retval)
+-		retval = fw_set_page_data(buf);
+-	if (retval)
+-		fw_free_buf(buf); /* free untransfered pages buffer */
++		retval = fw_map_pages_buf(buf);
++
++	/* pass the pages buffer to driver at the last minute */
++	fw_set_page_data(buf, fw_priv->fw);
+ 
+-	kfree(buf);
+ 	fw_priv->buf = NULL;
+ 	mutex_unlock(&fw_lock);
+ 
+@@ -753,6 +854,7 @@ request_firmware_nowait(
+ 
+ static int __init firmware_class_init(void)
+ {
++	fw_cache_init();
+ 	return class_register(&firmware_class);
+ }
+ 
+diff --git a/include/linux/firmware.h b/include/linux/firmware.h
+index 1e7c011..e85b771 100644
+--- a/include/linux/firmware.h
++++ b/include/linux/firmware.h
+@@ -12,6 +12,9 @@ struct firmware {
+ 	size_t size;
+ 	const u8 *data;
+ 	struct page **pages;
++
++	/* firmware loader private fields */
++	void *priv;
+ };
+ 
+ struct module;
+-- 
+1.7.9.5
+

@@ -1,0 +1,96 @@
+Path: news.gmane.org!not-for-mail
+From: Ian Abbott <abbotti@mev.co.uk>
+Newsgroups: gmane.linux.kernel
+Subject: Re: Need to know the size of data send from Kernel to USer Ap
+Date: Tue, 24 Jul 2012 10:06:31 +0100
+Lines: 42
+Approved: news@gmane.org
+Message-ID: <500E6597.2050402@mev.co.uk>
+References: <500E5808.1070607@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="ISO-8859-1"; format=flowed
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343120820 27738 80.91.229.3 (24 Jul 2012 09:07:00 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 09:07:00 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org
+To: bforce1729 <bforce1729@gmail.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 11:06:59 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Stb4q-0000U0-VI
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 11:06:49 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752433Ab2GXJGi (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 05:06:38 -0400
+Original-Received: from mail.mev.co.uk ([62.49.15.74]:50413 "EHLO mail.mev.co.uk"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751026Ab2GXJGh (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 05:06:37 -0400
+Original-Received: from localhost (localhost [127.0.0.1])
+	by mail.mev.co.uk (Postfix) with ESMTP id 95A9D68032;
+	Tue, 24 Jul 2012 10:06:35 +0100 (BST)
+X-Virus-Scanned: Debian amavisd-new at mail.mev.co.uk
+Original-Received: from mail.mev.co.uk ([127.0.0.1])
+	by localhost (mantis.mev.local [127.0.0.1]) (amavisd-new, port 10024)
+	with LMTP id WDl_0wvie4ix; Tue, 24 Jul 2012 10:06:33 +0100 (BST)
+Original-Received: from remote.mev.co.uk (mev2008.mev.local [10.0.0.1])
+	by mail.mev.co.uk (Postfix) with ESMTPS id 68B2D5A072;
+	Tue, 24 Jul 2012 10:06:33 +0100 (BST)
+Original-Received: from [10.0.0.210] (10.0.0.254) by remote.mev.co.uk (10.0.0.1) with
+ Microsoft SMTP Server (TLS) id 8.1.436.0; Tue, 24 Jul 2012 10:06:32 +0100
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120616 Thunderbird/13.0
+In-Reply-To: <500E5808.1070607@gmail.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332204
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332204>
+
+On 2012-07-24 09:08, bforce1729 wrote:
+> Hi,
+>
+> I am new to kernel programming so can anyone point me to the right
+> forum/reply for the question below.
+>
+> I would like to implement a character device and using a node of type
+> character  read and write data. However I am not sure of the length of
+> data from kernel which a user app will receive, so I would like to code
+> safely. If the data exceeds the application gets killed.
+> Any idea or API to perform the task of knowing the data length when
+> passing data to and fro from kernel to user level would be appreciated.
+>
+> Kernel code:
+>
+>                  copy_to_user(buff, kernel_msg, strlen(kernel_msg));
+>
+> User App:
+>                  fd=open("./my_device",O_RDONLY);
+> ret=read(fd,buff,strlen(buf));                        //How can I know
+> the size of buff, which would be sent/filled from kernel???
+
+I doubt you really want strlen(buf) there.  You probably want 
+sizeof(buf) or something similar.  You might need to read up on what 
+strlen() actually does.
+
+Anyway, the driver's "read" file operation knows the maximum amount the 
+user is asking for as it is specified in the third parameter.  The 
+function should return the (non-negative) amount it is actually passing 
+back to the user (which will be returned by the read() function in 
+userspace), or a negative error value (which will cause read() to return 
+-1 and set errno appropriately).
+
+Also, copy_to_user() might not succeed if the user passed a bad pointer 
+or bad length.  It returns 0 on success and the length of the uncopied 
+part on failure.  So if copy_to_user() returns a non-zero value you 
+should either return -EFAULT or work out the partial amount successfully 
+read (as long as it is greater than zero) and return that.
+
+-- 
+-=( Ian Abbott @ MEV Ltd.    E-mail: <abbotti@mev.co.uk>        )=-
+-=( Tel: +44 (0)161 477 1898   FAX: +44 (0)161 718 3587         )=-

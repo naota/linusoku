@@ -1,0 +1,122 @@
+Path: news.gmane.org!not-for-mail
+From: Anton Vorontsov <anton.vorontsov@linaro.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel,gmane.linux.kernel.debugging.kgdb.bugs
+Subject: [PATCH 03/11] kdb: Implement disable_nmi command
+Date: Mon, 30 Jul 2012 04:58:12 -0700
+Lines: 54
+Approved: news@gmane.org
+Message-ID: <1343649500-18491-3-git-send-email-anton.vorontsov@linaro.org>
+References: <20120730115719.GA5742@lizard>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343649840 5724 80.91.229.3 (30 Jul 2012 12:04:00 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 12:04:00 +0000 (UTC)
+Cc: =?UTF-8?q?Arve=20Hj=C3=B8nnev=C3=A5g?= <arve@android.com>,
+	Colin Cross <ccross@android.com>,
+	John Stultz <john.stultz@linaro.org>,
+	linux-kernel@vger.kernel.org, linux-arm-kernel@lists.infradead.org,
+	linaro-kernel@lists.linaro.org, patches@linaro.org,
+	kernel-team@android.com, kgdb-bugreport@lists.sourceforge.net
+To: Russell King <linux@arm.linux.org.uk>,
+	Jason Wessel <jason.wessel@windriver.com>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	Alan Cox <alan@linux.intel.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 14:03:56 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvohW-0006IX-SA
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 14:03:55 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754019Ab2G3MDr (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 08:03:47 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:57187 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753630Ab2G3MBp (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 08:01:45 -0400
+Original-Received: by ghrr11 with SMTP id r11so4690719ghr.19
+        for <linux-kernel@vger.kernel.org>; Mon, 30 Jul 2012 05:01:44 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :x-gm-message-state;
+        bh=9M8UIiuyucOjBhpEU9cK6Xz0uFSztS3cudFZhhFPyOg=;
+        b=UeP9s55WFBHpI5CASVUrXYdYQWFN6XMUnft68708lNed5pj8CSHf2ZvrH15LNiVN/+
+         Xi52+68YKEgGstrva48ZhkexVSn5G8RdEHInU3m3r6Z9RKxPADzU0Y/y+Ailb+WjG+0K
+         xi8k4TyACQlj9OaeURBvx3IHcsCo4tJYDGKoV2ycFdCxZu9RDvFKLXG1vMhtDZHBCntE
+         24Y67xLbgNzl4eexzcyj67EQTgZWDnvla0bnNBUsP9SHtfs+pQL1nZiKrTfUcCQRrgrw
+         YTbziwfTRnObr9SiqPsyujsXXjruSW2h0FZ6Tf1v7OtvXTkywm6WQr+DB7lwfeZWDqh5
+         TqIA==
+Original-Received: by 10.66.75.98 with SMTP id b2mr24056313paw.60.1343649704475;
+        Mon, 30 Jul 2012 05:01:44 -0700 (PDT)
+Original-Received: from localhost (c-71-204-165-222.hsd1.ca.comcast.net. [71.204.165.222])
+        by mx.google.com with ESMTPS id tq4sm7820441pbc.11.2012.07.30.05.01.43
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 30 Jul 2012 05:01:44 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <20120730115719.GA5742@lizard>
+X-Gm-Message-State: ALoCoQkDaXov4wfRWmh3m1WxIB1Y8Qe8Ntdp//ix2eTNiwTqHW9DB3Rp7Jm3Gc9VNBDyCp671DUY
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335024 gmane.linux.ports.arm.kernel:179358 gmane.linux.kernel.debugging.kgdb.bugs:5724
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335024>
+
+This command disables NMI-entry. If NMI source was previously shared with
+a serial console ("debug port"), this effectively releases the port from
+KDB exclusive use, and makes the console available for normal use.
+
+Of course, NMI can be reenabled, enable_nmi modparam is used for that:
+
+	echo 1 > /sys/module/kdb/parameters/enable_nmi
+
+Signed-off-by: Anton Vorontsov <anton.vorontsov@linaro.org>
+---
+ kernel/debug/kdb/kdb_main.c |   20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/kernel/debug/kdb/kdb_main.c b/kernel/debug/kdb/kdb_main.c
+index 3ee92a1..1e9f20e 100644
+--- a/kernel/debug/kdb/kdb_main.c
++++ b/kernel/debug/kdb/kdb_main.c
+@@ -2131,6 +2131,24 @@ static int kdb_dmesg(int argc, const char **argv)
+ 	return 0;
+ }
+ #endif /* CONFIG_PRINTK */
++
++static int kdb_disable_nmi(int argc, const char *argv[])
++{
++	kgdb_arch_enable_nmi(0);
++	return 0;
++}
++
++static int kdb_param_enable_nmi(const char *val, const struct kernel_param *kp)
++{
++	kgdb_arch_enable_nmi(1);
++	return 0;
++}
++
++static const struct kernel_param_ops kdb_param_ops_enable_nmi = {
++	.set = kdb_param_enable_nmi,
++};
++module_param_cb(enable_nmi, &kdb_param_ops_enable_nmi, NULL, 0600);
++
+ /*
+  * kdb_cpu - This function implements the 'cpu' command.
+  *	cpu	[<cpunum>]
+@@ -2873,6 +2891,8 @@ static void __init kdb_inittab(void)
+ 	kdb_register_flags("dmesg", kdb_dmesg, "[lines]",
+ 	  "Display syslog buffer", 0, KDB_SAFE);
+ #endif
++	kdb_register_flags("disable_nmi", kdb_disable_nmi, "",
++	  "Disable NMI entry to KDB", 0, KDB_SAFE);
+ 	kdb_register_flags("defcmd", kdb_defcmd, "name \"usage\" \"help\"",
+ 	  "Define a set of commands, down to endefcmd", 0, KDB_SAFE);
+ 	kdb_register_flags("kill", kdb_kill, "<-signal> <pid>",
+-- 
+1.7.10.4
+

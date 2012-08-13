@@ -1,0 +1,131 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 33/40] vmscan: activate executable pages after first usage
+Date: Thu, 26 Jul 2012 14:29:51 -0700
+Lines: 58
+Approved: news@gmane.org
+Message-ID: <20120726211414.141121812@linuxfoundation.org>
+References: <20120726211424.GA7709@kroah.com>
+ <20120726211411.164006056@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343338375 10813 80.91.229.3 (26 Jul 2012 21:32:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 21:32:55 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	Konstantin Khlebnikov <khlebnikov@openvz.org>,
+	Pekka Enberg <penberg@kernel.org>,
+	Minchan Kim <minchan.kim@gmail.com>,
+	KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>,
+	Wu Fengguang <fengguang.wu@intel.com>,
+	Johannes Weiner <hannes@cmpxchg.org>,
+	Nick Piggin <npiggin@kernel.dk>, Mel Gorman <mel@csn.ul.ie>,
+	Shaohua Li <shaohua.li@intel.com>,
+	Rik van Riel <riel@redhat.com>, Mel Gorman <mgorman@suse.de>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 23:32:48 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuVfq-0006sC-1V
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 23:32:46 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753644Ab2GZVcH (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 17:32:07 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:40055 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753711Ab2GZVcA (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 17:32:00 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so3821129pbb.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 14:31:59 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=fFxQvv/uetr/VGaT/QHooI5tNzhEZlkTHqGJE2Zzv3E=;
+        b=WFIzgPwgdK6b1KyTb/HJgNQlcjdSISQ71ZzrvFfEk26cR88QiXAPCf3cwMtas6Oo35
+         TrKz57nFtYTlUg/41CT/CYdXnELK8g5cadj16NDBYwx0jC9IqtjNbn5F0LwPVWGnaWEF
+         87nDyyPPTs6qPy3UKNtkvlXtm1c50HDMAslHWVOhP8BU1j+Uv1+dVHpBfiuZYIcwYnEn
+         T30P/5bNYDX97ChIh/qMSldyK31In1idUScCTRXIcubs5b4isA91rW42f2EArobQi/lo
+         Mo64MX6dAhhIuR872XcMwiYE8Un7rwou4V7alft5AtfLCV7AQBDFp5eqLrZ3yGPEXCyN
+         nppQ==
+Original-Received: by 10.68.219.166 with SMTP id pp6mr8467474pbc.35.1343338319758;
+        Thu, 26 Jul 2012 14:31:59 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id pi7sm430834pbb.56.2012.07.26.14.31.56
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 14:31:58 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120726211411.164006056@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQmkSBCfELE7dbngHeh6urPxYoAunOz8nBDTTqduVpyOJqZEpIenNy7hLsMWT8SjjQhNMFMm
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333943 gmane.linux.kernel.stable:28881
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333943>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Konstantin Khlebnikov <khlebnikov@openvz.org>
+
+commit c909e99364c8b6ca07864d752950b6b4ecf6bef4 upstream.
+
+Stable note: Not tracked in Bugzilla. There were reports of shared
+	mapped pages being unfairly reclaimed in comparison to older kernels.
+	This is being addressed over time.
+
+Logic added in commit 8cab4754d24a0 ("vmscan: make mapped executable pages
+the first class citizen") was noticeably weakened in commit
+645747462435d84 ("vmscan: detect mapped file pages used only once").
+
+Currently these pages can become "first class citizens" only after second
+usage.  After this patch page_check_references() will activate they after
+first usage, and executable code gets yet better chance to stay in memory.
+
+Signed-off-by: Konstantin Khlebnikov <khlebnikov@openvz.org>
+Cc: Pekka Enberg <penberg@kernel.org>
+Cc: Minchan Kim <minchan.kim@gmail.com>
+Cc: KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>
+Cc: Wu Fengguang <fengguang.wu@intel.com>
+Cc: Johannes Weiner <hannes@cmpxchg.org>
+Cc: Nick Piggin <npiggin@kernel.dk>
+Cc: Mel Gorman <mel@csn.ul.ie>
+Cc: Shaohua Li <shaohua.li@intel.com>
+Cc: Rik van Riel <riel@redhat.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ mm/vmscan.c |    6 ++++++
+ 1 file changed, 6 insertions(+)
+
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -726,6 +726,12 @@ static enum page_references page_check_r
+ 		if (referenced_page || referenced_ptes > 1)
+ 			return PAGEREF_ACTIVATE;
+ 
++		/*
++		 * Activate file-backed executable pages after first usage.
++		 */
++		if (vm_flags & VM_EXEC)
++			return PAGEREF_ACTIVATE;
++
+ 		return PAGEREF_KEEP;
+ 	}
+ 
+
+

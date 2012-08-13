@@ -1,0 +1,141 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 11/40] vmscan: clear ZONE_CONGESTED for zone with good watermark
+Date: Thu, 26 Jul 2012 14:29:29 -0700
+Lines: 75
+Approved: news@gmane.org
+Message-ID: <20120726211412.097882882@linuxfoundation.org>
+References: <20120726211424.GA7709@kroah.com>
+ <20120726211411.164006056@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343338726 13795 80.91.229.3 (26 Jul 2012 21:38:46 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 21:38:46 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Shaohua Li <shaohua.li@intel.com>,
+	Mel Gorman <mgorman@suse.de>,
+	Minchan Kim <minchan.kim@gmail.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 23:38:45 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuVlc-00034q-3A
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 23:38:44 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753373Ab2GZVan (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 17:30:43 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:40055 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753304Ab2GZVad (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 17:30:33 -0400
+Original-Received: by pbbrp8 with SMTP id rp8so3821129pbb.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 14:30:32 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=KhHrLMI7ou3RNjK53tWNqz6ZXNvMKQnFRQFXRm6JPng=;
+        b=XIX1UTV7788rjlUKr/BerQuZLOJzZGXefuuDy6LoEuZZyHvnpUGgOJDoieu8c4uWuX
+         sH8B5RCZQPeTKa8lgxbrANjFk9EkLEcchJPgrImZuSAt02Ok5NY+xPeCwbmcDZFuVYK3
+         QmZXzIxebulGBJDe9GE71fTEAE5FleS7VZltFIM1iZyQZpwpYgeJzWiy6vK/NUnepsdb
+         KAzOXYaiz/EJAcLfTahx5+B13XzpKq0EgVsjcmubtc46HlbRTy2OT8wGoQalJbJ54iU2
+         w8WaClKScPJ1FVPt81uqpZIeYIzsv4dO/MCpIO7tNZaTabU637AHhfJZbiUXE6SJgPwZ
+         eQUg==
+Original-Received: by 10.68.221.227 with SMTP id qh3mr8443003pbc.115.1343338232561;
+        Thu, 26 Jul 2012 14:30:32 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id rg10sm429360pbc.54.2012.07.26.14.30.30
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 14:30:31 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120726211411.164006056@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQmzOf1m/4jIW9WOzHX4I7tvdkgB9aRUCzz3W4U2DDYLxHO0iKRXd3JoI7JQiR6VbqkvyCdh
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333960 gmane.linux.kernel.stable:28896
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333960>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Shaohua Li <shaohua.li@intel.com>
+
+commit 439423f6894aa0dec22187526827456f5004baed upstream.
+
+Stable note: Not tracked in Bugzilla. kswapd is responsible for clearing
+	ZONE_CONGESTED after it balances a zone and this patch fixes a bug
+	where that was failing to happen. Without this patch, processes
+	can stall in wait_iff_congested unnecessarily. For users, this can
+	look like an interactivity stall but some workloads would see it
+	as sudden drop in throughput.
+
+ZONE_CONGESTED is only cleared in kswapd, but pages can be freed in any
+task.  It's possible ZONE_CONGESTED isn't cleared in some cases:
+
+ 1. the zone is already balanced just entering balance_pgdat() for
+    order-0 because concurrent tasks free memory.  In this case, later
+    check will skip the zone as it's balanced so the flag isn't cleared.
+
+ 2. high order balance fallbacks to order-0.  quote from Mel: At the
+    end of balance_pgdat(), kswapd uses the following logic;
+
+	If reclaiming at high order {
+		for each zone {
+			if all_unreclaimable
+				skip
+			if watermark is not met
+				order = 0
+				loop again
+
+			/* watermark is met */
+			clear congested
+		}
+	}
+
+    i.e. it clears ZONE_CONGESTED if it the zone is balanced.  if not,
+    it restarts balancing at order-0.  However, if the higher zones are
+    balanced for order-0, kswapd will miss clearing ZONE_CONGESTED as
+    that only happens after a zone is shrunk.  This can mean that
+    wait_iff_congested() stalls unnecessarily.
+
+This patch makes kswapd clear ZONE_CONGESTED during its initial
+highmem->dma scan for zones that are already balanced.
+
+Signed-off-by: Shaohua Li <shaohua.li@intel.com>
+Acked-by: Mel Gorman <mgorman@suse.de>
+Reviewed-by: Minchan Kim <minchan.kim@gmail.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ mm/vmscan.c |    3 +++
+ 1 file changed, 3 insertions(+)
+
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -2456,6 +2456,9 @@ loop_again:
+ 					high_wmark_pages(zone), 0, 0)) {
+ 				end_zone = i;
+ 				break;
++			} else {
++				/* If balanced, clear the congested flag */
++				zone_clear_flag(zone, ZONE_CONGESTED);
+ 			}
+ 		}
+ 		if (i < 0)
+
+

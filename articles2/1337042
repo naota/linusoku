@@ -1,0 +1,86 @@
+Path: news.gmane.org!not-for-mail
+From: Silas Boyd-Wickizer <sbw@mit.edu>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 0/3] Use get_online_cpus to avoid races involving
+ for_each_online_cpu
+Date: Thu, 2 Aug 2012 17:03:45 -0700
+Lines: 25
+Approved: news@gmane.org
+Message-ID: <20120803000344.GA3443@mit.edu>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343952490 5452 80.91.229.3 (3 Aug 2012 00:08:10 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 00:08:10 +0000 (UTC)
+Cc: "Paul E. McKenney" <paulmck@linux.vnet.ibm.com>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 02:08:08 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sx5Qw-00077A-KQ
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 02:08:02 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752692Ab2HCAHz (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 2 Aug 2012 20:07:55 -0400
+Original-Received: from mail-ob0-f174.google.com ([209.85.214.174]:33314 "EHLO
+	mail-ob0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751796Ab2HCAHy (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 2 Aug 2012 20:07:54 -0400
+Original-Received: by obbuo13 with SMTP id uo13so187732obb.19
+        for <linux-kernel@vger.kernel.org>; Thu, 02 Aug 2012 17:07:53 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:date:from:to:cc:subject:message-id:mime-version:content-type
+         :content-disposition:user-agent;
+        bh=oO84nsjhEvQCMB21bTKg+rXt5oALWUz5S6oFOV+qfN8=;
+        b=DryDDP5zygQ32Ae7ol/Ddkiy2HDxVbDHoyIBembyqVVWPpGEoDGouawMFaE6bnHssc
+         IN6Npj5DI1C5rwG4cnQ8aulP8XOjniaVpBWSV8nLUFqmrjx9u05RGLxawS7aJ30g99y5
+         gKEPuR7qxbznKDBValONjUXA1h8fkosMVvKvDlW52Kk3DKVGXKehyDTqn3RTNRI9HHoJ
+         6LR/kSUNv4x470+sXhRo5eugBEDYrltlXsw2JrxhP5W4muYH/EJd/v1E2MHNMhp2Zyz1
+         OpIMQxlzxgN2adJRhWqAiB56ePT5ugTgWrwy4fAW12ZzwVPdwYzet+p73hd5g+ehLq+n
+         x4cA==
+Original-Received: by 10.182.86.225 with SMTP id s1mr40908183obz.73.1343952473389;
+        Thu, 02 Aug 2012 17:07:53 -0700 (PDT)
+Original-Received: from mit.edu (c-98-246-152-142.hsd1.or.comcast.net. [98.246.152.142])
+        by mx.google.com with ESMTPS id e9sm6030849oee.12.2012.08.02.17.07.50
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 02 Aug 2012 17:07:52 -0700 (PDT)
+Content-Disposition: inline
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337042
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337042>
+
+Hello,
+
+I've found 4 races involving for_each_online_cpu that could have ill
+effects.  All 4 occur in code that can be compiled as modules, but
+which is probably usually linked statically.  All 4 occur during
+module init and/or exit.  I've written patches for 3 of the 4, and
+will describe the 4th race in separate e-mail.
+
+I've been checking the usages of for_each_online_cpu for the
+possibility of races with offlining and onlining CPUs.  I used
+libsparse and kernel source annotations to check that code uses
+for_each_online_cpu in contexts with hotplug disabled
+(e.g. get_online_cpus(), preempt_disable, ..).  I compiled with an
+x86 64-bit allyesconfig and weeded out false positives (e.g. careful
+use of CPU notifiers) by hand.
+
+I've identified about 40 races, but only 4 that seem to have
+unintentional and potentially harmful effects.
+
+Here is a link to my checker code, which isn't fit for inclusion in
+anything:
+
+  http://pdos.csail.mit.edu/~sbw/online-checker/
+
+Silas

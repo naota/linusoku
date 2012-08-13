@@ -1,0 +1,229 @@
+Path: news.gmane.org!not-for-mail
+From: Jiri Olsa <jolsa@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 11/17] perf, tool: Add interface to arch registers sets
+Date: Sun, 22 Jul 2012 14:14:34 +0200
+Lines: 178
+Approved: news@gmane.org
+Message-ID: <1342959280-5361-12-git-send-email-jolsa@redhat.com>
+References: <1342959280-5361-1-git-send-email-jolsa@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342959464 19836 80.91.229.3 (22 Jul 2012 12:17:44 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 22 Jul 2012 12:17:44 +0000 (UTC)
+Cc: eranian@google.com, gorcunov@openvz.org, tzanussi@gmail.com,
+	mhiramat@redhat.com, robert.richter@amd.com, fche@redhat.com,
+	linux-kernel@vger.kernel.org, masami.hiramatsu.pt@hitachi.com,
+	drepper@gmail.com, asharma@fb.com, benjamin.redelings@nescent.org,
+	Jiri Olsa <jolsa@redhat.com>
+To: acme@redhat.com, a.p.zijlstra@chello.nl, mingo@elte.hu,
+	paulus@samba.org, cjashfor@linux.vnet.ibm.com, fweisbec@gmail.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 22 14:17:40 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Ssv6R-00057D-Dh
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 22 Jul 2012 14:17:39 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751989Ab2GVMPu (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 08:15:50 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:52416 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751958Ab2GVMPq (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 08:15:46 -0400
+Original-Received: from int-mx01.intmail.prod.int.phx2.redhat.com (int-mx01.intmail.prod.int.phx2.redhat.com [10.5.11.11])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6MCFWF1001089
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Sun, 22 Jul 2012 08:15:32 -0400
+Original-Received: from krava.brq.redhat.com (dhcp-1-202.brq.redhat.com [10.34.1.202])
+	by int-mx01.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with ESMTP id q6MCEeFY005088;
+	Sun, 22 Jul 2012 08:15:28 -0400
+In-Reply-To: <1342959280-5361-1-git-send-email-jolsa@redhat.com>
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.11
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331329
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331329>
+
+Adding header files to access unified API for arch registers.
+  util/perf_regs.h - global perf_reg declarations
+  arch/x86/include/perf_regs.h - x86 arch specific
+
+Adding perf_reg_name function to obtain register name based
+on the reg ID value, and PERF_REGS_MASK macro with mask
+definition of all current arch registers (will be used in
+unwind patches).
+
+Signed-off-by: Jiri Olsa <jolsa@redhat.com>
+---
+ tools/perf/Makefile                     |   13 +++++-
+ tools/perf/arch/x86/include/perf_regs.h |   80 +++++++++++++++++++++++++++++++
+ tools/perf/util/perf_regs.h             |   14 +++++
+ 3 files changed, 106 insertions(+), 1 deletions(-)
+ create mode 100644 tools/perf/arch/x86/include/perf_regs.h
+ create mode 100644 tools/perf/util/perf_regs.h
+
+diff --git a/tools/perf/Makefile b/tools/perf/Makefile
+index 75d74e5..576db7e 100644
+--- a/tools/perf/Makefile
++++ b/tools/perf/Makefile
+@@ -50,13 +50,15 @@ ARCH ?= $(shell echo $(uname_M) | sed -e s/i.86/i386/ -e s/sun4u/sparc64/ \
+ 				  -e s/s390x/s390/ -e s/parisc64/parisc/ \
+ 				  -e s/ppc.*/powerpc/ -e s/mips.*/mips/ \
+ 				  -e s/sh[234].*/sh/ )
++NO_PERF_REGS := 1
+ 
+ CC = $(CROSS_COMPILE)gcc
+ AR = $(CROSS_COMPILE)ar
+ 
+ # Additional ARCH settings for x86
+ ifeq ($(ARCH),i386)
+-        ARCH := x86
++	ARCH := x86
++	NO_PERF_REGS := 0
+ endif
+ ifeq ($(ARCH),x86_64)
+ 	ARCH := x86
+@@ -69,6 +71,7 @@ ifeq ($(ARCH),x86_64)
+ 		ARCH_CFLAGS := -DARCH_X86_64
+ 		ARCH_INCLUDE = ../../arch/x86/lib/memcpy_64.S ../../arch/x86/lib/memset_64.S
+ 	endif
++	NO_PERF_REGS := 0
+ endif
+ 
+ # Treat warnings as errors unless directed not to
+@@ -319,6 +322,7 @@ LIB_H += $(ARCH_INCLUDE)
+ LIB_H += util/cgroup.h
+ LIB_H += $(TRACE_EVENT_DIR)event-parse.h
+ LIB_H += util/target.h
++LIB_H += util/perf_regs.h
+ 
+ LIB_OBJS += $(OUTPUT)util/abspath.o
+ LIB_OBJS += $(OUTPUT)util/alias.o
+@@ -669,6 +673,13 @@ else
+ 	endif
+ endif
+ 
++ifeq ($(NO_PERF_REGS),0)
++	ifeq ($(ARCH),x86)
++		LIB_H += arch/x86/include/perf_regs.h
++	endif
++else
++	BASIC_CFLAGS += -DNO_PERF_REGS
++endif
+ 
+ ifdef NO_STRLCPY
+ 	BASIC_CFLAGS += -DNO_STRLCPY
+diff --git a/tools/perf/arch/x86/include/perf_regs.h b/tools/perf/arch/x86/include/perf_regs.h
+new file mode 100644
+index 0000000..46fc9f1
+--- /dev/null
++++ b/tools/perf/arch/x86/include/perf_regs.h
+@@ -0,0 +1,80 @@
++#ifndef ARCH_PERF_REGS_H
++#define ARCH_PERF_REGS_H
++
++#include <stdlib.h>
++#include "../../util/types.h"
++#include "../../../../../arch/x86/include/asm/perf_regs.h"
++
++#ifndef ARCH_X86_64
++#define PERF_REGS_MASK ((1ULL << PERF_REG_X86_32_MAX) - 1)
++#else
++#define REG_NOSUPPORT ((1ULL << PERF_REG_X86_DS) | \
++		       (1ULL << PERF_REG_X86_ES) | \
++		       (1ULL << PERF_REG_X86_FS) | \
++		       (1ULL << PERF_REG_X86_GS))
++#define PERF_REGS_MASK (((1ULL << PERF_REG_X86_64_MAX) - 1) & ~REG_NOSUPPORT)
++#endif
++#define PERF_REG_IP PERF_REG_X86_IP
++#define PERF_REG_SP PERF_REG_X86_SP
++
++static inline const char *perf_reg_name(int id)
++{
++	switch (id) {
++	case PERF_REG_X86_AX:
++		return "AX";
++	case PERF_REG_X86_BX:
++		return "BX";
++	case PERF_REG_X86_CX:
++		return "CX";
++	case PERF_REG_X86_DX:
++		return "DX";
++	case PERF_REG_X86_SI:
++		return "SI";
++	case PERF_REG_X86_DI:
++		return "DI";
++	case PERF_REG_X86_BP:
++		return "BP";
++	case PERF_REG_X86_SP:
++		return "SP";
++	case PERF_REG_X86_IP:
++		return "IP";
++	case PERF_REG_X86_FLAGS:
++		return "FLAGS";
++	case PERF_REG_X86_CS:
++		return "CS";
++	case PERF_REG_X86_SS:
++		return "SS";
++	case PERF_REG_X86_DS:
++		return "DS";
++	case PERF_REG_X86_ES:
++		return "ES";
++	case PERF_REG_X86_FS:
++		return "FS";
++	case PERF_REG_X86_GS:
++		return "GS";
++#ifdef ARCH_X86_64
++	case PERF_REG_X86_R8:
++		return "R8";
++	case PERF_REG_X86_R9:
++		return "R9";
++	case PERF_REG_X86_R10:
++		return "R10";
++	case PERF_REG_X86_R11:
++		return "R11";
++	case PERF_REG_X86_R12:
++		return "R12";
++	case PERF_REG_X86_R13:
++		return "R13";
++	case PERF_REG_X86_R14:
++		return "R14";
++	case PERF_REG_X86_R15:
++		return "R15";
++#endif /* ARCH_X86_64 */
++	default:
++		return NULL;
++	}
++
++	return NULL;
++}
++
++#endif /* ARCH_PERF_REGS_H */
+diff --git a/tools/perf/util/perf_regs.h b/tools/perf/util/perf_regs.h
+new file mode 100644
+index 0000000..3efb79a
+--- /dev/null
++++ b/tools/perf/util/perf_regs.h
+@@ -0,0 +1,14 @@
++#ifndef __PERF_REGS_H
++#define __PERF_REGS_H
++
++#ifndef NO_PERF_REGS_DEFS
++#include <perf_regs.h>
++#else
++#define PERF_REGS_MASK	0
++
++static inline const char *perf_reg_name(int id __used)
++{
++	return NULL;
++}
++#endif /* NO_PERF_REGS_DEFS */
++#endif /* __PERF_REGS_H */
+-- 
+1.7.7.6
+

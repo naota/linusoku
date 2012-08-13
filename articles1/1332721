@@ -1,0 +1,382 @@
+Path: news.gmane.org!not-for-mail
+From: Len Brown <lenb@kernel.org>
+Newsgroups: gmane.linux.power-management.general,gmane.linux.acpi.devel,gmane.linux.kernel
+Subject: [PATCH 34/52] ACPICA: Add support for implicit notify on
+	multiple devices
+Date: Tue, 24 Jul 2012 23:41:30 -0400
+Organization: Intel Open Source Technology Center
+Lines: 293
+Approved: news@gmane.org
+Message-ID: <5816b3430c4b5f31d9c35af1da7be721c9518137.1343187617.git.len.brown@intel.com>
+References: <1343187708-19532-1-git-send-email-lenb@kernel.org>
+Reply-To: Len Brown <lenb@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343188022 30065 80.91.229.3 (25 Jul 2012 03:47:02 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 03:47:02 +0000 (UTC)
+Cc: Len Brown <len.brown@intel.com>, Lin Ming <ming.m.lin@intel.com>,
+	linux-kernel@vger.kernel.org, Bob Moore <robert.moore@intel.com>,
+	Jung-uk Kim <jkim@freebsd.org>
+To: linux-acpi@vger.kernel.org,
+	linux-pm@lists.linux-foundation.org
+Original-X-From: linux-pm-bounces@lists.linux-foundation.org Wed Jul 25 05:47:01 2012
+Return-path: <linux-pm-bounces@lists.linux-foundation.org>
+Envelope-to: gll-linux-pm@gmane.org
+Original-Received: from mail.linuxfoundation.org ([140.211.169.12])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-pm-bounces@lists.linux-foundation.org>)
+	id 1StsYt-0003yU-UJ
+	for gll-linux-pm@gmane.org; Wed, 25 Jul 2012 05:47:00 +0200
+Original-Received: from mail.linux-foundation.org (localhost [IPv6:::1])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id D1388A52;
+	Wed, 25 Jul 2012 03:43:06 +0000 (UTC)
+X-Original-To: linux-pm@lists.linux-foundation.org
+Delivered-To: linux-pm@mail.linuxfoundation.org
+Original-Received: from smtp1.linuxfoundation.org (smtp1.linux-foundation.org
+	[172.17.192.35])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id BA948A50
+	for <linux-pm@lists.linux-foundation.org>;
+	Wed, 25 Jul 2012 03:43:05 +0000 (UTC)
+X-Greylist: domain auto-whitelisted by SQLgrey-1.7.6
+Original-Received: from mail-qa0-f54.google.com (mail-qa0-f54.google.com
+	[209.85.216.54])
+	by smtp1.linuxfoundation.org (Postfix) with ESMTPS id 037F91F950
+	for <linux-pm@lists.linux-foundation.org>;
+	Wed, 25 Jul 2012 03:43:04 +0000 (UTC)
+Original-Received: by mail-qa0-f54.google.com with SMTP id t11so276251qaa.6
+	for <linux-pm@lists.linux-foundation.org>;
+	Tue, 24 Jul 2012 20:43:04 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=gmail.com; s=20120113;
+	h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+	:references:in-reply-to:references:reply-to:organization;
+	bh=QUWIxrFlcrf+3KbH8Ztgu37HSdeFQmD7jtNWIsbrEx4=;
+	b=DK454ESvrWRweC8Nb2RUWFKa+YissepYYN9svH1+EGNQVaizdYO5TrSDdf7CnzOz/9
+	3n4ipi3t1s72KiKh+MK/i1oL9iBoz8iqqax4YroyGzm7E+Y+UDN6Kncgf3UfD20/WCGj
+	SW335NGsnuBFtY2XKY8ZdpuZtsPUptT0+rbyHnvhVdCKAPvDfLC/PHZo5VjUtVSKwLFT
+	2hxlR1bNQCxj8XVzBHrNlbIDbRqc+4jM/o0hdHu0jxyRVTZdPpN55w2uogkdEft4BKba
+	4ERav+Jpshjy77s7KxaEAfrZnYy/O8aNE7ydCZP/AC1CfBhYSe6lNWvUNR3wM2fJh8x3
+	+jSg==
+Original-Received: by 10.224.106.138 with SMTP id x10mr36002399qao.1.1343187784806;
+	Tue, 24 Jul 2012 20:43:04 -0700 (PDT)
+Original-Received: from x980.localdomain6 (h184-61-125-197.altnnh.dsl.dynamic.tds.net.
+	[184.61.125.197])
+	by mx.google.com with ESMTPS id et6sm15489186qab.8.2012.07.24.20.43.02
+	(version=SSLv3 cipher=OTHER); Tue, 24 Jul 2012 20:43:04 -0700 (PDT)
+X-Mailer: git-send-email 1.7.12.rc0
+In-Reply-To: <1343187708-19532-1-git-send-email-lenb@kernel.org>
+In-Reply-To: <6af1c4fc5227af65092ebc848989693562bfa3e8.1343187617.git.len.brown@intel.com>
+Original-References: <6af1c4fc5227af65092ebc848989693562bfa3e8.1343187617.git.len.brown@intel.com>
+X-Spam-Status: No, score=-2.3 required=5.0 tests=BAYES_00,DKIM_SIGNED,
+	DKIM_VALID,FREEMAIL_ENVFROM_END_DIGIT,FREEMAIL_FROM,RCVD_IN_DNSWL_LOW
+	autolearn=ham version=3.3.1
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on
+	smtp1.linux-foundation.org
+X-BeenThere: linux-pm@lists.linux-foundation.org
+X-Mailman-Version: 2.1.12
+Precedence: list
+List-Id: Linux power management <linux-pm.lists.linux-foundation.org>
+List-Unsubscribe: <https://lists.linuxfoundation.org/mailman/options/linux-pm>, 
+	<mailto:linux-pm-request@lists.linux-foundation.org?subject=unsubscribe>
+List-Archive: <http://lists.linuxfoundation.org/pipermail/linux-pm/>
+List-Post: <mailto:linux-pm@lists.linux-foundation.org>
+List-Help: <mailto:linux-pm-request@lists.linux-foundation.org?subject=help>
+List-Subscribe: <https://lists.linuxfoundation.org/mailman/listinfo/linux-pm>, 
+	<mailto:linux-pm-request@lists.linux-foundation.org?subject=subscribe>
+Original-Sender: linux-pm-bounces@lists.linux-foundation.org
+Errors-To: linux-pm-bounces@lists.linux-foundation.org
+Xref: news.gmane.org gmane.linux.power-management.general:27921 gmane.linux.acpi.devel:54508 gmane.linux.kernel:1332721
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332721>
+
+From: Bob Moore <robert.moore@intel.com>
+
+Adds basic support to allow multiple devices to be implicitly
+notified.
+
+This change is partially derived from original commit 981858b("ACPI /
+ACPICA: Implicit notify for multiple devices") by Rafael.
+
+Signed-off-by: Bob Moore <robert.moore@intel.com>
+Signed-off-by: Rafael J. Wysocki <rjw@sisk.pl>
+Signed-off-by: Jung-uk Kim <jkim@freebsd.org>
+Signed-off-by: Lin Ming <ming.m.lin@intel.com>
+Signed-off-by: Len Brown <len.brown@intel.com>
+---
+ drivers/acpi/acpica/aclocal.h   |  11 ++++-
+ drivers/acpi/acpica/evgpe.c     |  22 ++++-----
+ drivers/acpi/acpica/evgpeutil.c |  20 ++++++++
+ drivers/acpi/acpica/evxfgpe.c   | 106 ++++++++++++++++++++++++++--------------
+ 4 files changed, 109 insertions(+), 50 deletions(-)
+
+diff --git a/drivers/acpi/acpica/aclocal.h b/drivers/acpi/acpica/aclocal.h
+index af7330f..6b225e8 100644
+--- a/drivers/acpi/acpica/aclocal.h
++++ b/drivers/acpi/acpica/aclocal.h
+@@ -404,6 +404,13 @@ struct acpi_gpe_handler_info {
+ 	u8 originally_enabled;  /* True if GPE was originally enabled */
+ };
+ 
++/* Notify info for implicit notify, multiple device objects */
++
++struct acpi_gpe_notify_info {
++	struct acpi_namespace_node *device_node;	/* Device to be notified */
++	struct acpi_gpe_notify_info *next;
++};
++
+ struct acpi_gpe_notify_object {
+ 	struct acpi_namespace_node *node;
+ 	struct acpi_gpe_notify_object *next;
+@@ -412,7 +419,7 @@ struct acpi_gpe_notify_object {
+ union acpi_gpe_dispatch_info {
+ 	struct acpi_namespace_node *method_node;	/* Method node for this GPE level */
+ 	struct acpi_gpe_handler_info *handler;  /* Installed GPE handler */
+-	struct acpi_gpe_notify_object device;   /* List of _PRW devices for implicit notify */
++	struct acpi_gpe_notify_info *notify_list;	/* List of _PRW devices for implicit notifies */
+ };
+ 
+ /*
+@@ -420,7 +427,7 @@ union acpi_gpe_dispatch_info {
+  * NOTE: Important to keep this struct as small as possible.
+  */
+ struct acpi_gpe_event_info {
+-	union acpi_gpe_dispatch_info dispatch;	/* Either Method or Handler */
++	union acpi_gpe_dispatch_info dispatch;	/* Either Method, Handler, or notify_list */
+ 	struct acpi_gpe_register_info *register_info;	/* Backpointer to register info */
+ 	u8 flags;		/* Misc info about this GPE */
+ 	u8 gpe_number;		/* This GPE */
+diff --git a/drivers/acpi/acpica/evgpe.c b/drivers/acpi/acpica/evgpe.c
+index 8ba0e5f..afbd5cb 100644
+--- a/drivers/acpi/acpica/evgpe.c
++++ b/drivers/acpi/acpica/evgpe.c
+@@ -466,7 +466,7 @@ static void ACPI_SYSTEM_XFACE acpi_ev_asynch_execute_gpe_method(void *context)
+ 	acpi_status status;
+ 	struct acpi_gpe_event_info *local_gpe_event_info;
+ 	struct acpi_evaluate_info *info;
+-	struct acpi_gpe_notify_object *notify_object;
++	struct acpi_gpe_notify_info *notify;
+ 
+ 	ACPI_FUNCTION_TRACE(ev_asynch_execute_gpe_method);
+ 
+@@ -517,17 +517,17 @@ static void ACPI_SYSTEM_XFACE acpi_ev_asynch_execute_gpe_method(void *context)
+ 		 * completes. The notify handlers are NOT invoked synchronously
+ 		 * from this thread -- because handlers may in turn run other
+ 		 * control methods.
++		 *
++		 * June 2012: Expand implicit notify mechanism to support
++		 * notifies on multiple device objects.
+ 		 */
+-		status = acpi_ev_queue_notify_request(
+-				local_gpe_event_info->dispatch.device.node,
+-				ACPI_NOTIFY_DEVICE_WAKE);
+-
+-		notify_object = local_gpe_event_info->dispatch.device.next;
+-		while (ACPI_SUCCESS(status) && notify_object) {
+-			status = acpi_ev_queue_notify_request(
+-					notify_object->node,
+-					ACPI_NOTIFY_DEVICE_WAKE);
+-			notify_object = notify_object->next;
++		notify = local_gpe_event_info->dispatch.notify_list;
++		while (ACPI_SUCCESS(status) && notify) {
++			status =
++			    acpi_ev_queue_notify_request(notify->device_node,
++							 ACPI_NOTIFY_DEVICE_WAKE);
++
++			notify = notify->next;
+ 		}
+ 
+ 		break;
+diff --git a/drivers/acpi/acpica/evgpeutil.c b/drivers/acpi/acpica/evgpeutil.c
+index 3c43796..0c33c62 100644
+--- a/drivers/acpi/acpica/evgpeutil.c
++++ b/drivers/acpi/acpica/evgpeutil.c
+@@ -347,6 +347,8 @@ acpi_ev_delete_gpe_handlers(struct acpi_gpe_xrupt_info *gpe_xrupt_info,
+ 			    void *context)
+ {
+ 	struct acpi_gpe_event_info *gpe_event_info;
++	struct acpi_gpe_notify_info *notify;
++	struct acpi_gpe_notify_info *next;
+ 	u32 i;
+ 	u32 j;
+ 
+@@ -365,10 +367,28 @@ acpi_ev_delete_gpe_handlers(struct acpi_gpe_xrupt_info *gpe_xrupt_info,
+ 
+ 			if ((gpe_event_info->flags & ACPI_GPE_DISPATCH_MASK) ==
+ 			    ACPI_GPE_DISPATCH_HANDLER) {
++
++				/* Delete an installed handler block */
++
+ 				ACPI_FREE(gpe_event_info->dispatch.handler);
+ 				gpe_event_info->dispatch.handler = NULL;
+ 				gpe_event_info->flags &=
+ 				    ~ACPI_GPE_DISPATCH_MASK;
++			} else if ((gpe_event_info->
++				 flags & ACPI_GPE_DISPATCH_MASK) ==
++				ACPI_GPE_DISPATCH_NOTIFY) {
++
++				/* Delete the implicit notification device list */
++
++				notify = gpe_event_info->dispatch.notify_list;
++				while (notify) {
++					next = notify->next;
++					ACPI_FREE(notify);
++					notify = next;
++				}
++				gpe_event_info->dispatch.notify_list = NULL;
++				gpe_event_info->flags &=
++				    ~ACPI_GPE_DISPATCH_MASK;
+ 			}
+ 		}
+ 	}
+diff --git a/drivers/acpi/acpica/evxfgpe.c b/drivers/acpi/acpica/evxfgpe.c
+index 86f9b34..2ce4409 100644
+--- a/drivers/acpi/acpica/evxfgpe.c
++++ b/drivers/acpi/acpica/evxfgpe.c
+@@ -197,12 +197,12 @@ acpi_status
+ acpi_setup_gpe_for_wake(acpi_handle wake_device,
+ 			acpi_handle gpe_device, u32 gpe_number)
+ {
+-	acpi_status status = AE_BAD_PARAMETER;
++	acpi_status status;
+ 	struct acpi_gpe_event_info *gpe_event_info;
+ 	struct acpi_namespace_node *device_node;
+-	struct acpi_gpe_notify_object *notify_object;
++	struct acpi_gpe_notify_info *notify;
++	struct acpi_gpe_notify_info *new_notify;
+ 	acpi_cpu_flags flags;
+-	u8 gpe_dispatch_mask;
+ 
+ 	ACPI_FUNCTION_TRACE(acpi_setup_gpe_for_wake);
+ 
+@@ -216,63 +216,95 @@ acpi_setup_gpe_for_wake(acpi_handle wake_device,
+ 		return_ACPI_STATUS(AE_BAD_PARAMETER);
+ 	}
+ 
++	/* Handle root object case */
++
++	if (wake_device == ACPI_ROOT_OBJECT) {
++		device_node = acpi_gbl_root_node;
++	} else {
++		device_node = ACPI_CAST_PTR(struct acpi_namespace_node, wake_device);
++	}
++
++	/* Validate WakeDevice is of type Device */
++
++	if (device_node->type != ACPI_TYPE_DEVICE) {
++		return_ACPI_STATUS (AE_BAD_PARAMETER);
++	}
++
++	/*
++	 * Allocate a new notify object up front, in case it is needed.
++	 * Memory allocation while holding a spinlock is a big no-no
++	 * on some hosts.
++	 */
++	new_notify = ACPI_ALLOCATE_ZEROED(sizeof(struct acpi_gpe_notify_info));
++	if (!new_notify) {
++		return_ACPI_STATUS(AE_NO_MEMORY);
++	}
++
+ 	flags = acpi_os_acquire_lock(acpi_gbl_gpe_lock);
+ 
+ 	/* Ensure that we have a valid GPE number */
+ 
+ 	gpe_event_info = acpi_ev_get_gpe_event_info(gpe_device, gpe_number);
+ 	if (!gpe_event_info) {
++		status = AE_BAD_PARAMETER;
+ 		goto unlock_and_exit;
+ 	}
+ 
+-	if (wake_device == ACPI_ROOT_OBJECT) {
+-		goto out;
+-	}
+-
+ 	/*
+ 	 * If there is no method or handler for this GPE, then the
+-	 * wake_device will be notified whenever this GPE fires (aka
+-	 * "implicit notify") Note: The GPE is assumed to be
++	 * wake_device will be notified whenever this GPE fires. This is
++	 * known as an "implicit notify". Note: The GPE is assumed to be
+ 	 * level-triggered (for windows compatibility).
+ 	 */
+-	gpe_dispatch_mask = gpe_event_info->flags & ACPI_GPE_DISPATCH_MASK;
+-	if (gpe_dispatch_mask != ACPI_GPE_DISPATCH_NONE
+-	    && gpe_dispatch_mask != ACPI_GPE_DISPATCH_NOTIFY) {
+-		goto out;
+-	}
+-
+-	/* Validate wake_device is of type Device */
+-
+-	device_node = ACPI_CAST_PTR(struct acpi_namespace_node, wake_device);
+-	if (device_node->type != ACPI_TYPE_DEVICE) {
+-		goto unlock_and_exit;
++	if ((gpe_event_info->flags & ACPI_GPE_DISPATCH_MASK) ==
++	    ACPI_GPE_DISPATCH_NONE) {
++		/*
++		 * This is the first device for implicit notify on this GPE.
++		 * Just set the flags here, and enter the NOTIFY block below.
++		 */
++		gpe_event_info->flags =
++		    (ACPI_GPE_DISPATCH_NOTIFY | ACPI_GPE_LEVEL_TRIGGERED);
+ 	}
+ 
+-	if (gpe_dispatch_mask == ACPI_GPE_DISPATCH_NONE) {
+-		gpe_event_info->flags = (ACPI_GPE_DISPATCH_NOTIFY |
+-					 ACPI_GPE_LEVEL_TRIGGERED);
+-		gpe_event_info->dispatch.device.node = device_node;
+-		gpe_event_info->dispatch.device.next = NULL;
+-	} else {
+-		/* There are multiple devices to notify implicitly. */
+-
+-		notify_object = ACPI_ALLOCATE_ZEROED(sizeof(*notify_object));
+-		if (!notify_object) {
+-			status = AE_NO_MEMORY;
+-			goto unlock_and_exit;
++	/*
++	 * If we already have an implicit notify on this GPE, add
++	 * this device to the notify list.
++	 */
++	if ((gpe_event_info->flags & ACPI_GPE_DISPATCH_MASK) ==
++	    ACPI_GPE_DISPATCH_NOTIFY) {
++
++		/* Ensure that the device is not already in the list */
++
++		notify = gpe_event_info->dispatch.notify_list;
++		while (notify) {
++			if (notify->device_node == device_node) {
++				status = AE_ALREADY_EXISTS;
++				goto unlock_and_exit;
++			}
++			notify = notify->next;
+ 		}
+ 
+-		notify_object->node = device_node;
+-		notify_object->next = gpe_event_info->dispatch.device.next;
+-		gpe_event_info->dispatch.device.next = notify_object;
++		/* Add this device to the notify list for this GPE */
++
++		new_notify->device_node = device_node;
++		new_notify->next = gpe_event_info->dispatch.notify_list;
++		gpe_event_info->dispatch.notify_list = new_notify;
++		new_notify = NULL;
+ 	}
+ 
+- out:
++	/* Mark the GPE as a possible wake event */
++
+ 	gpe_event_info->flags |= ACPI_GPE_CAN_WAKE;
+ 	status = AE_OK;
+ 
+- unlock_and_exit:
++unlock_and_exit:
+ 	acpi_os_release_lock(acpi_gbl_gpe_lock, flags);
++
++	/* Delete the notify object if it was not used above */
++
++	if (new_notify) {
++		ACPI_FREE(new_notify);
++	}
+ 	return_ACPI_STATUS(status);
+ }
+ ACPI_EXPORT_SYMBOL(acpi_setup_gpe_for_wake)
+-- 
+1.7.12.rc0
+
+

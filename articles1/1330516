@@ -1,0 +1,107 @@
+Path: news.gmane.org!not-for-mail
+From: Jim Cromie <jim.cromie@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 2/3] dyndbg: in dynamic_emit_prefix, change inter-field separator
+Date: Thu, 19 Jul 2012 13:46:22 -0600
+Lines: 48
+Approved: news@gmane.org
+Message-ID: <1342727183-4520-4-git-send-email-jim.cromie@gmail.com>
+References: <1342727183-4520-1-git-send-email-jim.cromie@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342727237 9548 80.91.229.3 (19 Jul 2012 19:47:17 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 19:47:17 +0000 (UTC)
+Cc: kay@vrfy.com, joe@perches.com, greg@kroah.com,
+	Jim Cromie <jim.cromie@gmail.com>
+To: jbaron@redhat.com, linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 21:47:16 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Srwgt-0004ov-Qa
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 21:47:16 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751683Ab2GSTrL (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 15:47:11 -0400
+Original-Received: from mail-yw0-f46.google.com ([209.85.213.46]:55931 "EHLO
+	mail-yw0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751477Ab2GSTqu (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 15:46:50 -0400
+Original-Received: by yhmm54 with SMTP id m54so3192290yhm.19
+        for <linux-kernel@vger.kernel.org>; Thu, 19 Jul 2012 12:46:50 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=3HUdsYx4OMyQKAIfBYTqAaISwKenTC/ZEz06sV+k9b4=;
+        b=hFj9Hzif8zpECoNZtGvmQaRlQYlixxQ/RadXvRdLZDruuhTPJqbbzgBzpsNQ2qMUKS
+         MJqrPeeKFDyAACgvHcMbPrhIifsT+IneIvrxjeg5AG5xoM6nmaOSMgeriP6ECT8+R/Sj
+         9Et3SDszl0IQxfWIy2llrOW8deD35osAcDfrdDKNzsF+stAM379R545cEg1LeKEwm5T5
+         HuF6BaSbWJNvD+2l0fE8kVd9TpVd39M3vA9KKPi0jiDDawFw2McJoX9FVVUu1ajArY9Z
+         1CXmoISpalsCxhVuLjFezs+H+MBStPk+jGqlVsRWCmax0wk8s9fAgfbR0n7qrwoAUT18
+         RCpQ==
+Original-Received: by 10.50.237.6 with SMTP id uy6mr2548870igc.52.1342727209803;
+        Thu, 19 Jul 2012 12:46:49 -0700 (PDT)
+Original-Received: from groucho.jimc.earth.net (c-75-70-77-50.hsd1.co.comcast.net. [75.70.77.50])
+        by mx.google.com with ESMTPS id ai6sm5165926igc.0.2012.07.19.12.46.48
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 19 Jul 2012 12:46:48 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1342727183-4520-1-git-send-email-jim.cromie@gmail.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330516
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330516>
+
+dynamic_emit_prefix() currently separates modname, funcname, lineno
+with ':'.  This is complicates use of cut -d: <logfile>, since the
+field positions can change per callsite with dynamic-debug.  So change
+inter-field separator to '.' and keep the ':' prefix terminator.
+
+This improves the situation, but doesnt solve it entirely; if
+dyndbg==p is used, the callsite is enabled but no prefix is added, so
+theres one less ':' in the message.  Changing the terminator to ','
+would fix this, and might be warranted.
+
+pr_fmt(fmt) KBUILD_MODNAME ": " fmt, also adds another ':'.
+
+Signed-off-by: Jim Cromie <jim.cromie@gmail.com>
+---
+ lib/dynamic_debug.c |   12 +++++++-----
+ 1 file changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/lib/dynamic_debug.c b/lib/dynamic_debug.c
+index 7ca29a0..6bc34aa 100644
+--- a/lib/dynamic_debug.c
++++ b/lib/dynamic_debug.c
+@@ -532,16 +532,18 @@ static char *dynamic_emit_prefix(const struct _ddebug *desc, char *buf)
+ 	}
+ 	pos_after_tid = pos;
+ 	if (desc->flags & _DPRINTK_FLAGS_INCL_MODNAME)
+-		pos += snprintf(buf + pos, remaining(pos), "%s:",
++		pos += snprintf(buf + pos, remaining(pos), "%s.",
+ 					desc->modname);
+ 	if (desc->flags & _DPRINTK_FLAGS_INCL_FUNCNAME)
+-		pos += snprintf(buf + pos, remaining(pos), "%s:",
++		pos += snprintf(buf + pos, remaining(pos), "%s.",
+ 					desc->function);
+ 	if (desc->flags & _DPRINTK_FLAGS_INCL_LINENO)
+-		pos += snprintf(buf + pos, remaining(pos), "%d:",
++		pos += snprintf(buf + pos, remaining(pos), "%d.",
+ 					desc->lineno);
+-	if (pos - pos_after_tid)
+-		pos += snprintf(buf + pos, remaining(pos), " ");
++	if (pos - pos_after_tid) {
++		pos--;
++		pos += snprintf(buf + pos, remaining(pos), ": ");
++	}
+ 	if (pos >= PREFIX_SIZE)
+ 		buf[PREFIX_SIZE - 1] = '\0';
+ 
+-- 
+1.7.10.4
+

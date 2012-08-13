@@ -1,0 +1,121 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 107/122] tcp: perform DMA to userspace only if there is a task waiting for it
+Date: Tue,  7 Aug 2012 15:26:35 -0700
+Lines: 57
+Approved: news@gmane.org
+Message-ID: <20120807221959.405424007@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344381757 4072 80.91.229.3 (7 Aug 2012 23:22:37 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 23:22:37 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Jiri Kosina <jkosina@suse.cz>,
+	"David S. Miller" <davem@davemloft.net>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 01:22:35 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Syt6Z-0004jl-VF
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 01:22:28 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S964838Ab2HGXWU (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 19:22:20 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:64363 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030334Ab2HGWcg (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:32:36 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so346923pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:32:36 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=AgTPkC3GoUOvsoFhvM8OkwGtChWPKyVvGm/U4YSMubU=;
+        b=KsAIzcLMhh4gUdp+UA/s/3w6qlJQKni3o0YrtBp3fnZ+FAcEM49ZvgU7uQJzzWCjxe
+         YIL8dX74uGTQxLf0LWh5NE56Jw5keGnvc1uX8x5XdqjLi/tqD98kXmxnhWt9N8/i5lYS
+         +9eZN+fftJ2y9/F6vw4g60LOG+cIX7oUTkJ2oVwUtGf0Nz+8W+WgbNuGLgSoXk+eg79k
+         2RSei5kxy5LFLOFX16J/QrzrRmbmQ89HKjO+CdQPMi30DnUTQzANgh8qrRhntbgxWORV
+         3491g+T28UzOQIA8bBolLXm1SxoaOiVMNKmQnsxrip85dQkI1SnSqYAfP2N34zw6ccRt
+         IGaw==
+Original-Received: by 10.68.226.38 with SMTP id rp6mr31090408pbc.90.1344378756592;
+        Tue, 07 Aug 2012 15:32:36 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id io1sm11955521pbc.67.2012.08.07.15.32.34
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:32:35 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQkTC7wYwztX9SwEux23E0lIz0sqiBB2M0vteakiBlzNCPpnmdblE5oJzzKinyWmELg5C9T6
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339646 gmane.linux.kernel.stable:29475
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339646>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+
+From: Jiri Kosina <jkosina@suse.cz>
+
+[ Upstream commit 59ea33a68a9083ac98515e4861c00e71efdc49a1 ]
+
+Back in 2006, commit 1a2449a87b ("[I/OAT]: TCP recv offload to I/OAT")
+added support for receive offloading to IOAT dma engine if available.
+
+The code in tcp_rcv_established() tries to perform early DMA copy if
+applicable. It however does so without checking whether the userspace
+task is actually expecting the data in the buffer.
+
+This is not a problem under normal circumstances, but there is a corner
+case where this doesn't work -- and that's when MSG_TRUNC flag to
+recvmsg() is used.
+
+If the IOAT dma engine is not used, the code properly checks whether
+there is a valid ucopy.task and the socket is owned by userspace, but
+misses the check in the dmaengine case.
+
+This problem can be observed in real trivially -- for example 'tbench' is a
+good reproducer, as it makes a heavy use of MSG_TRUNC. On systems utilizing
+IOAT, you will soon find tbench waiting indefinitely in sk_wait_data(), as they
+have been already early-copied in tcp_rcv_established() using dma engine.
+
+This patch introduces the same check we are performing in the simple
+iovec copy case to the IOAT case as well. It fixes the indefinite
+recvmsg(MSG_TRUNC) hangs.
+
+Signed-off-by: Jiri Kosina <jkosina@suse.cz>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ net/ipv4/tcp_input.c |    4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+--- a/net/ipv4/tcp_input.c
++++ b/net/ipv4/tcp_input.c
+@@ -5602,7 +5602,9 @@ int tcp_rcv_established(struct sock *sk,
+ 			if (tp->copied_seq == tp->rcv_nxt &&
+ 			    len - tcp_header_len <= tp->ucopy.len) {
+ #ifdef CONFIG_NET_DMA
+-				if (tcp_dma_try_early_copy(sk, skb, tcp_header_len)) {
++				if (tp->ucopy.task == current &&
++				    sock_owned_by_user(sk) &&
++				    tcp_dma_try_early_copy(sk, skb, tcp_header_len)) {
+ 					copied_early = 1;
+ 					eaten = 1;
+ 				}
+
+

@@ -1,0 +1,130 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 47/73] s390/idle: fix sequence handling vs cpu hotplug
+Date: Tue, 31 Jul 2012 05:43:57 +0100
+Lines: 76
+Approved: news@gmane.org
+Message-ID: <20120731044318.836727902@decadent.org.uk>
+References: <20120731044310.013763753@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343710680 24129 80.91.229.3 (31 Jul 2012 04:58:00 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 04:58:00 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	Heiko Carstens <heiko.carstens@de.ibm.com>,
+	Martin Schwidefsky <schwidefsky@de.ibm.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 06:57:59 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sw4Wr-0002gS-Py
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 06:57:58 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755809Ab2GaE5L (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 00:57:11 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:48793 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1755646Ab2GaEu4 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 00:50:56 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Sw4Pm-0003QL-M7; Tue, 31 Jul 2012 05:50:38 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Sw4Op-0000Bo-L6; Tue, 31 Jul 2012 05:49:39 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120731044310.013763753@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335444 gmane.linux.kernel.stable:29013
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335444>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Heiko Carstens <heiko.carstens@de.ibm.com>
+
+commit 0008204ffe85d23382d6fd0f971f3f0fbe70bae2 upstream.
+
+The s390 idle accounting code uses a sequence counter which gets used
+when the per cpu idle statistics get updated and read.
+
+One assumption on read access is that only when the sequence counter is
+even and did not change while reading all values the result is valid.
+On cpu hotplug however the per cpu data structure gets initialized via
+a cpu hotplug notifier on CPU_ONLINE.
+CPU_ONLINE however is too late, since the onlined cpu is already running
+and might access the per cpu data. Worst case is that the data structure
+gets initialized while an idle thread is updating its idle statistics.
+This will result in an uneven sequence counter after an update.
+
+As a result user space tools like top, which access /proc/stat in order
+to get idle stats, will busy loop waiting for the sequence counter to
+become even again, which will never happen until the queried cpu will
+update its idle statistics again. And even then the sequence counter
+will only have an even value for a couple of cpu cycles.
+
+Fix this by moving the initialization of the per cpu idle statistics
+to cpu_init(). I prefer that solution in favor of changing the
+notifier to CPU_UP_PREPARE, which would be a different solution to
+the problem.
+
+Signed-off-by: Heiko Carstens <heiko.carstens@de.ibm.com>
+Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+[bwh: Backported to 3.2: adjust context]
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ arch/s390/kernel/processor.c |    2 ++
+ arch/s390/kernel/smp.c       |    3 ---
+ 2 files changed, 2 insertions(+), 3 deletions(-)
+
+--- a/arch/s390/kernel/processor.c
++++ b/arch/s390/kernel/processor.c
+@@ -26,12 +26,14 @@ static DEFINE_PER_CPU(struct cpuid, cpu_
+ void __cpuinit cpu_init(void)
+ {
+ 	struct cpuid *id = &per_cpu(cpu_id, smp_processor_id());
++	struct s390_idle_data *idle = &__get_cpu_var(s390_idle);
+ 
+ 	get_cpu_id(id);
+ 	atomic_inc(&init_mm.mm_count);
+ 	current->active_mm = &init_mm;
+ 	BUG_ON(current->mm);
+ 	enter_lazy_tlb(&init_mm, current);
++	memset(idle, 0, sizeof(*idle));
+ }
+ 
+ /*
+--- a/arch/s390/kernel/smp.c
++++ b/arch/s390/kernel/smp.c
+@@ -1020,14 +1020,11 @@ static int __cpuinit smp_cpu_notify(stru
+ 	unsigned int cpu = (unsigned int)(long)hcpu;
+ 	struct cpu *c = &per_cpu(cpu_devices, cpu);
+ 	struct sys_device *s = &c->sysdev;
+-	struct s390_idle_data *idle;
+ 	int err = 0;
+ 
+ 	switch (action) {
+ 	case CPU_ONLINE:
+ 	case CPU_ONLINE_FROZEN:
+-		idle = &per_cpu(s390_idle, cpu);
+-		memset(idle, 0, sizeof(struct s390_idle_data));
+ 		err = sysfs_create_group(&s->kobj, &cpu_online_attr_group);
+ 		break;
+ 	case CPU_DEAD:
+
+

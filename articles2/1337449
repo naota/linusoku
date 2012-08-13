@@ -1,0 +1,103 @@
+Path: news.gmane.org!not-for-mail
+From: Tejun Heo <tj@kernel.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [PATCH 03/14] workqueue: add missing smp_wmb() in process_one_work()
+Date: Fri,  3 Aug 2012 10:43:48 -0700
+Lines: 39
+Approved: news@gmane.org
+Message-ID: <1344015839-21800-4-git-send-email-tj@kernel.org>
+References: <1344015839-21800-1-git-send-email-tj@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344015897 21978 80.91.229.3 (3 Aug 2012 17:44:57 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 17:44:57 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	padovan@profusion.mobi, marcel@holtmann.org, peterz@infradead.org,
+	mingo@redhat.com, davem@davemloft.net, dougthompson@xmission.com,
+	ibm-acpi@hmh.eng.br, cbou@mail.ru, rui.zhang@intel.com,
+	tomi.valkeinen@ti.com, Tejun Heo <tj@kernel.org>,
+	Oleg Nesterov <oleg@redhat.com>, stable@vger.kernel.org
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 19:44:54 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxLvg-0007yq-Lu
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 19:44:53 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753538Ab2HCRoT (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 13:44:19 -0400
+Original-Received: from mail-yw0-f46.google.com ([209.85.213.46]:41087 "EHLO
+	mail-yw0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753223Ab2HCRoN (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 13:44:13 -0400
+Original-Received: by yhmm54 with SMTP id m54so1120477yhm.19
+        for <multiple recipients>; Fri, 03 Aug 2012 10:44:12 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references;
+        bh=/e8UdzLD4kwUWLUhi3umnsZATW0gxZW3Iukh2ThsHg8=;
+        b=UNHG9bk+DlOjCQM+I4j1+5zFmw5giSUgtjcBqahktN91iVUNYCht+XRQGVV5Tjz7DG
+         a6yJCsQ8GvLMhlzFFVyhOKXhRi/TjPuaFdbOsCfhIvGvWFt0CKQA5pWARUXUYoq1aW2Z
+         QL2YMtpLTGO+BNrV7xxRgc0WCxwQ4JLK9bcmBYrB+oc4JXF44A+POfa4G030qjbOYqUR
+         ktv4YE244X12MaGESfJS8fASG3QwRHboxxAD96lUhzedzg/QfLdI7ST8CD5V4V4OVAR8
+         tCVlEm5Vq7eqTnLj4k61T1nwolXPHI+OiVxMMM3JFD4xHW6U3Mpmo/sz7NNkGZwCU1d2
+         sfJw==
+Original-Received: by 10.50.89.197 with SMTP id bq5mr716166igb.64.1344015851563;
+        Fri, 03 Aug 2012 10:44:11 -0700 (PDT)
+Original-Received: from wtj.mtv.corp.google.com (wtj.mtv.corp.google.com [172.18.110.84])
+        by mx.google.com with ESMTPS id yh10sm4595318igb.0.2012.08.03.10.44.09
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 03 Aug 2012 10:44:10 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7.3
+In-Reply-To: <1344015839-21800-1-git-send-email-tj@kernel.org>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337449 gmane.linux.kernel.stable:29118
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337449>
+
+WORK_STRUCT_PENDING is used to claim ownership of a work item and
+process_one_work() releases it before starting execution.  When
+someone else grabs PENDING, all pre-release updates to the work item
+should be visible and all updates made by the new owner should happen
+afterwards.
+
+Grabbing PENDING uses test_and_set_bit() and thus has a full barrier;
+however, clearing doesn't have a matching wmb.  Given the preceding
+spin_unlock and use of clear_bit, I don't believe this can be a
+problem on an actual machine and there hasn't been any related report
+but it still is theretically possible for clear_pending to permeate
+upwards and happen before work->entry update.
+
+Add an explicit smp_wmb() before work_clear_pending().
+
+Signed-off-by: Tejun Heo <tj@kernel.org>
+Cc: Oleg Nesterov <oleg@redhat.com>
+Cc: stable@vger.kernel.org
+---
+ kernel/workqueue.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/kernel/workqueue.c b/kernel/workqueue.c
+index 70f95ab..5c26d36 100644
+--- a/kernel/workqueue.c
++++ b/kernel/workqueue.c
+@@ -1997,7 +1997,9 @@ __acquires(&gcwq->lock)
+ 
+ 	spin_unlock_irq(&gcwq->lock);
+ 
++	smp_wmb();	/* paired with test_and_set_bit(PENDING) */
+ 	work_clear_pending(work);
++
+ 	lock_map_acquire_read(&cwq->wq->lockdep_map);
+ 	lock_map_acquire(&lockdep_map);
+ 	trace_workqueue_execute_start(work);
+-- 
+1.7.7.3
+

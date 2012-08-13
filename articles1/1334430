@@ -1,0 +1,245 @@
+Path: news.gmane.org!not-for-mail
+From: Ramakrishna Pallala <ramakrishna.pallala@intel.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] smb347_charger: Add support for battery power supply attributes registration
+Date: Fri, 27 Jul 2012 22:25:31 +0530
+Lines: 199
+Approved: news@gmane.org
+Message-ID: <1343408131-21949-1-git-send-email-ramakrishna.pallala@intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343413120 3634 80.91.229.3 (27 Jul 2012 18:18:40 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 18:18:40 +0000 (UTC)
+Cc: Anton Vorontsov <cbouatmailru@gmail.com>,
+	Anton Vorontsov <anton.vorontsov@linaro.org>,
+	Ramakrishna Pallala <ramakrishna.pallala@intel.com>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 20:18:39 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sup7U-0005C4-EG
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 20:18:36 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752649Ab2G0SS1 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 14:18:27 -0400
+Original-Received: from mga02.intel.com ([134.134.136.20]:50422 "EHLO mga02.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752404Ab2G0SS0 (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 14:18:26 -0400
+Original-Received: from orsmga002.jf.intel.com ([10.7.209.21])
+  by orsmga101.jf.intel.com with ESMTP; 27 Jul 2012 11:18:25 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.67,351,1309762800"; 
+   d="scan'208";a="178432778"
+Original-Received: from rpallala-desktop.iind.intel.com (HELO localhost.localdomain) ([10.223.107.57])
+  by orsmga002.jf.intel.com with ESMTP; 27 Jul 2012 11:18:23 -0700
+X-Mailer: git-send-email 1.7.0.4
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334430
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334430>
+
+This patch adds the support to use power supply attributes registration
+mechanism for battery properties. This will be useful if the platform
+has a main/primary battery and it relies on smb347 driver to get
+some critical battery attributes.
+
+Anton, I have to rework on this patch once we get an agreement on the
+power supply attribute sources registration.
+
+Signed-off-by: Ramakrishna Pallala <ramakrishna.pallala@intel.com>
+---
+ drivers/power/smb347-charger.c       |  124 +++++++++++++++++++++++++++++-----
+ include/linux/power/smb347-charger.h |    1 +
+ 2 files changed, 108 insertions(+), 17 deletions(-)
+
+diff --git a/drivers/power/smb347-charger.c b/drivers/power/smb347-charger.c
+index 332dd01..b232453 100644
+--- a/drivers/power/smb347-charger.c
++++ b/drivers/power/smb347-charger.c
+@@ -136,6 +136,7 @@ struct smb347_charger {
+ 	struct power_supply	mains;
+ 	struct power_supply	usb;
+ 	struct power_supply	battery;
++	struct power_supply_attr_source battery_attr;
+ 	bool			mains_online;
+ 	bool			usb_online;
+ 	bool			charging_enabled;
+@@ -731,7 +732,8 @@ static irqreturn_t smb347_interrupt(int irq, void *data)
+ 		dev_err(smb->dev, "error in charger, disabling charging\n");
+ 
+ 		smb347_charging_disable(smb);
+-		power_supply_changed(&smb->battery);
++		if (smb->pdata->use_battery)
++			power_supply_changed(&smb->battery);
+ 		handled = true;
+ 	}
+ 
+@@ -741,7 +743,8 @@ static irqreturn_t smb347_interrupt(int irq, void *data)
+ 	 * disabled by the hardware.
+ 	 */
+ 	if (irqstat_c & (IRQSTAT_C_TERMINATION_IRQ | IRQSTAT_C_TAPER_IRQ)) {
+-		if (irqstat_c & IRQSTAT_C_TERMINATION_STAT)
++		if ((irqstat_c & IRQSTAT_C_TERMINATION_STAT) &&
++					smb->pdata->use_battery)
+ 			power_supply_changed(&smb->battery);
+ 		handled = true;
+ 	}
+@@ -1061,6 +1064,80 @@ static int smb347_battery_get_property(struct power_supply *psy,
+ 	return 0;
+ }
+ 
++static int smb347_battery_get_attr_property(
++			struct power_supply_attr_source *psy_attr,
++			enum power_supply_property psp,
++			union power_supply_propval *val)
++{
++	struct smb347_charger *smb = container_of(psy_attr,
++				struct smb347_charger, battery_attr);
++	const struct smb347_charger_platform_data *pdata = smb->pdata;
++	int ret;
++
++	ret = smb347_update_ps_status(smb);
++	if (ret < 0)
++		return ret;
++
++	switch (psp) {
++	case POWER_SUPPLY_PROP_STATUS:
++		if (!smb347_is_ps_online(smb)) {
++			val->intval = POWER_SUPPLY_STATUS_DISCHARGING;
++			break;
++		}
++		if (smb347_charging_status(smb))
++			val->intval = POWER_SUPPLY_STATUS_CHARGING;
++		else
++			val->intval = POWER_SUPPLY_STATUS_FULL;
++		break;
++
++	case POWER_SUPPLY_PROP_CHARGE_TYPE:
++		if (!smb347_is_ps_online(smb))
++			return -ENODATA;
++
++		/*
++		 * We handle trickle and pre-charging the same, and taper
++		 * and none the same.
++		 */
++		switch (smb347_charging_status(smb)) {
++		case 1:
++			val->intval = POWER_SUPPLY_CHARGE_TYPE_TRICKLE;
++			break;
++		case 2:
++			val->intval = POWER_SUPPLY_CHARGE_TYPE_FAST;
++			break;
++		default:
++			val->intval = POWER_SUPPLY_CHARGE_TYPE_NONE;
++			break;
++		}
++		break;
++
++	case POWER_SUPPLY_PROP_TECHNOLOGY:
++		val->intval = pdata->battery_info.technology;
++		break;
++
++	case POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN:
++		val->intval = pdata->battery_info.voltage_min_design;
++		break;
++
++	case POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN:
++		val->intval = pdata->battery_info.voltage_max_design;
++		break;
++
++	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
++		val->intval = pdata->battery_info.charge_full_design;
++		break;
++
++	case POWER_SUPPLY_PROP_MODEL_NAME:
++		val->strval = pdata->battery_info.name;
++		break;
++
++	default:
++		return -EINVAL;
++	}
++
++	return 0;
++}
++
+ static enum power_supply_property smb347_battery_properties[] = {
+ 	POWER_SUPPLY_PROP_STATUS,
+ 	POWER_SUPPLY_PROP_CHARGE_TYPE,
+@@ -1184,20 +1261,30 @@ static int smb347_probe(struct i2c_client *client,
+ 		}
+ 	}
+ 
+-	smb->battery.name = "smb347-battery";
+-	smb->battery.type = POWER_SUPPLY_TYPE_BATTERY;
+-	smb->battery.get_property = smb347_battery_get_property;
+-	smb->battery.properties = smb347_battery_properties;
+-	smb->battery.num_properties = ARRAY_SIZE(smb347_battery_properties);
+-
+-
+-	ret = power_supply_register(dev, &smb->battery);
+-	if (ret < 0) {
+-		if (smb->pdata->use_usb)
+-			power_supply_unregister(&smb->usb);
+-		if (smb->pdata->use_mains)
+-			power_supply_unregister(&smb->mains);
+-		return ret;
++	if (smb->pdata->use_battery) {
++		smb->battery.name = "smb347-battery";
++		smb->battery.type = POWER_SUPPLY_TYPE_BATTERY;
++		smb->battery.get_property = smb347_battery_get_property;
++		smb->battery.properties = smb347_battery_properties;
++		smb->battery.num_properties =
++				ARRAY_SIZE(smb347_battery_properties);
++		ret = power_supply_register(dev, &smb->battery);
++		if (ret < 0) {
++			if (smb->pdata->use_usb)
++				power_supply_unregister(&smb->usb);
++			if (smb->pdata->use_mains)
++				power_supply_unregister(&smb->mains);
++			return ret;
++		}
++	} else {
++		smb->battery_attr.name = "smb347-battery";
++		smb->battery_attr.type = POWER_SUPPLY_TYPE_BATTERY;
++		smb->battery_attr.get_property =
++					smb347_battery_get_attr_property;
++		ret = power_supply_attributes_register(dev, &smb->battery_attr);
++		if (ret < 0)
++			dev_warn(dev,
++				"power supply attr register failed: %d\n", ret);
+ 	}
+ 
+ 	/*
+@@ -1227,7 +1314,10 @@ static int smb347_remove(struct i2c_client *client)
+ 		gpio_free(smb->pdata->irq_gpio);
+ 	}
+ 
+-	power_supply_unregister(&smb->battery);
++	if (smb->pdata->use_battery)
++		power_supply_unregister(&smb->battery);
++	else
++		power_supply_attributes_unregister(&smb->battery_attr);
+ 	if (smb->pdata->use_usb)
+ 		power_supply_unregister(&smb->usb);
+ 	if (smb->pdata->use_mains)
+diff --git a/include/linux/power/smb347-charger.h b/include/linux/power/smb347-charger.h
+index b3cb20d..4bccd01 100644
+--- a/include/linux/power/smb347-charger.h
++++ b/include/linux/power/smb347-charger.h
+@@ -109,6 +109,7 @@ struct smb347_charger_platform_data {
+ 	unsigned int	charge_current_compensation;
+ 	bool		use_mains;
+ 	bool		use_usb;
++	bool		use_battery;
+ 	bool		use_usb_otg;
+ 	int		irq_gpio;
+ 	enum smb347_chg_enable enable_control;
+-- 
+1.7.0.4
+

@@ -1,0 +1,153 @@
+Path: news.gmane.org!not-for-mail
+From: Miklos Szeredi <miklos@szeredi.hu>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 2/2] audit: fix refcounting in audit-tree
+Date: Thu, 19 Jul 2012 11:48:52 +0200
+Lines: 81
+Approved: news@gmane.org
+Message-ID: <87a9ywrshn.fsf@tucsk.pomaz.szeredi.hu>
+References: <87eho8rsjs.fsf@tucsk.pomaz.szeredi.hu>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1342691353 24365 80.91.229.3 (19 Jul 2012 09:49:13 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 09:49:13 +0000 (UTC)
+Cc: eparis@redhat.com, torvalds@linux-foundation.org,
+	linux-kernel@vger.kernel.org
+To: viro@ZenIV.linux.org.uk
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 11:49:13 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SrnM8-0001Di-3x
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 11:49:12 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752461Ab2GSJtE (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 05:49:04 -0400
+Original-Received: from mail-bk0-f46.google.com ([209.85.214.46]:46067 "EHLO
+	mail-bk0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750897Ab2GSJs6 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 05:48:58 -0400
+Original-Received: by bkwj10 with SMTP id j10so2213466bkw.19
+        for <linux-kernel@vger.kernel.org>; Thu, 19 Jul 2012 02:48:57 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=szeredi.hu; s=google;
+        h=from:to:cc:subject:references:date:in-reply-to:message-id
+         :user-agent:mime-version:content-type;
+        bh=lKK21SpJdwwbCNAmUOrCkzrlYZna20okTDQ1TF0TUj4=;
+        b=aYAYcGhP0YkUYYV4z/75tQZAXKzLZoXJYgsVvOspu/G3xz+i554WSvP+GSl0kSX1ai
+         iDAaQvckJS67z5uRvO9wnurQE1x1N2aqV/CBautva4cTy/K5UlZjjVIKlgt+adEuiid/
+         4mthLdBfDgMBKLF8c2+E3KYQja6tT/JGl0eqY=
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:references:date:in-reply-to:message-id
+         :user-agent:mime-version:content-type:x-gm-message-state;
+        bh=lKK21SpJdwwbCNAmUOrCkzrlYZna20okTDQ1TF0TUj4=;
+        b=QlEGyIRFkh/35kC3QvEsC5PR2VAsbjawKUo21u8HTKX6gVDxQ4z93kQCOk8TwEohrA
+         KQc/MPTtZmcQ7mFx72w/8PJN5+8R7TQfUAwRXmqbpl4RfYK4A/CcsDsnhWGaCzxHzOuE
+         XrSL5RrP79yVJR8SDaprbNb8uEH7mFgWj4GjvL8FqWOBecf8HXa20ev3RTJuG4e+3kTL
+         3Flvki0ItHKmNWxJJs2LuY+7O0JeZp1NYmyCnc7ox7teqWV2yNEzzhvrAwV+d00vVgvU
+         8Kq89pIwd5JYoGPc0K/KucIWiPCfldMNIBG/A5rcVWAzsd7YC1pbSAwEHUpu7H2t2Kz8
+         zBQQ==
+Original-Received: by 10.204.39.73 with SMTP id f9mr480289bke.110.1342691337112;
+        Thu, 19 Jul 2012 02:48:57 -0700 (PDT)
+Original-Received: from tucsk.pomaz.szeredi.hu (178-164-179-161.pool.digikabel.hu. [178.164.179.161])
+        by mx.google.com with ESMTPS id hg13sm705743bkc.7.2012.07.19.02.48.55
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 19 Jul 2012 02:48:56 -0700 (PDT)
+In-Reply-To: <87eho8rsjs.fsf@tucsk.pomaz.szeredi.hu> (Miklos Szeredi's message
+	of "Thu, 19 Jul 2012 11:47:35 +0200")
+User-Agent: Gnus/5.13 (Gnus v5.13) Emacs/23.3 (gnu/linux)
+X-Gm-Message-State: ALoCoQn5qusu7N4UvcyE6q4QSrsc9pSqF+NIolgPb/KMiuigIBVGeJzKuz8QeXZ8qa0E/cuXl0K/
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330254
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330254>
+
+From: Miklos Szeredi <mszeredi@suse.cz>
+
+Refcounting of fsnotify_mark in audit tree is broken.  E.g:
+
+                              refcount
+create_chunk
+  alloc_chunk                 1
+  fsnotify_add_mark           2
+
+untag_chunk
+  fsnotify_get_mark           3
+  fsnotify_destroy_mark
+    audit_tree_freeing_mark   2
+  fsnotify_put_mark           1
+  fsnotify_put_mark           0
+  via destroy_list
+    fsnotify_mark_destroy    -1
+
+This was reported by various people as triggering Oops when stopping auditd.
+
+We could just remove the put_mark from audit_tree_freeing_mark() but that would
+break freeing via inode destruction.  So this patch simply omits a put_mark
+after calling destroy_mark or adds a get_mark before.
+
+The additional get_mark is necessary where there's no other put_mark after
+fsnotify_destroy_mark() since it assumes that the caller is holding a reference
+(or the inode is keeping the mark pinned, not the case here AFAICS).
+
+Signed-off-by: Miklos Szeredi <mszeredi@suse.cz>
+Reported-by: Valentin Avram <aval13@gmail.com>
+Reported-by: Peter Moody <pmoody@google.com>
+Acked-by: Eric Paris <eparis@redhat.com>
+CC: stable@vger.kernel.org
+---
+ kernel/audit_tree.c |    5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+Index: linux-2.6/kernel/audit_tree.c
+===================================================================
+--- linux-2.6.orig/kernel/audit_tree.c	2012-06-25 17:55:41.000000000 +0200
++++ linux-2.6/kernel/audit_tree.c	2012-06-25 18:08:03.000000000 +0200
+@@ -250,7 +250,6 @@ static void untag_chunk(struct node *p)
+ 		spin_unlock(&hash_lock);
+ 		spin_unlock(&entry->lock);
+ 		fsnotify_destroy_mark(entry);
+-		fsnotify_put_mark(entry);
+ 		goto out;
+ 	}
+ 
+@@ -293,7 +292,6 @@ static void untag_chunk(struct node *p)
+ 	spin_unlock(&hash_lock);
+ 	spin_unlock(&entry->lock);
+ 	fsnotify_destroy_mark(entry);
+-	fsnotify_put_mark(entry);
+ 	goto out;
+ 
+ Fallback:
+@@ -332,6 +330,7 @@ static int create_chunk(struct inode *in
+ 		spin_unlock(&hash_lock);
+ 		chunk->dead = 1;
+ 		spin_unlock(&entry->lock);
++		fsnotify_get_mark(entry);
+ 		fsnotify_destroy_mark(entry);
+ 		fsnotify_put_mark(entry);
+ 		return 0;
+@@ -412,6 +411,7 @@ static int tag_chunk(struct inode *inode
+ 		spin_unlock(&chunk_entry->lock);
+ 		spin_unlock(&old_entry->lock);
+ 
++		fsnotify_get_mark(chunk_entry);
+ 		fsnotify_destroy_mark(chunk_entry);
+ 
+ 		fsnotify_put_mark(chunk_entry);
+@@ -445,7 +445,6 @@ static int tag_chunk(struct inode *inode
+ 	spin_unlock(&old_entry->lock);
+ 	fsnotify_destroy_mark(old_entry);
+ 	fsnotify_put_mark(old_entry); /* pair to fsnotify_find mark_entry */
+-	fsnotify_put_mark(old_entry); /* and kill it */
+ 	return 0;
+ }
+ 

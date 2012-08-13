@@ -1,0 +1,181 @@
+Path: news.gmane.org!not-for-mail
+From: "Rafael J. Wysocki" <rjw@sisk.pl>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.sh.devel
+Subject: [PATCH 1/12] PM / Domains: Make it possible to use domain names when adding devices
+Date: Tue, 7 Aug 2012 01:06:11 +0200
+Lines: 124
+Approved: news@gmane.org
+Message-ID: <201208070106.12060.rjw@sisk.pl>
+References: <201208070105.23262.rjw@sisk.pl>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain;
+  charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344294863 10050 80.91.229.3 (6 Aug 2012 23:14:23 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 23:14:23 +0000 (UTC)
+Cc: LKML <linux-kernel@vger.kernel.org>,
+	Linux PM list <linux-pm@vger.kernel.org>,
+	Magnus Damm <magnus.damm@gmail.com>
+To: "Linux-sh list" <linux-sh@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 01:14:23 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyWVA-0008S5-Td
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 01:14:21 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932395Ab2HFXON (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 19:14:13 -0400
+Original-Received: from ogre.sisk.pl ([193.178.161.156]:44941 "EHLO ogre.sisk.pl"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752887Ab2HFXLM (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 19:11:12 -0400
+Original-Received: from localhost (localhost.localdomain [127.0.0.1])
+	by ogre.sisk.pl (Postfix) with ESMTP id C39C21DB9C1;
+	Tue,  7 Aug 2012 01:01:14 +0200 (CEST)
+Original-Received: from ogre.sisk.pl ([127.0.0.1])
+ by localhost (ogre.sisk.pl [127.0.0.1]) (amavisd-new, port 10024) with ESMTP
+ id 04362-03; Tue,  7 Aug 2012 01:00:54 +0200 (CEST)
+Original-Received: from ferrari.rjw.lan (62-121-64-87.home.aster.pl [62.121.64.87])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by ogre.sisk.pl (Postfix) with ESMTP id 28FAA1DB950;
+	Tue,  7 Aug 2012 01:00:54 +0200 (CEST)
+User-Agent: KMail/1.13.6 (Linux/3.5.0+; KDE/4.6.0; x86_64; ; )
+In-Reply-To: <201208070105.23262.rjw@sisk.pl>
+X-Virus-Scanned: amavisd-new at ogre.sisk.pl using MkS_Vir for Linux
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338626 gmane.linux.ports.sh.devel:16162
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338626>
+
+
+Add a new helper function __pm_genpd_name_add_device() allowing
+a device to be added to a (registered) generic PM domain identified
+by name.  Add a wrapper around it, pm_genpd_name_add_device(),
+passing NULL as the last argument and reorganize pm_domains.h for the
+new functions to be defined consistently with the existing ones.
+
+These functions are useful for adding devices to PM domains whose
+representations are stored in tables, when the caller doesn't know
+the index of the domain to add the device to, but it knows the
+domain's name.
+
+Signed-off-by: Rafael J. Wysocki <rjw@sisk.pl>
+---
+ drivers/base/power/domain.c |   27 +++++++++++++++++++++++++++
+ include/linux/pm_domain.h   |   42 +++++++++++++++++++++++++++++-------------
+ 2 files changed, 56 insertions(+), 13 deletions(-)
+
+Index: linux/drivers/base/power/domain.c
+===================================================================
+--- linux.orig/drivers/base/power/domain.c
++++ linux/drivers/base/power/domain.c
+@@ -1465,6 +1465,33 @@ int __pm_genpd_of_add_device(struct devi
+ 	return __pm_genpd_add_device(genpd, dev, td);
+ }
+ 
++
++/**
++ * __pm_genpd_name_add_device - Find I/O PM domain and add a device to it.
++ * @domain_name: Name of the PM domain to add the device to.
++ * @dev: Device to be added.
++ * @td: Set of PM QoS timing parameters to attach to the device.
++ */
++int __pm_genpd_name_add_device(const char *domain_name, struct device *dev,
++			       struct gpd_timing_data *td)
++{
++	struct generic_pm_domain *genpd = NULL, *gpd;
++
++	if (IS_ERR_OR_NULL(domain_name) || IS_ERR_OR_NULL(dev))
++		return -EINVAL;
++
++	mutex_lock(&gpd_list_lock);
++	list_for_each_entry(gpd, &gpd_list, gpd_list_node) {
++		if (!strcmp(gpd->name, domain_name)) {
++			genpd = gpd;
++			break;
++		}
++	}
++	mutex_unlock(&gpd_list_lock);
++
++	return __pm_genpd_add_device(genpd, dev, td);
++}
++
+ /**
+  * pm_genpd_remove_device - Remove a device from an I/O PM domain.
+  * @genpd: PM domain to remove the device from.
+Index: linux/include/linux/pm_domain.h
+===================================================================
+--- linux.orig/include/linux/pm_domain.h
++++ linux/include/linux/pm_domain.h
+@@ -138,17 +138,9 @@ extern int __pm_genpd_of_add_device(stru
+ 				    struct device *dev,
+ 				    struct gpd_timing_data *td);
+ 
+-static inline int pm_genpd_add_device(struct generic_pm_domain *genpd,
+-				      struct device *dev)
+-{
+-	return __pm_genpd_add_device(genpd, dev, NULL);
+-}
+-
+-static inline int pm_genpd_of_add_device(struct device_node *genpd_node,
+-					 struct device *dev)
+-{
+-	return __pm_genpd_of_add_device(genpd_node, dev, NULL);
+-}
++extern int __pm_genpd_name_add_device(const char *domain_name,
++				      struct device *dev,
++				      struct gpd_timing_data *td);
+ 
+ extern int pm_genpd_remove_device(struct generic_pm_domain *genpd,
+ 				  struct device *dev);
+@@ -187,8 +179,14 @@ static inline int __pm_genpd_add_device(
+ {
+ 	return -ENOSYS;
+ }
+-static inline int pm_genpd_add_device(struct generic_pm_domain *genpd,
+-				      struct device *dev)
++static inline int __pm_genpd_of_add_device(struct device_node *genpd_node,
++					   struct device *dev)
++{
++	return -ENOSYS;
++}
++static inline int __pm_genpd_name_add_device(char *domain_name,
++					     struct device *dev,
++					     struct gpd_timing_data *td)
+ {
+ 	return -ENOSYS;
+ }
+@@ -242,6 +240,24 @@ static inline bool default_stop_ok(struc
+ #define pm_domain_always_on_gov NULL
+ #endif
+ 
++static inline int pm_genpd_add_device(struct generic_pm_domain *genpd,
++				      struct device *dev)
++{
++	return __pm_genpd_add_device(genpd, dev, NULL);
++}
++
++static inline int pm_genpd_of_add_device(struct device_node *genpd_node,
++					 struct device *dev)
++{
++	return __pm_genpd_of_add_device(genpd_node, dev, NULL);
++}
++
++static inline int pm_genpd_name_add_device(const char *domain_name,
++					   struct device *dev)
++{
++	return __pm_genpd_name_add_device(domain_name, dev, NULL);
++}
++
+ static inline int pm_genpd_remove_callbacks(struct device *dev)
+ {
+ 	return __pm_genpd_remove_callbacks(dev, true);
+

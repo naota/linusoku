@@ -1,0 +1,109 @@
+Path: news.gmane.org!not-for-mail
+From: Andrew Morton <akpm@linux-foundation.org>
+Newsgroups: gmane.linux.kernel.next,gmane.linux.kernel
+Subject: Re: linux-next: manual merge of the akpm tree with the tip tree
+Date: Wed, 25 Jul 2012 11:57:13 -0700
+Lines: 56
+Approved: news@gmane.org
+Message-ID: <20120725115713.e56239b5.akpm@linux-foundation.org>
+References: <20120725140827.4332a5448e4d8d200164ea2e@canb.auug.org.au>
+	<20120725071044.GA27535@gmail.com>
+	<20120725073503.GB1112@cmpxchg.org>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=US-ASCII
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343242643 15295 80.91.229.3 (25 Jul 2012 18:57:23 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 18:57:23 +0000 (UTC)
+Cc: Ingo Molnar <mingo@kernel.org>,
+	Stephen Rothwell <sfr@canb.auug.org.au>,
+	linux-next@vger.kernel.org, linux-kernel@vger.kernel.org,
+	Lee Schermerhorn <lee.schermerhorn@hp.com>,
+	Thomas Gleixner <tglx@linutronix.de>,
+	Ingo Molnar <mingo@elte.hu>, "H. Peter Anvin" <hpa@zytor.com>,
+	Peter Zijlstra <peterz@infradead.org>
+To: Johannes Weiner <hannes@cmpxchg.org>
+Original-X-From: linux-next-owner@vger.kernel.org Wed Jul 25 20:57:19 2012
+Return-path: <linux-next-owner@vger.kernel.org>
+Envelope-to: glkn-linux-next@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-next-owner@vger.kernel.org>)
+	id 1Su6lo-0007Ef-RE
+	for glkn-linux-next@plane.gmane.org; Wed, 25 Jul 2012 20:57:17 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751343Ab2GYS5P (ORCPT <rfc822;glkn-linux-next@m.gmane.org>);
+	Wed, 25 Jul 2012 14:57:15 -0400
+Original-Received: from mail.linuxfoundation.org ([140.211.169.12]:58321 "EHLO
+	mail.linuxfoundation.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750838Ab2GYS5P (ORCPT
+	<rfc822;linux-next@vger.kernel.org>); Wed, 25 Jul 2012 14:57:15 -0400
+Original-Received: from akpm.mtv.corp.google.com (216-239-45-4.google.com [216.239.45.4])
+	by mail.linuxfoundation.org (Postfix) with ESMTPSA id 79970D42;
+	Wed, 25 Jul 2012 18:57:14 +0000 (UTC)
+In-Reply-To: <20120725073503.GB1112@cmpxchg.org>
+X-Mailer: Sylpheed 3.0.2 (GTK+ 2.20.1; x86_64-pc-linux-gnu)
+Original-Sender: linux-next-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-next.vger.kernel.org>
+X-Mailing-List: linux-next@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel.next:23502 gmane.linux.kernel:1333219
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333219>
+
+On Wed, 25 Jul 2012 09:35:03 +0200
+Johannes Weiner <hannes@cmpxchg.org> wrote:
+
+> As this is unlikely to reappear in this merge window, the conflict
+> resolution is quite simple.  All that's needed is remove the 3 hunks
+> from my patch that converted a user in Peter's patch to a new API.  I
+> can resend the series if needed, but it's probably easier to just
+> remove the hunks against mm/migrate.c::migrate_misplaced_page():
+> 
+> @@ -1519,10 +1512,9 @@ migrate_misplaced_page(struct page *page, struct mm_struct *mm, int node)
+>  {
+>  	struct page *oldpage = page, *newpage;
+>  	struct address_space *mapping = page_mapping(page);
+> -	struct mem_cgroup *mcg;
+> +	struct mem_cgroup *memcg;
+>  	unsigned int gfp;
+>  	int rc = 0;
+> -	int charge = -ENOMEM;
+>  
+>  	VM_BUG_ON(!PageLocked(page));
+>  	VM_BUG_ON(page_mapcount(page));
+> @@ -1556,12 +1548,7 @@ migrate_misplaced_page(struct page *page, struct mm_struct *mm, int node)
+>  	if (!trylock_page(newpage))
+>  		BUG();		/* new page should be unlocked!!! */
+>  
+> -	// XXX hnaz, is this right?
+> -	charge = mem_cgroup_prepare_migration(page, newpage, &mcg, gfp);
+> -	if (charge == -ENOMEM) {
+> -		rc = charge;
+> -		goto out;
+> -	}
+> +	mem_cgroup_prepare_migration(page, newpage, &memcg);
+>  
+>  	newpage->index = page->index;
+>  	newpage->mapping = page->mapping;
+> @@ -1581,11 +1568,9 @@ migrate_misplaced_page(struct page *page, struct mm_struct *mm, int node)
+>  		page = newpage;
+>  	}
+>  
+> +	mem_cgroup_end_migration(memcg, oldpage, newpage, !rc);
+>  out:
+> -	if (!charge)
+> -		mem_cgroup_end_migration(mcg, oldpage, newpage, !rc);
+> -
+> -       if (oldpage != page)
+> +	if (oldpage != page)
+>                 put_page(oldpage);
+>  
+>  	if (rc) {
+
+Yes, that worked out OK.
+
+This means that if the above code reappears in linux-next or mainline,
+the current copy of
+mm-memcg-fix-compaction-migration-failing-due-to-memcg-limits.patch
+will no longer update it, and I probably won't notice that omission. 

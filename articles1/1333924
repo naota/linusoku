@@ -1,0 +1,129 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 02/40] ntp: Fix STA_INS/DEL clearing bug
+Date: Thu, 26 Jul 2012 14:29:20 -0700
+Lines: 60
+Approved: news@gmane.org
+Message-ID: <20120726211411.254314091@linuxfoundation.org>
+References: <20120726211424.GA7709@kroah.com>
+ <20120726211411.164006056@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343338227 9583 80.91.229.3 (26 Jul 2012 21:30:27 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 21:30:27 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, John Stultz <johnstul@us.ibm.com>,
+	Ingo Molnar <mingo@kernel.org>,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Richard Cochran <richardcochran@gmail.com>,
+	Prarit Bhargava <prarit@redhat.com>,
+	Thomas Gleixner <tglx@linutronix.de>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 23:30:25 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuVdQ-00055h-Q1
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 23:30:17 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753144Ab2GZVaI (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 17:30:08 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:62132 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753015Ab2GZVaG (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 17:30:06 -0400
+Original-Received: by pbbrp8 with SMTP id rp8so3820546pbb.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 14:30:06 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=lhK984v2rG7nFl0iFxZPwtS6xsH7jF1b2vUtOb1CVYU=;
+        b=ZedGdvjRTdQI+3/T5JaO/hwKozP+FKaMg0vOd0KdnscHU0O4LFYaaSwwAFiBd2VHgo
+         CCsXTGTU5qtyZW9xSuD39c/E81nSmAv2Qdg5tILHfEM8MAWf2XZlIYLJbOkAqbLk06n/
+         1J8YAAJE0wVENAA0h0pEHhFr4s4Nf72UQcx7DxFg2U7zSNzzO+r/x2S1DPCijD42VOvM
+         j9CdhIAkoLLyN9uxpUP6zoDC2Y3nLw797nniH13uFWu1SfjqDAD2DmwlvwM6IxYQXgDr
+         5lB5zq3KmyIaeF/Q4Mk3bB8pXxsvbi1apQMezxsK/C6lvS9UGrFDM1FAd/eVhZm8ouws
+         O4VQ==
+Original-Received: by 10.68.221.10 with SMTP id qa10mr8007571pbc.154.1343338205846;
+        Thu, 26 Jul 2012 14:30:05 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id nj4sm439811pbc.5.2012.07.26.14.30.03
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 14:30:04 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120726211411.164006056@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQkIyCpDKWu1o4dFK1oPy1JUF+bZtzeHN3KxEJqqztuBPH/s03HXtu9Iqhr15/AuB7M6/6Fu
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333924 gmane.linux.kernel.stable:28862
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333924>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: John Stultz <johnstul@us.ibm.com>
+
+commit 6b1859dba01c7d512b72d77e3fd7da8354235189 upstream.
+
+In commit 6b43ae8a619d17c4935c3320d2ef9e92bdeed05d, I
+introduced a bug that kept the STA_INS or STA_DEL bit
+from being cleared from time_status via adjtimex()
+without forcing STA_PLL first.
+
+Usually once the STA_INS is set, it isn't cleared
+until the leap second is applied, so its unlikely this
+affected anyone. However during testing I noticed it
+took some effort to cancel a leap second once STA_INS
+was set.
+
+Signed-off-by: John Stultz <johnstul@us.ibm.com>
+Cc: Ingo Molnar <mingo@kernel.org>
+Cc: Peter Zijlstra <a.p.zijlstra@chello.nl>
+Cc: Richard Cochran <richardcochran@gmail.com>
+Cc: Prarit Bhargava <prarit@redhat.com>
+Link: http://lkml.kernel.org/r/1342156917-25092-2-git-send-email-john.stultz@linaro.org
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ kernel/time/ntp.c |    8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+--- a/kernel/time/ntp.c
++++ b/kernel/time/ntp.c
+@@ -375,7 +375,9 @@ int second_overflow(unsigned long secs)
+ 			time_state = TIME_DEL;
+ 		break;
+ 	case TIME_INS:
+-		if (secs % 86400 == 0) {
++		if (!(time_status & STA_INS))
++			time_state = TIME_OK;
++		else if (secs % 86400 == 0) {
+ 			leap = -1;
+ 			time_state = TIME_OOP;
+ 			time_tai++;
+@@ -384,7 +386,9 @@ int second_overflow(unsigned long secs)
+ 		}
+ 		break;
+ 	case TIME_DEL:
+-		if ((secs + 1) % 86400 == 0) {
++		if (!(time_status & STA_DEL))
++			time_state = TIME_OK;
++		else if ((secs + 1) % 86400 == 0) {
+ 			leap = 1;
+ 			time_tai--;
+ 			time_state = TIME_WAIT;
+
+

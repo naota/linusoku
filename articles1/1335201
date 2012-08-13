@@ -1,0 +1,141 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 30/41] mm: vmscan: do not OOM if aborting reclaim to start compaction
+Date: Mon, 30 Jul 2012 10:31:29 -0700
+Lines: 72
+Approved: news@gmane.org
+Message-ID: <20120730172903.662057319@linuxfoundation.org>
+References: <20120730172901.306897424@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343669600 24878 80.91.229.3 (30 Jul 2012 17:33:20 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 17:33:20 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Mel Gorman <mgorman@suse.de>,
+	Rik van Riel <riel@redhat.com>,
+	Andrea Arcangeli <aarcange@redhat.com>,
+	Minchan Kim <minchan.kim@gmail.com>,
+	Dave Jones <davej@redhat.com>, Jan Kara <jack@suse.cz>,
+	Andy Isaacson <adi@hexapodia.org>, Nai Xia <nai.xia@gmail.com>,
+	Johannes Weiner <jweiner@redhat.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 19:33:16 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Svtq5-0002Oh-Cd
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 19:33:05 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754907Ab2G3Rcz (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 13:32:55 -0400
+Original-Received: from mail-gg0-f174.google.com ([209.85.161.174]:49202 "EHLO
+	mail-gg0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754870Ab2G3Rcw (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 13:32:52 -0400
+Original-Received: by mail-gg0-f174.google.com with SMTP id u4so5078471ggl.19
+        for <linux-kernel@vger.kernel.org>; Mon, 30 Jul 2012 10:32:51 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=ZCb916ZUI658HL0TWFuls0ecP0O6ATBH8lZebzxdjgM=;
+        b=G1RB2fxrNShZErXOLXISaPvT47B7xMuJ/3/WHMOYHLQO0oeoZzx5gg6nJujMB2pxZR
+         Yas8qSGNt7aN/lcPqlvKN0986/jo+RQLWLiRQz+PdaRMs4jNVyR6zYOXL28Bpqf8xEKT
+         AQMsE9XcaHvMvh0rACSuHodYIu5m91gCG23clDIkditTz1RJ+pdRBd/2si/Lx6u6ro9G
+         76l7dY9QYQIACec+zRHbBGqREU1HVb5ONMaoMwS3iFh14dPoi+uC75nFeEg5QVOhlj3Y
+         p9E/8bgVsMJU8+weJjAdRTnVgPpCONKtXsHpyvhoQ2oe3D74Jl1pO/ryUBVrok2HMWTo
+         E6CQ==
+Original-Received: by 10.66.88.68 with SMTP id be4mr26244764pab.23.1343669571424;
+        Mon, 30 Jul 2012 10:32:51 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id pt2sm8290267pbb.58.2012.07.30.10.32.49
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 30 Jul 2012 10:32:50 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120730172901.306897424@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQk6KCrrr2veWWjQHF9wmNnvmDgW7K2vHlCSB7LcupOyvjIF4jea7FdkC1aDf0LM1y7Zm3qy
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335201 gmane.linux.kernel.stable:28946
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335201>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Mel Gorman <mgorman@suse.de>
+
+commit 7335084d446b83cbcb15da80497d03f0c1dc9e21 upstream.
+
+Stable note: Not tracked in Bugzilla. This patch makes later patches
+	easier to apply but otherwise has little to justify it. The
+	problem it fixes was never observed but the source of the
+	theoretical problem did not exist for very long.
+
+During direct reclaim it is possible that reclaim will be aborted so that
+compaction can be attempted to satisfy a high-order allocation.  If this
+decision is made before any pages are reclaimed, it is possible that 0 is
+returned to the page allocator potentially triggering an OOM.  This has
+not been observed but it is a possibility so this patch addresses it.
+
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Reviewed-by: Rik van Riel <riel@redhat.com>
+Cc: Andrea Arcangeli <aarcange@redhat.com>
+Cc: Minchan Kim <minchan.kim@gmail.com>
+Cc: Dave Jones <davej@redhat.com>
+Cc: Jan Kara <jack@suse.cz>
+Cc: Andy Isaacson <adi@hexapodia.org>
+Cc: Nai Xia <nai.xia@gmail.com>
+Cc: Johannes Weiner <jweiner@redhat.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+
+---
+ mm/vmscan.c |    8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -2240,6 +2240,7 @@ static unsigned long do_try_to_free_page
+ 	struct zoneref *z;
+ 	struct zone *zone;
+ 	unsigned long writeback_threshold;
++	bool should_abort_reclaim;
+ 
+ 	get_mems_allowed();
+ 	delayacct_freepages_start();
+@@ -2251,7 +2252,8 @@ static unsigned long do_try_to_free_page
+ 		sc->nr_scanned = 0;
+ 		if (!priority)
+ 			disable_swap_token(sc->mem_cgroup);
+-		if (shrink_zones(priority, zonelist, sc))
++		should_abort_reclaim = shrink_zones(priority, zonelist, sc);
++		if (should_abort_reclaim)
+ 			break;
+ 
+ 		/*
+@@ -2318,6 +2320,10 @@ out:
+ 	if (oom_killer_disabled)
+ 		return 0;
+ 
++	/* Aborting reclaim to try compaction? don't OOM, then */
++	if (should_abort_reclaim)
++		return 1;
++
+ 	/* top priority shrink_zones still had more to do? don't OOM, then */
+ 	if (scanning_global_lru(sc) && !all_unreclaimable(zonelist, sc))
+ 		return 1;
+
+

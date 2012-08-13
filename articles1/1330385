@@ -1,0 +1,177 @@
+Path: news.gmane.org!not-for-mail
+From: Mel Gorman <mgorman@suse.de>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel.stable,gmane.linux.kernel
+Subject: [PATCH 19/34] mm: compaction: make isolate_lru_page() filter-aware again
+Date: Thu, 19 Jul 2012 15:36:29 +0100
+Lines: 117
+Approved: news@gmane.org
+Message-ID: <1342708604-26540-20-git-send-email-mgorman@suse.de>
+References: <1342708604-26540-1-git-send-email-mgorman@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342708683 12595 80.91.229.3 (19 Jul 2012 14:38:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 14:38:03 +0000 (UTC)
+Cc: "Linux-MM <linux-mm"@kvack.org,
+	LKML <linux-kernel@vger.kernel.org>, Mel Gorman <mgorman@suse.de>
+To: Stable <stable@vger.kernel.org>
+Original-X-From: owner-linux-mm@kvack.org Thu Jul 19 16:38:02 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Srrrb-0006Oa-LX
+	for glkm-linux-mm-2@m.gmane.org; Thu, 19 Jul 2012 16:37:59 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 92D416B0081; Thu, 19 Jul 2012 10:37:14 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 4F81D6B0099; Thu, 19 Jul 2012 10:37:09 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 073086B0075; Thu, 19 Jul 2012 10:37:06 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx185.postini.com [74.125.245.185])
+	by kanga.kvack.org (Postfix) with SMTP id D759F6B0074
+	for <linux-mm@kvack.org>; Thu, 19 Jul 2012 10:36:59 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx185.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 19 Jul 2012 14:37:00 GMT
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 3D34EA3421;
+	Thu, 19 Jul 2012 16:36:58 +0200 (CEST)
+X-Mailer: git-send-email 1.7.9.2
+In-Reply-To: <1342708604-26540-1-git-send-email-mgorman@suse.de>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mgorman@suse.de> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82712 gmane.linux.kernel.stable:28552 gmane.linux.kernel:1330385
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330385>
+
+commit c82449352854ff09e43062246af86bdeb628f0c3 upstream.
+
+Stable note: Not tracked in Bugzilla. A fix aimed at preserving page aging
+	information by reducing LRU list churning had the side-effect of
+	reducing THP allocation success rates. This was part of a series
+	to restore the success rates while preserving the reclaim fix.
+
+Commit [39deaf85: mm: compaction: make isolate_lru_page() filter-aware]
+noted that compaction does not migrate dirty or writeback pages and
+that is was meaningless to pick the page and re-add it to the LRU list.
+This had to be partially reverted because some dirty pages can be
+migrated by compaction without blocking.
+
+This patch updates "mm: compaction: make isolate_lru_page" by skipping
+over pages that migration has no possibility of migrating to minimise
+LRU disruption.
+
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Reviewed-by: Rik van Riel<riel@redhat.com>
+Cc: Andrea Arcangeli <aarcange@redhat.com>
+Reviewed-by: Minchan Kim <minchan@kernel.org>
+Cc: Dave Jones <davej@redhat.com>
+Cc: Jan Kara <jack@suse.cz>
+Cc: Andy Isaacson <adi@hexapodia.org>
+Cc: Nai Xia <nai.xia@gmail.com>
+Cc: Johannes Weiner <jweiner@redhat.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+---
+ include/linux/mmzone.h |    2 ++
+ mm/compaction.c        |    3 +++
+ mm/vmscan.c            |   35 +++++++++++++++++++++++++++++++++--
+ 3 files changed, 38 insertions(+), 2 deletions(-)
+
+diff --git a/include/linux/mmzone.h b/include/linux/mmzone.h
+index 951ed81..80caa71 100644
+--- a/include/linux/mmzone.h
++++ b/include/linux/mmzone.h
+@@ -166,6 +166,8 @@ static inline int is_unevictable_lru(enum lru_list l)
+ #define ISOLATE_CLEAN		((__force isolate_mode_t)0x4)
+ /* Isolate unmapped file */
+ #define ISOLATE_UNMAPPED	((__force isolate_mode_t)0x8)
++/* Isolate for asynchronous migration */
++#define ISOLATE_ASYNC_MIGRATE	((__force isolate_mode_t)0x10)
+ 
+ /* LRU Isolation modes. */
+ typedef unsigned __bitwise__ isolate_mode_t;
+diff --git a/mm/compaction.c b/mm/compaction.c
+index afdc416..76bdd65 100644
+--- a/mm/compaction.c
++++ b/mm/compaction.c
+@@ -371,6 +371,9 @@ static isolate_migrate_t isolate_migratepages(struct zone *zone,
+ 			continue;
+ 		}
+ 
++		if (!cc->sync)
++			mode |= ISOLATE_ASYNC_MIGRATE;
++
+ 		/* Try isolate the page */
+ 		if (__isolate_lru_page(page, mode, 0) != 0)
+ 			continue;
+diff --git a/mm/vmscan.c b/mm/vmscan.c
+index 9aa75e9..aa75861 100644
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -1045,8 +1045,39 @@ int __isolate_lru_page(struct page *page, isolate_mode_t mode, int file)
+ 
+ 	ret = -EBUSY;
+ 
+-	if ((mode & ISOLATE_CLEAN) && (PageDirty(page) || PageWriteback(page)))
+-		return ret;
++	/*
++	 * To minimise LRU disruption, the caller can indicate that it only
++	 * wants to isolate pages it will be able to operate on without
++	 * blocking - clean pages for the most part.
++	 *
++	 * ISOLATE_CLEAN means that only clean pages should be isolated. This
++	 * is used by reclaim when it is cannot write to backing storage
++	 *
++	 * ISOLATE_ASYNC_MIGRATE is used to indicate that it only wants to pages
++	 * that it is possible to migrate without blocking
++	 */
++	if (mode & (ISOLATE_CLEAN|ISOLATE_ASYNC_MIGRATE)) {
++		/* All the caller can do on PageWriteback is block */
++		if (PageWriteback(page))
++			return ret;
++
++		if (PageDirty(page)) {
++			struct address_space *mapping;
++
++			/* ISOLATE_CLEAN means only clean pages */
++			if (mode & ISOLATE_CLEAN)
++				return ret;
++
++			/*
++			 * Only pages without mappings or that have a
++			 * ->migratepage callback are possible to migrate
++			 * without blocking
++			 */
++			mapping = page_mapping(page);
++			if (mapping && !mapping->a_ops->migratepage)
++				return ret;
++		}
++	}
+ 
+ 	if ((mode & ISOLATE_UNMAPPED) && page_mapped(page))
+ 		return ret;
+-- 
+1.7.9.2
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

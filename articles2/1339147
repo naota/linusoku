@@ -1,0 +1,118 @@
+Path: news.gmane.org!not-for-mail
+From: Jiang Liu <liuj97@gmail.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.pci
+Subject: [RFC PATCH v1 05/22] PCI: introduce pci_bus_{get|put}() to manage PCI bus reference count
+Date: Wed,  8 Aug 2012 00:10:45 +0800
+Lines: 51
+Approved: news@gmane.org
+Message-ID: <1344355862-2726-6-git-send-email-jiang.liu@huawei.com>
+References: <1344355862-2726-1-git-send-email-jiang.liu@huawei.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344356382 10694 80.91.229.3 (7 Aug 2012 16:19:42 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 16:19:42 +0000 (UTC)
+Cc: Jiang Liu <jiang.liu@huawei.com>,
+	Taku Izumi <izumi.taku@jp.fujitsu.com>,
+	"Rafael J . Wysocki" <rjw@sisk.pl>,
+	Yijing Wang <wangyijing@huawei.com>,
+	Xinwei Hu <huxinwei@huawei.com>, linux-kernel@vger.kernel.org,
+	linux-pci@vger.kernel.org, Jiang Liu <liuj97@gmail.com>
+To: Bjorn Helgaas <bhelgaas@google.com>,
+	Don Dutile <ddutile@redhat.com>,
+	Yinghai Lu <yinghai@kernel.org>,
+	Greg KH <gregkh@linuxfoundation.org>,
+	Kenji Kaneshige <kaneshige.kenji@jp.fujitsu.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 18:19:39 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SymVJ-0007Vr-5a
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 18:19:33 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755533Ab2HGQT0 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 12:19:26 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:51364 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752163Ab2HGQTW (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 12:19:22 -0400
+Original-Received: by pbbrr13 with SMTP id rr13so4529963pbb.19
+        for <multiple recipients>; Tue, 07 Aug 2012 09:19:22 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=VGHMSDDpAb59kKIdPDHAO4DFfWjOK31pCg/lzm6mfnY=;
+        b=C2k6S7zhj1m8eIYTkTyclQmiWf6uNSlWg8fq5rvt0GEeptTNaitUS7aRR+0mkV3Fsx
+         vKf2nGCI+K5jHzpgDimX5RFvmX/J5jKyLIDLMuvxGJ67RH4ss1/Z/O8nLm1HCnmmxux0
+         Wez7ALBVpOvhaHmxfIWeE4qtB+bIaphNbXXOIafJbiQRwhfpBNdsRrDnhTyfbLKji2Xm
+         7LzT89SVRS8bQvPhMw90AKCv5CqYFAT9OeJpev6cuvHJNwrvvFVD1IY1guqfIG2B9RjP
+         WU6M//dt/085bA4Kup5pYWMvuo142KcMw2v8RGqvlmO/Yx1+H2MfWkGW+PK9hdGpbVU8
+         Ee9g==
+Original-Received: by 10.68.231.40 with SMTP id td8mr29427066pbc.150.1344356362218;
+        Tue, 07 Aug 2012 09:19:22 -0700 (PDT)
+Original-Received: from localhost.localdomain ([58.250.81.2])
+        by mx.google.com with ESMTPS id pt2sm11429362pbb.58.2012.08.07.09.19.14
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 09:19:21 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1344355862-2726-1-git-send-email-jiang.liu@huawei.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339147 gmane.linux.kernel.pci:16954
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339147>
+
+Sometimes PCI hotplug drivers need to hold a reference count on a PCI bus,
+so introduce pci_bus_{get|put}() to manage PCI bus reference count.
+
+Signed-off-by: Jiang Liu <liuj97@gmail.com>
+---
+ drivers/pci/bus.c   |   15 +++++++++++++++
+ include/linux/pci.h |    2 ++
+ 2 files changed, 17 insertions(+)
+
+diff --git a/drivers/pci/bus.c b/drivers/pci/bus.c
+index e2a0c52..0e18270 100644
+--- a/drivers/pci/bus.c
++++ b/drivers/pci/bus.c
+@@ -325,6 +325,21 @@ void pci_walk_bus(struct pci_bus *top, int (*cb)(struct pci_dev *, void *),
+ }
+ EXPORT_SYMBOL_GPL(pci_walk_bus);
+ 
++struct pci_bus *pci_bus_get(struct pci_bus *bus)
++{
++	if (bus)
++		get_device(&bus->dev);
++	return bus;
++}
++EXPORT_SYMBOL(pci_bus_get);
++
++void pci_bus_put(struct pci_bus *bus)
++{
++	if (bus)
++		put_device(&bus->dev);
++}
++EXPORT_SYMBOL(pci_bus_put);
++
+ EXPORT_SYMBOL(pci_bus_alloc_resource);
+ EXPORT_SYMBOL_GPL(pci_bus_add_device);
+ EXPORT_SYMBOL(pci_bus_add_devices);
+diff --git a/include/linux/pci.h b/include/linux/pci.h
+index 95479cd..21fa79e 100644
+--- a/include/linux/pci.h
++++ b/include/linux/pci.h
+@@ -955,6 +955,8 @@ int pci_request_selected_regions_exclusive(struct pci_dev *, int, const char *);
+ void pci_release_selected_regions(struct pci_dev *, int);
+ 
+ /* drivers/pci/bus.c */
++struct pci_bus *pci_bus_get(struct pci_bus *bus);
++void pci_bus_put(struct pci_bus *bus);
+ void pci_add_resource(struct list_head *resources, struct resource *res);
+ void pci_add_resource_offset(struct list_head *resources, struct resource *res,
+ 			     resource_size_t offset);
+-- 
+1.7.9.5
+

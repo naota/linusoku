@@ -1,0 +1,211 @@
+Path: news.gmane.org!not-for-mail
+From: Andrew Vagin <avagin@openvz.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 3/4] perf: teach perf inject to merge sched_stat_* and sched_switch events (v2)
+Date: Tue,  7 Aug 2012 16:56:04 +0400
+Lines: 166
+Approved: news@gmane.org
+Message-ID: <1344344165-369636-4-git-send-email-avagin@openvz.org>
+References: <1344344165-369636-1-git-send-email-avagin@openvz.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344344223 2675 80.91.229.3 (7 Aug 2012 12:57:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 12:57:03 +0000 (UTC)
+Cc: Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Paul Mackerras <paulus@samba.org>,
+	Ingo Molnar <mingo@redhat.com>,
+	Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 14:57:02 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyjLD-0003Hp-Q0
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 14:56:56 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754557Ab2HGM4L (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 08:56:11 -0400
+Original-Received: from mailhub.sw.ru ([195.214.232.25]:21160 "EHLO relay.sw.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1750734Ab2HGM4J (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 08:56:09 -0400
+Original-Received: from ws-qual.sw.ru ([10.30.2.57])
+	by relay.sw.ru (8.13.4/8.13.4) with ESMTP id q77CtqeI023978;
+	Tue, 7 Aug 2012 16:55:54 +0400 (MSK)
+X-Mailer: git-send-email 1.7.1
+In-Reply-To: <1344344165-369636-1-git-send-email-avagin@openvz.org>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339006
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339006>
+
+You may want to know where and how long a task is sleeping. A callchain
+may be found in sched_switch and a time slice in stat_iowait, so I add
+handler in perf inject for merging this events.
+
+My code saves sched_switch event for each process and when it meets
+stat_iowait, it reports the sched_switch event, because this event
+contains a correct callchain. By another words it replaces all
+stat_iowait events on proper sched_switch events.
+
+v2: - remove the global variable "session"
+    - hadle errors from malloc()
+
+Signed-off-by: Andrew Vagin <avagin@openvz.org>
+---
+ tools/perf/Documentation/perf-inject.txt |    4 ++
+ tools/perf/builtin-inject.c              |   86 ++++++++++++++++++++++++++++++
+ 2 files changed, 90 insertions(+), 0 deletions(-)
+
+diff --git a/tools/perf/Documentation/perf-inject.txt b/tools/perf/Documentation/perf-inject.txt
+index 6be2101..c04e0c6 100644
+--- a/tools/perf/Documentation/perf-inject.txt
++++ b/tools/perf/Documentation/perf-inject.txt
+@@ -35,6 +35,10 @@ OPTIONS
+ -o::
+ --output=::
+         Output file name. (default: stdout)
++-s::
++--sched-stat::
++	Merge sched_stat and sched_switch for getting events where and how long
++	tasks slept.
+ 
+ SEE ALSO
+ --------
+diff --git a/tools/perf/builtin-inject.c b/tools/perf/builtin-inject.c
+index 4c9cdbb..9b3393a 100644
+--- a/tools/perf/builtin-inject.c
++++ b/tools/perf/builtin-inject.c
+@@ -8,11 +8,13 @@
+ #include "builtin.h"
+ 
+ #include "perf.h"
++#include "util/evsel.h"
+ #include "util/session.h"
+ #include "util/tool.h"
+ #include "util/debug.h"
+ 
+ #include "util/parse-options.h"
++#include "util/trace-event.h"
+ 
+ static const char	*input_name	= "-";
+ static const char	*output_name	= "-";
+@@ -21,6 +23,7 @@ static int		output;
+ static u64		bytes_written;
+ 
+ static bool		inject_build_ids;
++static bool		inject_sched_stat;
+ 
+ static int perf_event__repipe_synth(struct perf_tool *tool __used,
+ 				    union perf_event *event,
+@@ -210,6 +213,83 @@ repipe:
+ 	return 0;
+ }
+ 
++struct event_entry {
++	struct list_head node;
++	u32		 pid;
++	union perf_event event[0];
++};
++
++static LIST_HEAD(samples);
++
++static int perf_event__sched_stat(struct perf_tool *tool,
++				      union perf_event *event,
++				      struct perf_sample *sample,
++				      struct perf_evsel *evsel,
++				      struct machine *machine)
++{
++	const char *evname = NULL;
++	uint32_t size;
++	struct event_entry *ent;
++	union perf_event *event_sw = NULL;
++	struct perf_sample sample_sw;
++	int sched_process_exit;
++
++	size = event->header.size;
++
++	evname = evsel->tp_format->name;
++
++	sched_process_exit = !strcmp(evname, "sched_process_exit");
++
++	if (!strcmp(evname, "sched_switch") ||  sched_process_exit) {
++		list_for_each_entry(ent, &samples, node)
++			if (sample->pid == ent->pid)
++				break;
++
++		if (&ent->node != &samples) {
++			list_del(&ent->node);
++			free(ent);
++		}
++
++		if (sched_process_exit)
++			return 0;
++
++		ent = malloc(size + sizeof(struct event_entry));
++		if (ent == NULL)
++			die("malloc");
++		ent->pid = sample->pid;
++		memcpy(&ent->event, event, size);
++		list_add(&ent->node, &samples);
++		return 0;
++
++	} else if (!strncmp(evname, "sched_stat_", 11)) {
++		u32 pid;
++
++		pid = raw_field_value(evsel->tp_format,
++					"pid", sample->raw_data);
++
++		list_for_each_entry(ent, &samples, node) {
++			if (pid == ent->pid)
++				break;
++		}
++
++		if (&ent->node == &samples)
++			return 0;
++
++		event_sw = &ent->event[0];
++		perf_evsel__parse_sample(evsel, event_sw, &sample_sw, false);
++
++		sample_sw.period = sample->period;
++		sample_sw.time = sample->time;
++		perf_evsel__synthesize_sample(evsel, event_sw, &sample_sw, false);
++
++		perf_event__repipe(tool, event_sw, &sample_sw, machine);
++		return 0;
++	}
++
++	perf_event__repipe(tool, event, sample, machine);
++
++	return 0;
++}
+ struct perf_tool perf_inject = {
+ 	.sample		= perf_event__repipe_sample,
+ 	.mmap		= perf_event__repipe,
+@@ -245,6 +325,9 @@ static int __cmd_inject(void)
+ 		perf_inject.mmap	 = perf_event__repipe_mmap;
+ 		perf_inject.fork	 = perf_event__repipe_task;
+ 		perf_inject.tracing_data = perf_event__repipe_tracing_data;
++	} else if (inject_sched_stat) {
++		perf_inject.sample	 = perf_event__sched_stat;
++		perf_inject.ordered_samples = true;
+ 	}
+ 
+ 	session = perf_session__new(input_name, O_RDONLY, false, true, &perf_inject);
+@@ -272,6 +355,9 @@ static const char * const report_usage[] = {
+ static const struct option options[] = {
+ 	OPT_BOOLEAN('b', "build-ids", &inject_build_ids,
+ 		    "Inject build-ids into the output stream"),
++	OPT_BOOLEAN('s', "sched-stat", &inject_sched_stat,
++		    "Merge sched-stat and sched-switch for getting events "
++		    "where and how long tasks slept"),
+ 	OPT_STRING('i', "input", &input_name, "file",
+ 		    "input file name"),
+ 	OPT_STRING('o', "output", &output_name, "file",
+-- 
+1.7.1
+

@@ -1,0 +1,106 @@
+Path: news.gmane.org!not-for-mail
+From: aris@ruivo.org
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.cgroups
+Subject: [PATCH RESEND 1/4] device_cgroup: add "deny_all" in dev_cgroup structure
+Date: Thu, 09 Aug 2012 15:04:15 -0400
+Lines: 52
+Approved: news@gmane.org
+Message-ID: <20120809190415.021701086@muttley.lan.cathedral>
+References: <20120809190414.773462171@muttley.lan.cathedral>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344539832 696 80.91.229.3 (9 Aug 2012 19:17:12 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 19:17:12 +0000 (UTC)
+Cc: Tejun Heo <tj@kernel.org>, Li Zefan <lizefan@huawei.com>
+To: linux-kernel@vger.kernel.org, cgroups@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 09 21:17:12 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzYEJ-0002sH-Fa
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 09 Aug 2012 21:17:11 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1759353Ab2HITRF (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 15:17:05 -0400
+Original-Received: from lobo.ruivo.org ([173.14.175.98]:51854 "EHLO lobo.ruivo.org"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1759300Ab2HITRD (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 15:17:03 -0400
+Original-Received: by lobo.ruivo.org (Postfix, from userid 1011)
+	id 5AC66525B2; Thu,  9 Aug 2012 15:17:00 -0400 (EDT)
+X-Spam-Checker-Version: SpamAssassin 3.3.2 (2011-06-06) on tate.lan.cathedral
+X-Spam-Level: 
+X-Spam-Status: No, score=-2.9 required=5.0 tests=ALL_TRUSTED,BAYES_00
+	autolearn=ham version=3.3.2
+Original-Received: from jake.ruivo.org (unknown [192.168.72.18])
+	by lobo.ruivo.org (Postfix) with ESMTPSA id 1AD665244D;
+	Thu,  9 Aug 2012 15:16:43 -0400 (EDT)
+Original-Received: from muttley.lan.ruivo (muttley.lan.ruivo [192.168.66.11])
+	by jake.ruivo.org (Postfix) with ESMTP id 54A963E618A;
+	Thu,  9 Aug 2012 15:16:44 -0400 (EDT)
+Original-Received: from aris by muttley.lan.cathedral with local (Exim 4.80)
+	(envelope-from <aris@muttley.lan.cathedral>)
+	id 1SzY1n-0007Tk-2z; Thu, 09 Aug 2012 15:04:15 -0400
+User-Agent: quilt/0.60-1
+Content-Disposition: inline; filename=deny_all.patch
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340936 gmane.linux.kernel.cgroups:3561
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340936>
+
+deny_all will determine if the default policy is to deny all device access
+unless for the ones in the exception list.
+
+This variable will be used in the next patches to convert device_cgroup
+internally into a default policy + rules.
+
+Signed-off-by: Aristeu Rozanski <aris@redhat.com>
+
+---
+ security/device_cgroup.c |    5 +++++
+ 1 file changed, 5 insertions(+)
+
+Index: github/security/device_cgroup.c
+===================================================================
+--- github.orig/security/device_cgroup.c	2012-07-24 17:15:58.277108951 -0400
++++ github/security/device_cgroup.c	2012-07-24 17:16:00.085156162 -0400
+@@ -42,6 +42,7 @@
+ struct dev_cgroup {
+ 	struct cgroup_subsys_state css;
+ 	struct list_head whitelist;
++	bool deny_all;
+ };
+ 
+ static inline struct dev_cgroup *css_to_devcgroup(struct cgroup_subsys_state *s)
+@@ -178,12 +179,14 @@
+ 		wh->minor = wh->major = ~0;
+ 		wh->type = DEV_ALL;
+ 		wh->access = ACC_MASK;
++		dev_cgroup->deny_all = false;
+ 		list_add(&wh->list, &dev_cgroup->whitelist);
+ 	} else {
+ 		parent_dev_cgroup = cgroup_to_devcgroup(parent_cgroup);
+ 		mutex_lock(&devcgroup_mutex);
+ 		ret = dev_whitelist_copy(&dev_cgroup->whitelist,
+ 				&parent_dev_cgroup->whitelist);
++		dev_cgroup->deny_all = parent_dev_cgroup->deny_all;
+ 		mutex_unlock(&devcgroup_mutex);
+ 		if (ret) {
+ 			kfree(dev_cgroup);
+@@ -409,9 +412,11 @@
+ 	case DEVCG_ALLOW:
+ 		if (!parent_has_perm(devcgroup, &wh))
+ 			return -EPERM;
++		devcgroup->deny_all = false;
+ 		return dev_whitelist_add(devcgroup, &wh);
+ 	case DEVCG_DENY:
+ 		dev_whitelist_rm(devcgroup, &wh);
++		devcgroup->deny_all = true;
+ 		break;
+ 	default:
+ 		return -EINVAL;
+

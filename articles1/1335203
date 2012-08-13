@@ -1,0 +1,220 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 21/41] mm: migration: clean up unmap_and_move()
+Date: Mon, 30 Jul 2012 10:31:20 -0700
+Lines: 151
+Approved: news@gmane.org
+Message-ID: <20120730172902.969248664@linuxfoundation.org>
+References: <20120730172901.306897424@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343669696 25592 80.91.229.3 (30 Jul 2012 17:34:56 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 17:34:56 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Minchan Kim <minchan.kim@gmail.com>,
+	KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>,
+	Johannes Weiner <hannes@cmpxchg.org>,
+	KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>,
+	Mel Gorman <mgorman@suse.de>, Rik van Riel <riel@redhat.com>,
+	Michal Hocko <mhocko@suse.cz>,
+	Andrea Arcangeli <aarcange@redhat.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 19:34:53 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Svtro-0003bH-FK
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 19:34:52 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754977Ab2G3RdM (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 13:33:12 -0400
+Original-Received: from mail-gg0-f174.google.com ([209.85.161.174]:49202 "EHLO
+	mail-gg0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754931Ab2G3RdF (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 13:33:05 -0400
+Original-Received: by mail-gg0-f174.google.com with SMTP id u4so5078471ggl.19
+        for <linux-kernel@vger.kernel.org>; Mon, 30 Jul 2012 10:33:05 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=5AYVh0Co6cxiUJ+KKGnUhn8FyqKGIulE6iJaQRUXDNg=;
+        b=TatBqWYg7Ek9gPfWovkI8+zx+aMvpHt4zGx51Ta7K2m6cDnpT5QKcORBjsbF9KFV54
+         hgigE9MRrnsUursCCLP9QNSlmsLR5jEXt78/ikKjcSSLh5qngTd+dyKCQImb/xM6mYAC
+         w/tLutjNMHt74sDqrSe3Y2zWe35YNhcoHs6mFvxSth+BQM4Ga/8mTsu2wj4Lx3F1jAIZ
+         rUxu7I7QrgLpLEv75rikVx1/jeAr36xOz1ukfHOsCEj0aXrsFeUo0vyMhy2wIMQ3KeKE
+         u5tiIrxfldiTAcNCW2biy6LGeKGz5QOdTMt//l89ov0KqL8z2N0wq2yiBScfS630nhTz
+         xKxw==
+Original-Received: by 10.66.76.170 with SMTP id l10mr26123888paw.57.1343669584928;
+        Mon, 30 Jul 2012 10:33:04 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id nh8sm8289542pbc.60.2012.07.30.10.33.02
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 30 Jul 2012 10:33:03 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120730172901.306897424@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQliYB+lCUaOEIlBx+MBEBW2WX9txl0C6A2H64uaeyiloKvMe1+oagh52xOaC+AltVvt3OGT
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335203 gmane.linux.kernel.stable:28947
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335203>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Minchan Kim <minchan.kim@gmail.com>
+
+commit 0dabec93de633a87adfbbe1d800a4c56cd19d73b upstream.
+
+Stable note: Not tracked in Bugzilla. This patch makes later patches
+	easier to apply but has no other impact.
+
+unmap_and_move() is one a big messy function.  Clean it up.
+
+Signed-off-by: Minchan Kim <minchan.kim@gmail.com>
+Reviewed-by: KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>
+Cc: Johannes Weiner <hannes@cmpxchg.org>
+Cc: KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>
+Cc: Mel Gorman <mgorman@suse.de>
+Cc: Rik van Riel <riel@redhat.com>
+Cc: Michal Hocko <mhocko@suse.cz>
+Cc: Andrea Arcangeli <aarcange@redhat.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ mm/migrate.c |   75 +++++++++++++++++++++++++++++++----------------------------
+ 1 file changed, 40 insertions(+), 35 deletions(-)
+
+--- a/mm/migrate.c
++++ b/mm/migrate.c
+@@ -621,38 +621,18 @@ static int move_to_new_page(struct page
+ 	return rc;
+ }
+ 
+-/*
+- * Obtain the lock on page, remove all ptes and migrate the page
+- * to the newly allocated page in newpage.
+- */
+-static int unmap_and_move(new_page_t get_new_page, unsigned long private,
+-			struct page *page, int force, bool offlining, bool sync)
++static int __unmap_and_move(struct page *page, struct page *newpage,
++				int force, bool offlining, bool sync)
+ {
+-	int rc = 0;
+-	int *result = NULL;
+-	struct page *newpage = get_new_page(page, private, &result);
++	int rc = -EAGAIN;
+ 	int remap_swapcache = 1;
+ 	int charge = 0;
+ 	struct mem_cgroup *mem;
+ 	struct anon_vma *anon_vma = NULL;
+ 
+-	if (!newpage)
+-		return -ENOMEM;
+-
+-	if (page_count(page) == 1) {
+-		/* page was freed from under us. So we are done. */
+-		goto move_newpage;
+-	}
+-	if (unlikely(PageTransHuge(page)))
+-		if (unlikely(split_huge_page(page)))
+-			goto move_newpage;
+-
+-	/* prepare cgroup just returns 0 or -ENOMEM */
+-	rc = -EAGAIN;
+-
+ 	if (!trylock_page(page)) {
+ 		if (!force || !sync)
+-			goto move_newpage;
++			goto out;
+ 
+ 		/*
+ 		 * It's not safe for direct compaction to call lock_page.
+@@ -668,7 +648,7 @@ static int unmap_and_move(new_page_t get
+ 		 * altogether.
+ 		 */
+ 		if (current->flags & PF_MEMALLOC)
+-			goto move_newpage;
++			goto out;
+ 
+ 		lock_page(page);
+ 	}
+@@ -785,27 +765,52 @@ uncharge:
+ 		mem_cgroup_end_migration(mem, page, newpage, rc == 0);
+ unlock:
+ 	unlock_page(page);
++out:
++	return rc;
++}
++
++/*
++ * Obtain the lock on page, remove all ptes and migrate the page
++ * to the newly allocated page in newpage.
++ */
++static int unmap_and_move(new_page_t get_new_page, unsigned long private,
++			struct page *page, int force, bool offlining, bool sync)
++{
++	int rc = 0;
++	int *result = NULL;
++	struct page *newpage = get_new_page(page, private, &result);
++
++	if (!newpage)
++		return -ENOMEM;
+ 
+-move_newpage:
++	if (page_count(page) == 1) {
++		/* page was freed from under us. So we are done. */
++		goto out;
++	}
++
++	if (unlikely(PageTransHuge(page)))
++		if (unlikely(split_huge_page(page)))
++			goto out;
++
++	rc = __unmap_and_move(page, newpage, force, offlining, sync);
++out:
+ 	if (rc != -EAGAIN) {
+- 		/*
+- 		 * A page that has been migrated has all references
+- 		 * removed and will be freed. A page that has not been
+- 		 * migrated will have kepts its references and be
+- 		 * restored.
+- 		 */
+- 		list_del(&page->lru);
++		/*
++		 * A page that has been migrated has all references
++		 * removed and will be freed. A page that has not been
++		 * migrated will have kepts its references and be
++		 * restored.
++		 */
++		list_del(&page->lru);
+ 		dec_zone_page_state(page, NR_ISOLATED_ANON +
+ 				page_is_file_cache(page));
+ 		putback_lru_page(page);
+ 	}
+-
+ 	/*
+ 	 * Move the new page to the LRU. If migration was not successful
+ 	 * then this will free the page.
+ 	 */
+ 	putback_lru_page(newpage);
+-
+ 	if (result) {
+ 		if (rc)
+ 			*result = rc;
+
+

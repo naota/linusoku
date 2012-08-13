@@ -1,0 +1,132 @@
+Path: news.gmane.org!not-for-mail
+From: karl.beldan@gmail.com
+Newsgroups: gmane.linux.kernel
+Subject: About dma_sync_single_for_{cpu,device}
+Date: Mon, 30 Jul 2012 22:24:01 +0200
+Lines: 71
+Approved: news@gmane.org
+Message-ID: <20120730202401.GA4947@gobelin>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+X-Trace: dough.gmane.org 1343679715 12247 80.91.229.3 (30 Jul 2012 20:21:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 20:21:55 +0000 (UTC)
+Cc: karl.beldan@gmail.com
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 22:21:55 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvwTT-0003lk-0V
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 22:21:55 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755070Ab2G3UVo (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 16:21:44 -0400
+Original-Received: from mail-wg0-f44.google.com ([74.125.82.44]:51470 "EHLO
+	mail-wg0-f44.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754195Ab2G3UVm (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 16:21:42 -0400
+Original-Received: by wgbdr13 with SMTP id dr13so5183327wgb.1
+        for <linux-kernel@vger.kernel.org>; Mon, 30 Jul 2012 13:21:41 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=date:from:to:cc:subject:message-id:mime-version:content-type
+         :content-disposition:x-location:user-agent;
+        bh=1MWm1Wbt2jqzlhYqYSQm2tsNWkzjIb0DgNou5c3rSao=;
+        b=rvQwFgFXcNGCIMwNsy5n6FdAauDuUYZxQrnoDr4k9lOmlIZtxHVI1dxdIoL/Gyo9Gi
+         lLr7oXlbDdFhrd2tAOhwnRBVOIKbjtnQ3EEqIdtwDx44bdUK+hsUgOW2EwUoIaME85Si
+         7O63poaLildFtKFsGaizsH03WvqhGRhHr0iJztEN3Srxkk+0RHV+K0ITGxa4WD39XV5O
+         i/pThn61WtArJgQZUappyyukcFfJg5Zv3W5mrLmeA66YJTMbB6alSNXZK/IGTNJmnLFc
+         aw2iVeJU5F4rK0QFk6f7LQd40svAhwqPhSjyqX6uugqgJz0WRR+2AmErAktsIXx6dllA
+         8/pQ==
+Original-Received: by 10.180.78.5 with SMTP id x5mr728042wiw.13.1343679701183;
+        Mon, 30 Jul 2012 13:21:41 -0700 (PDT)
+Original-Received: from gobelin ([80.214.9.5])
+        by mx.google.com with ESMTPS id fr4sm26767438wib.8.2012.07.30.13.21.39
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 30 Jul 2012 13:21:40 -0700 (PDT)
+Content-Disposition: inline
+X-Location: France
+User-Agent: Mutt (Linux 3.5.0-07078-gf7da9cd-dirty x86_64 GNU/Linux)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335309
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335309>
+
+Hi,
+
+
+On our board we've got an MV78200 and a network device between which we
+xfer memory chunks via the ddram with an external dma controller.
+To handle these xfers we're using the dma API.
+
+To tx a chunk of data from the SoC => network device, we :
+- prepare a buffer with a leading header embedding a pattern, 
+- trigger the xfer and wait for an irq
+// The device updates the pattern and then triggers an irq
+- upon irq we check the pattern for the xfer completion
+
+
+I was expecting the following to work:
+	addr = dma_map_single(dev, buffer, size, DMA_TO_DEVICE);
+	dev_send(buffer);
+	// wait for irq (don't peek in the buffer) ... got irq
+	dma_sync_single_single_for_cpu(dev, buffer, pattern_size, DMA_FROM_DEVICE);
+	if (!xfer_done(buffer)) // not RAM value
+		dma_sync_single_for_device(dev, buffer, pattern_size, DMA_FROM_DEVICE);
+	[...]
+
+But this does not work (the buffer pattern does not reflect the ddram
+value).
+On the other hand, the following works:
+	[...]
+	// wait for irq (don't peek in the buffer) ... got irq
+	dma_sync_single_for_device(dev, buffer, pattern_size, DMA_FROM_DEVICE);
+	if (!xfer_done(buffer)) // RAM value
+	[...]
+
+
+Looking at 
+	dma-mapping.c:__dma_page_cpu_to_{dev,cpu}() and
+	proc-feroceon.S: feroceon_dma_{,un}map_area
+this behavior is not surprising.
+The sync_for_cpu calls the unmap which just invalidates the outer cache
+while the sync_for_device invalidates both inner and outer.
+
+It seems that:
+- we need to invalidate after the RAM has been updated
+- we need to invalidate with sync_single_for_device rather than
+  sync_single_for_cpu to check the value
+
+Is it correct ?
+
+
+
+
+
+
+Maybe the following comment in dma-mapping.c explains the situation :
+/*
+ * The DMA API is built upon the notion of "buffer ownership".  A buffer
+ * is either exclusively owned by the CPU (and therefore may be accessed
+ * by it) or exclusively owned by the DMA device.  These helper functions
+ * represent the transitions between these two ownership states.
+ *
+ * Note, however, that on later ARMs, this notion does not work due to
+ * speculative prefetches.  We model our approach on the assumption that
+ * the CPU does do speculative prefetches, which means we clean caches
+ * before transfers and delay cache invalidation until transfer completion.
+ *
+ */
+
+Thanks for your input,
+ 
+Regards,
+ 
+Karl

@@ -1,0 +1,112 @@
+Path: news.gmane.org!not-for-mail
+From: Ming Lei <ming.lei@canonical.com>
+Newsgroups: gmane.linux.kernel
+Subject: [RFC PATCH 02/13] driver core: firmware loader: fix races during loading firmware
+Date: Wed, 25 Jul 2012 01:00:02 +0800
+Lines: 61
+Approved: news@gmane.org
+Message-ID: <1343149213-10160-3-git-send-email-ming.lei@canonical.com>
+References: <1343149213-10160-1-git-send-email-ming.lei@canonical.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343149301 7044 80.91.229.3 (24 Jul 2012 17:01:41 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 17:01:41 +0000 (UTC)
+Cc: "Rafael J. Wysocki" <rjw@sisk.pl>,
+	Borislav Petkov <borislav.petkov@amd.com>,
+	linux-kernel@vger.kernel.org, Ming Lei <ming.lei@canonical.com>
+To: Linus Torvalds <torvalds@linux-foundation.org>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 19:01:38 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StiUH-0003s0-FB
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 19:01:33 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755939Ab2GXRAu (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 13:00:50 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:32908 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755953Ab2GXRAt (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 13:00:49 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so12947488pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 24 Jul 2012 10:00:48 -0700 (PDT)
+Original-Received: by 10.68.200.98 with SMTP id jr2mr45906732pbc.81.1343149248531;
+        Tue, 24 Jul 2012 10:00:48 -0700 (PDT)
+Original-Received: from localhost ([183.37.197.13])
+        by mx.google.com with ESMTPS id qr3sm12490547pbc.69.2012.07.24.10.00.45
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 24 Jul 2012 10:00:47 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1343149213-10160-1-git-send-email-ming.lei@canonical.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332469
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332469>
+
+This patch fixes two races in loading firmware:
+
+1, FW_STATUS_DONE should be set before waking up the task waitting
+on _request_firmware_load, otherwise FW_STATUS_ABORT may be
+thought as DONE mistakenly.
+
+2, Inside _request_firmware_load(), there is a small window between
+wait_for_completion() and mutex_lock(&fw_lock), and 'echo 1 > loading'
+still may happen during the period, so this patch checks FW_STATUS_DONE
+to prevent pages' buffer completed from being freed in firmware_loading_store.
+
+Signed-off-by: Ming Lei <ming.lei@canonical.com>
+---
+ drivers/base/firmware_class.c |   20 +++++++++++---------
+ 1 file changed, 11 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/base/firmware_class.c b/drivers/base/firmware_class.c
+index f789bbd..6e96b8c 100644
+--- a/drivers/base/firmware_class.c
++++ b/drivers/base/firmware_class.c
+@@ -243,18 +243,21 @@ static ssize_t firmware_loading_store(struct device *dev,
+ 	switch (loading) {
+ 	case 1:
+ 		/* discarding any previous partial load */
+-		for (i = 0; i < fw_priv->nr_pages; i++)
+-			__free_page(fw_priv->pages[i]);
+-		kfree(fw_priv->pages);
+-		fw_priv->pages = NULL;
+-		fw_priv->page_array_size = 0;
+-		fw_priv->nr_pages = 0;
+-		set_bit(FW_STATUS_LOADING, &fw_priv->status);
++		if (!test_bit(FW_STATUS_DONE, &fw_priv->status)) {
++			for (i = 0; i < fw_priv->nr_pages; i++)
++				__free_page(fw_priv->pages[i]);
++			kfree(fw_priv->pages);
++			fw_priv->pages = NULL;
++			fw_priv->page_array_size = 0;
++			fw_priv->nr_pages = 0;
++			set_bit(FW_STATUS_LOADING, &fw_priv->status);
++		}
+ 		break;
+ 	case 0:
+ 		if (test_bit(FW_STATUS_LOADING, &fw_priv->status)) {
+-			complete(&fw_priv->completion);
++			set_bit(FW_STATUS_DONE, &fw_priv->status);
+ 			clear_bit(FW_STATUS_LOADING, &fw_priv->status);
++			complete(&fw_priv->completion);
+ 			break;
+ 		}
+ 		/* fallthrough */
+@@ -552,7 +555,6 @@ static int _request_firmware_load(struct firmware_priv *fw_priv, bool uevent,
+ 
+ 	wait_for_completion(&fw_priv->completion);
+ 
+-	set_bit(FW_STATUS_DONE, &fw_priv->status);
+ 	del_timer_sync(&fw_priv->timeout);
+ 
+ 	mutex_lock(&fw_lock);
+-- 
+1.7.9.5
+

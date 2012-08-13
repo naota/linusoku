@@ -1,0 +1,269 @@
+Path: news.gmane.org!not-for-mail
+From: Anthony Olech <anthony.olech.opensource@diasemi.com>
+Newsgroups: gmane.linux.kernel
+Subject: [NEW DRIVER V1 2/7] DA9058 ONKEY driver
+Date: Thu, 2 Aug 2012 09:48:55 +0100
+Lines: 224
+Approved: news@gmane.org
+Message-ID: <201208020849.q728nh9C007809@latitude.olech.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343897433 9009 80.91.229.3 (2 Aug 2012 08:50:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 2 Aug 2012 08:50:33 +0000 (UTC)
+Cc: LKML <linux-kernel@vger.kernel.org>
+To: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 02 10:50:33 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Swr72-0008QM-Gw
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 02 Aug 2012 10:50:32 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753528Ab2HBIt6 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 2 Aug 2012 04:49:58 -0400
+Original-Received: from mailrelay1.diasemi.com ([82.210.246.133]:62541 "EHLO
+	mailrelay1.diasemi.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753332Ab2HBItw (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 2 Aug 2012 04:49:52 -0400
+Original-Received: from latitude.olech.com (Not Verified[10.20.27.23]) by mailrelay1.diasemi.com with ESMTP Gateway 
+	id <B501a3f290002>; Thu, 02 Aug 2012 10:49:48 +0200
+Original-Received: from latitude.olech.com (localhost [127.0.0.1])
+	by latitude.olech.com (8.14.4/8.14.4/Debian-2ubuntu2) with ESMTP id q728nhXE007810;
+	Thu, 2 Aug 2012 09:49:43 +0100
+Original-Received: (from root@localhost)
+	by latitude.olech.com (8.14.4/8.14.4/Submit) id q728nh9C007809;
+	Thu, 2 Aug 2012 09:49:43 +0100
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336743
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336743>
+
+This is the ONKEY component driver of the Dialog DA9058 PMIC.
+This driver is just one component of the whole DA9058 PMIC driver.
+It depends on the core DA9058 MFD driver.
+
+Signed-off-by: Tony Olech (at Home) <tony@olech.com>
+---
+ drivers/input/misc/Kconfig        |   10 ++
+ drivers/input/misc/Makefile       |    1 +
+ drivers/input/misc/da9058_onkey.c |  170 +++++++++++++++++++++++++++++++++++++
+ 3 files changed, 181 insertions(+), 0 deletions(-)
+ create mode 100644 drivers/input/misc/da9058_onkey.c
+
+diff --git a/drivers/input/misc/Kconfig b/drivers/input/misc/Kconfig
+index 7faf4a7..697b703 100644
+--- a/drivers/input/misc/Kconfig
++++ b/drivers/input/misc/Kconfig
+@@ -73,6 +73,16 @@ config INPUT_BMA150
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called bma150.
+ 
++config INPUT_DA9058_ONKEY
++	tristate "DA9058 ONKEY support"
++	depends on MFD_DA9058
++	help
++	  Support the ONKEY of DA9058 PMICs as an input device
++	  reporting power button status.
++
++	  To compile this driver as a module, choose M here: the module
++	  will be called da9058_onkey.
++
+ config INPUT_PCSPKR
+ 	tristate "PC Speaker support"
+ 	depends on PCSPKR_PLATFORM
+diff --git a/drivers/input/misc/Makefile b/drivers/input/misc/Makefile
+index f55cdf4..048d50e 100644
+--- a/drivers/input/misc/Makefile
++++ b/drivers/input/misc/Makefile
+@@ -41,6 +41,7 @@ obj-$(CONFIG_INPUT_PCF8574)		+= pcf8574_keypad.o
+ obj-$(CONFIG_INPUT_PCSPKR)		+= pcspkr.o
+ obj-$(CONFIG_INPUT_PM8XXX_VIBRATOR)	+= pm8xxx-vibrator.o
+ obj-$(CONFIG_INPUT_PMIC8XXX_PWRKEY)	+= pmic8xxx-pwrkey.o
++obj-$(CONFIG_INPUT_DA9058_ONKEY)		+= da9058_onkey.o
+ obj-$(CONFIG_INPUT_POWERMATE)		+= powermate.o
+ obj-$(CONFIG_INPUT_PWM_BEEPER)		+= pwm-beeper.o
+ obj-$(CONFIG_INPUT_RB532_BUTTON)	+= rb532_button.o
+diff --git a/drivers/input/misc/da9058_onkey.c b/drivers/input/misc/da9058_onkey.c
+new file mode 100644
+index 0000000..94c14f9
+--- /dev/null
++++ b/drivers/input/misc/da9058_onkey.c
+@@ -0,0 +1,170 @@
++/*
++ *  Copyright (C) 2012 Dialog Semiconductor Ltd.
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; either version 2 of the License, or
++ *  (at your option) any later version.
++ *
++ */
++
++#include <linux/module.h>
++#include <linux/input.h>
++#include <linux/delay.h>
++#include <linux/slab.h>
++#include <linux/interrupt.h>
++#include <linux/mfd/core.h>
++
++#include <linux/mfd/da9058/version.h>
++#include <linux/mfd/da9058/registers.h>
++#include <linux/mfd/da9058/core.h>
++#include <linux/mfd/da9058/irq.h>
++#include <linux/mfd/da9058/onkey.h>
++
++struct da9058_onkey {
++	struct da9058 *da9058;
++	struct platform_device *pdev;
++	struct input_dev *input;
++	struct delayed_work work;
++	int irq;
++};
++
++static void da9058_onkey_poll(struct work_struct *work)
++{
++	struct da9058_onkey *onkey = container_of(work, struct da9058_onkey,
++							work.work);
++	struct da9058 *da9058 = onkey->da9058;
++	int poll, ret;
++	u8 sa;
++
++	ret = da9058_reg_read(da9058, DA9058_STATUSA_REG, &sa);
++	if (ret) {
++		dev_dbg(&onkey->pdev->dev, "Failed to read ONKEY: %d\n", ret);
++		poll = 1;
++	} else if (sa & DA9058_STATUSA_NONKEY) {
++		poll = 0;
++	} else {
++		poll = 1;
++	}
++
++	input_report_key(onkey->input, KEY_POWER, poll);
++	input_sync(onkey->input);
++
++	if (poll)
++		schedule_delayed_work(&onkey->work, msecs_to_jiffies(50));
++}
++
++static irqreturn_t da9058_onkey_event_handler(int irq, void *data)
++{
++	struct da9058_onkey *onkey = data;
++
++	schedule_delayed_work(&onkey->work, 0);
++
++	return IRQ_HANDLED;
++}
++
++static int __devinit da9058_onkey_probe(struct platform_device *pdev)
++{
++	struct da9058 *da9058 = dev_get_drvdata(pdev->dev.parent);
++	const struct mfd_cell *cell = mfd_get_cell(pdev);
++	struct da9058_onkey_pdata *onkey_pdata;
++	struct da9058_onkey *onkey;
++	int ret;
++
++	if (cell == NULL) {
++		ret = -ENODEV;
++		goto exit;
++	}
++
++	onkey_pdata = cell->platform_data;
++
++	if (onkey_pdata == NULL) {
++		ret = -EINVAL;
++		goto exit;
++	}
++
++	dev_info(&pdev->dev, "Starting ONKEY\n");
++
++	onkey = devm_kzalloc(&pdev->dev, sizeof(struct da9058_onkey),
++				GFP_KERNEL);
++	if (!onkey) {
++		ret = -ENOMEM;
++		goto exit;
++	}
++
++	platform_set_drvdata(pdev, onkey);
++
++	onkey->da9058 = da9058;
++	onkey->pdev = pdev;
++
++	INIT_DELAYED_WORK(&onkey->work, da9058_onkey_poll);
++
++	onkey->input = input_allocate_device();
++	if (!onkey->input) {
++		dev_err(&pdev->dev, "failed to allocate data device\n");
++		ret = -ENOMEM;
++		goto err1;
++	}
++
++	onkey->input->evbit[0] = BIT_MASK(EV_KEY);
++	onkey->input->keybit[BIT_WORD(KEY_POWER)] = BIT_MASK(KEY_POWER);
++	onkey->input->name = "da9058-onkey";
++	onkey->input->phys = "da9058-onkey/input0";
++	onkey->input->dev.parent = &pdev->dev;
++
++	ret = input_register_device(onkey->input);
++	if (ret) {
++		dev_err(&pdev->dev,
++			"Unable to register input ONKEY device: %d\n", ret);
++		goto err2;
++	}
++	onkey->irq = DA9058_IRQ_ENONKEY;
++
++	ret = request_threaded_irq(da9058_to_virt_irq_num(da9058, onkey->irq),
++				NULL, da9058_onkey_event_handler,
++				IRQF_TRIGGER_RISING | IRQF_ONESHOT,
++				"DA9058 keydown", onkey);
++
++	if (ret) {
++		dev_err(&pdev->dev, "Failed to get ONKEY keydown IRQ %d: %d\n",
++			onkey->irq, ret);
++		goto err3;
++	}
++	goto exit;
++
++err3:
++err2:
++	input_free_device(onkey->input);
++err1:
++	platform_set_drvdata(pdev, NULL);
++exit:
++	return ret;
++}
++
++static int __devexit da9058_onkey_remove(struct platform_device *pdev)
++{
++	struct da9058_onkey *onkey = platform_get_drvdata(pdev);
++	struct da9058 *da9058 = onkey->da9058;
++
++	free_irq(da9058_to_virt_irq_num(da9058, onkey->irq), onkey);
++	cancel_delayed_work_sync(&onkey->work);
++	input_unregister_device(onkey->input);
++
++	return 0;
++}
++
++static struct platform_driver da9058_onkey_driver = {
++	.probe = da9058_onkey_probe,
++	.remove = __devexit_p(da9058_onkey_remove),
++	.driver = {
++		.name = "da9058-onkey",
++		.owner = THIS_MODULE,
++	}
++};
++
++module_platform_driver(da9058_onkey_driver);
++
++MODULE_AUTHOR("Anthony Olech <Anthony.Olech@diasemi.com>");
++MODULE_DESCRIPTION("Dialog DA9058 PMIC Onkey Driver");
++MODULE_LICENSE("GPL v2");
++MODULE_ALIAS("platform:da9058-onkey");
+-- 
+end-of-patch for NEW DRIVER V1
+

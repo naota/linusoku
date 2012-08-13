@@ -1,0 +1,116 @@
+Path: news.gmane.org!not-for-mail
+From: Peter Huewe <peter.huewe@infineon.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.lsm
+Subject: [PATCH] char/tpm: Use struct dev_pm_ops for power management.
+Date: Mon, 6 Aug 2012 09:58:59 +0200
+Lines: 59
+Approved: news@gmane.org
+Message-ID: <1344239939-5752-1-git-send-email-peter.huewe@infineon.com>
+References: <20120803203836.GA11918@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1344239976 12977 80.91.229.3 (6 Aug 2012 07:59:36 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 07:59:36 +0000 (UTC)
+Cc: <linux-kernel@vger.kernel.org>,
+	<linux-security-module@vger.kernel.org>,
+	<tpmdd-devel@lists.sourceforge.net>,
+	Bryan Freed <bfreed@chromium.org>,
+	David Safford <safford@linux.vnet.ibm.com>,
+	<hpa@linux.intel.com>, Peter Huewe <peter.huewe@infineon.com>
+To: Kent Yoder <key@linux.vnet.ibm.com>, <jmorris@namei.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Aug 06 09:59:34 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyIDt-0000Ip-OU
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 06 Aug 2012 09:59:34 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753747Ab2HFH72 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 03:59:28 -0400
+Original-Received: from smtp2.infineon.com ([217.10.60.23]:18244 "EHLO
+	smtp2.infineon.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753646Ab2HFH7V (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 03:59:21 -0400
+X-SBRS: None
+Original-Received: from unknown (HELO mucxv003.muc.infineon.com) ([172.23.11.20])
+  by smtp2.infineon.com with ESMTP/TLS/ADH-AES256-SHA; 06 Aug 2012 10:00:31 +0200
+Original-Received: from MUCSE591.eu.infineon.com (mucltm01.eu.infineon.com [172.23.8.248])
+	by mucxv003.muc.infineon.com (Postfix) with ESMTPS;
+	Mon,  6 Aug 2012 09:59:17 +0200 (CEST)
+Original-Received: from localhost (172.29.170.142) by MUCSE591.eu.infineon.com
+ (172.23.7.80) with Microsoft SMTP Server (TLS) id 14.2.298.4; Mon, 6 Aug 2012
+ 09:59:16 +0200
+X-Mailer: git-send-email 1.7.6.msysgit.0
+In-Reply-To: <20120803203836.GA11918@linux.vnet.ibm.com>
+X-Originating-IP: [172.29.170.142]
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338089 gmane.linux.kernel.lsm:16767
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338089>
+
+Make the tpm_i2c_infineon driver define its PM callbacks trough a
+struct dev_pm_ops by using SIMPLE_DEV_PM_OPS instead of coding it
+explicitly.
+
+This simplifies the code and allows the driver to use tpm_pm_suspend()
+and tpm_pm_resume() as its PM callbacks directly, without defining its
+own PM callback routines.
+
+Signed-off-by: Peter Huewe <peter.huewe@infineon.com>
+---
+Thanks Kent and Rafael - much better this way ;)
+
+ drivers/char/tpm/tpm_i2c_infineon.c |   30 +-----------------------------
+ 1 files changed, 1 insertions(+), 29 deletions(-)
+
+diff --git a/drivers/char/tpm/tpm_i2c_infineon.c b/drivers/char/tpm/tpm_i2c_infineon.c
+index 1794a09..65761b6 100644
+--- a/drivers/char/tpm/tpm_i2c_infineon.c
++++ b/drivers/char/tpm/tpm_i2c_infineon.c
+@@ -655,35 +655,7 @@ static const struct i2c_device_id tpm_tis_i2c_table[] = {
+ };
+ 
+ MODULE_DEVICE_TABLE(i2c, tpm_tis_i2c_table);
+-
+-#ifdef CONFIG_PM
+-/* NOTE:
+- * Suspend does currently not work Nvidias Tegra2 Platform
+- * but works fine on Beagleboard (arm omap).
+- *
+- * This function will block System Suspend if TPM is not initialized,
+- * however the TPM is usually initialized by BIOS/u-boot or by sending
+- * a TPM_Startup command.
+- */
+-static int tpm_tis_i2c_suspend(struct device *dev)
+-{
+-	return tpm_pm_suspend(dev, dev->power.power_state);
+-}
+-
+-static int tpm_tis_i2c_resume(struct device *dev)
+-{
+-	return tpm_pm_resume(dev);
+-}
+-
+-static const struct dev_pm_ops tpm_tis_i2c_ops = {
+-	.suspend = tpm_tis_i2c_suspend,
+-	.resume = tpm_tis_i2c_resume,
+-};
+-#else
+-#define tpm_tis_i2c_suspend NULL
+-#define tpm_tis_i2c_resume NULL
+-#define tpm_tis_i2c_ops NULL
+-#endif
++static SIMPLE_DEV_PM_OPS(tpm_tis_i2c_ops, tpm_pm_suspend, tpm_pm_resume);
+ 
+ static int __devinit tpm_tis_i2c_probe(struct i2c_client *client,
+ 			     const struct i2c_device_id *id)
+-- 
+1.7.6.msysgit.0
+

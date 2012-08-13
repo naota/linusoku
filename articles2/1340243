@@ -1,0 +1,96 @@
+Path: news.gmane.org!not-for-mail
+From: Jesper Juhl <jj@chaosbits.net>
+Newsgroups: gmane.linux.documentation,gmane.linux.kernel
+Subject: [PATCH] Documentation/accounting/getdelays.c: remember to close()
+ socket on error in create_nl_socket()
+Date: Wed, 8 Aug 2012 20:56:14 +0200 (CEST)
+Lines: 48
+Approved: news@gmane.org
+Message-ID: <alpine.LNX.2.00.1208082053100.10061@swampdragon.chaosbits.net>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: TEXT/PLAIN; charset=US-ASCII
+X-Trace: dough.gmane.org 1344452181 10385 80.91.229.3 (8 Aug 2012 18:56:21 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 18:56:21 +0000 (UTC)
+Cc: trivial@kernel.org, linux-doc@vger.kernel.org,
+	Rob Landley <rob@landley.net>,
+	Balbir Singh <balbir@linux.vnet.ibm.com>,
+	Jay Lan <jlan@sgi.com>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-doc-owner@vger.kernel.org Wed Aug 08 20:56:19 2012
+Return-path: <linux-doc-owner@vger.kernel.org>
+Envelope-to: lnx-linux-doc@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-doc-owner@vger.kernel.org>)
+	id 1SzBQY-0001dv-U7
+	for lnx-linux-doc@plane.gmane.org; Wed, 08 Aug 2012 20:56:19 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1758582Ab2HHS4R (ORCPT <rfc822;lnx-linux-doc@m.gmane.org>);
+	Wed, 8 Aug 2012 14:56:17 -0400
+Original-Received: from 1010ds2-suoe.0.fullrate.dk ([90.184.90.115]:11133 "EHLO
+	swampdragon.chaosbits.net" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1758484Ab2HHS4R (ORCPT
+	<rfc822;linux-doc@vger.kernel.org>); Wed, 8 Aug 2012 14:56:17 -0400
+Original-Received: by swampdragon.chaosbits.net (Postfix, from userid 1000)
+	id 4AC269403E; Wed,  8 Aug 2012 20:56:15 +0200 (CEST)
+Original-Received: from localhost (localhost [127.0.0.1])
+	by swampdragon.chaosbits.net (Postfix) with ESMTP id 38D969403B;
+	Wed,  8 Aug 2012 20:56:15 +0200 (CEST)
+User-Agent: Alpine 2.00 (LNX 1167 2008-08-23)
+Original-Sender: linux-doc-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-doc.vger.kernel.org>
+X-Mailing-List: linux-doc@vger.kernel.org
+Xref: news.gmane.org gmane.linux.documentation:6145 gmane.linux.kernel:1340243
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340243>
+
+If the call to setsockopt() fails in
+Documentation/accounting/getdelays.c::create_nl_socket() we return -1
+without closing the socket, thus leaking it when the 'fd' variable
+goes out of scope.
+
+Easily fixed by just jumping to the 'error' label instead of returning
+since we do the proper cleanup there.
+
+While I was there I noticed that the error message that is printet if
+setsockopt() fails was broken over two lines - put that on a single
+line so it is easier to grep for.
+
+Signed-off-by: Jesper Juhl <jj@chaosbits.net>
+---
+ Documentation/accounting/getdelays.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/Documentation/accounting/getdelays.c b/Documentation/accounting/getdelays.c
+index f6318f6..6f706ac 100644
+--- a/Documentation/accounting/getdelays.c
++++ b/Documentation/accounting/getdelays.c
+@@ -98,10 +98,9 @@ static int create_nl_socket(int protocol)
+ 	if (rcvbufsz)
+ 		if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF,
+ 				&rcvbufsz, sizeof(rcvbufsz)) < 0) {
+-			fprintf(stderr, "Unable to set socket rcv buf size "
+-					"to %d\n",
++			fprintf(stderr, "Unable to set socket rcv buf size to %d\n",
+ 				rcvbufsz);
+-			return -1;
++			goto error;
+ 		}
+ 
+ 	memset(&local, 0, sizeof(local));
+-- 
+1.7.11.4
+
+
+-- 
+Jesper Juhl <jj@chaosbits.net>       http://www.chaosbits.net/
+Don't top-post http://www.catb.org/jargon/html/T/top-post.html
+Plain text mails only, please.
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-doc" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

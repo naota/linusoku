@@ -1,0 +1,113 @@
+Path: news.gmane.org!not-for-mail
+From: Julia Lawall <Julia.Lawall@lip6.fr>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.janitors,gmane.linux.usb.general
+Subject: [PATCH 2/9] drivers/usb/host/ehci-au1xxx.c: use devm_ functions
+Date: Sun, 29 Jul 2012 21:46:06 +0200
+Lines: 67
+Approved: news@gmane.org
+Message-ID: <1343591173-2819-3-git-send-email-Julia.Lawall@lip6.fr>
+References: <1343591173-2819-1-git-send-email-Julia.Lawall@lip6.fr>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343591365 3145 80.91.229.3 (29 Jul 2012 19:49:25 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 29 Jul 2012 19:49:25 +0000 (UTC)
+Cc: kernel-janitors@vger.kernel.org,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	linux-usb@vger.kernel.org, linux-kernel@vger.kernel.org
+To: Alan Stern <stern@rowland.harvard.edu>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 29 21:49:24 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvZUM-0001Du-U4
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 29 Jul 2012 21:49:19 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753573Ab2G2TrS (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 29 Jul 2012 15:47:18 -0400
+Original-Received: from mail1-relais-roc.national.inria.fr ([192.134.164.82]:44777 "EHLO
+	mail1-relais-roc.national.inria.fr" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1753437Ab2G2TqZ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 29 Jul 2012 15:46:25 -0400
+X-IronPort-AV: E=Sophos;i="4.77,675,1336341600"; 
+   d="scan'208";a="168487762"
+Original-Received: from palace.lip6.fr (HELO localhost.localdomain) ([132.227.105.202])
+  by mail1-relais-roc.national.inria.fr with ESMTP/TLS/DHE-RSA-AES256-SHA; 29 Jul 2012 21:46:21 +0200
+X-Mailer: git-send-email 1.7.8.6
+In-Reply-To: <1343591173-2819-1-git-send-email-Julia.Lawall@lip6.fr>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334795 gmane.linux.kernel.janitors:25232 gmane.linux.usb.general:68474
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334795>
+
+From: Julia Lawall <Julia.Lawall@lip6.fr>
+
+The various devm_ functions allocate memory that is released when a driver
+detaches.  This patch uses these functions for data that is allocated in
+the probe function of a platform device and is only freed in the remove
+function.
+
+Signed-off-by: Julia Lawall <Julia.Lawall@lip6.fr>
+
+---
+Not compiled.
+
+ drivers/usb/host/ehci-au1xxx.c |   20 ++++----------------
+ 1 file changed, 4 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/usb/host/ehci-au1xxx.c b/drivers/usb/host/ehci-au1xxx.c
+index cba10d6..65c945e 100644
+--- a/drivers/usb/host/ehci-au1xxx.c
++++ b/drivers/usb/host/ehci-au1xxx.c
+@@ -98,23 +98,17 @@ static int ehci_hcd_au1xxx_drv_probe(struct platform_device *pdev)
+ 	hcd->rsrc_start = res->start;
+ 	hcd->rsrc_len = resource_size(res);
+ 
+-	if (!request_mem_region(hcd->rsrc_start, hcd->rsrc_len, hcd_name)) {
+-		pr_debug("request_mem_region failed");
+-		ret = -EBUSY;
+-		goto err1;
+-	}
+-
+-	hcd->regs = ioremap(hcd->rsrc_start, hcd->rsrc_len);
++	hcd->regs = devm_request_and_ioremap(&pdev->dev, res);
+ 	if (!hcd->regs) {
+-		pr_debug("ioremap failed");
++		pr_debug("devm_request_and_ioremap failed");
+ 		ret = -ENOMEM;
+-		goto err2;
++		goto err1;
+ 	}
+ 
+ 	if (alchemy_usb_control(ALCHEMY_USB_EHCI0, 1)) {
+ 		printk(KERN_INFO "%s: controller init failed!\n", pdev->name);
+ 		ret = -ENODEV;
+-		goto err3;
++		goto err1;
+ 	}
+ 
+ 	ret = usb_add_hcd(hcd, pdev->resource[1].start,
+@@ -125,10 +119,6 @@ static int ehci_hcd_au1xxx_drv_probe(struct platform_device *pdev)
+ 	}
+ 
+ 	alchemy_usb_control(ALCHEMY_USB_EHCI0, 0);
+-err3:
+-	iounmap(hcd->regs);
+-err2:
+-	release_mem_region(hcd->rsrc_start, hcd->rsrc_len);
+ err1:
+ 	usb_put_hcd(hcd);
+ 	return ret;
+@@ -140,8 +130,6 @@ static int ehci_hcd_au1xxx_drv_remove(struct platform_device *pdev)
+ 
+ 	usb_remove_hcd(hcd);
+ 	alchemy_usb_control(ALCHEMY_USB_EHCI0, 0);
+-	iounmap(hcd->regs);
+-	release_mem_region(hcd->rsrc_start, hcd->rsrc_len);
+ 	usb_put_hcd(hcd);
+ 	platform_set_drvdata(pdev, NULL);
+ 

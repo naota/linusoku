@@ -1,0 +1,120 @@
+Path: news.gmane.org!not-for-mail
+From: Stanislav Kinsbursky <skinsbursky@parallels.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.nfs,gmane.linux.openvz.devel
+Subject: [PATCH v2 03/15] LockD: manage garbage collection timeout per
+	networks namespace
+Date: Wed, 25 Jul 2012 16:56:11 +0400
+Lines: 73
+Approved: news@gmane.org
+Message-ID: <20120725125611.24376.76843.stgit@localhost.localdomain>
+References: <20120725125258.24376.82525.stgit@localhost.localdomain>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343221075 20838 80.91.229.3 (25 Jul 2012 12:57:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 12:57:55 +0000 (UTC)
+Cc: linux-nfs@vger.kernel.org, Trond.Myklebust@netapp.com,
+	linux-kernel@vger.kernel.org, devel@openvz.org
+To: bfields@fieldses.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 14:57:52 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su19y-000385-R8
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 14:57:51 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756758Ab2GYM5j (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 08:57:39 -0400
+Original-Received: from mailhub.sw.ru ([195.214.232.25]:1863 "EHLO relay.sw.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1756366Ab2GYM5g (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 08:57:36 -0400
+Original-Received: from localhost.localdomain ([10.30.21.131])
+	by relay.sw.ru (8.13.4/8.13.4) with ESMTP id q6PCvPhv029188;
+	Wed, 25 Jul 2012 16:57:25 +0400 (MSK)
+In-Reply-To: <20120725125258.24376.82525.stgit@localhost.localdomain>
+User-Agent: StGit/0.16
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332958 gmane.linux.nfs:51105 gmane.linux.openvz.devel:1889
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332958>
+
+This patch moves next_gc to per-net data.
+
+Note: passed network can be NULL (when Lockd kthread is exiting of Lockd
+module is removing).
+
+Signed-off-by: Stanislav Kinsbursky <skinsbursky@parallels.com>
+---
+ fs/lockd/host.c  |   12 +++++++++---
+ fs/lockd/netns.h |    1 +
+ 2 files changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/fs/lockd/host.c b/fs/lockd/host.c
+index 991274a..3636734 100644
+--- a/fs/lockd/host.c
++++ b/fs/lockd/host.c
+@@ -21,6 +21,8 @@
+ 
+ #include <net/ipv6.h>
+ 
++#include "netns.h"
++
+ #define NLMDBG_FACILITY		NLMDBG_HOSTCACHE
+ #define NLM_HOST_NRHASH		32
+ #define NLM_HOST_REBIND		(60 * HZ)
+@@ -41,7 +43,6 @@ static struct hlist_head	nlm_client_hosts[NLM_HOST_NRHASH];
+ 		hlist_for_each_entry_safe((host), (pos), (next), \
+ 						(chain), h_hash)
+ 
+-static unsigned long		next_gc;
+ static unsigned long		nrhosts;
+ static DEFINE_MUTEX(nlm_host_mutex);
+ 
+@@ -337,6 +338,7 @@ struct nlm_host *nlmsvc_lookup_host(const struct svc_rqst *rqstp,
+ 		.hostname_len	= hostname_len,
+ 		.net		= net,
+ 	};
++	struct lockd_net *ln = net_generic(net, lockd_net_id);
+ 
+ 	dprintk("lockd: %s(host='%*s', vers=%u, proto=%s)\n", __func__,
+ 			(int)hostname_len, hostname, rqstp->rq_vers,
+@@ -344,7 +346,7 @@ struct nlm_host *nlmsvc_lookup_host(const struct svc_rqst *rqstp,
+ 
+ 	mutex_lock(&nlm_host_mutex);
+ 
+-	if (time_after_eq(jiffies, next_gc))
++	if (time_after_eq(jiffies, ln->next_gc))
+ 		nlm_gc_hosts(net);
+ 
+ 	chain = &nlm_server_hosts[nlm_hash_address(ni.sap)];
+@@ -653,5 +655,9 @@ nlm_gc_hosts(struct net *net)
+ 		nlm_destroy_host_locked(host);
+ 	}
+ 
+-	next_gc = jiffies + NLM_HOST_COLLECT;
++	if (net) {
++		struct lockd_net *ln = net_generic(net, lockd_net_id);
++
++		ln->next_gc = jiffies + NLM_HOST_COLLECT;
++	}
+ }
+diff --git a/fs/lockd/netns.h b/fs/lockd/netns.h
+index ce227e0..97c6c77 100644
+--- a/fs/lockd/netns.h
++++ b/fs/lockd/netns.h
+@@ -5,6 +5,7 @@
+ 
+ struct lockd_net {
+ 	unsigned int nlmsvc_users;
++	unsigned long next_gc;
+ };
+ 
+ extern int lockd_net_id;
+

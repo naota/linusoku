@@ -1,0 +1,159 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 10/40] mm: vmscan: fix force-scanning small targets without swap
+Date: Thu, 26 Jul 2012 14:29:28 -0700
+Lines: 89
+Approved: news@gmane.org
+Message-ID: <20120726211412.004590506@linuxfoundation.org>
+References: <20120726211424.GA7709@kroah.com>
+ <20120726211411.164006056@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343338275 9934 80.91.229.3 (26 Jul 2012 21:31:15 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 21:31:15 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Johannes Weiner <jweiner@redhat.com>,
+	KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>,
+	Michal Hocko <mhocko@suse.cz>, Ying Han <yinghan@google.com>,
+	Balbir Singh <bsingharora@gmail.com>,
+	KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>,
+	Daisuke Nishimura <nishimura@mxp.nes.nec.co.jp>,
+	Mel Gorman <mel@csn.ul.ie>, Mel Gorman <mgorman@suse.de>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 23:31:12 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuVeH-0005gC-Hl
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 23:31:09 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753396Ab2GZVap (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 17:30:45 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:35774 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753283Ab2GZVa3 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 17:30:29 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so3820542pbb.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 14:30:29 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=l9U25kWlPWHjjWoTU3A/1S19lqRqzClmOb3331hQH+o=;
+        b=GO5j5eKPMP8wNW1hkLtPc9ZiroRRDJHRBh7YvudQfodw/rZcx//o+3eTi3CtNuxLDZ
+         e3bKG5HrNM6xicx/n8hrJxUH5s+U9vIMe4ytMi1H9Z4NjR3uVvy/4lbOry+pPewsbDCl
+         T24Gr6ouH+zIRDitqVIPLiKYAOuhv3dPiie4U7TSuqJXos0qDsTYBkO41PNv3Pfs66MD
+         O+c4lPWNB1M/vUFuSCp0nLOORF2dyMuEMe+TS2+0Q+Gx2nOQAPYKUnxbr5q2YAypgnso
+         3eFCHUHVh0oZnZX8g5/GLDb5hNET4Ma1KDweBfk1RvI+MP3B6AqhMtmtEpkoCKzlIg4g
+         iKSA==
+Original-Received: by 10.68.217.100 with SMTP id ox4mr8164586pbc.87.1343338229450;
+        Thu, 26 Jul 2012 14:30:29 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id mc3sm439196pbc.12.2012.07.26.14.30.27
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 14:30:28 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120726211411.164006056@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQlKyoxajDW7rr4eMCfptJdhlGKc4Z3Lm1qHxhuh6dfm7BDjVyDx6LpBgvCsQuhRBcQKUou6
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333930 gmane.linux.kernel.stable:28868
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333930>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Johannes Weiner <jweiner@redhat.com>
+
+commit a4d3e9e76337059406fcf3ead288c0df22a790e9 upstream.
+
+Stable note: Not tracked in Bugzilla. This patch augments an earlier commit
+        that avoids scanning priority being artificially raised. The older
+	fix was particularly important for small memcgs to avoid calling
+	wait_iff_congested() unnecessarily.
+
+Without swap, anonymous pages are not scanned.  As such, they should not
+count when considering force-scanning a small target if there is no swap.
+
+Otherwise, targets are not force-scanned even when their effective scan
+number is zero and the other conditions--kswapd/memcg--apply.
+
+This fixes 246e87a93934 ("memcg: fix get_scan_count() for small
+targets").
+
+[akpm@linux-foundation.org: fix comment]
+Signed-off-by: Johannes Weiner <jweiner@redhat.com>
+Acked-by: KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>
+Reviewed-by: Michal Hocko <mhocko@suse.cz>
+Cc: Ying Han <yinghan@google.com>
+Cc: Balbir Singh <bsingharora@gmail.com>
+Cc: KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>
+Cc: Daisuke Nishimura <nishimura@mxp.nes.nec.co.jp>
+Acked-by: Mel Gorman <mel@csn.ul.ie>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ mm/vmscan.c |   27 ++++++++++++---------------
+ 1 file changed, 12 insertions(+), 15 deletions(-)
+
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -1747,23 +1747,15 @@ static void get_scan_count(struct zone *
+ 	u64 fraction[2], denominator;
+ 	enum lru_list l;
+ 	int noswap = 0;
+-	int force_scan = 0;
++	bool force_scan = false;
+ 	unsigned long nr_force_scan[2];
+ 
+-
+-	anon  = zone_nr_lru_pages(zone, sc, LRU_ACTIVE_ANON) +
+-		zone_nr_lru_pages(zone, sc, LRU_INACTIVE_ANON);
+-	file  = zone_nr_lru_pages(zone, sc, LRU_ACTIVE_FILE) +
+-		zone_nr_lru_pages(zone, sc, LRU_INACTIVE_FILE);
+-
+-	if (((anon + file) >> priority) < SWAP_CLUSTER_MAX) {
+-		/* kswapd does zone balancing and need to scan this zone */
+-		if (scanning_global_lru(sc) && current_is_kswapd())
+-			force_scan = 1;
+-		/* memcg may have small limit and need to avoid priority drop */
+-		if (!scanning_global_lru(sc))
+-			force_scan = 1;
+-	}
++	/* kswapd does zone balancing and needs to scan this zone */
++	if (scanning_global_lru(sc) && current_is_kswapd())
++		force_scan = true;
++	/* memcg may have small limit and need to avoid priority drop */
++	if (!scanning_global_lru(sc))
++		force_scan = true;
+ 
+ 	/* If we have no swap space, do not bother scanning anon pages. */
+ 	if (!sc->may_swap || (nr_swap_pages <= 0)) {
+@@ -1776,6 +1768,11 @@ static void get_scan_count(struct zone *
+ 		goto out;
+ 	}
+ 
++	anon  = zone_nr_lru_pages(zone, sc, LRU_ACTIVE_ANON) +
++		zone_nr_lru_pages(zone, sc, LRU_INACTIVE_ANON);
++	file  = zone_nr_lru_pages(zone, sc, LRU_ACTIVE_FILE) +
++		zone_nr_lru_pages(zone, sc, LRU_INACTIVE_FILE);
++
+ 	if (scanning_global_lru(sc)) {
+ 		free  = zone_page_state(zone, NR_FREE_PAGES);
+ 		/* If we have very few page cache pages,
+
+

@@ -1,0 +1,108 @@
+Path: news.gmane.org!not-for-mail
+From: Rohit Vaswani <rvaswani@codeaurora.org>
+Newsgroups: gmane.linux.ports.arm.msm,gmane.linux.ports.arm.kernel,gmane.linux.kernel
+Subject: [PATCH 2/2] msm: io: Change the default static iomappings to be shared
+Date: Mon, 30 Jul 2012 17:54:21 -0700
+Lines: 62
+Approved: news@gmane.org
+Message-ID: <1343696061-11445-1-git-send-email-rvaswani@codeaurora.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343696073 720 80.91.229.3 (31 Jul 2012 00:54:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 00:54:33 +0000 (UTC)
+Cc: Rohit Vaswani <rvaswani@codeaurora.org>,
+	linux-arm-kernel@lists.infradead.org, linux-kernel@vger.kernel.org,
+	linux-arm-msm@vger.kernel.org
+To: davidb@codeaurora.org
+Original-X-From: linux-arm-msm-owner@vger.kernel.org Tue Jul 31 02:54:33 2012
+Return-path: <linux-arm-msm-owner@vger.kernel.org>
+Envelope-to: glpam-linux-arm-msm@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-arm-msm-owner@vger.kernel.org>)
+	id 1Sw0jF-00082P-Cv
+	for glpam-linux-arm-msm@plane.gmane.org; Tue, 31 Jul 2012 02:54:29 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754193Ab2GaAy2 (ORCPT <rfc822;glpam-linux-arm-msm@m.gmane.org>);
+	Mon, 30 Jul 2012 20:54:28 -0400
+Original-Received: from wolverine01.qualcomm.com ([199.106.114.254]:62078 "EHLO
+	wolverine01.qualcomm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754086Ab2GaAy1 (ORCPT
+	<rfc822;linux-arm-msm@vger.kernel.org>);
+	Mon, 30 Jul 2012 20:54:27 -0400
+X-IronPort-AV: E=McAfee;i="5400,1158,6788"; a="216142492"
+Original-Received: from pdmz-ns-snip_114_130.qualcomm.com (HELO mostmsg01.qualcomm.com) ([199.106.114.130])
+  by wolverine01.qualcomm.com with ESMTP/TLS/DHE-RSA-AES256-SHA; 30 Jul 2012 17:54:28 -0700
+Original-Received: from codeaurora.org (pdmz-ns-snip_218_1.qualcomm.com [192.168.218.1])
+	by mostmsg01.qualcomm.com (Postfix) with ESMTPA id 0EA3D10004BE;
+	Mon, 30 Jul 2012 17:54:27 -0700 (PDT)
+X-Mailer: git-send-email 1.7.8.3
+Original-Sender: linux-arm-msm-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-arm-msm.vger.kernel.org>
+X-Mailing-List: linux-arm-msm@vger.kernel.org
+Xref: news.gmane.org gmane.linux.ports.arm.msm:2896 gmane.linux.ports.arm.kernel:179479 gmane.linux.kernel:1335359
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335359>
+
+With 3.4 kernel the static iomappings can be shared with the ioremap
+mappings. If ioremap is called with an address for which a static
+mapping already exists, then that mapping should be used instead
+of creating a new one.
+However, the MT_DEVICE_NONSHARED flag prevents this. Hence, get rid
+of this flag. Some targets (7X00) that require the static iomappings
+to be NONSHARED use the MSM_DEVICE_TYPE and MSM_CHIP_DEVICE_TYPE macros.
+
+Signed-off-by: Rohit Vaswani <rvaswani@codeaurora.org>
+---
+ arch/arm/mach-msm/io.c |   25 +++++++++++++++++--------
+ 1 files changed, 17 insertions(+), 8 deletions(-)
+
+diff --git a/arch/arm/mach-msm/io.c b/arch/arm/mach-msm/io.c
+index 61d61cb..9f4b4ba 100644
+--- a/arch/arm/mach-msm/io.c
++++ b/arch/arm/mach-msm/io.c
+@@ -33,23 +33,32 @@
+ 		.virtual = (unsigned long) MSM_##name##_BASE, \
+ 		.pfn = __phys_to_pfn(chip##_##name##_PHYS), \
+ 		.length = chip##_##name##_SIZE, \
+-		.type = MT_DEVICE_NONSHARED, \
++		.type = MT_DEVICE, \
++	 }
++
++#define MSM_CHIP_DEVICE_TYPE(name, chip, mem_type) {			      \
++		.virtual = (unsigned long) MSM_##name##_BASE, \
++		.pfn = __phys_to_pfn(chip##_##name##_PHYS), \
++		.length = chip##_##name##_SIZE, \
++		.type = mem_type, \
+ 	 }
+ 
+ #define MSM_DEVICE(name) MSM_CHIP_DEVICE(name, MSM)
++#define MSM_DEVICE_TYPE(name, mem_type) \
++		MSM_CHIP_DEVICE_TYPE(name, MSM, mem_type)
+ 
+ #if defined(CONFIG_ARCH_MSM7X00A) || defined(CONFIG_ARCH_MSM7X27) \
+ 	|| defined(CONFIG_ARCH_MSM7X25)
+ static struct map_desc msm_io_desc[] __initdata = {
+-	MSM_DEVICE(VIC),
+-	MSM_CHIP_DEVICE(CSR, MSM7X00),
+-	MSM_DEVICE(DMOV),
+-	MSM_CHIP_DEVICE(GPIO1, MSM7X00),
+-	MSM_CHIP_DEVICE(GPIO2, MSM7X00),
+-	MSM_CHIP_DEVICE(CLK_CTL, MSM7X00),
++	MSM_DEVICE_TYPE(VIC, MT_DEVICE_NONSHARED),
++	MSM_CHIP_DEVICE_TYPE(CSR, MSM7X00, MT_DEVICE_NONSHARED),
++	MSM_DEVICE_TYPE(DMOV, MT_DEVICE_NONSHARED),
++	MSM_CHIP_DEVICE_TYPE(GPIO1, MSM7X00, MT_DEVICE_NONSHARED),
++	MSM_CHIP_DEVICE_TYPE(GPIO2, MSM7X00, MT_DEVICE_NONSHARED),
++	MSM_CHIP_DEVICE_TYPE(CLK_CTL, MSM7X00, MT_DEVICE_NONSHARED),
+ #if defined(CONFIG_DEBUG_MSM_UART1) || defined(CONFIG_DEBUG_MSM_UART2) || \
+ 	defined(CONFIG_DEBUG_MSM_UART3)
+-	MSM_DEVICE(DEBUG_UART),
++	MSM_DEVICE_TYPE(DEBUG_UART, MT_DEVICE_NONSHARED),
+ #endif
+ 	{
+ 		.virtual =  (unsigned long) MSM_SHARED_RAM_BASE,
+-- 
+Sent by an employee of the Qualcomm Innovation Center,Inc
+The Qualcomm Innovation Center, Inc. is a member of the Code Aurora Forum.
+

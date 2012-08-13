@@ -1,0 +1,163 @@
+Path: news.gmane.org!not-for-mail
+From: Andi Kleen <andi@firstfloor.org>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [PATCH 3/3] HWPOISON: improve handling/reporting of memory error on dirty pagecache
+Date: Sat, 11 Aug 2012 04:15:06 -0700
+Lines: 96
+Approved: news@gmane.org
+Message-ID: <m21ujdd6it.fsf@firstfloor.org>
+References: <1344634913-13681-1-git-send-email-n-horiguchi@ah.jp.nec.com>
+	<1344634913-13681-4-git-send-email-n-horiguchi@ah.jp.nec.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344683724 12826 80.91.229.3 (11 Aug 2012 11:15:24 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 11 Aug 2012 11:15:24 +0000 (UTC)
+Cc: Andi Kleen <andi.kleen@intel.com>,  Wu Fengguang <fengguang.wu@intel.com>,  Andrew Morton <akpm@linux-foundation.org>,  Tony Luck <tony.luck@intel.com>,  Rik van Riel <riel@redhat.com>,  "Jun'ichi Nomura" <j-nomura@ce.jp.nec.com>,  Naoya Horiguchi <nhoriguc@redhat.com>,  linux-mm@kvack.org,  linux-kernel@vger.kernel.org
+To: Naoya Horiguchi <n-horiguchi@ah.jp.nec.com>
+Original-X-From: owner-linux-mm@kvack.org Sat Aug 11 13:15:20 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1T09f1-0000ln-UY
+	for glkm-linux-mm-2@m.gmane.org; Sat, 11 Aug 2012 13:15:16 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 4562E6B0044; Sat, 11 Aug 2012 07:15:13 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 1EA056B005A; Sat, 11 Aug 2012 07:15:13 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id CA65C6B005D; Sat, 11 Aug 2012 07:15:12 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx114.postini.com [74.125.245.114])
+	by kanga.kvack.org (Postfix) with SMTP id 9E7A66B0044
+	for <linux-mm@kvack.org>; Sat, 11 Aug 2012 07:15:11 -0400 (EDT)
+Original-Received: from mga02.intel.com ([134.134.136.20]) by na3sys010amx114.postini.com ([74.125.244.10]) with SMTP;
+	Sat, 11 Aug 2012 11:15:11 GMT
+Original-Received: from orsmga002.jf.intel.com ([10.7.209.21])
+  by orsmga101.jf.intel.com with ESMTP; 11 Aug 2012 04:15:10 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.77,749,1336374000"; 
+   d="scan'208";a="184974495"
+Original-Received: from tassilo.jf.intel.com ([10.7.201.151])
+  by orsmga002.jf.intel.com with ESMTP; 11 Aug 2012 04:15:06 -0700
+Original-Received: by tassilo.jf.intel.com (Postfix, from userid 501)
+	id C0FC52418D0; Sat, 11 Aug 2012 04:15:06 -0700 (PDT)
+In-Reply-To: <1344634913-13681-4-git-send-email-n-horiguchi@ah.jp.nec.com>
+	(Naoya Horiguchi's message of "Fri, 10 Aug 2012 17:41:53 -0400")
+User-Agent: Gnus/5.13 (Gnus v5.13) Emacs/23.3 (gnu/linux)
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0005) s cv gt3 GT2 gt1 r p m c 
+X-pstn-addresses: from <andi@firstfloor.org> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:84041 gmane.linux.kernel:1341579
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341579>
+
+Naoya Horiguchi <n-horiguchi@ah.jp.nec.com> writes:
+
+I'm sceptical on the patch, but here's my review.
+
+>   - return -EHWPOISON when we access to the error-affected address with
+>     read(), partial-page write(), fsync(),
+
+Note that a lot of user space does not like new errnos (nothing in
+strerror etc.). It's probably better to reuse some existing errno.
+
+> @@ -270,6 +273,9 @@ int filemap_fdatawait_range(struct address_space *mapping, loff_t start_byte,
+>  	if (end_byte < start_byte)
+>  		return 0;
+>  
+> +	if (unlikely(hwpoison_file_range(mapping, start_byte, end_byte)))
+> +		return -EHWPOISON;
+> +
+
+That function uses a global lock. fdatawait is quite common. This will
+likely cause performance problems in IO workloads.
+
+You need to get that lock out of the hot path somehow.
+
+Probably better to try to put the data into a existing data structure,
+or if you cannot do that you would need some way to localize the lock.
+
+Or at least make it conditional of hwpoison errors being around. 
+
+
+>  	pagevec_init(&pvec, 0);
+>  	while ((index <= end) &&
+>  			(nr_pages = pagevec_lookup_tag(&pvec, mapping, &index,
+> @@ -369,6 +375,16 @@ int filemap_write_and_wait_range(struct address_space *mapping,
+>  				err = err2;
+>  		}
+>  	}
+> +
+> +	/*
+> +	 * When AS_HWPOISON is set, dirty page with memory error is
+> +	 * removed from pagecache and mapping->nrpages is decreased by 1.
+> +	 * So in order to detect memory error on single page file, we need
+> +	 * to check AS_HWPOISON bit outside if(mapping->nrpages) block below.
+> +	 */
+> +	if (unlikely(hwpoison_file_range(mapping, lstart, lend)))
+> +		return -EHWPOISON;
+
+Same here.
+>  					ra, filp, page,
+> @@ -2085,6 +2123,9 @@ inline int generic_write_checks(struct file *file, loff_t *pos, size_t *count, i
+>          if (unlikely(*pos < 0))
+>                  return -EINVAL;
+>  
+> +	if (unlikely(hwpoison_partial_write(file->f_mapping, *pos, *count)))
+> +		return -EHWPOISON;
+
+Same here.
+> +
+> +		/*
+> +		 * Memory error is reported to userspace by AS_HWPOISON flags
+> +		 * in mapping->flags. The mechanism is similar to that of
+> +		 * AS_EIO, but we have separete flags because there'are two
+> +		 * differences between them:
+> +		 *  1. Expected userspace handling. When user processes get
+> +		 *     -EIO, they can retry writeback hoping the error in IO
+> +		 *     devices is temporary, switch to write to other devices,
+> +		 *     or do some other application-specific handling.
+> +		 *     For -EHWPOISON, we can clear the error by overwriting
+> +		 *     the corrupted page.
+> +		 *  2. When to clear. For -EIO, we can think that we recover
+> +		 *     from the error when writeback succeeds. For -EHWPOISON
+> +		 *     OTOH, we can see that things are back to normal when
+> +		 *     corrupted data are overwritten from user buffer.
+> +		 */
+> +		hwp = kmalloc(sizeof(struct hwp_dirty), GFP_ATOMIC);
+
+You need to check the return value, especially for GFP_ATOMIC which is
+common to fail
+
+> +		hwp->page = p;
+> +		hwp->fpage = NULL;
+> +		hwp->mapping = mapping;
+> +		hwp->index = page_index(p);
+> +		hwp->ino = inode->i_ino;
+> +		hwp->dev = inode->i_sb->s_dev;
+> +		add_hwp_dirty(hwp);
+
+-Andi
+-- 
+ak@linux.intel.com -- Speaking for myself only
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

@@ -1,0 +1,106 @@
+Path: news.gmane.org!not-for-mail
+From: Miklos Szeredi <mszeredi@suse.cz>
+Newsgroups: gmane.linux.kernel
+Subject: Re: Oops in audit_copy_inode
+Date: Wed, 01 Aug 2012 18:11:39 +0200
+Lines: 56
+Approved: news@gmane.org
+Message-ID: <1343837499.18359.7.camel@tucsk.pomaz.szeredi.hu>
+References: <CALnj_=4r0qdrNUbXmS=q=sk11PZ-Q0z=wPO5wR_DzR4HjnMdqw@mail.gmail.com>
+	 <CALnj_=5qfAxtKN_T+eoAPCswZPrWmKmOK5HSTwCNZV0s08f_qw@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343837430 25781 80.91.229.3 (1 Aug 2012 16:10:30 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 1 Aug 2012 16:10:30 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, Kees Cook <keescook@google.com>,
+	viro@zeniv.linux.org.uk, Eric Paris <eparis@redhat.com>,
+	miklos@szeredi.hu
+To: Peter Moody <pmoody@google.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 01 18:10:30 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwbVE-0002Iv-Cy
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 01 Aug 2012 18:10:28 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753486Ab2HAQKU (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 1 Aug 2012 12:10:20 -0400
+Original-Received: from cantor2.suse.de ([195.135.220.15]:35826 "EHLO mx2.suse.de"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1750737Ab2HAQKS (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 1 Aug 2012 12:10:18 -0400
+Original-Received: from relay1.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id D0ED1A24CA;
+	Wed,  1 Aug 2012 18:10:17 +0200 (CEST)
+In-Reply-To: <CALnj_=5qfAxtKN_T+eoAPCswZPrWmKmOK5HSTwCNZV0s08f_qw@mail.gmail.com>
+X-Mailer: Evolution 3.2.3 
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336443
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336443>
+
+Hi Peter,
+
+Thanks for the report.
+
+Here's a patch.  I haven't tested it but I'm pretty confident that it
+fixes the bug.
+
+Thanks,
+Miklos
+
+
+Subject: vfs: fix audit_inode on negative dentry
+From: Miklos Szeredi <mszeredi@suse.cz>
+
+Peter Moody reported an oops in audit_copy_inode() and bisected it to commit
+7157486541 (vfs: do_last(): common slow lookup).
+
+The problem is that audit_inode() in do_last() is called with a negative dentry.
+
+Previously the non-O_CREAT case didn't call audit_inode() here, but now both
+O_CREAT and non-O_CREAT opens are handled by the same code.
+
+I really have no idea why this audit_inode() is needed here at all but am afaid
+to remove this for fear of breaking audit somehow.  So just fix this case by
+checking for a negative dentry.
+
+Reported-by: Peter Moody <pmoody@google.com>
+Signed-off-by: Miklos Szeredi <mszeredi@suse.cz>
+CC: stable@vger.kernel.org
+---
+ fs/namei.c |   10 ++++++----
+ 1 file changed, 6 insertions(+), 4 deletions(-)
+
+Index: linux-2.6/fs/namei.c
+===================================================================
+--- linux-2.6.orig/fs/namei.c	2012-08-01 17:47:28.000000000 +0200
++++ linux-2.6/fs/namei.c	2012-08-01 17:49:26.000000000 +0200
+@@ -2607,10 +2607,12 @@ static int do_last(struct nameidata *nd,
+ 		goto finish_open_created;
+ 	}
+ 
+-	/*
+-	 * It already exists.
+-	 */
+-	audit_inode(pathname, path->dentry);
++	if (path->dentry->d_inode) {
++		/*
++		 * It already exists.
++		 */
++		audit_inode(pathname, path->dentry);
++	}
+ 
+ 	/*
+ 	 * If atomic_open() acquired write access it is dropped now due to
+
+

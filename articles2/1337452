@@ -1,0 +1,176 @@
+Path: news.gmane.org!not-for-mail
+From: Tejun Heo <tj@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 05/14] workqueue: set delayed_work->timer function on initialization
+Date: Fri,  3 Aug 2012 10:43:50 -0700
+Lines: 113
+Approved: news@gmane.org
+Message-ID: <1344015839-21800-6-git-send-email-tj@kernel.org>
+References: <1344015839-21800-1-git-send-email-tj@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344015905 22090 80.91.229.3 (3 Aug 2012 17:45:05 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 17:45:05 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	padovan@profusion.mobi, marcel@holtmann.org, peterz@infradead.org,
+	mingo@redhat.com, davem@davemloft.net, dougthompson@xmission.com,
+	ibm-acpi@hmh.eng.br, cbou@mail.ru, rui.zhang@intel.com,
+	tomi.valkeinen@ti.com, Tejun Heo <tj@kernel.org>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 19:44:59 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxLvh-0007yq-Sb
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 19:44:54 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753720Ab2HCRo1 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 13:44:27 -0400
+Original-Received: from mail-gg0-f174.google.com ([209.85.161.174]:50487 "EHLO
+	mail-gg0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752062Ab2HCRoQ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 13:44:16 -0400
+Original-Received: by mail-gg0-f174.google.com with SMTP id l2so1128801ggn.19
+        for <linux-kernel@vger.kernel.org>; Fri, 03 Aug 2012 10:44:16 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references;
+        bh=xEJQGJ1dsFA51NvybffzWoyrwzSZRNFvJc62IdzO/EM=;
+        b=qCoWIQ7mv2MFv5V+yWxx0ZlLmQKhrPHPf+kAG8wSg25fTo3fi4CkMuqjY2TcbqqQ+J
+         NCewammBTqap7LcdqlVOHPUVOfHtyUPR8L3xU/bXZnLk4ds2vMogvuSM4Y2tLpFZ03uW
+         LtwbkAlrKQM1cZmV1C+a/Tn0UrMNiy4hxNKLfEc7OjEWwUljgfZB2F8vSOlNuYESspNZ
+         OGL1UYsRjhHl0bzKudvWIeqYhFTHiTU48kTA0bQMpqAguRQht4tzGWMVUKgdodqPO1rh
+         pAjbAqBOfYbo+iqlcpv6IN/W2DNse1adE4l6ySE2RZXAUfgAJDOp3yKj7gdPaamZ/bsx
+         dJ3w==
+Original-Received: by 10.50.219.135 with SMTP id po7mr4937471igc.15.1344015855835;
+        Fri, 03 Aug 2012 10:44:15 -0700 (PDT)
+Original-Received: from wtj.mtv.corp.google.com (wtj.mtv.corp.google.com [172.18.110.84])
+        by mx.google.com with ESMTPS id yh10sm4595318igb.0.2012.08.03.10.44.13
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 03 Aug 2012 10:44:15 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7.3
+In-Reply-To: <1344015839-21800-1-git-send-email-tj@kernel.org>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337452
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337452>
+
+delayed_work->timer.function is currently initialized during
+queue_delayed_work_on().  Export delayed_work_timer_fn() and set
+delayed_work timer function during delayed_work initialization
+together with other fields.
+
+This ensures the timer function is always valid on an initialized
+delayed_work.  This is to help mod_delayed_work() implementation.
+
+To detect delayed_work users which diddle with the internal timer,
+trigger WARN if timer function doesn't match on queue.
+
+Signed-off-by: Tejun Heo <tj@kernel.org>
+---
+ include/linux/workqueue.h |   13 +++++++++++--
+ kernel/workqueue.c        |    7 ++++---
+ 2 files changed, 15 insertions(+), 5 deletions(-)
+
+diff --git a/include/linux/workqueue.h b/include/linux/workqueue.h
+index 278dc5d..ab95fef 100644
+--- a/include/linux/workqueue.h
++++ b/include/linux/workqueue.h
+@@ -16,6 +16,7 @@ struct workqueue_struct;
+ 
+ struct work_struct;
+ typedef void (*work_func_t)(struct work_struct *work);
++void delayed_work_timer_fn(unsigned long __data);
+ 
+ /*
+  * The first word is the work queue pointer and the flags rolled into
+@@ -124,12 +125,14 @@ struct execute_work {
+ 
+ #define __DELAYED_WORK_INITIALIZER(n, f) {			\
+ 	.work = __WORK_INITIALIZER((n).work, (f)),		\
+-	.timer = TIMER_INITIALIZER(NULL, 0, 0),			\
++	.timer = TIMER_INITIALIZER(delayed_work_timer_fn,	\
++				0, (unsigned long)&(n)),	\
+ 	}
+ 
+ #define __DEFERRED_WORK_INITIALIZER(n, f) {			\
+ 	.work = __WORK_INITIALIZER((n).work, (f)),		\
+-	.timer = TIMER_DEFERRED_INITIALIZER(NULL, 0, 0),	\
++	.timer = TIMER_DEFERRED_INITIALIZER(delayed_work_timer_fn, \
++				0, (unsigned long)&(n)),	\
+ 	}
+ 
+ #define DECLARE_WORK(n, f)					\
+@@ -207,18 +210,24 @@ static inline unsigned int work_static(struct work_struct *work) { return 0; }
+ 	do {							\
+ 		INIT_WORK(&(_work)->work, (_func));		\
+ 		init_timer(&(_work)->timer);			\
++		(_work)->timer.function = delayed_work_timer_fn;\
++		(_work)->timer.data = (unsigned long)(_work);	\
+ 	} while (0)
+ 
+ #define INIT_DELAYED_WORK_ONSTACK(_work, _func)			\
+ 	do {							\
+ 		INIT_WORK_ONSTACK(&(_work)->work, (_func));	\
+ 		init_timer_on_stack(&(_work)->timer);		\
++		(_work)->timer.function = delayed_work_timer_fn;\
++		(_work)->timer.data = (unsigned long)(_work);	\
+ 	} while (0)
+ 
+ #define INIT_DELAYED_WORK_DEFERRABLE(_work, _func)		\
+ 	do {							\
+ 		INIT_WORK(&(_work)->work, (_func));		\
+ 		init_timer_deferrable(&(_work)->timer);		\
++		(_work)->timer.function = delayed_work_timer_fn;\
++		(_work)->timer.data = (unsigned long)(_work);	\
+ 	} while (0)
+ 
+ /**
+diff --git a/kernel/workqueue.c b/kernel/workqueue.c
+index 30474c4..5539238 100644
+--- a/kernel/workqueue.c
++++ b/kernel/workqueue.c
+@@ -1112,7 +1112,7 @@ bool queue_work(struct workqueue_struct *wq, struct work_struct *work)
+ }
+ EXPORT_SYMBOL_GPL(queue_work);
+ 
+-static void delayed_work_timer_fn(unsigned long __data)
++void delayed_work_timer_fn(unsigned long __data)
+ {
+ 	struct delayed_work *dwork = (struct delayed_work *)__data;
+ 	struct cpu_workqueue_struct *cwq = get_work_cwq(&dwork->work);
+@@ -1121,6 +1121,7 @@ static void delayed_work_timer_fn(unsigned long __data)
+ 	__queue_work(smp_processor_id(), cwq->wq, &dwork->work);
+ 	local_irq_enable();
+ }
++EXPORT_SYMBOL_GPL(delayed_work_timer_fn);
+ 
+ /**
+  * queue_delayed_work_on - queue work on specific CPU after delay
+@@ -1145,6 +1146,8 @@ bool queue_delayed_work_on(int cpu, struct workqueue_struct *wq,
+ 	if (!test_and_set_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work))) {
+ 		unsigned int lcpu;
+ 
++		WARN_ON_ONCE(timer->function != delayed_work_timer_fn ||
++			     timer->data != (unsigned long)dwork);
+ 		BUG_ON(timer_pending(timer));
+ 		BUG_ON(!list_empty(&work->entry));
+ 
+@@ -1168,8 +1171,6 @@ bool queue_delayed_work_on(int cpu, struct workqueue_struct *wq,
+ 		set_work_cwq(work, get_cwq(lcpu, wq), 0);
+ 
+ 		timer->expires = jiffies + delay;
+-		timer->data = (unsigned long)dwork;
+-		timer->function = delayed_work_timer_fn;
+ 
+ 		if (unlikely(cpu >= 0))
+ 			add_timer_on(timer, cpu);
+-- 
+1.7.7.3
+

@@ -1,0 +1,222 @@
+Path: news.gmane.org!not-for-mail
+From: Anton Vorontsov <anton.vorontsov@linaro.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel,gmane.linux.kernel.debugging.kgdb.bugs
+Subject: [PATCH 04/11] tty/serial/kgdboc: Add and wire up clear_irqs callback
+Date: Mon, 30 Jul 2012 04:58:13 -0700
+Lines: 154
+Approved: news@gmane.org
+Message-ID: <1343649500-18491-4-git-send-email-anton.vorontsov@linaro.org>
+References: <20120730115719.GA5742@lizard>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343649761 4985 80.91.229.3 (30 Jul 2012 12:02:41 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 12:02:41 +0000 (UTC)
+Cc: =?UTF-8?q?Arve=20Hj=C3=B8nnev=C3=A5g?= <arve@android.com>,
+	Colin Cross <ccross@android.com>,
+	John Stultz <john.stultz@linaro.org>,
+	linux-kernel@vger.kernel.org, linux-arm-kernel@lists.infradead.org,
+	linaro-kernel@lists.linaro.org, patches@linaro.org,
+	kernel-team@android.com, kgdb-bugreport@lists.sourceforge.net
+To: Russell King <linux@arm.linux.org.uk>,
+	Jason Wessel <jason.wessel@windriver.com>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	Alan Cox <alan@linux.intel.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 14:02:36 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvogB-0005Tq-AK
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 14:02:31 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753713Ab2G3MBv (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 08:01:51 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:47107 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753641Ab2G3MBq (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 08:01:46 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so9733592pbb.19
+        for <linux-kernel@vger.kernel.org>; Mon, 30 Jul 2012 05:01:46 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :x-gm-message-state;
+        bh=vIkPT4AR+B8xJtWJ+Yb/N3oDCKB0J5pt5yiAzntRiXY=;
+        b=X95MlioWOsUH8X6uo12Zqn/BHuqkagS+f6TwO+J6qhfKSwV7uzuKfldMqMOFifSWRw
+         SRUuNrHmwQYVo6DI28aB8FdGTVRx4EOoTo9N0gxTIvhchzyFlCdEOyD6LprBl5yXkXOq
+         zbUBP4VTHLZYzcLJjh3teINDysiV5LNdHn12kt9oI7XdUaSyqcdqYAaawaXNr4+THNSE
+         1qEhtx3lJdgGYATi0eQSPvtVPbdW0E6FliBjquvehffIeVNmFRpx1mpIz/ro7z3YJAhp
+         8cfyqXELuxr58XSTXUglDoRrjXxJGXyMFfo94esZMApbWi1H5PCalL6a4Imu+6LjV/lT
+         xKFg==
+Original-Received: by 10.68.223.129 with SMTP id qu1mr34205276pbc.165.1343649706714;
+        Mon, 30 Jul 2012 05:01:46 -0700 (PDT)
+Original-Received: from localhost (c-71-204-165-222.hsd1.ca.comcast.net. [71.204.165.222])
+        by mx.google.com with ESMTPS id nk3sm7816478pbc.27.2012.07.30.05.01.45
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 30 Jul 2012 05:01:46 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <20120730115719.GA5742@lizard>
+X-Gm-Message-State: ALoCoQm2z4FGpHzjsu351vdDxj4ruVIr7Mp+DoLONQLkDGlpPIt5ut3kbJAvJjQGUJRM++Pykc9y
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335019 gmane.linux.ports.arm.kernel:179353 gmane.linux.kernel.debugging.kgdb.bugs:5719
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335019>
+
+This patch implements a new callback: clear_irqs. It is used for the
+cases when KDB-entry (e.g. NMI) and KDB IO (e.g. serial port) shares
+the same interrupt. To get the idea, let's take some real example (ARM
+machine): we have a serial port which interrupt is routed to an NMI,
+and the interrupt is used to enter KDB. Once there is some activity on
+the serial port, the CPU receives NMI exception, and we fall into KDB
+shell. So, it is our "debug console", and it is able to interrupt (and
+thus debug) even IRQ handlers themselves.
+
+When used that way, the interrupt never reaches serial driver's IRQ
+handler routine, which means that serial driver will not silence the
+interrupt. NMIs behaviour are quite arch-specific, and we can't assume
+that we can use them as ordinary IRQs, e.g. on some arches (like ARM)
+we can't handle data aborts, the behaviour is undefined then. So we
+can't just handle execution to serial driver's IRQ handler from the
+NMI context once we're done with KDB (plus this would defeat the
+debugger's purpose: we want the NMI handler be as simple as possible,
+so it will have less chances to hang).
+
+So, given that have to deal with it somehow, we have two options:
+
+1. Implement something that clears the interrupt;
+2. Implement a whole new concept of grabbing tty for exclusive KDB use,
+   plus implement mask/unmask callbacks, i.e.:
+   - Since consoles might use ttys w/o opending them, we would have
+     to make kdb respect CON_ENABLED flag (maybe a good idea to do it
+     anyway);
+   - Add 'bool exclusive' argument to tty_find_polling_driver(), if set
+     to 1, the function will refuse to return an already tty; and will
+     use the flag in tty_reopen() to not allow multiple users (there are
+     already checks for pty masters, which are "open once" ttys);
+   - Once we got the tty exclusively, we would need to call some new
+     uart->mask_all_but_rx_interrupts call before we want to use the
+     port for NMI/KDB, and unmask_all_but_rx_interrupts after we're
+     done with it.
+
+The second option is obviously more complex, needlessly so, and less
+generic. So I went with the first one: we just consume all the interrupts.
+The tty becomes silently unusable for the rest of the world when we use
+it with KDB; but once we reroute the serial IRQ source back from NMI to
+an ordinary IRQ (in KDB this can be done with 'disable_nmi' command), it
+will behave as normal.
+
+p.s. Since the callback is so far used only by polling user, we place
+it under the appropriate #ifdef.
+
+Signed-off-by: Anton Vorontsov <anton.vorontsov@linaro.org>
+---
+ drivers/tty/serial/kgdboc.c      |    9 +++++++++
+ drivers/tty/serial/serial_core.c |   15 +++++++++++++++
+ include/linux/kgdb.h             |    1 +
+ include/linux/serial_core.h      |    1 +
+ include/linux/tty_driver.h       |    1 +
+ 5 files changed, 27 insertions(+)
+
+diff --git a/drivers/tty/serial/kgdboc.c b/drivers/tty/serial/kgdboc.c
+index 2b42a01..178e62c 100644
+--- a/drivers/tty/serial/kgdboc.c
++++ b/drivers/tty/serial/kgdboc.c
+@@ -227,6 +227,14 @@ static int kgdboc_get_char(void)
+ 						kgdb_tty_line);
+ }
+ 
++static void kgdboc_clear_irqs(void)
++{
++	if (!kgdb_tty_driver)
++		return;
++	if (kgdb_tty_driver->ops->clear_irqs)
++		kgdb_tty_driver->ops->clear_irqs(kgdb_tty_driver, kgdb_tty_line);
++}
++
+ static void kgdboc_put_char(u8 chr)
+ {
+ 	if (!kgdb_tty_driver)
+@@ -298,6 +306,7 @@ static struct kgdb_io kgdboc_io_ops = {
+ 	.name			= "kgdboc",
+ 	.read_char		= kgdboc_get_char,
+ 	.write_char		= kgdboc_put_char,
++	.clear_irqs		= kgdboc_clear_irqs,
+ 	.pre_exception		= kgdboc_pre_exp_handler,
+ 	.post_exception		= kgdboc_post_exp_handler,
+ };
+diff --git a/drivers/tty/serial/serial_core.c b/drivers/tty/serial/serial_core.c
+index 246b823..89c4093 100644
+--- a/drivers/tty/serial/serial_core.c
++++ b/drivers/tty/serial/serial_core.c
+@@ -2154,6 +2154,20 @@ static void uart_poll_put_char(struct tty_driver *driver, int line, char ch)
+ 	port = state->uart_port;
+ 	port->ops->poll_put_char(port, ch);
+ }
++
++static void uart_clear_irqs(struct tty_driver *driver, int line)
++{
++	struct uart_driver *drv = driver->driver_state;
++	struct uart_state *state = drv->state + line;
++	struct uart_port *port;
++
++	if (!state || !state->uart_port)
++		return;
++
++	port = state->uart_port;
++	if (port->ops->clear_irqs)
++		port->ops->clear_irqs(port);
++}
+ #endif
+ 
+ static const struct tty_operations uart_ops = {
+@@ -2186,6 +2200,7 @@ static const struct tty_operations uart_ops = {
+ 	.poll_init	= uart_poll_init,
+ 	.poll_get_char	= uart_poll_get_char,
+ 	.poll_put_char	= uart_poll_put_char,
++	.clear_irqs	= uart_clear_irqs,
+ #endif
+ };
+ 
+diff --git a/include/linux/kgdb.h b/include/linux/kgdb.h
+index e0c0a2e..f695b26 100644
+--- a/include/linux/kgdb.h
++++ b/include/linux/kgdb.h
+@@ -285,6 +285,7 @@ struct kgdb_io {
+ 	const char		*name;
+ 	int			(*read_char) (void);
+ 	void			(*write_char) (u8);
++	void			(*clear_irqs) (void);
+ 	void			(*flush) (void);
+ 	int			(*init) (void);
+ 	void			(*pre_exception) (void);
+diff --git a/include/linux/serial_core.h b/include/linux/serial_core.h
+index 65db992..081d300 100644
+--- a/include/linux/serial_core.h
++++ b/include/linux/serial_core.h
+@@ -275,6 +275,7 @@ struct uart_ops {
+ #ifdef CONFIG_CONSOLE_POLL
+ 	void	(*poll_put_char)(struct uart_port *, unsigned char);
+ 	int		(*poll_get_char)(struct uart_port *);
++	void	(*clear_irqs)(struct uart_port *);
+ #endif
+ };
+ 
+diff --git a/include/linux/tty_driver.h b/include/linux/tty_driver.h
+index 6e6dbb7..94b14cd 100644
+--- a/include/linux/tty_driver.h
++++ b/include/linux/tty_driver.h
+@@ -287,6 +287,7 @@ struct tty_operations {
+ 	int (*poll_init)(struct tty_driver *driver, int line, char *options);
+ 	int (*poll_get_char)(struct tty_driver *driver, int line);
+ 	void (*poll_put_char)(struct tty_driver *driver, int line, char ch);
++	void (*clear_irqs)(struct tty_driver *driver, int line);
+ #endif
+ 	const struct file_operations *proc_fops;
+ };
+-- 
+1.7.10.4
+

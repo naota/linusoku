@@ -1,0 +1,100 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 062/122] udf: Improve table length check to avoid possible overflow
+Date: Tue,  7 Aug 2012 15:25:50 -0700
+Lines: 36
+Approved: news@gmane.org
+Message-ID: <20120807221953.899292191@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344378801 15215 80.91.229.3 (7 Aug 2012 22:33:21 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:33:21 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Ben Hutchings <ben@decadent.org.uk>,
+	Jan Kara <jack@suse.cz>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:33:19 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysL0-0004aE-On
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:33:19 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757188Ab2HGWaS (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:30:18 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:64363 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1757156Ab2HGWaN (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:30:13 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so346923pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:30:13 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=CBHt/c6TRUxO5pRdDDWdmeHXPag+Gyssig5F/5CfN2A=;
+        b=mWUOgECUPocyko4ykYpjMyb+/q1BIaWOSUb++NJrwC+3v8z0Cuza6UizpmxCbgSVZw
+         NWHIQC8tJ/EZSH9SXd/ag0HruOaC5Vn/KcKv89Z4YDXcsF2i59fWdjaTW45YyqupYovH
+         NkPLSCq1YOeP5Aur3ysgf2TdNah/aRkFzWXSwVVXELvGNVdgXPCgijfpEW4oOfwWw+6J
+         3pvCW+yTB7Trs5PzO87Y/QbywhwfSAoZQHOQtTk9pmnQ81X21TwiAG+XaCToDjfXyG/w
+         t6hxao1KqViZB2RfZu4CmQhI8MbHyDB6/KBlljt5CsJ1GnbHAyR+CpO2Sl68FB6U8kHE
+         p3aQ==
+Original-Received: by 10.68.130.233 with SMTP id oh9mr31071987pbb.78.1344378613179;
+        Tue, 07 Aug 2012 15:30:13 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id nr8sm8537977pbc.43.2012.08.07.15.30.11
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:30:12 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQkvMh/vFOYAk5kDhpwN2MaMuiwX+LLy9j76NDMJy3KaQA6OixnQq+B3PEXzudsnmT6xcNi0
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339436 gmane.linux.kernel.stable:29275
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339436>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Jan Kara <jack@suse.cz>
+
+commit 57b9655d01ef057a523e810d29c37ac09b80eead upstream.
+
+When a partition table length is corrupted to be close to 1 << 32, the
+check for its length may overflow on 32-bit systems and we will think
+the length is valid. Later on the kernel can crash trying to read beyond
+end of buffer. Fix the check to avoid possible overflow.
+
+Reported-by: Ben Hutchings <ben@decadent.org.uk>
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ fs/udf/super.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/fs/udf/super.c
++++ b/fs/udf/super.c
+@@ -1283,7 +1283,7 @@ static int udf_load_logicalvol(struct su
+ 	BUG_ON(ident != TAG_IDENT_LVD);
+ 	lvd = (struct logicalVolDesc *)bh->b_data;
+ 	table_len = le32_to_cpu(lvd->mapTableLength);
+-	if (sizeof(*lvd) + table_len > sb->s_blocksize) {
++	if (table_len > sb->s_blocksize - sizeof(*lvd)) {
+ 		udf_err(sb, "error loading logical volume descriptor: "
+ 			"Partition table too long (%u > %lu)\n", table_len,
+ 			sb->s_blocksize - sizeof(*lvd));
+
+

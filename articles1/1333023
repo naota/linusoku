@@ -1,0 +1,228 @@
+Path: news.gmane.org!not-for-mail
+From: Josh Boyer <jwboyer@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [PATCH] posix_types.h: Cleanup stale __NFDBITS and related
+ definitions
+Date: Wed, 25 Jul 2012 10:40:34 -0400
+Lines: 176
+Approved: news@gmane.org
+Message-ID: <20120725144033.GK10534@zod.bos.redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343227253 11144 80.91.229.3 (25 Jul 2012 14:40:53 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 14:40:53 +0000 (UTC)
+Cc: law@redhat.com, stable@vger.kernel.org,
+	linux-kernel@vger.kernel.org
+To: Linus Torvalds <torvalds@linux-foundation.org>,
+	Andrew Morton <akpm@linux-foundation.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 16:40:52 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su2le-0004kG-7Y
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 16:40:50 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S933254Ab2GYOkl (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 10:40:41 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:25780 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S933148Ab2GYOkk (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 10:40:40 -0400
+Original-Received: from int-mx11.intmail.prod.int.phx2.redhat.com (int-mx11.intmail.prod.int.phx2.redhat.com [10.5.11.24])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6PEedjP000912
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Wed, 25 Jul 2012 10:40:39 -0400
+Original-Received: from zod.bos.redhat.com (ovpn-112-32.phx2.redhat.com [10.3.112.32])
+	by int-mx11.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6PEeYX8025624
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES128-SHA bits=128 verify=NO);
+	Wed, 25 Jul 2012 10:40:37 -0400
+Content-Disposition: inline
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.24
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333023 gmane.linux.kernel.stable:28800
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333023>
+
+Recently, glibc made a change to suppress sign-conversion warnings in FD_SET
+(glibc commit ceb9e56b3d1).  This uncovered an issue with the kernel's
+definition of __NFDBITS if applications #include <linux/types.h> after
+including <sys/select.h>.  A build failure would be seen when passing the
+-Werror=sign-compare and -D_FORTIFY_SOURCE=2 flags to gcc.
+
+It was suggested that the kernel should either match the glibc definition of
+__NFDBITS or remove that entirely.  The current in-kernel uses of __NFDBITS
+can be replaced with BITS_PER_LONG, and there are no uses of the related
+__FDELT and __FDMASK defines.  Given that, we'll continue the cleanup that
+was started with commit 8b3d1cda4f5f ("posix_types: Remove fd_set macros")
+and drop the remaining unused macros.
+
+Additionally, linux/time.h has similar macros defined that expand to nothing
+so we'll remove those at the same time.
+
+Reported-by: Jeff Law <law@redhat.com>
+Suggested-by: Linus Torvalds <torvalds@linux-foundation.org>
+CC: <stable@vger.kernel.org>
+Signed-off-by: Josh Boyer <jwboyer@redhat.com>
+---
+ arch/mips/kernel/kspd.c     |  2 +-
+ fs/exec.c                   |  2 +-
+ fs/select.c                 | 10 +++++-----
+ include/linux/posix_types.h | 18 +++---------------
+ include/linux/time.h        |  8 --------
+ kernel/exit.c               |  2 +-
+ security/selinux/hooks.c    |  2 +-
+ 7 files changed, 12 insertions(+), 32 deletions(-)
+
+diff --git a/arch/mips/kernel/kspd.c b/arch/mips/kernel/kspd.c
+index 84d0639..b77f56b 100644
+--- a/arch/mips/kernel/kspd.c
++++ b/arch/mips/kernel/kspd.c
+@@ -323,7 +323,7 @@ static void sp_cleanup(void)
+ 	fdt = files_fdtable(files);
+ 	for (;;) {
+ 		unsigned long set;
+-		i = j * __NFDBITS;
++		i = j * BITS_PER_LONG;
+ 		if (i >= fdt->max_fds)
+ 			break;
+ 		set = fdt->open_fds[j++];
+diff --git a/fs/exec.c b/fs/exec.c
+index da27b91..e95aeed 100644
+--- a/fs/exec.c
++++ b/fs/exec.c
+@@ -1020,7 +1020,7 @@ static void flush_old_files(struct files_struct * files)
+ 		unsigned long set, i;
+ 
+ 		j++;
+-		i = j * __NFDBITS;
++		i = j * BITS_PER_LONG;
+ 		fdt = files_fdtable(files);
+ 		if (i >= fdt->max_fds)
+ 			break;
+diff --git a/fs/select.c b/fs/select.c
+index bae3215..db14c78 100644
+--- a/fs/select.c
++++ b/fs/select.c
+@@ -345,8 +345,8 @@ static int max_select_fd(unsigned long n, fd_set_bits *fds)
+ 	struct fdtable *fdt;
+ 
+ 	/* handle last in-complete long-word first */
+-	set = ~(~0UL << (n & (__NFDBITS-1)));
+-	n /= __NFDBITS;
++	set = ~(~0UL << (n & (BITS_PER_LONG-1)));
++	n /= BITS_PER_LONG;
+ 	fdt = files_fdtable(current->files);
+ 	open_fds = fdt->open_fds + n;
+ 	max = 0;
+@@ -373,7 +373,7 @@ get_max:
+ 			max++;
+ 			set >>= 1;
+ 		} while (set);
+-		max += n * __NFDBITS;
++		max += n * BITS_PER_LONG;
+ 	}
+ 
+ 	return max;
+@@ -435,11 +435,11 @@ int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
+ 			in = *inp++; out = *outp++; ex = *exp++;
+ 			all_bits = in | out | ex;
+ 			if (all_bits == 0) {
+-				i += __NFDBITS;
++				i += BITS_PER_LONG;
+ 				continue;
+ 			}
+ 
+-			for (j = 0; j < __NFDBITS; ++j, ++i, bit <<= 1) {
++			for (j = 0; j < BITS_PER_LONG; ++j, ++i, bit <<= 1) {
+ 				int fput_needed;
+ 				if (i >= n)
+ 					break;
+diff --git a/include/linux/posix_types.h b/include/linux/posix_types.h
+index f04c98c..0eb4b4b 100644
+--- a/include/linux/posix_types.h
++++ b/include/linux/posix_types.h
+@@ -15,26 +15,14 @@
+  */
+ 
+ /*
+- * Those macros may have been defined in <gnu/types.h>. But we always
+- * use the ones here. 
++ * This macro may have been defined in <gnu/types.h>. But we always
++ * use the one here. 
+  */
+-#undef __NFDBITS
+-#define __NFDBITS	(8 * sizeof(unsigned long))
+-
+ #undef __FD_SETSIZE
+ #define __FD_SETSIZE	1024
+ 
+-#undef __FDSET_LONGS
+-#define __FDSET_LONGS	(__FD_SETSIZE/__NFDBITS)
+-
+-#undef __FDELT
+-#define	__FDELT(d)	((d) / __NFDBITS)
+-
+-#undef __FDMASK
+-#define	__FDMASK(d)	(1UL << ((d) % __NFDBITS))
+-
+ typedef struct {
+-	unsigned long fds_bits [__FDSET_LONGS];
++	unsigned long fds_bits [__FD_SETSIZE / (8 * sizeof(long))];
+ } __kernel_fd_set;
+ 
+ /* Type of a signal handler.  */
+diff --git a/include/linux/time.h b/include/linux/time.h
+index 179f4d6..c81c5e4 100644
+--- a/include/linux/time.h
++++ b/include/linux/time.h
+@@ -257,14 +257,6 @@ static __always_inline void timespec_add_ns(struct timespec *a, u64 ns)
+ 
+ #endif /* __KERNEL__ */
+ 
+-#define NFDBITS			__NFDBITS
+-
+-#define FD_SETSIZE		__FD_SETSIZE
+-#define FD_SET(fd,fdsetp)	__FD_SET(fd,fdsetp)
+-#define FD_CLR(fd,fdsetp)	__FD_CLR(fd,fdsetp)
+-#define FD_ISSET(fd,fdsetp)	__FD_ISSET(fd,fdsetp)
+-#define FD_ZERO(fdsetp)		__FD_ZERO(fdsetp)
+-
+ /*
+  * Names of the interval timers, and structure
+  * defining a timer setting:
+diff --git a/kernel/exit.c b/kernel/exit.c
+index d17f6c4..f65345f 100644
+--- a/kernel/exit.c
++++ b/kernel/exit.c
+@@ -483,7 +483,7 @@ static void close_files(struct files_struct * files)
+ 	rcu_read_unlock();
+ 	for (;;) {
+ 		unsigned long set;
+-		i = j * __NFDBITS;
++		i = j * BITS_PER_LONG;
+ 		if (i >= fdt->max_fds)
+ 			break;
+ 		set = fdt->open_fds[j++];
+diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
+index 689fe2d..94c45a1 100644
+--- a/security/selinux/hooks.c
++++ b/security/selinux/hooks.c
+@@ -2129,7 +2129,7 @@ static inline void flush_unauthorized_files(const struct cred *cred,
+ 		int fd;
+ 
+ 		j++;
+-		i = j * __NFDBITS;
++		i = j * BITS_PER_LONG;
+ 		fdt = files_fdtable(files);
+ 		if (i >= fdt->max_fds)
+ 			break;
+-- 
+1.7.11.2
+

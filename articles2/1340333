@@ -1,0 +1,154 @@
+Path: news.gmane.org!not-for-mail
+From: Tejun Heo <tj@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCHSET] workqueue: use irqsafe timer in delayed_work
+Date: Wed,  8 Aug 2012 14:37:55 -0700
+Lines: 96
+Approved: news@gmane.org
+Message-ID: <1344461882-10149-1-git-send-email-tj@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344461907 23162 80.91.229.3 (8 Aug 2012 21:38:27 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 21:38:27 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, mingo@redhat.com,
+	akpm@linux-foundation.org, tglx@linutronix.de,
+	peterz@infradead.org, davem@davemloft.net, tomi.valkeinen@ti.com
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 23:38:27 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzDxR-0000sH-4F
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 23:38:25 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756142Ab2HHViS (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 17:38:18 -0400
+Original-Received: from mail-gg0-f174.google.com ([209.85.161.174]:39611 "EHLO
+	mail-gg0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751639Ab2HHViQ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 17:38:16 -0400
+Original-Received: by ggdk6 with SMTP id k6so616222ggd.19
+        for <linux-kernel@vger.kernel.org>; Wed, 08 Aug 2012 14:38:16 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer;
+        bh=rCPnXcA6hnC6iV4fvcZ5DZQPbpATRZAtRtOtyZUY62w=;
+        b=0nQkif0a2gU+aKqJsCTqCyeeOvbEicEggaBPDbYtRGT2yNPf+Ml8ZxsdqeZZI+LgXm
+         XC1PRmMxxndQKfNLhGgiL21Pm8a8dNs2ciDNdrLNZ90V5NSDWWb8MpsM4i0X2kVBkymI
+         GCi0p7GJCRPbDL+zA0zPJqrmbSNOfKPCL2sEzj7jA6kDb46TJf6dctqxMEouLJOhCywo
+         PjZIxVaBYZ+LlJRjaGSf87rICcS8gk+veh/CC8ETfq8JVrxBKOGtB10//oGNtsx7eMUD
+         OzEToM2jUchXFAL+tGtl47Z8ZbLOhDYmRxiWnGj7KQelrFbw8k6y6tOwH5Df7fTRc9p8
+         0bag==
+Original-Received: by 10.66.74.37 with SMTP id q5mr27949528pav.29.1344461895517;
+        Wed, 08 Aug 2012 14:38:15 -0700 (PDT)
+Original-Received: from wtj.mtv.corp.google.com (wtj.mtv.corp.google.com [172.18.110.84])
+        by mx.google.com with ESMTPS id gj10sm14112276pbc.18.2012.08.08.14.38.13
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Wed, 08 Aug 2012 14:38:14 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7.3
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340333
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340333>
+
+Hello,
+
+Because IRQs can happen between delayed_work->timer being dispatched
+and delayed_work_timer_fn() actually queueing delayed_work->work,
+try_to_grab_pending() couldn't be used from IRQ handlers.  If it hits
+the window, it will return -EAGAIN perpetually.  This makes it
+impossible to steal PENDING from IRQ handlers using
+try_to_grab_pending() leading to the following issues.
+
+* mod_delayed_work() can't be used from IRQ handlers.
+
+* __cancel_delayed_work() can't use the usual try_to_grab_pending()
+  which handles all three states but instead only deals with the first
+  state using a separate implementation.  There's no way to make a
+  delayed_work not pending from IRQ handlers.
+
+* The context / behavior differences among cancel_delayed_work(),
+  __cancel_delayed_work(), cancel_delayed_work_sync() are subtle and
+  confusing (the first two are mostly historical tho).
+
+This patchset makes delayed_work use the irqsafe timer added by the
+pending "timer: clean up initializers and implement irqsafe timers"
+patchset[1].  This enables try_to_grab_pending() to be used from any
+context which in turn makes mod_delayed_work() usable from IRQ
+handlers.  cancel_delayed_work() is reimplemented using
+try_to_grab_pending() so that it also can be used from IRQ handlers
+and its behavior is consitent with other canceling operations.
+__cancel_delayed_work() is no longer necessary and deprecated.
+
+ 0001-workqueue-cosmetic-whitespace-updates-for-macro-defi.patch
+ 0002-workqueue-make-deferrable-delayed_work-initializer-n.patch
+ 0003-workqueue-clean-up-delayed_work-initializers-and-add.patch
+ 0004-workqueue-use-irqsafe-timer-for-delayed_work.patch
+ 0005-workqueue-use-mod_delayed_work-instead-of-__cancel-q.patch
+ 0006-workqueue-reimplement-cancel_delayed_work-using-try_.patch
+ 0007-workqueue-deprecate-__cancel_delayed_work.patch
+
+0001-0003 are prep patches.
+
+0004 makes delayed_work use irqsafe timers.  This makes
+try_to_grab_pending() and mod_delayed_work() safe to use from any
+context.
+
+0005 converts all __cancel_delayed_work() + queue_delayed_work()
+sequences to mod_delayed_work().  The link_watch conversion needs
+David's ack.
+
+0006 reimplements cancel_delayed_work() using try_to_grab_pending().
+
+0007 replaces __cancel_delayed_work() calls with cancel_delayed_work()
+and deprecates the underscored one.
+
+This patchset is on top of
+
+  [2] wq/for-3.7 (8fcd63664f "workqueue: fix CPU binding of flush_delayed...")
++ [1] timer: clean up initializers and implement irqsafe timers
+
+and available in the following git branch.
+
+ git://git.kernel.org/pub/scm/linux/kernel/git/tj/wq.git review-delayed_work-irqsafe
+
+diffstat follows.
+
+ arch/powerpc/platforms/cell/cpufreq_spudemand.c |    2 
+ block/blk-core.c                                |    8 -
+ block/blk-throttle.c                            |    7 -
+ drivers/block/floppy.c                          |    5 
+ drivers/cpufreq/cpufreq_conservative.c          |    2 
+ drivers/cpufreq/cpufreq_ondemand.c              |    2 
+ drivers/devfreq/devfreq.c                       |    2 
+ drivers/infiniband/core/mad.c                   |   16 --
+ drivers/input/keyboard/qt2160.c                 |    3 
+ drivers/input/mouse/synaptics_i2c.c             |    7 -
+ drivers/net/ethernet/mellanox/mlx4/sense.c      |    2 
+ drivers/power/ab8500_btemp.c                    |    2 
+ drivers/power/ab8500_charger.c                  |    8 -
+ drivers/power/ab8500_fg.c                       |    8 -
+ drivers/power/abx500_chargalg.c                 |    4 
+ drivers/power/max17040_battery.c                |    2 
+ drivers/video/omap2/displays/panel-taal.c       |    6 
+ drivers/video/omap2/dss/dsi.c                   |    6 
+ include/linux/workqueue.h                       |  155 ++++++++++--------------
+ kernel/workqueue.c                              |   50 ++++++-
+ mm/slab.c                                       |    2 
+ mm/vmstat.c                                     |    2 
+ net/core/link_watch.c                           |   21 ---
+ net/core/neighbour.c                            |    2 
+ net/ipv4/inetpeer.c                             |    2 
+ net/sunrpc/cache.c                              |    2 
+ 26 files changed, 159 insertions(+), 169 deletions(-)
+
+--
+tejun
+
+[1] http://thread.gmane.org/gmane.linux.kernel/1340224
+[2] git://git.kernel.org/pub/scm/linux/kernel/git/tj/wq.git for-3.7

@@ -1,0 +1,137 @@
+Path: news.gmane.org!not-for-mail
+From: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Newsgroups: gmane.comp.emulators.kvm.devel,gmane.linux.kernel
+Subject: [PATCH v5 04/12] KVM: introduce gfn_to_hva_read/kvm_read_hva/kvm_read_hva_atomic
+Date: Tue, 07 Aug 2012 17:50:26 +0800
+Lines: 77
+Approved: news@gmane.org
+Message-ID: <5020E4E2.2090406@linux.vnet.ibm.com>
+References: <5020E423.9080004@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344333045 10708 80.91.229.3 (7 Aug 2012 09:50:45 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 09:50:45 +0000 (UTC)
+Cc: Avi Kivity <avi@redhat.com>, Marcelo Tosatti <mtosatti@redhat.com>,
+	LKML <linux-kernel@vger.kernel.org>, KVM <kvm@vger.kernel.org>
+To: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Original-X-From: kvm-owner@vger.kernel.org Tue Aug 07 11:50:44 2012
+Return-path: <kvm-owner@vger.kernel.org>
+Envelope-to: gcekd-kvm-devel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <kvm-owner@vger.kernel.org>)
+	id 1SygQw-00086V-S8
+	for gcekd-kvm-devel@plane.gmane.org; Tue, 07 Aug 2012 11:50:39 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753492Ab2HGJuf (ORCPT <rfc822;gcekd-kvm-devel@m.gmane.org>);
+	Tue, 7 Aug 2012 05:50:35 -0400
+Original-Received: from e28smtp05.in.ibm.com ([122.248.162.5]:43232 "EHLO
+	e28smtp05.in.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752307Ab2HGJue (ORCPT <rfc822;kvm@vger.kernel.org>);
+	Tue, 7 Aug 2012 05:50:34 -0400
+Original-Received: from /spool/local
+	by e28smtp05.in.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <kvm@vger.kernel.org> from <xiaoguangrong@linux.vnet.ibm.com>;
+	Tue, 7 Aug 2012 15:20:32 +0530
+Original-Received: from d28relay05.in.ibm.com (9.184.220.62)
+	by e28smtp05.in.ibm.com (192.168.1.135) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Tue, 7 Aug 2012 15:20:30 +0530
+Original-Received: from d28av04.in.ibm.com (d28av04.in.ibm.com [9.184.220.66])
+	by d28relay05.in.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q779oUNb23461944;
+	Tue, 7 Aug 2012 15:20:30 +0530
+Original-Received: from d28av04.in.ibm.com (loopback [127.0.0.1])
+	by d28av04.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q779oS0H019006;
+	Tue, 7 Aug 2012 19:50:29 +1000
+Original-Received: from localhost.localdomain ([9.123.236.99])
+	by d28av04.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q779oQM6018872;
+	Tue, 7 Aug 2012 19:50:27 +1000
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:14.0) Gecko/20120717 Thunderbird/14.0
+In-Reply-To: <5020E423.9080004@linux.vnet.ibm.com>
+x-cbid: 12080709-8256-0000-0000-0000039D3EA4
+Original-Sender: kvm-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <kvm.vger.kernel.org>
+X-Mailing-List: kvm@vger.kernel.org
+Xref: news.gmane.org gmane.comp.emulators.kvm.devel:95662 gmane.linux.kernel:1338910
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338910>
+
+This set of functions is only used to read data from host space, in the
+later patch, we will only get a readonly hva in gfn_to_hva_read, and
+the function name is a good hint to let gfn_to_hva_read to pair with
+kvm_read_hva()/kvm_read_hva_atomic()
+
+Signed-off-by: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+---
+ virt/kvm/kvm_main.c |   29 +++++++++++++++++++++++++----
+ 1 files changed, 25 insertions(+), 4 deletions(-)
+
+diff --git a/virt/kvm/kvm_main.c b/virt/kvm/kvm_main.c
+index 543f9b7..26ffc87 100644
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -1002,6 +1002,27 @@ unsigned long gfn_to_hva(struct kvm *kvm, gfn_t gfn)
+ }
+ EXPORT_SYMBOL_GPL(gfn_to_hva);
+
++/*
++ * The hva returned by this function is only allowed to be read.
++ * It should pair with kvm_read_hva() or kvm_read_hva_atomic().
++ */
++static unsigned long gfn_to_hva_read(struct kvm *kvm, gfn_t gfn)
++{
++	return gfn_to_hva_many(gfn_to_memslot(kvm, gfn), gfn, NULL);
++}
++
++static int kvm_read_hva(void *data, void __user *hva, int len)
++{
++	return __copy_from_user(data, hva, len);
++
++}
++
++static int kvm_read_hva_atomic(void *data, void __user *hva, int len)
++{
++	return __copy_from_user_inatomic(data, hva, len);
++
++}
++
+ int get_user_page_nowait(struct task_struct *tsk, struct mm_struct *mm,
+ 	unsigned long start, int write, struct page **page)
+ {
+@@ -1274,10 +1295,10 @@ int kvm_read_guest_page(struct kvm *kvm, gfn_t gfn, void *data, int offset,
+ 	int r;
+ 	unsigned long addr;
+
+-	addr = gfn_to_hva(kvm, gfn);
++	addr = gfn_to_hva_read(kvm, gfn);
+ 	if (kvm_is_error_hva(addr))
+ 		return -EFAULT;
+-	r = __copy_from_user(data, (void __user *)addr + offset, len);
++	r = kvm_read_hva(data, (void __user *)addr + offset, len);
+ 	if (r)
+ 		return -EFAULT;
+ 	return 0;
+@@ -1312,11 +1333,11 @@ int kvm_read_guest_atomic(struct kvm *kvm, gpa_t gpa, void *data,
+ 	gfn_t gfn = gpa >> PAGE_SHIFT;
+ 	int offset = offset_in_page(gpa);
+
+-	addr = gfn_to_hva(kvm, gfn);
++	addr = gfn_to_hva_read(kvm, gfn);
+ 	if (kvm_is_error_hva(addr))
+ 		return -EFAULT;
+ 	pagefault_disable();
+-	r = __copy_from_user_inatomic(data, (void __user *)addr + offset, len);
++	r = kvm_read_hva_atomic(data, (void __user *)addr + offset, len);
+ 	pagefault_enable();
+ 	if (r)
+ 		return -EFAULT;
+-- 
+1.7.7.6
+
+--
+To unsubscribe from this list: send the line "unsubscribe kvm" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

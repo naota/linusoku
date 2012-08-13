@@ -1,0 +1,142 @@
+Path: news.gmane.org!not-for-mail
+From: "Srivatsa S. Bhat" <srivatsa.bhat@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] x86, mm: Send tlb flush IPIs to online cpus only
+Date: Thu, 19 Jul 2012 19:05:51 +0530
+Lines: 76
+Approved: news@gmane.org
+Message-ID: <50080D37.3000808@linux.vnet.ibm.com>
+References: <20120719125643.30033.58913.stgit@srivatsabhat.in.ibm.com> <20120719133229.GB10073@x1.osrc.amd.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: QUOTED-PRINTABLE
+X-Trace: dough.gmane.org 1342705039 11098 80.91.229.3 (19 Jul 2012 13:37:19 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 13:37:19 +0000 (UTC)
+To: Borislav Petkov <bp@alien8.de>, msb@chromium.org, mingo@kernel.org,
+	linux-kernel@vger.kernel.org, shaohua.li@intel.com,
+	yinghai@kernel.org, tglx@linutronix.de, hpa@zytor.com,
+	x86@kernel.org, tj@kernel.org, akpm@linux-foundation.org,
+	sfr@canb.auug.org.au, cl@gentwo.org, olofj@chromium.org,
+	paulmck@linux.vnet.ibm.com, Alex Shi <alex.shi@intel.com>,
+	Conny Seidel <conny.seidel@amd.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 15:37:15 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Srqup-0005Oc-4t
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 15:37:15 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751558Ab2GSNhH convert rfc822-to-quoted-printable (ORCPT
+	<rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 09:37:07 -0400
+Original-Received: from e28smtp06.in.ibm.com ([122.248.162.6]:53612 "EHLO
+	e28smtp06.in.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750761Ab2GSNhF (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 09:37:05 -0400
+Original-Received: from /spool/local
+	by e28smtp06.in.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <srivatsa.bhat@linux.vnet.ibm.com>;
+	Thu, 19 Jul 2012 19:07:02 +0530
+Original-Received: from d28relay01.in.ibm.com (9.184.220.58)
+	by e28smtp06.in.ibm.com (192.168.1.136) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Thu, 19 Jul 2012 19:06:58 +0530
+Original-Received: from d28av04.in.ibm.com (d28av04.in.ibm.com [9.184.220.66])
+	by d28relay01.in.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6JDawV47602606
+	for <linux-kernel@vger.kernel.org>; Thu, 19 Jul 2012 19:06:58 +0530
+Original-Received: from d28av04.in.ibm.com (loopback [127.0.0.1])
+	by d28av04.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6JJ6hls028777
+	for <linux-kernel@vger.kernel.org>; Fri, 20 Jul 2012 05:06:45 +1000
+Original-Received: from [9.124.35.244] (srivatsabhat.in.ibm.com [9.124.35.244])
+	by d28av04.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6JJ6h5r028761;
+	Fri, 20 Jul 2012 05:06:43 +1000
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120605 Thunderbird/13.0
+In-Reply-To: <20120719133229.GB10073@x1.osrc.amd.com>
+x-cbid: 12071913-9574-0000-0000-000003A32BD6
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330350
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330350>
+
+On 07/19/2012 07:02 PM, Borislav Petkov wrote:
+> On Thu, Jul 19, 2012 at 06:27:33PM +0530, Srivatsa S. Bhat wrote:
+>=20
+> [ =E2=80=A6 ]
+>=20
+>> So we are sending an IPI to a cpu which is now offline. Once a cpu i=
+s offline,
+>> it will no longer respond to IPIs. This explains the softlockup.
+>>
+>> A cpu in the mm_cpumask could go offline before we send the invalida=
+te
+>> IPI causing us to wait forever. Avoid this by sending the IPI to onl=
+y the
+>> online cpus.
+>>
+>> [Since flush_tlb_others_ipi() is always called with preempt disabled=
+, it is
+>> not possible for a CPU to go offline once we enter this function, be=
+cause
+>> CPU offline goes through the stop_machine() stuff (which cannot proc=
+eed until
+>> all preempt disabled sections are exited). So we don't have to worry=
+ about
+>> any race between CPU offline and the target cpumask calculation in
+>> flush_tlb_others_ipi().]
+>>
+>> Addresses http://crosbug.com/31737
+>>
+>> Reported-and-debugged-by: Mandeep Singh Baines <msb@chromium.org>
+>> Signed-off-by: Srivatsa S. Bhat <srivatsa.bhat@linux.vnet.ibm.com>
+>> Acked-by: Mandeep Singh Baines <msb@chromium.org>
+>> Cc: Thomas Gleixner <tglx@linutronix.de>
+>> Cc: Ingo Molnar <mingo@redhat.com>
+>> Cc: "H. Peter Anvin" <hpa@zytor.com>
+>> Cc: x86@kernel.org
+>> Cc: Tejun Heo <tj@kernel.org>
+>> Cc: Andrew Morton <akpm@linux-foundation.org>
+>> Cc: Stephen Rothwell <sfr@canb.auug.org.au>
+>> Cc: Christoph Lameter <cl@gentwo.org>
+>> Cc: Olof Johansson <olofj@chromium.org>
+>> ---
+>>
+>>  arch/x86/mm/tlb.c |    6 +++++-
+>>  1 files changed, 5 insertions(+), 1 deletions(-)
+>>
+>> diff --git a/arch/x86/mm/tlb.c b/arch/x86/mm/tlb.c
+>> index 5e57e11..9d387a9 100644
+>> --- a/arch/x86/mm/tlb.c
+>> +++ b/arch/x86/mm/tlb.c
+>> @@ -186,7 +186,11 @@ static void flush_tlb_others_ipi(const struct c=
+pumask *cpumask,
+>> =20
+>>  	f->flush_mm =3D mm;
+>>  	f->flush_va =3D va;
+>> -	if (cpumask_andnot(to_cpumask(f->flush_cpumask), cpumask, cpumask_=
+of(smp_processor_id()))) {
+>> +
+>> +	cpumask_and(to_cpumask(f->flush_cpumask), cpumask, cpu_online_mask=
+);
+>> +	cpumask_clear_cpu(smp_processor_id(), to_cpumask(f->flush_cpumask)=
+);
+>> +
+>> +	if (!cpumask_empty(to_cpumask(f->flush_cpumask))) {
+>=20
+> FWIW, there's code in tip/x86/mm which reworks all that and
+> flush_tlb_others_ipi along with the 32 TLB flush vectors are being
+> removed in favor of a smp_call_function_many thing. And it should be
+> hotplug-safe since it must be called with preemption disabled anyway.
+>=20
+
+Oh.. ok.. Then this patch is perhaps unnecessary..
+Thanks for the info!
+
+Regards,
+Srivatsa S. Bhat
+

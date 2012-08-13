@@ -1,0 +1,149 @@
+Path: news.gmane.org!not-for-mail
+From: Neil Horman <nhorman@tuxdriver.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.network
+Subject: Re: [PATCH v4] net: cgroup: fix access the unallocated memory in
+ netprio cgroup
+Date: Thu, 19 Jul 2012 06:28:39 -0400
+Lines: 89
+Approved: news@gmane.org
+Message-ID: <20120719102839.GA2070@hmsreliant.think-freely.org>
+References: <1342079415-9631-1-git-send-email-gaofeng@cn.fujitsu.com>
+ <5005CF5D.9070905@intel.com>
+ <20120718122106.GB25563@hmsreliant.think-freely.org>
+ <5006C3CA.3010007@intel.com>
+ <20120718142632.GF25563@hmsreliant.think-freely.org>
+ <50075C43.7000706@huawei.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1342693766 11222 80.91.229.3 (19 Jul 2012 10:29:26 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 10:29:26 +0000 (UTC)
+Cc: John Fastabend <john.r.fastabend@intel.com>,
+	Gao feng <gaofeng@cn.fujitsu.com>, eric.dumazet@gmail.com,
+	linux-kernel@vger.kernel.org, netdev@vger.kernel.org,
+	davem@davemloft.net, Eric Dumazet <edumazet@google.com>,
+	"Rustad, Mark D" <mark.d.rustad@intel.com>
+To: Li Zefan <lizefan@huawei.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 12:29:24 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Srnyx-00017d-2y
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 12:29:19 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752508Ab2GSK3M (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 06:29:12 -0400
+Original-Received: from charlotte.tuxdriver.com ([70.61.120.58]:35085 "EHLO
+	smtp.tuxdriver.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750854Ab2GSK3K (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 06:29:10 -0400
+Original-Received: from hmsreliant.think-freely.org ([2001:470:8:a08:7aac:c0ff:fec2:933b] helo=localhost)
+	by smtp.tuxdriver.com with esmtpsa (TLSv1:AES128-SHA:128)
+	(Exim 4.63)
+	(envelope-from <nhorman@tuxdriver.com>)
+	id 1SrnyL-0007ze-LS; Thu, 19 Jul 2012 06:28:48 -0400
+Content-Disposition: inline
+In-Reply-To: <50075C43.7000706@huawei.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Spam-Score: -2.9 (--)
+X-Spam-Status: No
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330276 gmane.linux.network:237684
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330276>
+
+On Thu, Jul 19, 2012 at 09:00:51AM +0800, Li Zefan wrote:
+> >>>>>  static struct cgroup_subsys_state *cgrp_create(struct cgroup *cgrp)
+> 
+> >>>>>  {
+> >>>>>  	struct cgroup_netprio_state *cs;
+> >>>>> -	int ret;
+> >>>>> +	int ret = -EINVAL;
+> >>>>>
+> >>>>>  	cs = kzalloc(sizeof(*cs), GFP_KERNEL);
+> >>>>>  	if (!cs)
+> >>>>>  		return ERR_PTR(-ENOMEM);
+> >>>>>
+> >>>>> -	if (cgrp->parent && cgrp_netprio_state(cgrp->parent)->prioidx) {
+> >>>>> -		kfree(cs);
+> >>>>> -		return ERR_PTR(-EINVAL);
+> >>>>> -	}
+> >>>>> +	if (cgrp->parent && cgrp_netprio_state(cgrp->parent)->prioidx)
+> >>>>> +		goto out;
+> >>>>>
+> >>>>>  	ret = get_prioidx(&cs->prioidx);
+> >>>>> -	if (ret != 0) {
+> >>>>> +	if (ret < 0) {
+> >>>>>  		pr_warn("No space in priority index array\n");
+> >>>>> -		kfree(cs);
+> >>>>> -		return ERR_PTR(ret);
+> >>>>> +		goto out;
+> >>>>> +	}
+> >>>>> +
+> >>>>> +	ret = update_netdev_tables();
+> >>>>> +	if (ret < 0) {
+> >>>>> +		put_prioidx(cs->prioidx);
+> >>>>> +		goto out;
+> >>>>>  	}
+> >>>>
+> >>>> Gao,
+> >>>>
+> >>>> This introduces a null ptr dereference when netprio_cgroup is built
+> >>>> into the kernel because update_netdev_tables() depends on init_net.
+> >>>> However cgrp_create is being called by cgroup_init before
+> >>>> do_initcalls() is called and before net_dev_init().
+> >>>>
+> >>>> .John
+> >>>>
+> >>> Not sure I follow here John.  Shouldn't init_net be initialized prior to any
+> >>> network devices getting registered?  In other words, shouldn't for_each_netdev
+> >>> just result in zero iterations through the loop?
+> >>> Neil
+> >>>
+> >>
+> >> init_net _is_ initialized prior to any network devices getting
+> >> registered but not before cgrp_create called via cgroup_init.
+> >>
+> >> #define for_each_netdev(net, d)         \
+> >>                 list_for_each_entry(d, &(net)->dev_base_head, dev_list)
+> >>
+> >> but dev_base_head is zeroed at this time. In netdev_init we have,
+> >>
+> >>         INIT_LIST_HEAD(&net->dev_base_head);
+> >>
+> >> but we haven't got that far yet because cgroup_init is called
+> >> before do_initcalls().
+> >>
+> > ok, I see that, and it makes sense, but at this point I'm more concerned with
+> > cgroups getting initalized twice.  The early_init flag is clear in the
+> > cgroup_subsystem for netprio, so we really shouldn't be getting initalized from
+> > cgroup_init. We should be getting initalized from the module_init() call that
+> 
+> > we register
+> 
+> If the early_init flag is set, a cgroup subsys will be initialized from
+> cgroup_early_init(), otherwise cgroup_init().
+> 
+> If netprio is built as a module, the subsys will be initailized from module_init(),
+> otherwise cgroup_init() (in this case cgroup_load_subsys() called in module_init()
+> is a no-op).
+> 
+> So it won't get initialized twice.
+> 
+> 
+Yeah, we already figured that out :).
+
+Still its not a sane interface.  If you create a module_init function for a bit
+of code, you expect that function to be called before the rest of your code ever
+gets executed.  The way cgroup_init works, ss->cgroup_create gets called before
+the module_init routine does when the module is built monolithically.  So no, no
+double initalization, but definately some behavior that is going to be prone to
+mistakes.
+Neil
+

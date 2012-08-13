@@ -1,0 +1,92 @@
+Path: news.gmane.org!not-for-mail
+From: Cody P Schafer <cody@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 05/16] perf symbol: don't try to synthesize plt without dynstr.
+Date: Thu,  9 Aug 2012 15:18:30 -0700
+Lines: 25
+Approved: news@gmane.org
+Message-ID: <1344550721-21024-6-git-send-email-cody@linux.vnet.ibm.com>
+References: <1344550721-21024-1-git-send-email-cody@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344550969 24621 80.91.229.3 (9 Aug 2012 22:22:49 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 22:22:49 +0000 (UTC)
+Cc: LKML <linux-kernel@vger.kernel.org>,
+	Ingo Molnar <mingo@redhat.com>,
+	Paul Mackerras <paulus@samba.org>,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Sukadev Bhattiprolu <sukadev@linux.vnet.ibm.com>,
+	Matt Hellsley <matthltc@us.ibm.com>,
+	David Hansen <dave@linux.vnet.ibm.com>
+To: Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 10 00:22:47 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Szb7u-00084W-B1
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 10 Aug 2012 00:22:46 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1759925Ab2HIWW1 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 18:22:27 -0400
+Original-Received: from e31.co.us.ibm.com ([32.97.110.149]:48274 "EHLO
+	e31.co.us.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1759862Ab2HIWWL (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 18:22:11 -0400
+Original-Received: from /spool/local
+	by e31.co.us.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <cody@linux.vnet.ibm.com>;
+	Thu, 9 Aug 2012 16:22:11 -0600
+Original-Received: from d03dlp02.boulder.ibm.com (9.17.202.178)
+	by e31.co.us.ibm.com (192.168.1.131) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Thu, 9 Aug 2012 16:22:09 -0600
+Original-Received: from d03relay01.boulder.ibm.com (d03relay01.boulder.ibm.com [9.17.195.226])
+	by d03dlp02.boulder.ibm.com (Postfix) with ESMTP id EB3733E4003D
+	for <linux-kernel@vger.kernel.org>; Thu,  9 Aug 2012 22:22:06 +0000 (WET)
+Original-Received: from d03av02.boulder.ibm.com (d03av02.boulder.ibm.com [9.17.195.168])
+	by d03relay01.boulder.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q79MM6ha174004
+	for <linux-kernel@vger.kernel.org>; Thu, 9 Aug 2012 16:22:06 -0600
+Original-Received: from d03av02.boulder.ibm.com (loopback [127.0.0.1])
+	by d03av02.boulder.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q79MLxXZ005060
+	for <linux-kernel@vger.kernel.org>; Thu, 9 Aug 2012 16:22:06 -0600
+Original-Received: from localhost ([9.47.24.219])
+	by d03av02.boulder.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q79MLxe2005022;
+	Thu, 9 Aug 2012 16:21:59 -0600
+X-Mailer: git-send-email 1.7.11.3
+In-Reply-To: <1344550721-21024-1-git-send-email-cody@linux.vnet.ibm.com>
+X-Content-Scanned: Fidelis XPS MAILER
+x-cbid: 12080922-7282-0000-0000-00000BD3196B
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341023
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341023>
+
+If .dynsym exists but .dynstr is empty (NO_BITS or size==0), a segfault
+occurs. Avoid this by checking that .dynstr is not empty.
+
+Signed-off-by: Cody P Schafer <cody@linux.vnet.ibm.com>
+---
+ tools/perf/util/symbol.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/tools/perf/util/symbol.c b/tools/perf/util/symbol.c
+index 254d4d8..8ae159a 100644
+--- a/tools/perf/util/symbol.c
++++ b/tools/perf/util/symbol.c
+@@ -1077,6 +1077,9 @@ dso__synthesize_plt_symbols(struct dso *dso, char *name, struct map *map,
+ 	if (symstrs == NULL)
+ 		goto out_elf_end;
+ 
++	if (symstrs->d_size == 0)
++		goto out_elf_end;
++
+ 	nr_rel_entries = shdr_rel_plt.sh_size / shdr_rel_plt.sh_entsize;
+ 	plt_offset = shdr_plt.sh_offset;
+ 
+-- 
+1.7.11.3
+

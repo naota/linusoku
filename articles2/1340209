@@ -1,0 +1,126 @@
+Path: news.gmane.org!not-for-mail
+From: Oleg Nesterov <oleg@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 6/7] uprobes: fold uprobe_reset_state() into
+	uprobe_dup_mmap()
+Date: Wed, 8 Aug 2012 19:37:49 +0200
+Lines: 71
+Approved: news@gmane.org
+Message-ID: <20120808173749.GA13275@redhat.com>
+References: <20120808173659.GA13220@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344447693 6064 80.91.229.3 (8 Aug 2012 17:41:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 17:41:33 +0000 (UTC)
+Cc: Ananth N Mavinakayanahalli <ananth@in.ibm.com>,
+	Anton Arapov <anton@redhat.com>, linux-kernel@vger.kernel.org
+To: Ingo Molnar <mingo@elte.hu>, Peter Zijlstra <peterz@infradead.org>,
+	Srikar Dronamraju <srikar@linux.vnet.ibm.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 19:41:33 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzAGB-00058R-0b
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 19:41:31 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1759099Ab2HHRlM (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 13:41:12 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:50360 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1759055Ab2HHRlI (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 13:41:08 -0400
+Original-Received: from int-mx12.intmail.prod.int.phx2.redhat.com (int-mx12.intmail.prod.int.phx2.redhat.com [10.5.11.25])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q78Hev0W008278
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Wed, 8 Aug 2012 13:40:57 -0400
+Original-Received: from tranklukator.brq.redhat.com (dhcp-1-232.brq.redhat.com [10.34.1.232])
+	by int-mx12.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with SMTP id q78HeteL012428;
+	Wed, 8 Aug 2012 13:40:56 -0400
+Original-Received: by tranklukator.brq.redhat.com (nbSMTP-1.00) for uid 500
+	oleg@redhat.com; Wed,  8 Aug 2012 19:37:51 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <20120808173659.GA13220@redhat.com>
+User-Agent: Mutt/1.5.18 (2008-05-17)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.25
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340209
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340209>
+
+Now that we have uprobe_dup_mmap() we can fold uprobe_reset_state()
+into the new hook and remove it. mmput()->uprobe_clear_state() can't
+be called before dup_mmap().
+
+Signed-off-by: Oleg Nesterov <oleg@redhat.com>
+---
+ include/linux/uprobes.h |    4 ----
+ kernel/events/uprobes.c |   10 ++--------
+ kernel/fork.c           |    2 --
+ 3 files changed, 2 insertions(+), 14 deletions(-)
+
+diff --git a/include/linux/uprobes.h b/include/linux/uprobes.h
+index 4a37ab1..30297f9 100644
+--- a/include/linux/uprobes.h
++++ b/include/linux/uprobes.h
+@@ -118,7 +118,6 @@ extern void uprobe_notify_resume(struct pt_regs *regs);
+ extern bool uprobe_deny_signal(void);
+ extern bool __weak arch_uprobe_skip_sstep(struct arch_uprobe *aup, struct pt_regs *regs);
+ extern void uprobe_clear_state(struct mm_struct *mm);
+-extern void uprobe_reset_state(struct mm_struct *mm);
+ #else /* !CONFIG_UPROBES */
+ struct uprobes_state {
+ };
+@@ -163,8 +162,5 @@ static inline void uprobe_copy_process(struct task_struct *t)
+ static inline void uprobe_clear_state(struct mm_struct *mm)
+ {
+ }
+-static inline void uprobe_reset_state(struct mm_struct *mm)
+-{
+-}
+ #endif /* !CONFIG_UPROBES */
+ #endif	/* _LINUX_UPROBES_H */
+diff --git a/kernel/events/uprobes.c b/kernel/events/uprobes.c
+index 2a42319..81fb2d8 100644
+--- a/kernel/events/uprobes.c
++++ b/kernel/events/uprobes.c
+@@ -1150,16 +1150,10 @@ void uprobe_clear_state(struct mm_struct *mm)
+ 	kfree(area);
+ }
+ 
+-/*
+- * uprobe_reset_state - Free the area allocated for slots.
+- */
+-void uprobe_reset_state(struct mm_struct *mm)
+-{
+-	mm->uprobes_state.xol_area = NULL;
+-}
+-
+ void uprobe_dup_mmap(struct mm_struct *oldmm, struct mm_struct *newmm)
+ {
++	newmm->uprobes_state.xol_area = NULL;
++
+ 	if (test_bit(MMF_HAS_UPROBES, &oldmm->flags))
+ 		set_bit(MMF_HAS_UPROBES, &newmm->flags);
+ }
+diff --git a/kernel/fork.c b/kernel/fork.c
+index ab970c3..5555f51 100644
+--- a/kernel/fork.c
++++ b/kernel/fork.c
+@@ -836,8 +836,6 @@ struct mm_struct *dup_mm(struct task_struct *tsk)
+ #ifdef CONFIG_TRANSPARENT_HUGEPAGE
+ 	mm->pmd_huge_pte = NULL;
+ #endif
+-	uprobe_reset_state(mm);
+-
+ 	if (!mm_init(mm, tsk))
+ 		goto fail_nomem;
+ 
+-- 
+1.5.5.1
+

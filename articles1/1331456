@@ -1,0 +1,84 @@
+Path: news.gmane.org!not-for-mail
+From: Neil Horman <nhorman@tuxdriver.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.network
+Subject: Re: [PATCH] sctp: Make "Invalid Stream Identifier" ERROR follows
+ SACK when bundling
+Date: Sun, 22 Jul 2012 20:49:32 -0400
+Lines: 31
+Approved: news@gmane.org
+Message-ID: <20120723004932.GB8040@neilslaptop.think-freely.org>
+References: <1342677450-21810-1-git-send-email-xufengzhang.main@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343004591 27095 80.91.229.3 (23 Jul 2012 00:49:51 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 00:49:51 +0000 (UTC)
+Cc: vyasevich@gmail.com, sri@us.ibm.com, davem@davemloft.net,
+	linux-sctp@vger.kernel.org, netdev@vger.kernel.org,
+	linux-kernel@vger.kernel.org
+To: xufengzhang.main@gmail.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 02:49:50 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1St6qM-00011f-69
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 02:49:50 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752870Ab2GWAtn (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 20:49:43 -0400
+Original-Received: from charlotte.tuxdriver.com ([70.61.120.58]:42400 "EHLO
+	smtp.tuxdriver.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752790Ab2GWAtl (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 20:49:41 -0400
+Original-Received: from neilslaptop.think-freely.org ([2001:470:8:a08:4a5d:60ff:fe96:79da] helo=localhost)
+	by smtp.tuxdriver.com with esmtpsa (TLSv1:AES128-SHA:128)
+	(Exim 4.63)
+	(envelope-from <nhorman@tuxdriver.com>)
+	id 1St6q5-000339-OF; Sun, 22 Jul 2012 20:49:35 -0400
+Content-Disposition: inline
+In-Reply-To: <1342677450-21810-1-git-send-email-xufengzhang.main@gmail.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Spam-Score: -2.9 (--)
+X-Spam-Status: No
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331456 gmane.linux.network:238118
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331456>
+
+On Thu, Jul 19, 2012 at 01:57:30PM +0800, xufengzhang.main@gmail.com wrote:
+> When "Invalid Stream Identifier" ERROR happens after process the
+> received DATA chunks, this ERROR chunk is enqueued into outqueue
+> before SACK chunk, so when bundling ERROR chunk with SACK chunk,
+> the ERROR chunk is always placed first in the packet because of
+> the chunk's position in the outqueue.
+> This violates sctp specification:
+>     RFC 4960 6.5. Stream Identifier and Stream Sequence Number
+>     ...The endpoint may bundle the ERROR chunk in the same
+>     packet as the SACK as long as the ERROR follows the SACK.
+> So we must place SACK first when bundling "Invalid Stream Identifier"
+> ERROR and SACK in one packet.
+> Although we can do that by enqueue SACK chunk into outqueue before
+> ERROR chunk, it will violate the side-effect interpreter processing.
+> It's easy to do this job when dequeue chunks from the outqueue,
+> by this way, we introduce a flag 'has_isi_err' which indicate
+> whether or not the "Invalid Stream Identifier" ERROR happens.
+> 
+> Signed-off-by: Xufeng Zhang <xufeng.zhang@windriver.com>
+
+Not sure I understand how you came into this error.  If we get an invalid
+stream, we issue an SCTP_REPORT_TSN side effect, followed by an SCTP_CMD_REPLY
+which sends the error chunk.  The reply goes through
+sctp_outq_tail->sctp_outq_chunk->sctp_outq_transmit_chunk->sctp_outq_append_chunk.
+That last function checks to see if a sack is already part of the packet, and if
+there isn't one, appends one, using the updated tsn map.  So Can you explain in
+some more detail how you're getting into this situation?
+
+Thanks!
+Neil
+

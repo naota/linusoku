@@ -1,0 +1,107 @@
+Path: news.gmane.org!not-for-mail
+From: Steven Whitehouse <swhiteho@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.cluster.redhat.cluster.devel
+Subject: [PATCH 13/16] GFS2: Fixing double brelse'ing bh allocated in gfs2_meta_read when EIO occurs
+Date: Mon, 23 Jul 2012 09:01:03 +0100
+Lines: 60
+Approved: news@gmane.org
+Message-ID: <1343030466-3053-14-git-send-email-swhiteho@redhat.com>
+References: <1343030466-3053-1-git-send-email-swhiteho@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343032042 1257 80.91.229.3 (23 Jul 2012 08:27:22 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 08:27:22 +0000 (UTC)
+Cc: Masatake YAMATO <yamato@redhat.com>,
+	Steven Whitehouse <swhiteho@redhat.com>
+To: linux-kernel@vger.kernel.org, cluster-devel@redhat.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 10:27:20 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StDz0-0006h9-5Q
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 10:27:14 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754136Ab2GWI0c (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 04:26:32 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:44224 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754070Ab2GWI03 (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 04:26:29 -0400
+Original-Received: from int-mx01.intmail.prod.int.phx2.redhat.com (int-mx01.intmail.prod.int.phx2.redhat.com [10.5.11.11])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6N8QSeu008721
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK)
+	for <linux-kernel@vger.kernel.org>; Mon, 23 Jul 2012 04:26:28 -0400
+Original-Received: from chywoon.redhat.com (vpn1-5-152.ams2.redhat.com [10.36.5.152])
+	by int-mx01.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with ESMTP id q6N8Px9k016610;
+	Mon, 23 Jul 2012 04:26:22 -0400
+In-Reply-To: <1343030466-3053-1-git-send-email-swhiteho@redhat.com>
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.11
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331664 gmane.linux.cluster.redhat.cluster.devel:7194
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331664>
+
+From: Masatake YAMATO <yamato@redhat.com>
+
+This patch fixes buffer_head double free in following code path:
+
+gfs2_block_map
+=> gfs2_meta_inode_buffer
+ => gfs2_meta_indirect_buffer
+  => gfs2_meta_read
+=> release_metapath
+
+gfs2_block_map calls gfs2_meta_inode_buffer with &mp.mp_bh[0]
+as an argument. mp.mp_bh are filled with zero at the beginning
+of gfs2_block_map.
+
+If gfs2_meta_inode_buffer returns non-zero value, gfs2_block_map
+calls release_metapath to free buffers chained to mp.mp_bh.
+release_metapath checks each slot of mp.mp_bh[i] and
+free(with brelse) unless the slot is filled with NULL.
+
+&mp.mp_bh[0] passed to gfs2_meta_inode_buffer is filled at
+gfs2_meta_read. gfs2_meta_read is filled a buffer allocated with
+gfs2_getbuf even if EIO occurs. When EIO occurs, the allocated buffer
+is brelse'ed though the pointer(wrong poiner) points the brelse'ed is
+passed back to caller via an argument bhp.
+
+gfs2_meta_indirect_buffer, the caller also pass the wrong pointer
+to its caller with EIO. Finally gfs2_block_map gets both EIO and
+&mp.mp_bh[0] filled with the wrong pointer. release_metapath
+calls brelse again on the wrong pointer.
+
+Signed-off-by: Masatake YAMATO <yamato@redhat.com>
+Signed-off-by: Steven Whitehouse <swhiteho@redhat.com>
+
+diff --git a/fs/gfs2/meta_io.c b/fs/gfs2/meta_io.c
+index 6c1e5d1..3a56c8d 100644
+--- a/fs/gfs2/meta_io.c
++++ b/fs/gfs2/meta_io.c
+@@ -213,8 +213,10 @@ int gfs2_meta_read(struct gfs2_glock *gl, u64 blkno, int flags,
+ 	struct gfs2_sbd *sdp = gl->gl_sbd;
+ 	struct buffer_head *bh;
+ 
+-	if (unlikely(test_bit(SDF_SHUTDOWN, &sdp->sd_flags)))
++	if (unlikely(test_bit(SDF_SHUTDOWN, &sdp->sd_flags))) {
++		*bhp = NULL;
+ 		return -EIO;
++	}
+ 
+ 	*bhp = bh = gfs2_getbuf(gl, blkno, CREATE);
+ 
+@@ -235,6 +237,7 @@ int gfs2_meta_read(struct gfs2_glock *gl, u64 blkno, int flags,
+ 		if (tr && tr->tr_touched)
+ 			gfs2_io_error_bh(sdp, bh);
+ 		brelse(bh);
++		*bhp = NULL;
+ 		return -EIO;
+ 	}
+ 
+-- 
+1.7.4
+

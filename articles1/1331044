@@ -1,0 +1,92 @@
+Path: news.gmane.org!not-for-mail
+From: Tony Luck <tony.luck@intel.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] dmi: Feed DMI table to /dev/random driver
+Date: Fri, 20 Jul 2012 13:15:20 -0700
+Lines: 43
+Approved: news@gmane.org
+Message-ID: <0107910@agluck-desktop.sc.intel.com>
+References: <1341511933-11169-1-git-send-email-tytso@mit.edu>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342816874 28902 80.91.229.3 (20 Jul 2012 20:41:14 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 20:41:14 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, torvalds@linux-foundation.org,
+	w@1wt.eu, ewust@umich.edu, zakir@umich.edu, greg@kroah.com,
+	mpm@selenic.com, nadiah@cs.ucsd.edu, jhalderm@umich.edu,
+	tglx@linutronix.de, davem@davemloft.net,
+	Theodore Ts'o <tytso@mit.edu>
+To: Theodore Ts'o <tytso@mit.edu>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 22:41:11 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsK0Z-0006fZ-MW
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 22:41:08 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752923Ab2GTUk6 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 16:40:58 -0400
+Original-Received: from mga03.intel.com ([143.182.124.21]:14375 "EHLO mga03.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751908Ab2GTUk5 (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 16:40:57 -0400
+Original-Received: from azsmga001.ch.intel.com ([10.2.17.19])
+  by azsmga101.ch.intel.com with ESMTP; 20 Jul 2012 13:40:56 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="170961217"
+Original-Received: from agluck-desk.sc.intel.com (HELO agluck-desktop.sc.intel.com) ([10.3.52.68])
+  by azsmga001.ch.intel.com with SMTP; 20 Jul 2012 13:40:56 -0700
+In-Reply-To: <1341511933-11169-1-git-send-email-tytso@mit.edu>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331044
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331044>
+
+Send the entire DMI (SMBIOS) table to the /dev/random driver to
+help seed its pools.
+
+Signed-off-by: Tony Luck <tony.luck@intel.com>
+---
+
+This looks a useful addition to your /dev/random series. There are
+lots of platform specific goodies in this table (BIOS version, system
+serial number and UUID, count and version number of processors, DIMM
+slot population and serial numbers, etc.)
+
+On the system I tested the patch on the table is 9866 bytes. Is it
+OK to dump that much into add_device_randomness() in one shot? The
+alternative is to select the 'useful' bits deeper into the routines
+that parse the entries in the table.
+
+ drivers/firmware/dmi_scan.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/firmware/dmi_scan.c b/drivers/firmware/dmi_scan.c
+index 153980b..b298158 100644
+--- a/drivers/firmware/dmi_scan.c
++++ b/drivers/firmware/dmi_scan.c
+@@ -6,6 +6,7 @@
+ #include <linux/dmi.h>
+ #include <linux/efi.h>
+ #include <linux/bootmem.h>
++#include <linux/random.h>
+ #include <asm/dmi.h>
+ 
+ /*
+@@ -111,6 +112,8 @@ static int __init dmi_walk_early(void (*decode)(const struct dmi_header *,
+ 
+ 	dmi_table(buf, dmi_len, dmi_num, decode, NULL);
+ 
++	add_device_randomness(buf, dmi_len);
++
+ 	dmi_iounmap(buf, dmi_len);
+ 	return 0;
+ }
+-- 
+1.7.10.2.552.gaa3bb87
+

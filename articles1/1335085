@@ -1,0 +1,108 @@
+Path: news.gmane.org!not-for-mail
+From: tip-bot for Oleg Nesterov <oleg@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: [tip:perf/core] uprobes: Suppress uprobe_munmap() from mmput()
+Date: Mon, 30 Jul 2012 07:14:04 -0700
+Lines: 43
+Approved: news@gmane.org
+Message-ID: <tip-2fd611a991391a6050cbd139201a2e12fc306540@git.kernel.org>
+References: <20120729182231.GA20336@redhat.com>
+Reply-To: mingo@kernel.org, hpa@zytor.com, anton@redhat.com,
+	  linux-kernel@vger.kernel.org, srikar@linux.vnet.ibm.com,
+	  tglx@linutronix.de, oleg@redhat.com
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+X-Trace: dough.gmane.org 1343657674 8435 80.91.229.3 (30 Jul 2012 14:14:34 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 14:14:34 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, anton@redhat.com, hpa@zytor.com,
+	mingo@kernel.org, srikar@linux.vnet.ibm.com, oleg@redhat.com,
+	tglx@linutronix.de
+To: linux-tip-commits@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 16:14:29 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Svqjt-0002z9-CR
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 16:14:29 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754544Ab2G3OOW (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 10:14:22 -0400
+Original-Received: from terminus.zytor.com ([198.137.202.10]:45595 "EHLO
+	terminus.zytor.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754446Ab2G3OOV (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 10:14:21 -0400
+Original-Received: from terminus.zytor.com (localhost [127.0.0.1])
+	by terminus.zytor.com (8.14.5/8.14.5) with ESMTP id q6UEE5rG022565
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Mon, 30 Jul 2012 07:14:10 -0700
+Original-Received: (from tipbot@localhost)
+	by terminus.zytor.com (8.14.5/8.14.5/Submit) id q6UEE4Mh022562;
+	Mon, 30 Jul 2012 07:14:04 -0700
+X-Authentication-Warning: terminus.zytor.com: tipbot set sender to tipbot@zytor.com using -f
+In-Reply-To: <20120729182231.GA20336@redhat.com>
+Git-Commit-ID: 2fd611a991391a6050cbd139201a2e12fc306540
+X-Mailer: tip-git-log-daemon
+Robot-ID: <tip-bot.git.kernel.org>
+Robot-Unsubscribe: Contact <mailto:hpa@kernel.org>
+  to get blacklisted from these emails
+Content-Disposition: inline
+X-Spam-Status: No, score=-2.9 required=5.0 tests=ALL_TRUSTED,BAYES_00,
+	T_DATE_IN_FUTURE_96_Q autolearn=ham version=3.3.2
+X-Spam-Checker-Version: SpamAssassin 3.3.2 (2011-06-06) on terminus.zytor.com
+X-Greylist: Sender IP whitelisted, not delayed by milter-greylist-4.2.6 (terminus.zytor.com [127.0.0.1]); Mon, 30 Jul 2012 07:14:10 -0700 (PDT)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335085
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335085>
+
+Commit-ID:  2fd611a991391a6050cbd139201a2e12fc306540
+Gitweb:     http://git.kernel.org/tip/2fd611a991391a6050cbd139201a2e12fc306540
+Author:     Oleg Nesterov <oleg@redhat.com>
+AuthorDate: Sun, 29 Jul 2012 20:22:31 +0200
+Committer:  Ingo Molnar <mingo@kernel.org>
+CommitDate: Mon, 30 Jul 2012 11:27:21 +0200
+
+uprobes: Suppress uprobe_munmap() from mmput()
+
+uprobe_munmap() does get_user_pages() and it is also called from
+the final mmput()->exit_mmap() path. This slows down
+exit/mmput() for no reason, and I think  it is simply
+dangerous/wrong to try to fault-in a page into the dying mm. If
+nothing else, this happens after the last sync_mm_rss(), afaics
+handle_mm_fault() can change the task->rss_stat and make the
+subsequent check_mm() unhappy.
+
+Change uprobe_munmap() to check mm->mm_users != 0.
+
+Signed-off-by: Oleg Nesterov <oleg@redhat.com>
+Acked-by: Srikar Dronamraju <srikar.vnet.ibm.com>
+Cc: Anton Arapov <anton@redhat.com>
+Cc: Srikar Dronamraju <srikar@linux.vnet.ibm.com>
+Link: http://lkml.kernel.org/r/20120729182231.GA20336@redhat.com
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+---
+ kernel/events/uprobes.c |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/kernel/events/uprobes.c b/kernel/events/uprobes.c
+index bed2161..9db9cdf 100644
+--- a/kernel/events/uprobes.c
++++ b/kernel/events/uprobes.c
+@@ -1082,6 +1082,9 @@ void uprobe_munmap(struct vm_area_struct *vma, unsigned long start, unsigned lon
+ 	if (!atomic_read(&uprobe_events) || !valid_vma(vma, false))
+ 		return;
+ 
++	if (!atomic_read(&vma->vm_mm->mm_users)) /* called by mmput() ? */
++		return;
++
+ 	if (!atomic_read(&vma->vm_mm->uprobes_state.count))
+ 		return;
+ 

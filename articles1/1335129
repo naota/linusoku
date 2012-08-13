@@ -1,0 +1,144 @@
+Path: news.gmane.org!not-for-mail
+From: Peter Zijlstra <peterz@infradead.org>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH 1/5] user_hooks: New user hooks subsystem
+Date: Mon, 30 Jul 2012 17:08:12 +0200
+Lines: 79
+Approved: news@gmane.org
+Message-ID: <1343660892.20897.3.camel@twins>
+References: <1343403634-31555-1-git-send-email-fweisbec@gmail.com>
+	 <1343403634-31555-2-git-send-email-fweisbec@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=US-ASCII
+Content-Transfer-Encoding: 7BIT
+X-Trace: dough.gmane.org 1343660935 7491 80.91.229.3 (30 Jul 2012 15:08:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 15:08:55 +0000 (UTC)
+Cc: LKML <linux-kernel@vger.kernel.org>,
+	Alessio Igor Bogani <abogani@kernel.org>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Avi Kivity <avi@redhat.com>,
+	Chris Metcalf <cmetcalf@tilera.com>,
+	Christoph Lameter <cl@linux.com>,
+	Geoff Levand <geoff@infradead.org>,
+	Gilad Ben Yossef <gilad@benyossef.com>,
+	Hakan Akkan <hakanakkan@gmail.com>,
+	"H. Peter Anvin" <hpa@zytor.com>, Ingo Molnar <mingo@kernel.org>,
+	Kevin Hilman <khilman@ti.com>,
+	Max Krasnyansky <maxk@qualcomm.com>,
+	"Paul E. McKenney" <paulmck@linux.vnet.ibm.com>,
+	Stephen Hemminger <shemminger@vyatta.com>,
+	Steven Rostedt <rostedt@goodmis.org>,
+	Sven-Thorsten Dietrich <thebigcorporation@gmail.com>,
+	Thomas Gleixner <tglx@linutronix.de>
+To: Frederic Weisbecker <fweisbec@gmail.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 17:08:47 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvraO-0006jL-Gt
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 17:08:44 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754490Ab2G3PIh (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 11:08:37 -0400
+Original-Received: from casper.infradead.org ([85.118.1.10]:35255 "EHLO
+	casper.infradead.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752456Ab2G3PIg convert rfc822-to-8bit (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 11:08:36 -0400
+Original-Received: from dhcp-089-099-019-018.chello.nl ([89.99.19.18] helo=twins)
+	by casper.infradead.org with esmtpsa (Exim 4.76 #1 (Red Hat Linux))
+	id 1SvrZv-0005hL-3k; Mon, 30 Jul 2012 15:08:15 +0000
+Original-Received: by twins (Postfix, from userid 1000)
+	id 94D96879850B; Mon, 30 Jul 2012 17:08:12 +0200 (CEST)
+In-Reply-To: <1343403634-31555-2-git-send-email-fweisbec@gmail.com>
+X-Mailer: Evolution 3.2.2- 
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335129
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335129>
+
+On Fri, 2012-07-27 at 17:40 +0200, Frederic Weisbecker wrote:
+> +++ b/kernel/user_hooks.c
+> @@ -0,0 +1,56 @@
+> +#include <linux/user_hooks.h>
+> +#include <linux/rcupdate.h>
+> +#include <linux/sched.h>
+> +#include <linux/percpu.h>
+> +
+> +struct user_hooks {
+> +       bool hooking;
+> +       bool in_user;
+> +};
+
+I really detest using bool in structures.. but that's just me. Also this
+really wants a comment as to wtf 'hooking' means. in_user I can just
+about guess.
+
+> +DEFINE_PER_CPU(struct user_hooks, user_hooks) = {
+> +#ifdef CONFIG_USER_HOOKS_FORCE
+> +       .hooking = true,
+> +#endif
+> +};
+> +
+> +void user_enter(void)
+> +{
+> +       unsigned long flags;
+> +       struct user_hooks *uh;
+> +
+> +       WARN_ON_ONCE(!current->mm);
+> +       local_irq_save(flags);
+> +       uh = &__get_cpu_var(user_hooks);
+> +       if (uh->hooking && !uh->in_user) {
+> +               uh->in_user = true;
+> +               rcu_user_enter();
+> +       }
+
+By not using __get_cpu_var() but __this_cpu_*() you generate much better
+code (esp. on x86).
+
+IOW. something like:
+
+  if (__this_cpu_read(uh.hooking) && !__this_cpu_read(uh.in_user)) {
+	__this_cpu_write(uh.in_user, true);
+	rcu_user_enter();
+  }
+
+> +       local_irq_restore(flags);
+> +}
+> +
+> +void user_exit(void)
+> +{
+> +       unsigned long flags;
+> +       struct user_hooks *uh;
+> +
+> +       local_irq_save(flags);
+> +       uh = &__get_cpu_var(user_hooks);
+> +       if (uh->in_user) {
+> +               uh->in_user = false;
+> +               rcu_user_exit();
+> +       }
+> +       local_irq_restore(flags);
+> +}
+> +
+> +void user_hooks_switch(struct task_struct *prev,
+> +                      struct task_struct *next)
+> +{
+> +       struct user_hooks *uh;
+> +
+> +       uh = &__get_cpu_var(user_hooks);
+> +       if (uh->hooking) {
+> +               clear_tsk_thread_flag(prev, TIF_NOHZ);
+> +               set_tsk_thread_flag(next, TIF_NOHZ);
+> +       }
+
+This seems pointless to me.. why are we flipping that flag on context
+switch instead of keeping it enabled at all times? This are two atomic
+ops in the context switch path, why?
+
+> +} 

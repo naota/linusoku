@@ -1,0 +1,154 @@
+Path: news.gmane.org!not-for-mail
+From: H Hartley Sweeten <hartleys@visionengravers.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 22/90] staging: comedi: adv_pci_dio: remove CheckAndAllocCard()
+Date: Wed, 18 Jul 2012 18:34:15 -0700
+Lines: 100
+Approved: news@gmane.org
+Message-ID: <201207181834.15945.hartleys@visionengravers.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342661673 20100 80.91.229.3 (19 Jul 2012 01:34:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 01:34:33 +0000 (UTC)
+Cc: <devel@driverdev.osuosl.org>, <abbotti@mev.co.uk>,
+	<gregkh@linuxfoundation.org>
+To: Linux Kernel <linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 03:34:32 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SrfdN-0001JK-Tt
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 03:34:30 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754063Ab2GSBeW (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 18 Jul 2012 21:34:22 -0400
+Original-Received: from mail160.messagelabs.com ([216.82.253.99]:63166 "EHLO
+	mail160.messagelabs.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751916Ab2GSBeU (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 18 Jul 2012 21:34:20 -0400
+X-Env-Sender: hartleys@visionengravers.com
+X-Msg-Ref: server-14.tower-160.messagelabs.com!1342661659!10102160!2
+X-Originating-IP: [216.166.12.99]
+X-StarScan-Version: 6.5.10; banners=-,-,-
+X-VirusChecked: Checked
+Original-Received: (qmail 6450 invoked from network); 19 Jul 2012 01:34:19 -0000
+Original-Received: from out001.collaborationhost.net (HELO out001.collaborationhost.net) (216.166.12.99)
+  by server-14.tower-160.messagelabs.com with RC4-SHA encrypted SMTP; 19 Jul 2012 01:34:19 -0000
+Original-Received: from etch.local (10.2.3.210) by smtp.collaborationhost.net
+ (10.2.0.100) with Microsoft SMTP Server (TLS) id 8.3.213.0; Wed, 18 Jul 2012
+ 20:34:18 -0500
+User-Agent: KMail/1.9.9
+Content-Disposition: inline
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330054
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330054>
+
+This driver creates a linked list of all the pci devices in
+the system while it's looking for a match. It's only use is
+to determine if a device is "free" to use. The pci_is_enabled()
+helper can give us the same information. Use that instead and
+remove the linked list.
+
+Signed-off-by: H Hartley Sweeten <hsweeten@visionengravers.com>
+Cc: Ian Abbott <abbotti@mev.co.uk>
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/staging/comedi/drivers/adv_pci_dio.c | 39 +---------------------------
+ 1 file changed, 1 insertion(+), 38 deletions(-)
+
+diff --git a/drivers/staging/comedi/drivers/adv_pci_dio.c b/drivers/staging/comedi/drivers/adv_pci_dio.c
+index e1f52c6..ab92169 100644
+--- a/drivers/staging/comedi/drivers/adv_pci_dio.c
++++ b/drivers/staging/comedi/drivers/adv_pci_dio.c
+@@ -382,8 +382,6 @@ static const struct dio_boardtype boardtypes[] = {
+ };
+ 
+ struct pci_dio_private {
+-	struct pci_dio_private *prev;	/*  previous private struct */
+-	struct pci_dio_private *next;	/*  next private struct */
+ 	struct pci_dev *pcidev;	/*  pointer to board's pci_dev */
+ 	char valid;		/*  card is usable */
+ 	char GlobalIrqEnabled;	/*  1= any IRQ source is enabled */
+@@ -404,8 +402,6 @@ struct pci_dio_private {
+ 	unsigned short IDIFiltrHigh[8];	/*  IDI's filter value high signal */
+ };
+ 
+-static struct pci_dio_private *pci_priv;	/* list of allocated cards */
+-
+ #define devpriv ((struct pci_dio_private *)dev->private)
+ #define this_board ((const struct dio_boardtype *)dev->board_ptr)
+ 
+@@ -1055,38 +1051,12 @@ static int pci_dio_add_8254(struct comedi_device *dev,
+ 	return 0;
+ }
+ 
+-/*
+-==============================================================================
+-*/
+-static int CheckAndAllocCard(struct comedi_device *dev,
+-			     struct comedi_devconfig *it,
+-			     struct pci_dev *pcidev)
+-{
+-	struct pci_dio_private *pr, *prev;
+-
+-	for (pr = pci_priv, prev = NULL; pr != NULL; prev = pr, pr = pr->next) {
+-		if (pr->pcidev == pcidev)
+-			return 0; /* this card is used, look for another */
+-
+-	}
+-
+-	if (prev) {
+-		devpriv->prev = prev;
+-		prev->next = devpriv;
+-	} else {
+-		pci_priv = devpriv;
+-	}
+-
+-	return 1;
+-}
+-
+ static struct pci_dev *pci_dio_find_pci_dev(struct comedi_device *dev,
+ 					    struct comedi_devconfig *it)
+ {
+ 	struct pci_dev *pcidev = NULL;
+ 	unsigned long iobase;
+ 	int i;
+-	int ret;
+ 
+ 	for_each_pci_dev(pcidev) {
+ 		/*  loop through cards supported by this driver */
+@@ -1103,8 +1073,7 @@ static struct pci_dev *pci_dio_find_pci_dev(struct comedi_device *dev,
+ 					continue;
+ 				}
+ 			}
+-			ret = CheckAndAllocCard(dev, it, pcidev);
+-			if (ret != 1)
++			if (pci_is_enabled(pcidev))
+ 				continue;
+ 			dev->board_ptr = boardtypes + i;
+ 			break;
+@@ -1260,12 +1229,6 @@ static void pci_dio_detach(struct comedi_device *dev)
+ 				comedi_pci_disable(devpriv->pcidev);
+ 			pci_dev_put(devpriv->pcidev);
+ 		}
+-		if (devpriv->prev)
+-			devpriv->prev->next = devpriv->next;
+-		else
+-			pci_priv = devpriv->next;
+-		if (devpriv->next)
+-			devpriv->next->prev = devpriv->prev;
+ 	}
+ }
+ 
+-- 
+1.7.11
+

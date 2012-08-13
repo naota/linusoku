@@ -1,0 +1,111 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 022/122] ASoC: dapm: Fix _PRE and _POST events for DAPM performance improvements
+Date: Tue,  7 Aug 2012 15:25:10 -0700
+Lines: 46
+Approved: news@gmane.org
+Message-ID: <20120807221950.226690519@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344378606 13910 80.91.229.3 (7 Aug 2012 22:30:06 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:30:06 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	Mark Brown <broonie@opensource.wolfsonmicro.com>,
+	Liam Girdwood <lrg@ti.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:30:05 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysHs-0000lk-1B
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:30:04 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932293Ab2HGW2Q (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:28:16 -0400
+Original-Received: from mail-gg0-f174.google.com ([209.85.161.174]:59838 "EHLO
+	mail-gg0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S932298Ab2HGW2H (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:28:07 -0400
+Original-Received: by ggnl2 with SMTP id l2so147962ggn.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:28:06 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=mnqfC2u9dcH1JvaII/uq5cemd8v17/xi9PGezKdsSro=;
+        b=nnXa7BhgttjoUbE9XgEdblmsdPZr0/vvVwYPUwwU26Pu55a1NAtURI1LXfQEvBWEYh
+         iNamUUQcszwk0L2PAX95kyKTcBybEFSNp9PKNIlArB9Ksw7BMDCUCcowKsAuDEeOI/b4
+         8UOFaKG8o4WvP93RpLCizoZk6d1OQfjHj2NQs13sY5trowYESaKoczYmZncMEQqgdn1r
+         Q/EOtXbdJyIEcETXoyqlP7SX2Sgg6Sj3RTY1te860LUMGalQD490craipDORqQQev2LO
+         tQrbyZtvx3IgVBYZOVTvwpZbO8gNGFWoo57r0ieOojzORiKR4448eLKiWfiHhGgC+bHb
+         HH0g==
+Original-Received: by 10.66.84.229 with SMTP id c5mr29214102paz.12.1344378486605;
+        Tue, 07 Aug 2012 15:28:06 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id px1sm11952985pbb.49.2012.08.07.15.28.04
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:28:05 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQlqR4jAZDYeDfv7p1WabT866l8LGilPhyNPRCjzr7f7CMMuHRKQt9s78Gsyoa5o7Iva9OxH
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339416 gmane.linux.kernel.stable:29255
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339416>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Mark Brown <broonie@opensource.wolfsonmicro.com>
+
+commit 0ff97ebf0804d2e519d578fcb4db03f104d2ca8c upstream.
+
+Ever since the DAPM performance improvements we've been marking all widgets
+as not dirty after each DAPM run. Since _PRE and _POST events aren't part
+of the DAPM graph this has rendered them non-functional, they will never be
+marked dirty again and thus will never be run again.
+
+Fix this by skipping them when marking widgets as not dirty.
+
+Signed-off-by: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Acked-by: Liam Girdwood <lrg@ti.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ sound/soc/soc-dapm.c |   10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+--- a/sound/soc/soc-dapm.c
++++ b/sound/soc/soc-dapm.c
+@@ -1570,7 +1570,15 @@ static int dapm_power_widgets(struct snd
+ 	}
+ 
+ 	list_for_each_entry(w, &card->widgets, list) {
+-		list_del_init(&w->dirty);
++		switch (w->id) {
++		case snd_soc_dapm_pre:
++		case snd_soc_dapm_post:
++			/* These widgets always need to be powered */
++			break;
++		default:
++			list_del_init(&w->dirty);
++			break;
++		}
+ 
+ 		if (w->power) {
+ 			d = w->dapm;
+
+

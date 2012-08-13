@@ -1,0 +1,257 @@
+Path: news.gmane.org!not-for-mail
+From: Weiping Pan <wpan@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.network
+Subject: [PATCH net] rds: set correct msg_namelen
+Date: Mon, 23 Jul 2012 10:37:48 +0800
+Lines: 213
+Approved: news@gmane.org
+Message-ID: <5181687def9991f9878460d932bd31c64f9ad0cb.1343010976.git.wpan@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343011138 31761 80.91.229.3 (23 Jul 2012 02:38:58 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 02:38:58 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org
+To: netdev@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 04:38:56 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1St8Xu-0000fb-1c
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 04:38:54 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753341Ab2GWCiq (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 22:38:46 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:34620 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753086Ab2GWCip (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 22:38:45 -0400
+Original-Received: from int-mx02.intmail.prod.int.phx2.redhat.com (int-mx02.intmail.prod.int.phx2.redhat.com [10.5.11.12])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6N2ciML008517
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Sun, 22 Jul 2012 22:38:45 -0400
+Original-Received: from localhost.localdomain.com (dhcp-16-141.nay.redhat.com [10.66.16.141] (may be forged))
+	by int-mx02.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with ESMTP id q6N2cgKg016680;
+	Sun, 22 Jul 2012 22:38:43 -0400
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.12
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331587 gmane.linux.network:238124
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331587>
+
+Jay Fenlason (fenlason@redhat.com) found a bug,
+that recvfrom() on an RDS socket can return the contents of random kernel
+memory to userspace if it was called with a address length larger than
+sizeof(struct sockaddr_in).
+rds_recvmsg() also fails to set the addr_len paramater properly before
+returning, but that's just a bug.
+There are also a number of cases wher recvfrom() can return an entirely bogus
+address. Anything in rds_recvmsg() that returns a non-negative value but does
+not go through the "sin = (struct sockaddr_in *)msg->msg_name;" code path
+at the end of the while(1) loop will return up to 128 bytes of kernel memory
+to userspace.
+
+And I write two test programs to reproduce this bug, you will see that in
+rds_server, fromAddr will be overwritten and the following sock_fd will be
+destroyed.
+Yes, it is the programmer's fault to set msg_namelen incorrectly, but it is
+better to make the kernel copy the real length of address to user space in
+such case.
+
+How to run the test programs ?
+I test them on 32bit x86 system, 3.5.0-rc7.
+
+1 compile
+gcc -o rds_client rds_client.c
+gcc -o rds_server rds_server.c
+
+2 run ./rds_server on one console
+
+3 run ./rds_client on another console
+
+4 you will see something like:
+server is waiting to receive data...
+old socket fd=3
+server received data from client:data from client
+msg.msg_namelen=32
+new socket fd=-1067277685
+sendmsg()
+: Bad file descriptor
+
+/***************** rds_client.c ********************/
+
+int main(void)
+{
+	int sock_fd;
+	struct sockaddr_in serverAddr;
+	struct sockaddr_in toAddr;
+	char recvBuffer[128] = "data from client";
+	struct msghdr msg;
+	struct iovec iov;
+
+	sock_fd = socket(AF_RDS, SOCK_SEQPACKET, 0);
+	if (sock_fd < 0) {
+		perror("create socket error\n");
+		exit(1);
+	}
+
+	memset(&serverAddr, 0, sizeof(serverAddr));
+	serverAddr.sin_family = AF_INET;
+	serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+	serverAddr.sin_port = htons(4001);
+
+	if (bind(sock_fd, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
+		perror("bind() error\n");
+		close(sock_fd);
+		exit(1);
+	}
+
+	memset(&toAddr, 0, sizeof(toAddr));
+	toAddr.sin_family = AF_INET;
+	toAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+	toAddr.sin_port = htons(4000);
+	msg.msg_name = &toAddr;
+	msg.msg_namelen = sizeof(toAddr);
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+	msg.msg_iov->iov_base = recvBuffer;
+	msg.msg_iov->iov_len = strlen(recvBuffer) + 1;
+	msg.msg_control = 0;
+	msg.msg_controllen = 0;
+	msg.msg_flags = 0;
+
+	if (sendmsg(sock_fd, &msg, 0) == -1) {
+		perror("sendto() error\n");
+		close(sock_fd);
+		exit(1);
+	}
+
+	printf("client send data:%s\n", recvBuffer);
+
+	memset(recvBuffer, '\0', 128);
+
+	msg.msg_name = &toAddr;
+	msg.msg_namelen = sizeof(toAddr);
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+	msg.msg_iov->iov_base = recvBuffer;
+	msg.msg_iov->iov_len = 128;
+	msg.msg_control = 0;
+	msg.msg_controllen = 0;
+	msg.msg_flags = 0;
+	if (recvmsg(sock_fd, &msg, 0) == -1) {
+		perror("recvmsg() error\n");
+		close(sock_fd);
+		exit(1);
+	}
+
+	printf("receive data from server:%s\n", recvBuffer);
+
+	close(sock_fd);
+
+	return 0;
+}
+
+/***************** rds_server.c ********************/
+
+int main(void)
+{
+	struct sockaddr_in fromAddr;
+	int sock_fd;
+	struct sockaddr_in serverAddr;
+	unsigned int addrLen;
+	char recvBuffer[128];
+	struct msghdr msg;
+	struct iovec iov;
+
+	sock_fd = socket(AF_RDS, SOCK_SEQPACKET, 0);
+	if(sock_fd < 0) {
+		perror("create socket error\n");
+		exit(0);
+	}
+
+	memset(&serverAddr, 0, sizeof(serverAddr));
+	serverAddr.sin_family = AF_INET;
+	serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+	serverAddr.sin_port = htons(4000);
+	if (bind(sock_fd, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
+		perror("bind error\n");
+		close(sock_fd);
+		exit(1);
+	}
+
+	printf("server is waiting to receive data...\n");
+	msg.msg_name = &fromAddr;
+
+	/*
+	 * I add 16 to sizeof(fromAddr), ie 32,
+	 * and pay attention to the definition of fromAddr,
+	 * recvmsg() will overwrite sock_fd,
+	 * since kernel will copy 32 bytes to userspace.
+	 *
+	 * If you just use sizeof(fromAddr), it works fine.
+	 * */
+	msg.msg_namelen = sizeof(fromAddr) + 16;
+	/* msg.msg_namelen = sizeof(fromAddr); */
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+	msg.msg_iov->iov_base = recvBuffer;
+	msg.msg_iov->iov_len = 128;
+	msg.msg_control = 0;
+	msg.msg_controllen = 0;
+	msg.msg_flags = 0;
+
+	while (1) {
+		printf("old socket fd=%d\n", sock_fd);
+		if (recvmsg(sock_fd, &msg, 0) == -1) {
+			perror("recvmsg() error\n");
+			close(sock_fd);
+			exit(1);
+		}
+		printf("server received data from client:%s\n", recvBuffer);
+		printf("msg.msg_namelen=%d\n", msg.msg_namelen);
+		printf("new socket fd=%d\n", sock_fd);
+		strcat(recvBuffer, "--data from server");
+		if (sendmsg(sock_fd, &msg, 0) == -1) {
+			perror("sendmsg()\n");
+			close(sock_fd);
+			exit(1);
+		}
+	}
+
+	close(sock_fd);
+	return 0;
+}
+
+Signed-off-by: Weiping Pan <wpan@redhat.com>
+---
+ net/rds/recv.c |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/net/rds/recv.c b/net/rds/recv.c
+index 5c6e9f1..9f0f17c 100644
+--- a/net/rds/recv.c
++++ b/net/rds/recv.c
+@@ -410,6 +410,8 @@ int rds_recvmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
+ 
+ 	rdsdebug("size %zu flags 0x%x timeo %ld\n", size, msg_flags, timeo);
+ 
++	msg->msg_namelen = 0;
++
+ 	if (msg_flags & MSG_OOB)
+ 		goto out;
+ 
+@@ -485,6 +487,7 @@ int rds_recvmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
+ 			sin->sin_port = inc->i_hdr.h_sport;
+ 			sin->sin_addr.s_addr = inc->i_saddr;
+ 			memset(sin->sin_zero, 0, sizeof(sin->sin_zero));
++			msg->msg_namelen = sizeof(*sin);
+ 		}
+ 		break;
+ 	}
+-- 
+1.7.4
+

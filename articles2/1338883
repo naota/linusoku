@@ -1,0 +1,135 @@
+Path: news.gmane.org!not-for-mail
+From: Christoph Hellwig <hch@lst.de>
+Newsgroups: gmane.linux.kernel.virtualization,gmane.comp.emulators.kvm.devel,gmane.linux.kernel
+Subject: Re: [PATCH V6 2/2] virtio-blk: Add REQ_FLUSH and REQ_FUA support
+	to bio path
+Date: Tue, 7 Aug 2012 11:15:10 +0200
+Lines: 63
+Approved: news@gmane.org
+Message-ID: <20120807091510.GA2651@lst.de>
+References: <1344329235-17449-1-git-send-email-asias@redhat.com>
+	<1344329235-17449-3-git-send-email-asias@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344330923 26054 80.91.229.3 (7 Aug 2012 09:15:23 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 09:15:23 +0000 (UTC)
+Cc: Jens Axboe <axboe@kernel.dk>, kvm@vger.kernel.org,
+	"Michael S. Tsirkin" <mst@redhat.com>, linux-kernel@vger.kernel.org,
+	virtualization@lists.linux-foundation.org,
+	Tejun Heo <tj@kernel.org>, Shaohua Li <shli@kernel.org>,
+	Christoph Hellwig <hch@lst.de>
+To: Asias He <asias@redhat.com>
+Original-X-From: virtualization-bounces@lists.linux-foundation.org Tue Aug 07 11:15:20 2012
+Return-path: <virtualization-bounces@lists.linux-foundation.org>
+Envelope-to: glkv-virtualization@gmane.org
+Original-Received: from mail.linuxfoundation.org ([140.211.169.12])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <virtualization-bounces@lists.linux-foundation.org>)
+	id 1Syfsj-0001C7-DE
+	for glkv-virtualization@gmane.org; Tue, 07 Aug 2012 11:15:17 +0200
+Original-Received: from mail.linux-foundation.org (localhost [IPv6:::1])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id 2C776618;
+	Tue,  7 Aug 2012 09:15:16 +0000 (UTC)
+X-Original-To: virtualization@lists.linux-foundation.org
+Delivered-To: virtualization@mail.linuxfoundation.org
+Original-Received: from smtp1.linuxfoundation.org (smtp1.linux-foundation.org
+	[172.17.192.35])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id B8A77570
+	for <virtualization@lists.linux-foundation.org>;
+	Tue,  7 Aug 2012 09:15:15 +0000 (UTC)
+X-Greylist: from auto-whitelisted by SQLgrey-1.7.6
+Original-Received: from newverein.lst.de (verein.lst.de [213.95.11.211])
+	by smtp1.linuxfoundation.org (Postfix) with ESMTPS id AE9FF1F849
+	for <virtualization@lists.linux-foundation.org>;
+	Tue,  7 Aug 2012 09:15:12 +0000 (UTC)
+Original-Received: by newverein.lst.de (Postfix, from userid 2407)
+	id 3BB8414195; Tue,  7 Aug 2012 11:15:10 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <1344329235-17449-3-git-send-email-asias@redhat.com>
+User-Agent: Mutt/1.5.17 (2007-11-01)
+X-Spam-Status: No, score=-1.9 required=5.0 tests=BAYES_00,T_RP_MATCHES_RCVD
+	autolearn=ham version=3.3.1
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on
+	smtp1.linux-foundation.org
+X-BeenThere: virtualization@lists.linux-foundation.org
+X-Mailman-Version: 2.1.12
+Precedence: list
+List-Id: Linux virtualization <virtualization.lists.linux-foundation.org>
+List-Unsubscribe: <https://lists.linuxfoundation.org/mailman/options/virtualization>,
+	<mailto:virtualization-request@lists.linux-foundation.org?subject=unsubscribe>
+List-Archive: <http://lists.linuxfoundation.org/pipermail/virtualization/>
+List-Post: <mailto:virtualization@lists.linux-foundation.org>
+List-Help: <mailto:virtualization-request@lists.linux-foundation.org?subject=help>
+List-Subscribe: <https://lists.linuxfoundation.org/mailman/listinfo/virtualization>,
+	<mailto:virtualization-request@lists.linux-foundation.org?subject=subscribe>
+Original-Sender: virtualization-bounces@lists.linux-foundation.org
+Errors-To: virtualization-bounces@lists.linux-foundation.org
+Xref: news.gmane.org gmane.linux.kernel.virtualization:16422 gmane.comp.emulators.kvm.devel:95655 gmane.linux.kernel:1338883
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338883>
+
+At least after review is done I really think this patch sopuld be folded
+into the previous one.
+
+Some more comments below:
+
+> @@ -58,6 +58,12 @@ struct virtblk_req
+>  	struct bio *bio;
+>  	struct virtio_blk_outhdr out_hdr;
+>  	struct virtio_scsi_inhdr in_hdr;
+> +	struct work_struct work;
+> +	struct virtio_blk *vblk;
+
+I think using bio->bi_private for the virtio_blk pointer would
+be cleaner.
+
+
+> +	bool is_flush;
+> +	bool req_flush;
+> +	bool req_data;
+> +	bool req_fua;
+
+This could be a bitmap, or better even a single state field.
+
+> +static int virtblk_bio_send_flush(struct virtio_blk *vblk,
+> +				  struct virtblk_req *vbr)
+
+> +static int virtblk_bio_send_data(struct virtio_blk *vblk,
+> +				 struct virtblk_req *vbr)
+
+These should only get the struct virtblk_req * argument as the virtio_blk
+structure is easily derivable from it.
+
+> +static inline void virtblk_bio_done_flush(struct virtio_blk *vblk,
+> +					  struct virtblk_req *vbr)
+>  {
+> +	if (vbr->req_data) {
+> +		/* Send out the actual write data */
+> +		struct virtblk_req *_vbr;
+> +		_vbr = virtblk_alloc_req(vblk, GFP_NOIO);
+> +		if (!_vbr) {
+> +			bio_endio(vbr->bio, -ENOMEM);
+> +			goto out;
+> +		}
+> +		_vbr->req_fua = vbr->req_fua;
+> +		_vbr->bio = vbr->bio;
+> +		_vbr->vblk = vblk;
+> +		INIT_WORK(&_vbr->work, virtblk_bio_send_data_work);
+> +		queue_work(virtblk_wq, &_vbr->work);
+
+The _vbr naming isn't too nice.  Also can you explain why the original
+request can't be reused in a comment here?
+
+Also if using a state variable I think the whole code would be
+a bit cleaner if the bio_done helpers are combined.
+
+> -	if (writeback && !use_bio)
+> +	if (writeback)
+>  		blk_queue_flush(vblk->disk->queue, REQ_FLUSH);
+
+Shouldn't this be REQ_FLUSH | REQ_FUA for the bio case?
+
+Btw, did you verify that flushes really work correctly for all cases
+using tracing in qemu?

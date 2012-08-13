@@ -1,0 +1,120 @@
+Path: news.gmane.org!not-for-mail
+From: Ian Campbell <Ian.Campbell@citrix.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.xen.devel,gmane.linux.linaro.devel,gmane.linux.ports.arm.kernel
+Subject: Re: [Xen-devel] [PATCH 04/24] xen/arm: sync_bitops
+Date: Fri, 27 Jul 2012 10:28:25 +0100
+Organization: Citrix Systems, Inc.
+Lines: 59
+Approved: news@gmane.org
+Message-ID: <1343381305.6812.116.camel@zakaz.uk.xensource.com>
+References: <alpine.DEB.2.02.1207251741470.26163@kaball.uk.xensource.com>
+	 <1343316846-25860-4-git-send-email-stefano.stabellini@eu.citrix.com>
+	 <20120726163759.GE9222@phenom.dumpdata.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343381318 25098 80.91.229.3 (27 Jul 2012 09:28:38 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 09:28:38 +0000 (UTC)
+Cc: Stefano Stabellini <Stefano.Stabellini@eu.citrix.com>,
+	"linux-kernel@vger.kernel.org" <linux-kernel@vger.kernel.org>,
+	"xen-devel@lists.xensource.com" <xen-devel@lists.xensource.com>,
+	"linaro-dev@lists.linaro.org" <linaro-dev@lists.linaro.org>,
+	"arnd@arndb.de" <arnd@arndb.de>,
+	"catalin.marinas@arm.com" <catalin.marinas@arm.com>,
+	"Tim (Xen.org)" <tim@xen.org>,
+	"linux-arm-kernel@lists.infradead.org" 
+	<linux-arm-kernel@lists.infradead.org>
+To: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 11:28:37 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sugqa-0000lS-H9
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 11:28:36 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752664Ab2G0J2a (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 05:28:30 -0400
+Original-Received: from smtp.eu.citrix.com ([62.200.22.115]:21089 "EHLO
+	SMTP.EU.CITRIX.COM" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752382Ab2G0J22 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 05:28:28 -0400
+X-IronPort-AV: E=Sophos;i="4.77,666,1336348800"; 
+   d="scan'208";a="13730505"
+Original-Received: from lonpmailmx01.citrite.net ([10.30.203.162])
+  by LONPIPO01.EU.CITRIX.COM with ESMTP/TLS/RC4-MD5; 27 Jul 2012 09:28:27 +0000
+Original-Received: from [10.80.2.42] (10.80.2.42) by LONPMAILMX01.citrite.net
+ (10.30.203.162) with Microsoft SMTP Server id 8.3.213.0; Fri, 27 Jul 2012
+ 10:28:27 +0100
+In-Reply-To: <20120726163759.GE9222@phenom.dumpdata.com>
+X-Mailer: Evolution 3.4.3-1 
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334168 gmane.comp.emulators.xen.devel:135718 gmane.linux.linaro.devel:12706 gmane.linux.ports.arm.kernel:179022
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334168>
+
+On Thu, 2012-07-26 at 17:37 +0100, Konrad Rzeszutek Wilk wrote:
+> On Thu, Jul 26, 2012 at 04:33:46PM +0100, Stefano Stabellini wrote:
+> > sync_bitops functions are equivalent to the SMP implementation of the
+> > original functions, independently from CONFIG_SMP being defined.
+> 
+> So why can't the code be changed to use that? Is it that
+> the _set_bit, _clear_bit, etc are not available with !CONFIG_SMP?
+
+_set_bit etc are not SMP safe if !CONFIG_SMP. But under Xen you might be
+communicating with a completely external entity who might be on another
+CPU (e.g. two uniprocessor guests communicating via event channels and
+grant tables). So we need a variant of the bit ops which are SMP safe
+even on a UP kernel.
+
+The users are common code and the sync_foo vs foo distinction matters on
+some platforms (e.g. x86 where a UP kernel would omit the LOCK prefix
+for the normal ones).
+
+> 
+> > 
+> > Signed-off-by: Stefano Stabellini <stefano.stabellini@eu.citrix.com>
+> > ---
+> >  arch/arm/include/asm/sync_bitops.h |   17 +++++++++++++++++
+> >  1 files changed, 17 insertions(+), 0 deletions(-)
+> >  create mode 100644 arch/arm/include/asm/sync_bitops.h
+> > 
+> > diff --git a/arch/arm/include/asm/sync_bitops.h b/arch/arm/include/asm/sync_bitops.h
+> > new file mode 100644
+> > index 0000000..d975092903
+> > --- /dev/null
+> > +++ b/arch/arm/include/asm/sync_bitops.h
+> > @@ -0,0 +1,17 @@
+> > +#ifndef __ASM_SYNC_BITOPS_H__
+> > +#define __ASM_SYNC_BITOPS_H__
+> > +
+> > +#include <asm/bitops.h>
+> > +#include <asm/system.h>
+> > +
+> > +#define sync_set_bit(nr, p)		_set_bit(nr, p)
+> > +#define sync_clear_bit(nr, p)		_clear_bit(nr, p)
+> > +#define sync_change_bit(nr, p)		_change_bit(nr, p)
+> > +#define sync_test_and_set_bit(nr, p)	_test_and_set_bit(nr, p)
+> > +#define sync_test_and_clear_bit(nr, p)	_test_and_clear_bit(nr, p)
+> > +#define sync_test_and_change_bit(nr, p)	_test_and_change_bit(nr, p)
+> > +#define sync_test_bit(nr, addr)		test_bit(nr, addr)
+> > +#define sync_cmpxchg			cmpxchg
+> > +
+> > +
+> > +#endif
+> > -- 
+> > 1.7.2.5
+> > 
+> > 
+> > _______________________________________________
+> > Xen-devel mailing list
+> > Xen-devel@lists.xen.org
+> > http://lists.xen.org/xen-devel
+
+

@@ -1,0 +1,116 @@
+Path: news.gmane.org!not-for-mail
+From: Mel Gorman <mgorman@suse.de>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel.stable,gmane.linux.kernel
+Subject: [PATCH 30/34] mm: vmscan: Do not force kswapd to scan small targets
+Date: Thu, 19 Jul 2012 15:36:40 +0100
+Lines: 56
+Approved: news@gmane.org
+Message-ID: <1342708604-26540-31-git-send-email-mgorman@suse.de>
+References: <1342708604-26540-1-git-send-email-mgorman@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342708709 12803 80.91.229.3 (19 Jul 2012 14:38:29 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 14:38:29 +0000 (UTC)
+Cc: "Linux-MM <linux-mm"@kvack.org,
+	LKML <linux-kernel@vger.kernel.org>, Mel Gorman <mgorman@suse.de>
+To: Stable <stable@vger.kernel.org>
+Original-X-From: owner-linux-mm@kvack.org Thu Jul 19 16:38:29 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Srrs4-00072X-Le
+	for glkm-linux-mm-2@m.gmane.org; Thu, 19 Jul 2012 16:38:28 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id C5D926B0098; Thu, 19 Jul 2012 10:37:21 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 188456B007D; Thu, 19 Jul 2012 10:37:18 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 732ED6B0098; Thu, 19 Jul 2012 10:37:16 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx145.postini.com [74.125.245.145])
+	by kanga.kvack.org (Postfix) with SMTP id 435716B0070
+	for <linux-mm@kvack.org>; Thu, 19 Jul 2012 10:37:06 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx145.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 19 Jul 2012 14:37:06 GMT
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 9EB2CA37E0;
+	Thu, 19 Jul 2012 16:37:04 +0200 (CEST)
+X-Mailer: git-send-email 1.7.9.2
+In-Reply-To: <1342708604-26540-1-git-send-email-mgorman@suse.de>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mgorman@suse.de> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82721 gmane.linux.kernel.stable:28561 gmane.linux.kernel:1330394
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330394>
+
+commit ad2b8e601099a23dffffb53f91c18d874fe98854 upstream - WARNING: partial backport only
+
+Stable note: Not tracked in Bugzilla. This patch is very controversial for
+	-stable. The upstream patch is addressing a completely different
+	issue but accidentally contained an important fix. The workload
+	in question was running memcached and then started IO in the
+	background. memcached should stay resident but without this patch
+	it gets swapped. Sometimes this manifests as a drop in throughput
+	but mostly it was observed through /proc/vmstat.
+
+Commit [246e87a9: memcg: fix get_scan_count() for small targets] was
+meant to fix a problem whereby small scan targets on memcg were ignored
+causing priority to raise too sharply. It forced scanning to take place
+if the target was small, memcg or kswapd.
+
+From the time it was introduced it cause excessive reclaim by kswapd
+with workloads being pushed to swap that previously would have stayed
+resident. This was accidentally fixed by commit [ad2b8e60: mm: memcg:
+remove optimization of keeping the root_mem_cgroup LRU lists empty] but
+that patchset is not suitable for backporting.
+
+The original patch came with no information on what workloads it benefits
+but the cost of it is obvious in that it forces scanning to take place
+on lists that would otherwise have been ignored such as small anonymous
+inactive lists. This patch partially reverts 246e87a9 so that small lists
+are not force scanned which means that IO-intensive workloads with small
+amounts of anonymous memory will not be swapped.
+
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+---
+ mm/vmscan.c |    3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/mm/vmscan.c b/mm/vmscan.c
+index e5382ad..49d8547 100644
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -1849,9 +1849,6 @@ static void get_scan_count(struct zone *zone, struct scan_control *sc,
+ 	bool force_scan = false;
+ 	unsigned long nr_force_scan[2];
+ 
+-	/* kswapd does zone balancing and needs to scan this zone */
+-	if (scanning_global_lru(sc) && current_is_kswapd())
+-		force_scan = true;
+ 	/* memcg may have small limit and need to avoid priority drop */
+ 	if (!scanning_global_lru(sc))
+ 		force_scan = true;
+-- 
+1.7.9.2
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

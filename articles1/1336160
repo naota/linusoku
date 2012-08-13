@@ -1,0 +1,136 @@
+Path: news.gmane.org!not-for-mail
+From: Cruz Julian Bishop <cruzjbishop@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 3/5] Finish documentation of two structs in android/logger.c
+Date: Wed,  1 Aug 2012 14:54:18 +1000
+Lines: 77
+Approved: news@gmane.org
+Message-ID: <1343796860-7025-4-git-send-email-cruzjbishop@gmail.com>
+References: <1343796860-7025-1-git-send-email-cruzjbishop@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343796928 29517 80.91.229.3 (1 Aug 2012 04:55:28 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 1 Aug 2012 04:55:28 +0000 (UTC)
+Cc: swetland@google.com, linux-kernel@vger.kernel.org,
+	Cruz Julian Bishop <cruzjbishop@gmail.com>
+To: greg@kroah.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 01 06:55:28 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwQxx-0000ud-Tb
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 01 Aug 2012 06:55:26 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752681Ab2HAEzA (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 1 Aug 2012 00:55:00 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:64111 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751809Ab2HAEyv (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 1 Aug 2012 00:54:51 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so465707pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 31 Jul 2012 21:54:50 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=LxFEl2qC9PvecR85tBWsEAoEiAtzGKAHZCYMRnQzbLo=;
+        b=s4vhHBL9PoaeXPuhMw1pWWpGoihfjDDQ4NxEVHVfK1YZrO+TCQg+OTvoLruehvHpNK
+         hQhM5nBnKf6bS5Poqr05Vva99mz6YEqCn9LP1FmVdiwJVkU6di2xI8hWbIBXn3YpwkhY
+         pGdnc/TiPvjY2d7QRq0HBdMh4YQubobCkoImwMd8mmG/CnkiE5TfPL25byTSLCblirsr
+         5pyfJrxWocmiNBu2PT9PX6375LS6fZmnznXOiVIPKajG3wfOp/lpnyRWFD/+fXOkX2IT
+         LCwtELICuZ9FtjPQc6t1YhEM3e5ESHDG11dgIMJ8uzZJI0Ba+JnJqE9iXLOHVJWiTL6d
+         ou/Q==
+Original-Received: by 10.66.77.40 with SMTP id p8mr36999636paw.78.1343796890793;
+        Tue, 31 Jul 2012 21:54:50 -0700 (PDT)
+Original-Received: from localhost.localdomain (122-148-43-129.static.dsl.dodo.com.au. [122.148.43.129])
+        by mx.google.com with ESMTPS id ru4sm1735748pbc.66.2012.07.31.21.54.48
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 31 Jul 2012 21:54:50 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1343796860-7025-1-git-send-email-cruzjbishop@gmail.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336160
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336160>
+
+Signed-off-by: Cruz Julian Bishop <cruzjbishop@gmail.com>
+---
+ drivers/staging/android/logger.c |   40 +++++++++++++++++++++++++-------------
+ 1 file changed, 26 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/staging/android/logger.c b/drivers/staging/android/logger.c
+index f7b8237..1d5ed47 100644
+--- a/drivers/staging/android/logger.c
++++ b/drivers/staging/android/logger.c
+@@ -32,38 +32,50 @@
+ 
+ #include <asm/ioctls.h>
+ 
+-/*
++/**
+  * struct logger_log - represents a specific log, such as 'main' or 'radio'
++ * @buffer:	The actual ring buffer
++ * @misc:	The "misc" device representing the log
++ * @wq:		The wait queue for @readers
++ * @readers:	This log's readers
++ * @mutex:	The mutex that protects the @buffer
++ * @w_off:	The current write head offset
++ * @head:	The head, or location that readers start reading at.
++ * @size:	The size of the log
++ * @logs:	The list of log channels
+  *
+  * This structure lives from module insertion until module removal, so it does
+  * not need additional reference counting. The structure is protected by the
+  * mutex 'mutex'.
+  */
+ struct logger_log {
+-	unsigned char		*buffer;/* the ring buffer itself */
+-	struct miscdevice	misc;	/* misc device representing the log */
+-	wait_queue_head_t	wq;	/* wait queue for readers */
+-	struct list_head	readers; /* this log's readers */
+-	struct mutex		mutex;	/* mutex protecting buffer */
+-	size_t			w_off;	/* current write head offset */
+-	size_t			head;	/* new readers start here */
+-	size_t			size;	/* size of the log */
+-	struct list_head	logs;	/* list of log channels (myself)*/
++	unsigned char		*buffer;
++	struct miscdevice	misc;
++	wait_queue_head_t	wq;
++	struct list_head	readers;
++	struct mutex		mutex;
++	size_t			w_off;
++	size_t			head;
++	size_t			size;
++	struct list_head	logs;
+ };
+ 
+ static LIST_HEAD(log_list);
+ 
+ 
+-/*
++/**
+  * struct logger_reader - a logging device open for reading
++ * @log:	The associated log
++ * @list:	The associated entry in @logger_log's list
++ * @r_off:	The current read head offset.
+  *
+  * This object lives from open to release, so we don't need additional
+  * reference counting. The structure is protected by log->mutex.
+  */
+ struct logger_reader {
+-	struct logger_log	*log;	/* associated log */
+-	struct list_head	list;	/* entry in logger_log's list */
+-	size_t			r_off;	/* current read head offset */
++	struct logger_log	*log;
++	struct list_head	list;
++	size_t			r_off;
+ };
+ 
+ /* logger_offset - returns index 'n' into the log via (optimized) modulus */
+-- 
+1.7.9.5
+

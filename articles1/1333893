@@ -1,0 +1,96 @@
+Path: news.gmane.org!not-for-mail
+From: Peter Boonstoppel <pboonstoppel@nvidia.com>
+Newsgroups: gmane.linux.kernel
+Subject: RE: [PATCH 1/1] kthread: disable preemption during complete()
+Date: Thu, 26 Jul 2012 14:16:51 -0700
+Lines: 27
+Approved: news@gmane.org
+Message-ID: <5FBF8E85CA34454794F0F7ECBA79798F379D364860@HQMAIL04.nvidia.com>
+References: <5FBF8E85CA34454794F0F7ECBA79798F379D364859@HQMAIL04.nvidia.com>
+  <20120725000901.GA5304@google.com>
+  <5FBF8E85CA34454794F0F7ECBA79798F379D36485E@HQMAIL04.nvidia.com>
+  <20120725224044.GC32378@google.com>
+ <1343289850.26034.79.camel@twins>,<alpine.LFD.2.02.1207261242240.32033@ionos>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 8BIT
+X-Trace: dough.gmane.org 1343337456 1843 80.91.229.3 (26 Jul 2012 21:17:36 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 21:17:36 +0000 (UTC)
+Cc: Tejun Heo <tj@kernel.org>,
+	"linux-kernel@vger.kernel.org" <linux-kernel@vger.kernel.org>,
+	Paul Gortmaker <paul.gortmaker@windriver.com>,
+	Henrique de Moraes Holschuh <ibm-acpi@hmh.eng.br>,
+	Andy Walls <awalls@md.metrocast.net>,
+	Diwakar Tundlam <dtundlam@nvidia.com>,
+	Oleg Nesterov <oleg@redhat.com>, Ingo Molnar <mingo@elte.hu>
+To: Thomas Gleixner <tglx@linutronix.de>,
+	Peter Zijlstra <peterz@infradead.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 23:17:31 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuVR3-0003lR-6R
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 23:17:29 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752790Ab2GZVRW (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 17:17:22 -0400
+Original-Received: from hqemgate04.nvidia.com ([216.228.121.35]:10649 "EHLO
+	hqemgate04.nvidia.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752603Ab2GZVRV convert rfc822-to-8bit (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 17:17:21 -0400
+Original-Received: from hqnvupgp06.nvidia.com (Not Verified[216.228.121.13]) by hqemgate04.nvidia.com
+	id <B5011b39b0001>; Thu, 26 Jul 2012 14:16:11 -0700
+Original-Received: from hqemhub03.nvidia.com ([172.17.108.22])
+  by hqnvupgp06.nvidia.com (PGP Universal service);
+  Thu, 26 Jul 2012 14:16:52 -0700
+X-PGP-Universal: processed;
+	by hqnvupgp06.nvidia.com on Thu, 26 Jul 2012 14:16:52 -0700
+Original-Received: from HQMAIL04.nvidia.com ([172.20.150.117]) by hqemhub03.nvidia.com
+ ([172.20.150.15]) with mapi; Thu, 26 Jul 2012 14:16:52 -0700
+Thread-Topic: [PATCH 1/1] kthread: disable preemption during complete()
+Thread-Index: Ac1rHCNq0j2OYZo9SViAVcLPid3/VQAVRVV6
+In-Reply-To: <alpine.LFD.2.02.1207261242240.32033@ionos>
+Accept-Language: en-US
+Content-Language: en-US
+X-MS-Has-Attach: 
+X-MS-TNEF-Correlator: 
+acceptlanguage: en-US
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333893
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333893>
+
+> > tglx has patches that make the kthread create/destroy stuff from hotplug
+> > go away.. that seems like the better approach.
+
+> Right. That cpu hotplug setup/teardown stuff is ugly.
+
+If that stuff gets removed complete that's great. The only change I'm aware of right now is the workqueue one: http://thread.gmane.org/gmane.linux.kernel/1329164
+
+> > The main thing is avoiding the wakeup preemption from the complete()
+> > because we're going to sleep right after anyway.
+
+You are very likely to be preempted by the complete(), since the newly created thread has a relatively high vruntime.
+
+> > The comment doesn't really make that clear.
+
+> Right, the comment is crap. It has nothing to do with kthread_bind()
+> and stuff. The whole purpose is to avoid the pointless preemption
+> after wakeup.
+
+The only case I want to solve is the kthread_bind()->wait_task_inactive() scenario. On our platforms this patch reduces average cpu_up() time from about 9ms to 8ms, but max time goes down from 37ms to 8.5ms. cpu_up() latency becomes much more predictable.
+
+
+PeterB--
+To unsubscribe from this list: send the line "unsubscribe linux-kernel" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+Please read the FAQ at  http://www.tux.org/lkml/
+

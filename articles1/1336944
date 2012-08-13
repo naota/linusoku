@@ -1,0 +1,109 @@
+Path: news.gmane.org!not-for-mail
+From: Carlos Alberto Lopez Perez <clopez@igalia.com>
+Newsgroups: gmane.linux.drivers.platform.x86.devel,gmane.linux.kernel
+Subject: [PATCH] classmate-laptop: always call input_sync() after input_report_switch()
+Date: Thu,  2 Aug 2012 19:50:21 +0200
+Lines: 54
+Approved: news@gmane.org
+Message-ID: <1343929821-18054-1-git-send-email-clopez@igalia.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343929853 26119 80.91.229.3 (2 Aug 2012 17:50:53 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 2 Aug 2012 17:50:53 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org
+To: Thadeu Lima de Souza Cascardo <cascardo@holoscopio.com>,
+	Daniel Oliveira Nascimento <don@syst.com.br>,
+	Matthew Garrett <mjg@redhat.com>,
+	platform-driver-x86@vger.kernel.org
+Original-X-From: platform-driver-x86-owner@vger.kernel.org Thu Aug 02 19:50:53 2012
+Return-path: <platform-driver-x86-owner@vger.kernel.org>
+Envelope-to: gldpxd-platform-driver-x86@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <platform-driver-x86-owner@vger.kernel.org>)
+	id 1SwzXw-0001r5-MD
+	for gldpxd-platform-driver-x86@plane.gmane.org; Thu, 02 Aug 2012 19:50:53 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753658Ab2HBRuv (ORCPT
+	<rfc822;gldpxd-platform-driver-x86@m.gmane.org>);
+	Thu, 2 Aug 2012 13:50:51 -0400
+Original-Received: from smtp3.mundo-r.com ([212.51.32.191]:8512 "EHLO smtp4.mundo-r.com"
+	rhost-flags-OK-OK-OK-FAIL) by vger.kernel.org with ESMTP
+	id S1753302Ab2HBRuu (ORCPT
+	<rfc822;platform-driver-x86@vger.kernel.org>);
+	Thu, 2 Aug 2012 13:50:50 -0400
+X-IronPort-Anti-Spam-Filtered: true
+X-IronPort-Anti-Spam-Result: AvwEAK69GlBbdWOb/2dsb2JhbABFuRmBB4JOUoE+ARKIEb0/kk4DlUeJK4ZigmE
+X-IronPort-AV: E=Sophos;i="4.77,702,1336341600"; 
+   d="scan'208";a="953172518"
+Original-Received: from fanzine.igalia.com ([91.117.99.155])
+  by smtp4.mundo-r.com with ESMTP; 02 Aug 2012 19:50:26 +0200
+Original-Received: from maestria.local.igalia.com ([192.168.10.14] helo=mail.igalia.com)
+	by fanzine.igalia.com with esmtps 
+	(Cipher TLS1.0:RSA_AES_256_CBC_SHA1:32) (Exim)
+	id 1SwzXW-0001so-SI; Thu, 02 Aug 2012 19:50:26 +0200
+Original-Received: from ip149.dynamic.igalia.com ([192.168.10.149] helo=trinity.local.igalia.com)
+	by mail.igalia.com with esmtp (Exim)
+	id 1SwzXW-0005nx-MO; Thu, 02 Aug 2012 19:50:26 +0200
+X-Mailer: git-send-email 1.7.10.4
+Original-Sender: platform-driver-x86-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <platform-driver-x86.vger.kernel.org>
+X-Mailing-List: platform-driver-x86@vger.kernel.org
+Xref: news.gmane.org gmane.linux.drivers.platform.x86.devel:3706 gmane.linux.kernel:1336944
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336944>
+
+Due to commit cdda911c34006f1089f3c87b1a1f31ab3a4722f2 evdev only
+becomes readable when the buffer contains an EV_SYN/SYN_REPORT event.
+
+So in order to read the tablet sensor data as it happens we need to
+ensure that we always call input_sync() after input_report_switch()
+
+Signed-off-by: Carlos Alberto Lopez Perez <clopez@igalia.com>
+---
+ drivers/platform/x86/classmate-laptop.c |   12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/platform/x86/classmate-laptop.c b/drivers/platform/x86/classmate-laptop.c
+index 2ca7dd1..0667aa9 100644
+--- a/drivers/platform/x86/classmate-laptop.c
++++ b/drivers/platform/x86/classmate-laptop.c
+@@ -723,8 +723,10 @@ static void cmpc_tablet_handler(struct acpi_device *dev, u32 event)
+ 	struct input_dev *inputdev = dev_get_drvdata(&dev->dev);
+ 
+ 	if (event == 0x81) {
+-		if (ACPI_SUCCESS(cmpc_get_tablet(dev->handle, &val)))
++		if (ACPI_SUCCESS(cmpc_get_tablet(dev->handle, &val))) {
+ 			input_report_switch(inputdev, SW_TABLET_MODE, !val);
++			input_sync(inputdev);
++		}
+ 	}
+ }
+ 
+@@ -737,8 +739,10 @@ static void cmpc_tablet_idev_init(struct input_dev *inputdev)
+ 	set_bit(SW_TABLET_MODE, inputdev->swbit);
+ 
+ 	acpi = to_acpi_device(inputdev->dev.parent);
+-	if (ACPI_SUCCESS(cmpc_get_tablet(acpi->handle, &val)))
++	if (ACPI_SUCCESS(cmpc_get_tablet(acpi->handle, &val))) {
+ 		input_report_switch(inputdev, SW_TABLET_MODE, !val);
++		input_sync(inputdev);
++	}
+ }
+ 
+ static int cmpc_tablet_add(struct acpi_device *acpi)
+@@ -757,8 +761,10 @@ static int cmpc_tablet_resume(struct device *dev)
+ 	struct input_dev *inputdev = dev_get_drvdata(dev);
+ 
+ 	unsigned long long val = 0;
+-	if (ACPI_SUCCESS(cmpc_get_tablet(to_acpi_device(dev)->handle, &val)))
++	if (ACPI_SUCCESS(cmpc_get_tablet(to_acpi_device(dev)->handle, &val))) {
+ 		input_report_switch(inputdev, SW_TABLET_MODE, !val);
++		input_sync(inputdev);
++	}
+ 	return 0;
+ }
+ 
+-- 
+1.7.10.4
+

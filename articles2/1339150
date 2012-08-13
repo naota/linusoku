@@ -1,0 +1,220 @@
+Path: news.gmane.org!not-for-mail
+From: Jiang Liu <liuj97@gmail.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.pci
+Subject: [RFC PATCH v1 08/22] PCI: introduce hotplug safe search interfaces for PCI bus/device
+Date: Wed,  8 Aug 2012 00:10:48 +0800
+Lines: 153
+Approved: news@gmane.org
+Message-ID: <1344355862-2726-9-git-send-email-jiang.liu@huawei.com>
+References: <1344355862-2726-1-git-send-email-jiang.liu@huawei.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344356417 10982 80.91.229.3 (7 Aug 2012 16:20:17 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 16:20:17 +0000 (UTC)
+Cc: Jiang Liu <jiang.liu@huawei.com>,
+	Taku Izumi <izumi.taku@jp.fujitsu.com>,
+	"Rafael J . Wysocki" <rjw@sisk.pl>,
+	Yijing Wang <wangyijing@huawei.com>,
+	Xinwei Hu <huxinwei@huawei.com>, linux-kernel@vger.kernel.org,
+	linux-pci@vger.kernel.org, Jiang Liu <liuj97@gmail.com>
+To: Bjorn Helgaas <bhelgaas@google.com>,
+	Don Dutile <ddutile@redhat.com>,
+	Yinghai Lu <yinghai@kernel.org>,
+	Greg KH <gregkh@linuxfoundation.org>,
+	Kenji Kaneshige <kaneshige.kenji@jp.fujitsu.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 18:20:13 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SymVr-0008B2-DE
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 18:20:07 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755581Ab2HGQTx (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 12:19:53 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:51364 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752163Ab2HGQTt (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 12:19:49 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so4529963pbb.19
+        for <multiple recipients>; Tue, 07 Aug 2012 09:19:49 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=VmsGa5C1MHJ7ZUYWR+9ciJAAZw3HVDEHv1dCk5dCUh8=;
+        b=nCbA23NTD53d8BauB7eJLJsSKifv+WEkt6kJb8b+CHB14ri/4QSRMQ3my2aoCrKIV2
+         8d4XhChnmjsGhKMnAVUlBKZsJHsGCmbAOAyTE/rrkdFc2wxv+6gJ341TvNS57kLFkKXC
+         jAJuAmZ/FquCwaBHmyKTbeJpabq1B1+t6WPeJD6FwRdIXFk+tqoRZn5hfQMmz7YRf8eU
+         CFsO3FVZaK2J675nyqcIv6nuBPPwXq9Ubp6nTCpriVV5TRqohHEQlH4pfpwX8ezkOH3L
+         ALW7+Zky2Xlp+Yq9Uz5wEr2rd4vbJGuxPu1Ju0tzRDOEA2z1hU5F5XLq11acqkJWGmBQ
+         mDsg==
+Original-Received: by 10.68.220.193 with SMTP id py1mr29427829pbc.4.1344356389668;
+        Tue, 07 Aug 2012 09:19:49 -0700 (PDT)
+Original-Received: from localhost.localdomain ([58.250.81.2])
+        by mx.google.com with ESMTPS id pt2sm11429362pbb.58.2012.08.07.09.19.41
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 09:19:49 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1344355862-2726-1-git-send-email-jiang.liu@huawei.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339150 gmane.linux.kernel.pci:16957
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339150>
+
+Function pci_find_bus() is not hotplug safe because it doesn't hold any
+reference on the returned bus, so the bus may be destroyed by hotplug
+operations just after returning from pci_find_bus.
+
+This patch introduces a hotplug safe interface to get and lock a specific
+PCI bus. It also provides several help interfaces to reduce code complexity.
+
+Signed-off-by: Jiang Liu <liuj97@gmail.com>
+---
+ drivers/pci/bus.c    |   34 ++++++++++++++++++++++++++++++++++
+ drivers/pci/search.c |   44 ++++++++++++++++++++++++++++++++++----------
+ include/linux/pci.h  |   10 ++++++++++
+ 3 files changed, 78 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/pci/bus.c b/drivers/pci/bus.c
+index aa25fcf..b6aacaa 100644
+--- a/drivers/pci/bus.c
++++ b/drivers/pci/bus.c
+@@ -426,6 +426,40 @@ void pci_bus_change_state(struct pci_bus *bus, int old, int new, bool unlock)
+ }
+ EXPORT_SYMBOL(pci_bus_change_state);
+ 
++struct pci_bus *__pci_get_and_lock_bus(int domain, int busnr, int states)
++{
++	struct pci_bus *bus;
++
++	bus = pci_get_bus(domain, busnr);
++	if (bus && pci_bus_lock_states(bus, states) < 0) {
++		pci_bus_put(bus);
++		bus = NULL;
++	}
++
++	return bus;
++}
++EXPORT_SYMBOL(__pci_get_and_lock_bus);
++
++struct pci_bus *pci_lock_subordinate(struct pci_dev *dev, int states)
++{
++	struct pci_bus *bus = dev->subordinate;
++
++	if (bus && pci_bus_lock_states(bus, states) > 0)
++		return bus;
++
++	return NULL;
++}
++EXPORT_SYMBOL(pci_lock_subordinate);
++
++void pci_unlock_and_put_bus(struct pci_bus *bus)
++{
++	if (bus) {
++		pci_bus_unlock(bus);
++		pci_bus_put(bus);
++	}
++}
++EXPORT_SYMBOL(pci_unlock_and_put_bus);
++
+ EXPORT_SYMBOL(pci_bus_alloc_resource);
+ EXPORT_SYMBOL_GPL(pci_bus_add_device);
+ EXPORT_SYMBOL(pci_bus_add_devices);
+diff --git a/drivers/pci/search.c b/drivers/pci/search.c
+index f1147a7..c0a8a2b 100644
+--- a/drivers/pci/search.c
++++ b/drivers/pci/search.c
+@@ -69,6 +69,35 @@ static struct pci_bus *pci_do_find_bus(struct pci_bus *bus, unsigned char busnr)
+ }
+ 
+ /**
++ * pci_get_bus - get PCI bus from a given domain and bus number
++ * @domain: number of PCI domain to search
++ * @busnr: number of desired PCI bus
++ *
++ * Given a PCI bus number and domain number, the desired PCI bus is located
++ * in the global list of PCI buses. If the bus is found, a reference count
++ * is held on the returned PCI bus. If no bus is found, %NULL is returned.
++ */
++struct pci_bus *pci_get_bus(int domain, int busnr)
++{
++	struct pci_bus *bus;
++	struct pci_bus *tmp_bus = NULL;
++
++	down_read(&pci_bus_sem);
++	list_for_each_entry(bus, &pci_root_buses, node)
++		if (pci_domain_nr(bus) == domain) {
++			tmp_bus = pci_do_find_bus(bus, busnr);
++			if (tmp_bus) {
++				pci_bus_get(tmp_bus);
++				break;
++			}
++		}
++	up_read(&pci_bus_sem);
++
++	return tmp_bus;
++}
++EXPORT_SYMBOL(pci_get_bus);
++
++/**
+  * pci_find_bus - locate PCI bus from a given domain and bus number
+  * @domain: number of PCI domain to search
+  * @busnr: number of desired PCI bus
+@@ -79,17 +108,12 @@ static struct pci_bus *pci_do_find_bus(struct pci_bus *bus, unsigned char busnr)
+  */
+ struct pci_bus * pci_find_bus(int domain, int busnr)
+ {
+-	struct pci_bus *bus = NULL;
+-	struct pci_bus *tmp_bus;
++	struct pci_bus *bus;
+ 
+-	while ((bus = pci_find_next_bus(bus)) != NULL)  {
+-		if (pci_domain_nr(bus) != domain)
+-			continue;
+-		tmp_bus = pci_do_find_bus(bus, busnr);
+-		if (tmp_bus)
+-			return tmp_bus;
+-	}
+-	return NULL;
++	bus = pci_get_bus(domain, busnr);
++	pci_bus_put(bus);
++
++	return bus;
+ }
+ 
+ /**
+diff --git a/include/linux/pci.h b/include/linux/pci.h
+index e2ef517..9e52e88 100644
+--- a/include/linux/pci.h
++++ b/include/linux/pci.h
+@@ -488,6 +488,15 @@ extern int pci_bus_lock_states(struct pci_bus *bus, int states);
+ extern void pci_bus_unlock(struct pci_bus *bus);
+ extern void pci_bus_change_state(struct pci_bus *bus, int new, int old,
+ 				 bool unlock);
++extern struct pci_bus *pci_lock_subordinate(struct pci_dev *dev, int states);
++extern struct pci_bus *__pci_get_and_lock_bus(int domain, int busnr,
++					      int states);
++extern void pci_unlock_and_put_bus(struct pci_bus *bus);
++
++static inline struct pci_bus *pci_get_and_lock_bus(int domain, int busnr)
++{
++	return __pci_get_and_lock_bus(domain, busnr, PCI_BUS_STATE_WORKING);
++}
+ 
+ #define pci_bus_b(n)	list_entry(n, struct pci_bus, node)
+ #define to_pci_bus(n)	container_of(n, struct pci_bus, dev)
+@@ -734,6 +743,7 @@ void pcibios_bus_to_resource(struct pci_dev *dev, struct resource *res,
+ 			     struct pci_bus_region *region);
+ void pcibios_scan_specific_bus(int busn);
+ extern struct pci_bus *pci_find_bus(int domain, int busnr);
++struct pci_bus *pci_get_bus(int domain, int busnr);
+ void pci_bus_add_devices(const struct pci_bus *bus);
+ struct pci_bus *pci_scan_bus_parented(struct device *parent, int bus,
+ 				      struct pci_ops *ops, void *sysdata);
+-- 
+1.7.9.5
+

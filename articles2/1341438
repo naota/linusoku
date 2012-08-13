@@ -1,0 +1,132 @@
+Path: news.gmane.org!not-for-mail
+From: "Arokux B." <arokux@gmail.com>
+Newsgroups: gmane.linux.kbuild.devel,gmane.linux.kernel
+Subject: Failure while make modules_install if kmod was compiled with
+ --with-rootprefix set
+Date: Fri, 10 Aug 2012 23:50:07 +0200
+Lines: 77
+Approved: news@gmane.org
+Message-ID: <CAPNxggbrC7cKXYTKk=ivDL2ZT2w+5G4PACH1YT7iK-ZNk7twRQ@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1344635419 4227 80.91.229.3 (10 Aug 2012 21:50:19 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 21:50:19 +0000 (UTC)
+Cc: linux-kbuild@vger.kernel.org, linux-kernel@vger.kernel.org
+To: mmarek@suse.cz
+Original-X-From: linux-kbuild-owner@vger.kernel.org Fri Aug 10 23:50:18 2012
+Return-path: <linux-kbuild-owner@vger.kernel.org>
+Envelope-to: glkd-linux-kbuild@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kbuild-owner@vger.kernel.org>)
+	id 1Szx5x-0004Pi-KG
+	for glkd-linux-kbuild@plane.gmane.org; Fri, 10 Aug 2012 23:50:13 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1758086Ab2HJVuL (ORCPT <rfc822;glkd-linux-kbuild@m.gmane.org>);
+	Fri, 10 Aug 2012 17:50:11 -0400
+Original-Received: from mail-lb0-f174.google.com ([209.85.217.174]:58014 "EHLO
+	mail-lb0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756370Ab2HJVuK (ORCPT
+	<rfc822;linux-kbuild@vger.kernel.org>);
+	Fri, 10 Aug 2012 17:50:10 -0400
+Original-Received: by lbbgj3 with SMTP id gj3so431691lbb.19
+        for <multiple recipients>; Fri, 10 Aug 2012 14:50:07 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=mime-version:date:message-id:subject:from:to:cc:content-type;
+        bh=TQb1qedN5X5oksFlp30MrqT4PDx4wnfc6O8sa52Fa+Y=;
+        b=YhGLM1hoB5IDF8yXo/eAoudK2Gfwl8Pyhs6aCjwAiog4MG+zztgejudID9+7xKasYQ
+         5sqdhMP+PVaySuBoG1WuUHxxMc5tjUsWn7RAYhBJyDsuqsQ32iFB8rKIYacNepSGhksj
+         /7ld9ierdG7zfPqMHDWIcQUKQkTKT93/DT1l/xk8RHR2Q1LbGqj6fdF2m3pBrUtN4iZj
+         9p9UMciA7AGrE1ZkOxmCn+7AAj+3q+Kyf/n47OBjSeF1y0ls8Z5A+UBXpQ3v6oMQRRmZ
+         jDmMZ6myWAaRmRf2Iia7jj8+a8AtIQLE6s58Yn/+Dh9bn6Ogc3XbBKdCAP19TDNZwUW8
+         g9vQ==
+Original-Received: by 10.152.111.200 with SMTP id ik8mr4287876lab.15.1344635407819;
+ Fri, 10 Aug 2012 14:50:07 -0700 (PDT)
+Original-Received: by 10.114.1.161 with HTTP; Fri, 10 Aug 2012 14:50:07 -0700 (PDT)
+Original-Sender: linux-kbuild-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kbuild.vger.kernel.org>
+X-Mailing-List: linux-kbuild@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kbuild.devel:8522 gmane.linux.kernel:1341438
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341438>
+
+Dear Mr. Marek, dear all,
+
+I have detected a hidden failure while building the kernel. If
+--with-rootprefix is set for kmod, then depmod will look for modules
+installed at the location $ROOTPREFIX/lib/modules/<version>. The
+kernel build system does not know anything about $ROOTPREFIX, and so
+the wrong directory is created for the test if the hack is needed for
+an older versin of depmod at scripts/depmod.sh:19 mkdir -p
+"$tmp_dir/lib/modules/$KERNELRELEASE". That is why "$DEPMOD" -b
+"$tmp_dir" $KERNELRELEASE will always fail and kernel build system
+will think that the hack is always needed and depmod_hack_needed will
+always be true. After that the created symlink is wrong since it also
+does not contain $ROOTPREFIX, which depmod will preprend. That is why
+depmod will fail.
+
+To cure the problem an additional variable $MOD_ROOT_PREFIX can be
+introduced. With the help of this variable the paths in the
+scripts/depmod.sh are parametrized. This variable should be set to the
+same value which was passed to --with-rootprefix while compilation of
+kmod. Example: if  --with-rootprefix is set to /usr and the modules
+should be installed at the location /home/john, then the the following
+make call should be issued: make INSTALL_MOD_PATH=/home/john
+$MOD_ROOT_PREFIX=/usr. After that the modules will be installed at
+/home/john/usr. However should be also added to other places where the
+actuall installing takes place, and so I do not this this solution is
+optimal, nevertheless, please find the patch for depmod.sh at the end
+of this e-mail.
+
+A more superior solution could be probably a new option for depmod
+which would allow an overwriting of the $ROOTPREFIX. This option can
+be used in depmod.sh then to overwrite $ROOTPREFIX with an empty
+string.
+
+I was unsure as of which solution is better if any at all and so such
+a lengthy e-mail...
+
+With kind regards,
+
+Arokux
+
+
+diff --git a/scripts/depmod.sh b/scripts/depmod.sh
+index 2ae4817..87a6e42 100755
+--- a/scripts/depmod.sh
++++ b/scripts/depmod.sh
+@@ -16,16 +16,18 @@ fi
+ # numbers, so we cheat with a symlink here
+ depmod_hack_needed=true
+ tmp_dir=$(mktemp -d ${TMPDIR:-/tmp}/depmod.XXXXXX)
+-mkdir -p "$tmp_dir/lib/modules/$KERNELRELEASE"
++mkdir -p "$tmp_dir/$MOD_ROOT_PREFIX/lib/modules/$KERNELRELEASE"
++"$DEPMOD" -b "$tmp_dir" $KERNELRELEASE
++echo hello
+ if "$DEPMOD" -b "$tmp_dir" $KERNELRELEASE 2>/dev/null; then
+-       if test -e "$tmp_dir/lib/modules/$KERNELRELEASE/modules.dep" -o \
+-               -e "$tmp_dir/lib/modules/$KERNELRELEASE/modules.dep.bin"; then
++       if test -e
+"$tmp_dir/$MOD_ROOT_PREFIX/lib/modules/$KERNELRELEASE/modules.dep" -o
+\
++               -e
+"$tmp_dir/$MOD_ROOT_PREFIX/lib/modules/$KERNELRELEASE/modules.dep.bin";
+then
+                depmod_hack_needed=false
+        fi
+ fi
+ rm -rf "$tmp_dir"
+ if $depmod_hack_needed; then
+-       symlink="$INSTALL_MOD_PATH/lib/modules/99.98.$KERNELRELEASE"
++       symlink="$INSTALL_MOD_PATH/$MOD_ROOT_PREFIX/lib/modules/99.98.$KERNELRELEASE"
+        ln -s "$KERNELRELEASE" "$symlink"
+        KERNELRELEASE=99.98.$KERNELRELEASE
+ fi
+--
+To unsubscribe from this list: send the line "unsubscribe linux-kbuild" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

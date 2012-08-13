@@ -1,0 +1,118 @@
+Path: news.gmane.org!not-for-mail
+From: Stanislav Kinsbursky <skinsbursky@parallels.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.nfs,gmane.linux.openvz.devel
+Subject: [PATCH v2 11/15] LockD: manage grace list per network namespace
+Date: Wed, 25 Jul 2012 16:57:13 +0400
+Lines: 72
+Approved: news@gmane.org
+Message-ID: <20120725125713.24376.40630.stgit@localhost.localdomain>
+References: <20120725125258.24376.82525.stgit@localhost.localdomain>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343221145 21469 80.91.229.3 (25 Jul 2012 12:59:05 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 12:59:05 +0000 (UTC)
+Cc: linux-nfs@vger.kernel.org, Trond.Myklebust@netapp.com,
+	linux-kernel@vger.kernel.org, devel@openvz.org
+To: bfields@fieldses.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 14:59:04 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su1B3-00046P-DG
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 14:58:57 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932979Ab2GYM6k (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 08:58:40 -0400
+Original-Received: from mailhub.sw.ru ([195.214.232.25]:4547 "EHLO relay.sw.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1756715Ab2GYM6i (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 08:58:38 -0400
+Original-Received: from localhost.localdomain ([10.30.21.131])
+	by relay.sw.ru (8.13.4/8.13.4) with ESMTP id q6PCwQYi027917;
+	Wed, 25 Jul 2012 16:58:27 +0400 (MSK)
+In-Reply-To: <20120725125258.24376.82525.stgit@localhost.localdomain>
+User-Agent: StGit/0.16
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332965 gmane.linux.nfs:51112 gmane.linux.openvz.devel:1896
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332965>
+
+Signed-off-by: Stanislav Kinsbursky <skinsbursky@parallels.com>
+---
+ fs/lockd/grace.c |   14 +++++++++++---
+ fs/lockd/netns.h |    1 +
+ fs/lockd/svc.c   |    1 +
+ 3 files changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/fs/lockd/grace.c b/fs/lockd/grace.c
+index 183cc1f..8dbaff7 100644
+--- a/fs/lockd/grace.c
++++ b/fs/lockd/grace.c
+@@ -4,8 +4,10 @@
+ 
+ #include <linux/module.h>
+ #include <linux/lockd/bind.h>
++#include <net/net_namespace.h>
++
++#include "netns.h"
+ 
+-static LIST_HEAD(grace_list);
+ static DEFINE_SPINLOCK(grace_lock);
+ 
+ /**
+@@ -21,8 +23,11 @@ static DEFINE_SPINLOCK(grace_lock);
+  */
+ void locks_start_grace(struct lock_manager *lm)
+ {
++	struct net *net = &init_net;
++	struct lockd_net *ln = net_generic(net, lockd_net_id);
++
+ 	spin_lock(&grace_lock);
+-	list_add(&lm->list, &grace_list);
++	list_add(&lm->list, &ln->grace_list);
+ 	spin_unlock(&grace_lock);
+ }
+ EXPORT_SYMBOL_GPL(locks_start_grace);
+@@ -54,6 +59,9 @@ EXPORT_SYMBOL_GPL(locks_end_grace);
+  */
+ int locks_in_grace(void)
+ {
+-	return !list_empty(&grace_list);
++	struct net *net = &init_net;
++	struct lockd_net *ln = net_generic(net, lockd_net_id);
++
++	return !list_empty(&ln->grace_list);
+ }
+ EXPORT_SYMBOL_GPL(locks_in_grace);
+diff --git a/fs/lockd/netns.h b/fs/lockd/netns.h
+index e78650c..4eee248 100644
+--- a/fs/lockd/netns.h
++++ b/fs/lockd/netns.h
+@@ -11,6 +11,7 @@ struct lockd_net {
+ 
+ 	struct delayed_work grace_period_end;
+ 	struct lock_manager lockd_manager;
++	struct list_head grace_list;
+ };
+ 
+ extern int lockd_net_id;
+diff --git a/fs/lockd/svc.c b/fs/lockd/svc.c
+index a9c436b..834dfe2 100644
+--- a/fs/lockd/svc.c
++++ b/fs/lockd/svc.c
+@@ -596,6 +596,7 @@ static int lockd_init_net(struct net *net)
+ 	struct lockd_net *ln = net_generic(net, lockd_net_id);
+ 
+ 	INIT_DELAYED_WORK(&ln->grace_period_end, grace_ender);
++	INIT_LIST_HEAD(&ln->grace_list);
+ 	return 0;
+ }
+ 
+

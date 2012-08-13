@@ -1,0 +1,87 @@
+Path: news.gmane.org!not-for-mail
+From: Marina Makienko <makienko@ispras.ru>
+Newsgroups: gmane.linux.kernel,gmane.linux.ide
+Subject: [PATCH 06/13] ide: Potential null pointer dereference in generic_ide_resume()
+Date: Thu,  9 Aug 2012 17:55:23 +0400
+Lines: 44
+Approved: news@gmane.org
+Message-ID: <1344520529-19164-4-git-send-email-makienko@ispras.ru>
+References: <1344520529-19164-1-git-send-email-makienko@ispras.ru>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344520916 31933 80.91.229.3 (9 Aug 2012 14:01:56 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 14:01:56 +0000 (UTC)
+Cc: Marina Makienko <makienko@ispras.ru>, linux-ide@vger.kernel.org,
+	linux-kernel@vger.kernel.org, ldv-project@ispras.ru
+To: "David S. Miller" <davem@davemloft.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 09 16:01:56 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzTJD-0008Dc-US
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 09 Aug 2012 16:01:56 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030352Ab2HIOBs (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 10:01:48 -0400
+Original-Received: from smtp.ispras.ru ([83.149.198.202]:52417 "EHLO smtp.ispras.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S964873Ab2HIN7O (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 09:59:14 -0400
+Original-Received: from torvalds.intra.ispras.ru (unknown [83.149.198.253])
+	by smtp.ispras.ru (Postfix) with ESMTP id 502CA5D4046;
+	Thu,  9 Aug 2012 17:23:47 +0400 (MSD)
+X-Mailer: git-send-email 1.7.7
+In-Reply-To: <1344520529-19164-1-git-send-email-makienko@ispras.ru>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340726 gmane.linux.ide:52557
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340726>
+
+he function blk_get_request() can return NULL in some cases. There are
+checks on it if function is called with argumetns one of which is
+GFP_ATOMIC/GFP_NOIO/etc. If system couldn't find request
+blk_get_request() return NULL.
+
+But if there is function call with argument __GFP_WAIT
+the system will wait until get request or the queue becomes
+dead. If something kills the queue, blk_get_request()
+return NULL and next operations will lead to errors.
+
+Found by Linux Driver Verification project (linuxtesting.org).
+
+Signed-off-by: Marina Makienko <makienko@ispras.ru>
+---
+ drivers/ide/ide-pm.c |    6 ++++++
+ 1 files changed, 6 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/ide/ide-pm.c b/drivers/ide/ide-pm.c
+index 9240609..4412f24 100644
+--- a/drivers/ide/ide-pm.c
++++ b/drivers/ide/ide-pm.c
+@@ -19,6 +19,10 @@ int generic_ide_suspend(struct device *dev, pm_message_t mesg)
+ 
+ 	memset(&rqpm, 0, sizeof(rqpm));
+ 	rq = blk_get_request(drive->queue, READ, __GFP_WAIT);
++
++	if (!rq)
++		return -EIO;
++
+ 	rq->cmd_type = REQ_TYPE_PM_SUSPEND;
+ 	rq->special = &rqpm;
+ 	rqpm.pm_step = IDE_PM_START_SUSPEND;
+@@ -59,6 +63,8 @@ int generic_ide_resume(struct device *dev)
+ 
+ 	memset(&rqpm, 0, sizeof(rqpm));
+ 	rq = blk_get_request(drive->queue, READ, __GFP_WAIT);
++	if (!rq)
++		return -EIO;
+ 	rq->cmd_type = REQ_TYPE_PM_RESUME;
+ 	rq->cmd_flags |= REQ_PREEMPT;
+ 	rq->special = &rqpm;
+-- 
+1.7.7
+

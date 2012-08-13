@@ -1,0 +1,90 @@
+Path: news.gmane.org!not-for-mail
+From: Fengguang Wu <fengguang.wu@intel.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.janitors
+Subject: (unknown)
+Date: Thu, 9 Aug 2012 21:54:16 +0800
+Lines: 38
+Approved: news@gmane.org
+Message-ID: <20120809135416.GA13100@localhost>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344520472 27987 80.91.229.3 (9 Aug 2012 13:54:32 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 13:54:32 +0000 (UTC)
+Cc: Dave Peterson <dsp@llnl.gov>, kernel-janitors@vger.kernel.org,
+	Doug Thompson <dougthompson@xmission.com>,
+	linux-edac@vger.kernel.org, linux-kernel@vger.kernel.org
+To: Mauro Carvalho Chehab <mchehab@redhat.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 09 15:54:31 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzTC2-0004Gc-Qn
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 09 Aug 2012 15:54:31 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932729Ab2HINyX (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 09:54:23 -0400
+Original-Received: from mga01.intel.com ([192.55.52.88]:30930 "EHLO mga01.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S932262Ab2HINyV (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 09:54:21 -0400
+Original-Received: from fmsmga001.fm.intel.com ([10.253.24.23])
+  by fmsmga101.fm.intel.com with ESMTP; 09 Aug 2012 06:54:19 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.77,739,1336374000"; 
+   d="scan'208";a="195441380"
+Original-Received: from unknown (HELO wfg-t420.sh.intel.com) ([10.255.20.199])
+  by fmsmga001.fm.intel.com with ESMTP; 09 Aug 2012 06:54:17 -0700
+Original-Received: from wfg by wfg-t420.sh.intel.com with local (Exim 4.77)
+	(envelope-from <fengguang.wu@intel.com>)
+	id 1SzTBo-0003QW-7x; Thu, 09 Aug 2012 21:54:16 +0800
+Content-Disposition: inline
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340713 gmane.linux.kernel.janitors:25373
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340713>
+
+Subject: possible double free in edac_mc_alloc()
+Reply-To: 
+User-Agent: Heirloom mailx 12.5 6/20/10
+
+Hi,
+
+coccinelle warns about:
+
++ drivers/edac/edac_mc.c:429:9-23: ERROR: reference preceded by free on line 429
+
+and that line does look strange: the 'i' seems like a temporary value
+used in previous loops, and it won't change at all in the current
+loop. Which means the same mci->csrows[i] get freed once and again.
+It might also do double free for the previous kfree(csr) line.
+
+vim +429 drivers/edac/edac_mc.c
+
+   416         if (mci->dimms) {
+   417                 for (i = 0; i < tot_dimms; i++)
+   418                         kfree(mci->dimms[i]);
+   419                 kfree(mci->dimms);
+   420         }
+   421         if (mci->csrows) {
+   422                 for (chn = 0; chn < tot_channels; chn++) {
+   423                         csr = mci->csrows[chn];
+   424                         if (csr) {
+   425                                 for (chn = 0; chn < tot_channels; chn++)
+   426						kfree(csr->channels[chn]);
+   427					kfree(csr);
+   428				}
+ > 429				kfree(mci->csrows[i]);
+   430			}
+   431			kfree(mci->csrows);
+   432		}
+
+---
+0-DAY kernel build testing backend         Open Source Technology Centre
+Fengguang Wu <wfg@linux.intel.com>                     Intel Corporation

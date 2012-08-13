@@ -1,0 +1,114 @@
+Path: news.gmane.org!not-for-mail
+From: Michal Hocko <mhocko@suse.cz>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [patch v2] hugetlb: correct page offset index for sharing pmd
+Date: Mon, 6 Aug 2012 15:24:10 +0200
+Lines: 50
+Approved: news@gmane.org
+Message-ID: <20120806132410.GA6150@dhcp22.suse.cz>
+References: <CAJd=RBC9HhKh5Q0-yXi3W0x3guXJPFz4BNsniyOFmp0TjBdFqg@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344259459 4717 80.91.229.3 (6 Aug 2012 13:24:19 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 13:24:19 +0000 (UTC)
+Cc: Mel Gorman <mgorman@suse.de>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Linux-MM <linux-mm@kvack.org>, LKML <linux-kernel@vger.kernel.org>
+To: Hillf Danton <dhillf@gmail.com>
+Original-X-From: owner-linux-mm@kvack.org Mon Aug 06 15:24:18 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SyNI9-0006Cu-Og
+	for glkm-linux-mm-2@m.gmane.org; Mon, 06 Aug 2012 15:24:18 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 1EC5B6B0044; Mon,  6 Aug 2012 09:24:15 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id EDBF96B005A; Mon,  6 Aug 2012 09:24:14 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id A2F7E6B005D; Mon,  6 Aug 2012 09:24:14 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx139.postini.com [74.125.245.139])
+	by kanga.kvack.org (Postfix) with SMTP id B2F8B6B0044
+	for <linux-mm@kvack.org>; Mon,  6 Aug 2012 09:24:13 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx139.postini.com ([74.125.244.10]) with SMTP;
+	Mon, 06 Aug 2012 13:24:13 GMT
+Original-Received: from relay1.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 9B06D9FB23;
+	Mon,  6 Aug 2012 15:24:11 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <CAJd=RBC9HhKh5Q0-yXi3W0x3guXJPFz4BNsniyOFmp0TjBdFqg@mail.gmail.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mhocko@suse.cz> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83677 gmane.linux.kernel:1338273
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338273>
+
+On Sat 04-08-12 14:08:31, Hillf Danton wrote:
+> The computation of page offset index is incorrect to be used in scanning
+> prio tree, as huge page offset is required, and is fixed with well
+> defined routine.
+> 
+> Changes from v1
+> 	o s/linear_page_index/linear_hugepage_index/ for clearer code
+> 	o hp_idx variable added for less change
+> 
+> 
+> Signed-off-by: Hillf Danton <dhillf@gmail.com>
+> ---
+> 
+> --- a/arch/x86/mm/hugetlbpage.c	Fri Aug  3 20:34:58 2012
+> +++ b/arch/x86/mm/hugetlbpage.c	Fri Aug  3 20:40:16 2012
+> @@ -62,6 +62,7 @@ static void huge_pmd_share(struct mm_str
+>  {
+>  	struct vm_area_struct *vma = find_vma(mm, addr);
+>  	struct address_space *mapping = vma->vm_file->f_mapping;
+> +	pgoff_t hp_idx;
+>  	pgoff_t idx = ((addr - vma->vm_start) >> PAGE_SHIFT) +
+>  			vma->vm_pgoff;
+
+So we have two indexes now. That is just plain ugly!
+
+>  	struct prio_tree_iter iter;
+> @@ -72,8 +73,10 @@ static void huge_pmd_share(struct mm_str
+>  	if (!vma_shareable(vma, addr))
+>  		return;
+> 
+> +	hp_idx = linear_hugepage_index(vma, addr);
+> +
+>  	mutex_lock(&mapping->i_mmap_mutex);
+> -	vma_prio_tree_foreach(svma, &iter, &mapping->i_mmap, idx, idx) {
+> +	vma_prio_tree_foreach(svma, &iter, &mapping->i_mmap, hp_idx, hp_idx) {
+>  		if (svma == vma)
+>  			continue;
+> 
+> --
+
+-- 
+Michal Hocko
+SUSE Labs
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

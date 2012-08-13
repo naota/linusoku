@@ -1,0 +1,95 @@
+Path: news.gmane.org!not-for-mail
+From: Christoph Hellwig <hch@lst.de>
+Newsgroups: gmane.linux.kernel.virtualization,gmane.comp.emulators.kvm.devel,gmane.linux.kernel
+Subject: Re: [PATCH V5 4/4] virtio-blk: Add REQ_FLUSH and REQ_FUA support
+	to bio path
+Date: Mon, 6 Aug 2012 17:17:31 +0200
+Lines: 22
+Approved: news@gmane.org
+Message-ID: <20120806151731.GA23220@lst.de>
+References: <1343888757-25723-1-git-send-email-asias@redhat.com>
+	<1343888757-25723-5-git-send-email-asias@redhat.com>
+	<20120802062742.GA23573@lst.de> <501A2178.3000906@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344266260 2046 80.91.229.3 (6 Aug 2012 15:17:40 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 15:17:40 +0000 (UTC)
+Cc: Jens Axboe <axboe@kernel.dk>, kvm@vger.kernel.org,
+	"Michael S. Tsirkin" <mst@redhat.com>, linux-kernel@vger.kernel.org,
+	virtualization@lists.linux-foundation.org,
+	Tejun Heo <tj@kernel.org>, Shaohua Li <shli@kernel.org>,
+	Christoph Hellwig <hch@lst.de>
+To: Asias He <asias@redhat.com>
+Original-X-From: virtualization-bounces@lists.linux-foundation.org Mon Aug 06 17:17:36 2012
+Return-path: <virtualization-bounces@lists.linux-foundation.org>
+Envelope-to: glkv-virtualization@gmane.org
+Original-Received: from mail.linuxfoundation.org ([140.211.169.12])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <virtualization-bounces@lists.linux-foundation.org>)
+	id 1SyP3o-00089u-Gd
+	for glkv-virtualization@gmane.org; Mon, 06 Aug 2012 17:17:36 +0200
+Original-Received: from mail.linux-foundation.org (localhost [IPv6:::1])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id 3260E570;
+	Mon,  6 Aug 2012 15:17:35 +0000 (UTC)
+X-Original-To: virtualization@lists.linux-foundation.org
+Delivered-To: virtualization@mail.linuxfoundation.org
+Original-Received: from smtp1.linuxfoundation.org (smtp1.linux-foundation.org
+	[172.17.192.35])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id 77C9D564
+	for <virtualization@lists.linux-foundation.org>;
+	Mon,  6 Aug 2012 15:17:34 +0000 (UTC)
+X-Greylist: from auto-whitelisted by SQLgrey-1.7.6
+Original-Received: from newverein.lst.de (verein.lst.de [213.95.11.211])
+	by smtp1.linuxfoundation.org (Postfix) with ESMTPS id 005DF1FCC6
+	for <virtualization@lists.linux-foundation.org>;
+	Mon,  6 Aug 2012 15:17:33 +0000 (UTC)
+Original-Received: by newverein.lst.de (Postfix, from userid 2407)
+	id 8643F1417E; Mon,  6 Aug 2012 17:17:31 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <501A2178.3000906@redhat.com>
+User-Agent: Mutt/1.5.17 (2007-11-01)
+X-Spam-Status: No, score=-1.9 required=5.0 tests=BAYES_00,T_RP_MATCHES_RCVD
+	autolearn=ham version=3.3.1
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on
+	smtp1.linux-foundation.org
+X-BeenThere: virtualization@lists.linux-foundation.org
+X-Mailman-Version: 2.1.12
+Precedence: list
+List-Id: Linux virtualization <virtualization.lists.linux-foundation.org>
+List-Unsubscribe: <https://lists.linuxfoundation.org/mailman/options/virtualization>,
+	<mailto:virtualization-request@lists.linux-foundation.org?subject=unsubscribe>
+List-Archive: <http://lists.linuxfoundation.org/pipermail/virtualization/>
+List-Post: <mailto:virtualization@lists.linux-foundation.org>
+List-Help: <mailto:virtualization-request@lists.linux-foundation.org?subject=help>
+List-Subscribe: <https://lists.linuxfoundation.org/mailman/listinfo/virtualization>,
+	<mailto:virtualization-request@lists.linux-foundation.org?subject=subscribe>
+Original-Sender: virtualization-bounces@lists.linux-foundation.org
+Errors-To: virtualization-bounces@lists.linux-foundation.org
+Xref: news.gmane.org gmane.linux.kernel.virtualization:16413 gmane.comp.emulators.kvm.devel:95634 gmane.linux.kernel:1338377
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338377>
+
+On Thu, Aug 02, 2012 at 02:43:04PM +0800, Asias He wrote:
+>> Even if it has a payload waiting is highly suboptimal and it should
+>> use a non-blocking sequencing like it is done in the request layer.
+>
+> So, for REQ_FLUSH, what we need is that send out the VIRTIO_BLK_T_FLUSH and 
+> not to wait.
+
+If it's REQ_FLUSH without data a VIRTIO_BLK_T_FLUSH should be sent out only,
+if it's a REQ_FLUSH that has data a VIRTIO_BLK_T_FLUSH should be sent out,
+but instead of waiting for it to finish the I/O completion handler should
+then submit the actual write.
+
+> We still need to wait until the actual write is finished here?
+> Like,
+>
+> REQ_FUA is emulated by:
+> 1. Send the actual write
+> 2. Wait until the actual write is finished
+> 3. Send VIRTIO_BLK_T_FLUSH to device
+> 4. Signal the end of the write to upper layer
+
+Remove step 2 and run step 3 from the I/O completion handler.

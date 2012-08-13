@@ -1,0 +1,112 @@
+Path: news.gmane.org!not-for-mail
+From: Minchan Kim <minchan@kernel.org>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH 2/7] zsmalloc: prevent mappping in interrupt context
+Date: Wed,  8 Aug 2012 15:12:15 +0900
+Lines: 47
+Approved: news@gmane.org
+Message-ID: <1344406340-14128-3-git-send-email-minchan@kernel.org>
+References: <1344406340-14128-1-git-send-email-minchan@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344406270 24633 80.91.229.3 (8 Aug 2012 06:11:10 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 06:11:10 +0000 (UTC)
+Cc: Andrew Morton <akpm@linux-foundation.org>,
+	linux-mm@kvack.org,
+	linux-kernel@vger.kernel.org,
+	Nitin Gupta <ngupta@vflare.org>,
+	Seth Jennings <sjenning@linux.vnet.ibm.com>,
+	Dan Magenheimer <dan.magenheimer@oracle.com>,
+	Konrad Rzeszutek Wilk <konrad@darnok.org>,
+	Minchan Kim <minchan@kernel.org>
+To: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Original-X-From: owner-linux-mm@kvack.org Wed Aug 08 08:11:06 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SyzTu-0005I2-QH
+	for glkm-linux-mm-2@m.gmane.org; Wed, 08 Aug 2012 08:10:58 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id B12196B0070; Wed,  8 Aug 2012 02:10:54 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 986876B005A; Wed,  8 Aug 2012 02:10:54 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 27B576B0069; Wed,  8 Aug 2012 02:10:53 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx145.postini.com [74.125.245.145])
+	by kanga.kvack.org (Postfix) with SMTP id D23316B005A
+	for <linux-mm@kvack.org>; Wed,  8 Aug 2012 02:10:52 -0400 (EDT)
+Original-Received: from LGEMRELSE1Q.lge.com ([156.147.1.111]) by na3sys010amx145.postini.com ([74.125.244.10]) with SMTP;
+	Wed, 08 Aug 2012 06:10:53 GMT
+X-AuditID: 9c93016f-b7b08ae00000790d-f0-502202e96f9e
+Original-Received: from localhost.localdomain ( [10.177.220.67])
+	by LGEMRELSE1Q.lge.com (Symantec Brightmail Gateway) with SMTP id A0.60.30989.9E202205; Wed,  8 Aug 2012 15:10:49 +0900 (KST)
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1344406340-14128-1-git-send-email-minchan@kernel.org>
+X-Brightmail-Tracker: AAAAAA==
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:98.86731/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <minchan@kernel.org> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83797 gmane.linux.kernel:1339824
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339824>
+
+From: Seth Jennings <sjenning@linux.vnet.ibm.com>
+
+Because we use per-cpu mapping areas shared among the
+pools/users, we can't allow mapping in interrupt context
+because it can corrupt another users mappings.
+
+Signed-off-by: Seth Jennings <sjenning@linux.vnet.ibm.com>
+Signed-off-by: Minchan Kim <minchan@kernel.org>
+---
+ drivers/staging/zsmalloc/zsmalloc-main.c |    8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/staging/zsmalloc/zsmalloc-main.c b/drivers/staging/zsmalloc/zsmalloc-main.c
+index 3c83c65..b86133f 100644
+--- a/drivers/staging/zsmalloc/zsmalloc-main.c
++++ b/drivers/staging/zsmalloc/zsmalloc-main.c
+@@ -75,6 +75,7 @@
+ #include <linux/cpumask.h>
+ #include <linux/cpu.h>
+ #include <linux/vmalloc.h>
++#include <linux/hardirq.h>
+ 
+ #include "zsmalloc.h"
+ #include "zsmalloc_int.h"
+@@ -761,6 +762,13 @@ void *zs_map_object(struct zs_pool *pool, unsigned long handle,
+ 
+ 	BUG_ON(!handle);
+ 
++	/*
++	 * Because we use per-cpu mapping areas shared among the
++	 * pools/users, we can't allow mapping in interrupt context
++	 * because it can corrupt another users mappings.
++	 */
++	BUG_ON(in_interrupt());
++
+ 	obj_handle_to_location(handle, &page, &obj_idx);
+ 	get_zspage_mapping(get_first_page(page), &class_idx, &fg);
+ 	class = &pool->size_class[class_idx];
+-- 
+1.7.9.5
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

@@ -1,0 +1,193 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton@redhat.com>
+Newsgroups: gmane.linux.file-systems,gmane.linux.nfs,gmane.linux.kernel
+Subject: [PATCH v4 16/17] vfs: have do_sys_truncate retry once on an ESTALE error
+Date: Thu, 26 Jul 2012 07:55:19 -0400
+Lines: 131
+Approved: news@gmane.org
+Message-ID: <1343303720-11199-17-git-send-email-jlayton@redhat.com>
+References: <1343303720-11199-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343303781 26182 80.91.229.3 (26 Jul 2012 11:56:21 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 11:56:21 +0000 (UTC)
+Cc: linux-fsdevel@vger.kernel.org, linux-nfs@vger.kernel.org,
+	linux-kernel@vger.kernel.org, michael.brantley@deshaw.com,
+	hch@infradead.org, miklos@szeredi.hu, pstaubach@exagrid.com
+To: viro@ZenIV.linux.org.uk
+Original-X-From: linux-fsdevel-owner@vger.kernel.org Thu Jul 26 13:56:18 2012
+Return-path: <linux-fsdevel-owner@vger.kernel.org>
+Envelope-to: lnx-linux-fsdevel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-fsdevel-owner@vger.kernel.org>)
+	id 1SuMfw-0000MD-Mv
+	for lnx-linux-fsdevel@plane.gmane.org; Thu, 26 Jul 2012 13:56:17 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752595Ab2GZLzx (ORCPT <rfc822;lnx-linux-fsdevel@m.gmane.org>);
+	Thu, 26 Jul 2012 07:55:53 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:53878 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752562Ab2GZLzu (ORCPT
+	<rfc822;linux-fsdevel@vger.kernel.org>);
+	Thu, 26 Jul 2012 07:55:50 -0400
+Original-Received: by mail-gh0-f174.google.com with SMTP id r11so1845569ghr.19
+        for <linux-fsdevel@vger.kernel.org>; Thu, 26 Jul 2012 04:55:50 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:x-gm-message-state;
+        bh=MYSInVCIwjU/SfzM9Fbw4oKHKTZ0whMDLLO5QVdfpJE=;
+        b=FkPrjeY5Nbdp6t9u8GZtsK3SeQltgMnuB8qeGc0oXHlNWosiz3CeFoftLBZx7t3jtS
+         UOfYc6pgrx6mqc7dKMPy6ZYb4+e0o7/DeCvHvSpLVdFAIRSu0NJs3ttl/IKXoLy3dWc7
+         qoPbj+wlYDiany86Qf3BPGJ+9JcDspQBPxIGTlAU9bQ5QSAhLCjx2aPu+v9+C4PWbIUI
+         0gBKjJa6mIYF/qq/dBeefg/L8rX+4tbA+xvqU+Yh6AOoaMfhgByE+waCJqKGo3gjUIaA
+         FmOpAXnpyF/hT/Spd9zHbEWZW2Eqlumm6Ku5Ype6/jz3815ZEY8e/K+sbxeB0el8LutM
+         MlTw==
+Original-Received: by 10.101.6.27 with SMTP id j27mr4924939ani.56.1343303750168;
+        Thu, 26 Jul 2012 04:55:50 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-076-182-054-194.nc.res.rr.com. [76.182.54.194])
+        by mx.google.com with ESMTPS id l12sm4436364ank.2.2012.07.26.04.55.48
+        (version=SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 04:55:49 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1343303720-11199-1-git-send-email-jlayton@redhat.com>
+X-Gm-Message-State: ALoCoQkRedxXk9FzY91fOCuczA+cyYHk6J5BG8ah23aXAPBlGBjBqwLa3l/2FEZEiPKM6F/oC7kw
+Original-Sender: linux-fsdevel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-fsdevel.vger.kernel.org>
+X-Mailing-List: linux-fsdevel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.file-systems:66246 gmane.linux.nfs:51138 gmane.linux.kernel:1333590
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333590>
+
+Signed-off-by: Jeff Layton <jlayton@redhat.com>
+---
+ fs/open.c | 92 +++++++++++++++++++++++++++++++++++----------------------------
+ 1 file changed, 51 insertions(+), 41 deletions(-)
+
+diff --git a/fs/open.c b/fs/open.c
+index fea9b0e..a7b94ac 100644
+--- a/fs/open.c
++++ b/fs/open.c
+@@ -66,62 +66,72 @@ static long do_sys_truncate(const char __user *pathname, loff_t length)
+ 	struct path path;
+ 	struct inode *inode;
+ 	int error;
++	unsigned int lookup_flags = LOOKUP_FOLLOW;
++	unsigned int try = 0;
++	char *name;
+ 
+-	error = -EINVAL;
+ 	if (length < 0)	/* sorry, but loff_t says... */
+-		goto out;
++		return -EINVAL;
+ 
+-	error = user_path(pathname, &path);
+-	if (error)
+-		goto out;
+-	inode = path.dentry->d_inode;
++	name = getname_flags(pathname, lookup_flags, NULL);
++	if (IS_ERR(name))
++		return PTR_ERR(name);
+ 
+-	/* For directories it's -EISDIR, for other non-regulars - -EINVAL */
+-	error = -EISDIR;
+-	if (S_ISDIR(inode->i_mode))
+-		goto dput_and_out;
++	do {
++		error = kern_path_at(AT_FDCWD, name, lookup_flags, &path);
++		if (error)
++			break;
++		inode = path.dentry->d_inode;
+ 
+-	error = -EINVAL;
+-	if (!S_ISREG(inode->i_mode))
+-		goto dput_and_out;
++		/* For dirs, -EISDIR. For other non-regulars, -EINVAL */
++		error = -EISDIR;
++		if (S_ISDIR(inode->i_mode))
++			goto dput_and_out;
+ 
+-	error = mnt_want_write(path.mnt);
+-	if (error)
+-		goto dput_and_out;
++		error = -EINVAL;
++		if (!S_ISREG(inode->i_mode))
++			goto dput_and_out;
+ 
+-	error = inode_permission(inode, MAY_WRITE);
+-	if (error)
+-		goto mnt_drop_write_and_out;
++		error = mnt_want_write(path.mnt);
++		if (error)
++			goto dput_and_out;
+ 
+-	error = -EPERM;
+-	if (IS_APPEND(inode))
+-		goto mnt_drop_write_and_out;
++		error = inode_permission(inode, MAY_WRITE);
++		if (error)
++			goto mnt_drop_write_and_out;
+ 
+-	error = get_write_access(inode);
+-	if (error)
+-		goto mnt_drop_write_and_out;
++		error = -EPERM;
++		if (IS_APPEND(inode))
++			goto mnt_drop_write_and_out;
+ 
+-	/*
+-	 * Make sure that there are no leases.  get_write_access() protects
+-	 * against the truncate racing with a lease-granting setlease().
+-	 */
+-	error = break_lease(inode, O_WRONLY);
+-	if (error)
+-		goto put_write_and_out;
++		error = get_write_access(inode);
++		if (error)
++			goto mnt_drop_write_and_out;
+ 
+-	error = locks_verify_truncate(inode, NULL, length);
+-	if (!error)
+-		error = security_path_truncate(&path);
+-	if (!error)
+-		error = do_truncate(path.dentry, length, 0, NULL);
++		/*
++		 * Make sure that there are no leases. get_write_access()
++		 * protects against the truncate racing with a lease-granting
++		 * setlease().
++		 */
++		error = break_lease(inode, O_WRONLY);
++		if (error)
++			goto put_write_and_out;
++
++		error = locks_verify_truncate(inode, NULL, length);
++		if (!error)
++			error = security_path_truncate(&path);
++		if (!error)
++			error = do_truncate(path.dentry, length, 0, NULL);
+ 
+ put_write_and_out:
+-	put_write_access(inode);
++		put_write_access(inode);
+ mnt_drop_write_and_out:
+-	mnt_drop_write(path.mnt);
++		mnt_drop_write(path.mnt);
+ dput_and_out:
+-	path_put(&path);
+-out:
++		path_put(&path);
++		lookup_flags |= LOOKUP_REVAL;
++	} while (retry_estale(error, try++));
++	putname(name);
+ 	return error;
+ }
+ 
+-- 
+1.7.11.2
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

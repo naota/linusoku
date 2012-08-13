@@ -1,0 +1,105 @@
+Path: news.gmane.org!not-for-mail
+From: Theodore Ts'o <tytso@mit.edu>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: Re: [PATCH] random: mix in architectural randomness in extract_buf()
+Date: Fri, 27 Jul 2012 22:39:38 -0400
+Lines: 37
+Approved: news@gmane.org
+Message-ID: <20120728023938.GA3766@thunk.org>
+References: <20120725151000.GA30996@thunk.org>
+ <1343237822-7789-1-git-send-email-hpa@zytor.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343443211 14857 80.91.229.3 (28 Jul 2012 02:40:11 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 28 Jul 2012 02:40:11 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org,
+	Linus Torvalds <torvalds@linux-foundation.org>,
+	Ingo Molnar <mingo@kernel.org>, w@1wt.edu, ewust@umich.edu,
+	zakir@umich.edu, greg@kroah.com, mpm@selenic.com,
+	nadiah@cs.ucsd.edu, jhalderm@umich.edu, tglx@linutronix.de,
+	davem@davemloft.net, stable@vger.kernel.org,
+	DJ Johnston <dj.johnston@intel.com>,
+	"H. Peter Anvin" <hpa@linux.intel.com>
+To: "H. Peter Anvin" <hpa@zytor.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Jul 28 04:40:08 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Suwwo-0005KU-Tt
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 28 Jul 2012 04:40:07 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752897Ab2G1Cj6 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 22:39:58 -0400
+Original-Received: from li9-11.members.linode.com ([67.18.176.11]:41746 "EHLO
+	imap.thunk.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752705Ab2G1Cj4 (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 22:39:56 -0400
+Original-Received: from root (helo=closure.thunk.org)
+	by imap.thunk.org with local-esmtp (Exim 4.72)
+	(envelope-from <tytso@thunk.org>)
+	id 1SuwwM-0003Nj-M4; Sat, 28 Jul 2012 02:39:38 +0000
+Original-Received: by closure.thunk.org (Postfix, from userid 15806)
+	id 5AAD7240674; Fri, 27 Jul 2012 22:39:38 -0400 (EDT)
+Mail-Followup-To: Theodore Ts'o <tytso@mit.edu>,
+	"H. Peter Anvin" <hpa@zytor.com>, linux-kernel@vger.kernel.org,
+	Linus Torvalds <torvalds@linux-foundation.org>,
+	Ingo Molnar <mingo@kernel.org>, w@1wt.edu, ewust@umich.edu,
+	zakir@umich.edu, greg@kroah.com, mpm@selenic.com,
+	nadiah@cs.ucsd.edu, jhalderm@umich.edu, tglx@linutronix.de,
+	davem@davemloft.net, stable@vger.kernel.org,
+	DJ Johnston <dj.johnston@intel.com>,
+	"H. Peter Anvin" <hpa@linux.intel.com>
+Content-Disposition: inline
+In-Reply-To: <1343237822-7789-1-git-send-email-hpa@zytor.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-SA-Exim-Connect-IP: <locally generated>
+X-SA-Exim-Mail-From: tytso@thunk.org
+X-SA-Exim-Scanned: No (on imap.thunk.org); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334585 gmane.linux.kernel.stable:28911
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334585>
+
+Ok, I'll add this patch to the random tree.  I've modified the commit
+message a bit since the speed advertisement of RDRAND is rather
+pointless --- processes aren't generating session keys or long term
+keys at a high rate, and programs can't count on /dev/random being
+super fast and having unlimited entropy, since for most platforms and
+even most x86 CPU's deployed in service today, this isn't true --- and
+making your userspace program depond upon /dev/random in such a way
+that it only works on Ivy Bridge CPU's might be good for Intel from a
+vendor lock-in perspective, but it's really bad, non-portable
+programming style.
+
+Also, in the future arch_get_random_long() will almost certainly be
+hooked up for other architectures, so putting an extended
+advertisement for RDRAND really isn't appropriate.
+
+					- Ted
+
+commit d2e7c96af1e54b507ae2a6a7dd2baf588417a7e5
+Author: H. Peter Anvin <hpa@linux.intel.com>
+Date:   Fri Jul 27 22:26:08 2012 -0400
+
+    random: mix in architectural randomness in extract_buf()
+    
+    Mix in any architectural randomness in extract_buf() instead of
+    xfer_secondary_buf().  This allows us to mix in more architectural
+    randomness, and it also makes xfer_secondary_buf() faster, moving a
+    tiny bit of additional CPU overhead to process which is extracting the
+    randomness.
+    
+    [ Commit description modified by tytso to remove an extended
+      advertisement for the RDRAND instruction. ]
+    
+    Signed-off-by: H. Peter Anvin <hpa@linux.intel.com>
+    Acked-by: Ingo Molnar <mingo@kernel.org>
+    Cc: DJ Johnston <dj.johnston@intel.com>
+    Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+    Cc: stable@vger.kernel.org

@@ -1,0 +1,120 @@
+Path: news.gmane.org!not-for-mail
+From: Steven Whitehouse <swhiteho@redhat.com>
+Newsgroups: gmane.linux.cluster.redhat.cluster.devel,gmane.linux.kernel
+Subject: [PATCH 08/16] seq_file: Add seq_vprintf function
+	and export it
+Date: Mon, 23 Jul 2012 09:00:58 +0100
+Lines: 67
+Approved: news@gmane.org
+Message-ID: <1343030466-3053-9-git-send-email-swhiteho@redhat.com>
+References: <1343030466-3053-1-git-send-email-swhiteho@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343032052 1410 80.91.229.3 (23 Jul 2012 08:27:32 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 08:27:32 +0000 (UTC)
+To: linux-kernel@vger.kernel.org, cluster-devel@redhat.com
+Original-X-From: cluster-devel-bounces@redhat.com Mon Jul 23 10:27:32 2012
+Return-path: <cluster-devel-bounces@redhat.com>
+Envelope-to: glcrcd-cluster-devel@gmane.org
+Original-Received: from mx4-phx2.redhat.com ([209.132.183.25])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <cluster-devel-bounces@redhat.com>)
+	id 1StDzG-0006sf-Hm
+	for glcrcd-cluster-devel@gmane.org; Mon, 23 Jul 2012 10:27:30 +0200
+Original-Received: from lists01.pubmisc.prod.ext.phx2.redhat.com (lists01.pubmisc.prod.ext.phx2.redhat.com [10.5.19.33])
+	by mx4-phx2.redhat.com (8.13.8/8.13.8) with ESMTP id q6N8QhnO020244;
+	Mon, 23 Jul 2012 04:26:43 -0400
+Original-Received: from int-mx01.intmail.prod.int.phx2.redhat.com
+	(int-mx01.intmail.prod.int.phx2.redhat.com [10.5.11.11])
+	by lists01.pubmisc.prod.ext.phx2.redhat.com (8.13.8/8.13.8) with ESMTP
+	id q6N8QLGr029392 for <cluster-devel@listman.util.phx.redhat.com>;
+	Mon, 23 Jul 2012 04:26:21 -0400
+Original-Received: from chywoon.redhat.com (vpn1-5-152.ams2.redhat.com [10.36.5.152])
+	by int-mx01.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with ESMTP
+	id q6N8Px9f016610; Mon, 23 Jul 2012 04:26:15 -0400
+In-Reply-To: <1343030466-3053-1-git-send-email-swhiteho@redhat.com>
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.11
+X-loop: cluster-devel@redhat.com
+X-BeenThere: cluster-devel@redhat.com
+X-Mailman-Version: 2.1.12
+Precedence: junk
+List-Id: "\[Cluster devel\]" <cluster-devel.redhat.com>
+List-Unsubscribe: <https://www.redhat.com/mailman/options/cluster-devel>,
+	<mailto:cluster-devel-request@redhat.com?subject=unsubscribe>
+List-Archive: <https://www.redhat.com/archives/cluster-devel>
+List-Post: <mailto:cluster-devel@redhat.com>
+List-Help: <mailto:cluster-devel-request@redhat.com?subject=help>
+List-Subscribe: <https://www.redhat.com/mailman/listinfo/cluster-devel>,
+	<mailto:cluster-devel-request@redhat.com?subject=subscribe>
+Original-Sender: cluster-devel-bounces@redhat.com
+Errors-To: cluster-devel-bounces@redhat.com
+Xref: news.gmane.org gmane.linux.cluster.redhat.cluster.devel:7199 gmane.linux.kernel:1331669
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331669>
+
+The existing seq_printf function is rewritten in terms of the new
+seq_vprintf which is also exported to modules. This allows GFS2
+(and potentially other seq_file users) to have a vprintf based
+interface and to avoid an extra copy into a temporary buffer in
+some cases.
+
+Signed-off-by: Steven Whitehouse <swhiteho@redhat.com>
+Reported-by: Eric Dumazet <eric.dumazet@gmail.com>
+Acked-by: Al Viro <viro@ZenIV.linux.org.uk>
+
+diff --git a/fs/seq_file.c b/fs/seq_file.c
+index 0cbd049..14cf9de 100644
+--- a/fs/seq_file.c
++++ b/fs/seq_file.c
+@@ -385,15 +385,12 @@ int seq_escape(struct seq_file *m, const char *s, const char *esc)
+ }
+ EXPORT_SYMBOL(seq_escape);
+ 
+-int seq_printf(struct seq_file *m, const char *f, ...)
++int seq_vprintf(struct seq_file *m, const char *f, va_list args)
+ {
+-	va_list args;
+ 	int len;
+ 
+ 	if (m->count < m->size) {
+-		va_start(args, f);
+ 		len = vsnprintf(m->buf + m->count, m->size - m->count, f, args);
+-		va_end(args);
+ 		if (m->count + len < m->size) {
+ 			m->count += len;
+ 			return 0;
+@@ -402,6 +399,19 @@ int seq_printf(struct seq_file *m, const char *f, ...)
+ 	seq_set_overflow(m);
+ 	return -1;
+ }
++EXPORT_SYMBOL(seq_vprintf);
++
++int seq_printf(struct seq_file *m, const char *f, ...)
++{
++	int ret;
++	va_list args;
++
++	va_start(args, f);
++	ret = seq_vprintf(m, f, args);
++	va_end(args);
++
++	return ret;
++}
+ EXPORT_SYMBOL(seq_printf);
+ 
+ /**
+diff --git a/include/linux/seq_file.h b/include/linux/seq_file.h
+index fc61854..83c44ee 100644
+--- a/include/linux/seq_file.h
++++ b/include/linux/seq_file.h
+@@ -86,6 +86,7 @@ int seq_puts(struct seq_file *m, const char *s);
+ int seq_write(struct seq_file *seq, const void *data, size_t len);
+ 
+ __printf(2, 3) int seq_printf(struct seq_file *, const char *, ...);
++__printf(2, 0) int seq_vprintf(struct seq_file *, const char *, va_list args);
+ 
+ int seq_path(struct seq_file *, const struct path *, const char *);
+ int seq_dentry(struct seq_file *, struct dentry *, const char *);
+-- 
+1.7.4
+
+

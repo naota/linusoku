@@ -1,0 +1,136 @@
+Path: news.gmane.org!not-for-mail
+From: Borislav Petkov <bp@amd64.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 3/4] x86, CPU: Add AMD TLB size detection
+Date: Fri,  3 Aug 2012 18:37:48 +0200
+Lines: 82
+Approved: news@gmane.org
+Message-ID: <1344011869-21868-4-git-send-email-bp@amd64.org>
+References: <1344011869-21868-1-git-send-email-bp@amd64.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344011901 19535 80.91.229.3 (3 Aug 2012 16:38:21 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 16:38:21 +0000 (UTC)
+Cc: Alex Shi <alex.shi@intel.com>, X86-ML <x86@kernel.org>,
+	LKML <linux-kernel@vger.kernel.org>,
+	Borislav Petkov <borislav.petkov@amd.com>
+To: "H. Peter Anvin" <hpa@zytor.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 18:38:16 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxKtE-0003Zu-KO
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 18:38:16 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754056Ab2HCQiI (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 12:38:08 -0400
+Original-Received: from osrc3.amd.com ([217.9.48.20]:47867 "EHLO mail.x86-64.org"
+	rhost-flags-OK-FAIL-OK-OK) by vger.kernel.org with ESMTP
+	id S1753910Ab2HCQiD (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 12:38:03 -0400
+Original-Received: from localhost (localhost [127.0.0.1])
+	by mail.x86-64.org (Postfix) with ESMTP id C74B014195C;
+	Fri,  3 Aug 2012 18:38:01 +0200 (CEST)
+X-Virus-Scanned: Nedap ESD1 at etzel.amd.com
+Original-Received: from mail.x86-64.org ([127.0.0.1])
+	by localhost (www.amd64.org [127.0.0.1]) (amavisd-new, port 10024)
+	with ESMTP id QX8W+u0lfT7w; Fri,  3 Aug 2012 18:38:01 +0200 (CEST)
+Original-Received: from gwo.osrc.amd.com (gwo.osrc.amd.com [10.97.0.252])
+	by mail.x86-64.org (Postfix) with ESMTP;
+	Fri,  3 Aug 2012 18:38:01 +0200 (CEST)
+Original-Received: from aftab.osrc.amd.com (aftab.osrc.amd.com [165.204.15.109])
+	by gwo.osrc.amd.com (Postfix) with ESMTP id 6408A49C6DA;
+	Fri,  3 Aug 2012 17:38:01 +0100 (BST)
+X-Mailer: git-send-email 1.7.11.rc1
+In-Reply-To: <1344011869-21868-1-git-send-email-bp@amd64.org>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337404
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337404>
+
+From: Borislav Petkov <borislav.petkov@amd.com>
+
+Read I- and DTLB entries count from CPUID on AMD. Handle all the
+different family-specific cases.
+
+Signed-off-by: Borislav Petkov <borislav.petkov@amd.com>
+---
+ arch/x86/kernel/cpu/amd.c | 51 +++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 51 insertions(+)
+
+diff --git a/arch/x86/kernel/cpu/amd.c b/arch/x86/kernel/cpu/amd.c
+index 9d92e19039f0..48e9d33245d9 100644
+--- a/arch/x86/kernel/cpu/amd.c
++++ b/arch/x86/kernel/cpu/amd.c
+@@ -737,6 +737,56 @@ static unsigned int __cpuinit amd_size_cache(struct cpuinfo_x86 *c,
+ }
+ #endif
+ 
++static void __cpuinit cpu_detect_tlb_amd(struct cpuinfo_x86 *c)
++{
++	u32 ebx, eax, ecx, edx;
++	u16 mask = 0xfff;
++
++	if (c->x86 < 0xf)
++		return;
++
++	cpuid(0x80000006, &eax, &ebx, &ecx, &edx);
++
++	tlb_lld_4k[ENTRIES] = (ebx >> 16) & mask;
++	tlb_lli_4k[ENTRIES] = ebx & mask;
++
++	/*
++	 * K8 doesn't have 2M/4M entries in the L2 TLB so read out the L1 TLB
++	 * characteristics from the CPUID function 0x80000005 instead.
++	 */
++	if (c->x86 == 0xf) {
++		cpuid(0x80000005, &eax, &ebx, &ecx, &edx);
++		mask = 0xff;
++	}
++
++	/* Handle DTLB 2M and 4M sizes, fall back to L1 if L2 is disabled */
++	if (!((eax >> 16) & mask)) {
++		u32 a, b, c, d;
++
++		cpuid(0x80000005, &a, &b, &c, &d);
++		tlb_lld_2m[ENTRIES] = (a >> 16) & 0xff;
++	} else {
++		tlb_lld_2m[ENTRIES] = (eax >> 16) & mask;
++	}
++
++	/* a 4M entry uses two 2M entries */
++	tlb_lld_4m[ENTRIES] = tlb_lld_2m[ENTRIES] >> 1;
++
++	/* Handle ITLB 2M and 4M sizes, fall back to L1 if L2 is disabled */
++	if (!(eax & mask)) {
++		/* Erratum 658 */
++		if (c->x86 == 0x15 && c->x86_model <= 0x1f) {
++			tlb_lli_2m[ENTRIES] = 1024;
++		} else {
++			cpuid(0x80000005, &eax, &ebx, &ecx, &edx);
++			tlb_lli_2m[ENTRIES] = eax & 0xff;
++		}
++	} else
++		tlb_lli_2m[ENTRIES] = eax & mask;
++
++	tlb_lli_4m[ENTRIES] = tlb_lli_2m[ENTRIES] >> 1;
++}
++
+ static const struct cpu_dev __cpuinitconst amd_cpu_dev = {
+ 	.c_vendor	= "AMD",
+ 	.c_ident	= { "AuthenticAMD" },
+@@ -756,6 +806,7 @@ static const struct cpu_dev __cpuinitconst amd_cpu_dev = {
+ 	.c_size_cache	= amd_size_cache,
+ #endif
+ 	.c_early_init   = early_init_amd,
++	.c_detect_tlb	= cpu_detect_tlb_amd,
+ 	.c_bsp_init	= bsp_init_amd,
+ 	.c_init		= init_amd,
+ 	.c_x86_vendor	= X86_VENDOR_AMD,
+-- 
+1.7.11.rc1
+

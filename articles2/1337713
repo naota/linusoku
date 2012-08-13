@@ -1,0 +1,123 @@
+Path: news.gmane.org!not-for-mail
+From: Julia Lawall <Julia.Lawall-L2FTfq7BK8M@public.gmane.org>
+Newsgroups: gmane.linux.drivers.i2c,gmane.linux.kernel.janitors,gmane.linux.kernel
+Subject: [PATCH] drivers/i2c/i2c-smbus.c: convert kzalloc to devm_kzalloc
+Date: Sat,  4 Aug 2012 19:10:48 +0200
+Lines: 79
+Approved: news@gmane.org
+Message-ID: <1344100248-16238-1-git-send-email-Julia.Lawall@lip6.fr>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344100261 17087 80.91.229.3 (4 Aug 2012 17:11:01 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 4 Aug 2012 17:11:01 +0000 (UTC)
+Cc: kernel-janitors-u79uwXL29TY76Z2rM5mHXA@public.gmane.org,
+	"Ben Dooks (embedded platforms)" <ben-linux-elnMNo+KYs3YtjvyW6yDsg@public.gmane.org>,
+	"Wolfram Sang (embedded platforms)" <w.sang-bIcnvbaLZ9MEGnE8C9+IrQ@public.gmane.org>,
+	linux-i2c-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+To: "Jean Delvare" <khali-PUYAD+kWke1g9hUCZPvPmw@public.gmane.org>
+Original-X-From: linux-i2c-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org Sat Aug 04 19:11:00 2012
+Return-path: <linux-i2c-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Envelope-to: gldi-i2c-1-wOFGN7rlS/M9smdsby/KFg@public.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-i2c-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>)
+	id 1SxhsQ-0002wJ-MH
+	for gldi-i2c-1-wOFGN7rlS/M9smdsby/KFg@public.gmane.org; Sat, 04 Aug 2012 19:10:59 +0200
+Original-Received: (majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org) by vger.kernel.org via listexpand
+	id S1753744Ab2HDRK5 (ORCPT <rfc822;gldi-i2c-1@m.gmane.org>);
+	Sat, 4 Aug 2012 13:10:57 -0400
+Original-Received: from mail1-relais-roc.national.inria.fr ([192.134.164.82]:54326 "EHLO
+	mail1-relais-roc.national.inria.fr" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1753728Ab2HDRK4 (ORCPT
+	<rfc822;linux-i2c-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>); Sat, 4 Aug 2012 13:10:56 -0400
+X-IronPort-AV: E=Sophos;i="4.77,713,1336341600"; 
+   d="scan'208";a="169080479"
+Original-Received: from palace.lip6.fr (HELO localhost.localdomain) ([132.227.105.202])
+  by mail1-relais-roc.national.inria.fr with ESMTP/TLS/DHE-RSA-AES256-SHA; 04 Aug 2012 19:10:54 +0200
+X-Mailer: git-send-email 1.7.8.6
+Original-Sender: linux-i2c-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Precedence: bulk
+List-ID: <linux-i2c.vger.kernel.org>
+X-Mailing-List: linux-i2c-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Xref: news.gmane.org gmane.linux.drivers.i2c:12343 gmane.linux.kernel.janitors:25334 gmane.linux.kernel:1337713
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337713>
+
+From: Julia Lawall <Julia.Lawall-L2FTfq7BK8M@public.gmane.org>
+
+Converting kzalloc to devm_kzalloc simplifies the code and ensures that the
+result, alert, is freed after the irq allocated by the subsequent
+devm_request_irq.  This in turn ensures that when an interrupt can be
+triggered, the alert structure is still available.
+
+The problem of a free after a devm_request_irq was found using the
+following semantic match (http://coccinelle.lip6.fr/)
+
+// <smpl>
+@r exists@
+expression e1,e2,x,a,b,c,d;
+identifier free;
+position p1,p2;
+@@
+
+  devm_request_irq@p1(e1,e2,...,x)
+  ... when any
+      when != e2 = a
+      when != x = b
+  if (...) {
+    ... when != e2 = c
+        when != x = d
+    free@p2(...,x,...);
+    ...
+    return ...;
+  }
+// </smpl>
+
+Signed-off-by: Julia Lawall <Julia.Lawall-L2FTfq7BK8M@public.gmane.org>
+
+---
+ drivers/i2c/i2c-smbus.c |   11 ++++-------
+ 1 file changed, 4 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/i2c/i2c-smbus.c b/drivers/i2c/i2c-smbus.c
+index df3e0bf..50a36cf 100644
+--- a/drivers/i2c/i2c-smbus.c
++++ b/drivers/i2c/i2c-smbus.c
+@@ -142,7 +142,8 @@ static int smbalert_probe(struct i2c_client *ara,
+ 	struct i2c_adapter *adapter = ara->adapter;
+ 	int res;
+ 
+-	alert = kzalloc(sizeof(struct i2c_smbus_alert), GFP_KERNEL);
++	alert = devm_kzalloc(&ara->dev, sizeof(struct i2c_smbus_alert),
++			     GFP_KERNEL);
+ 	if (!alert)
+ 		return -ENOMEM;
+ 
+@@ -154,10 +155,8 @@ static int smbalert_probe(struct i2c_client *ara,
+ 	if (setup->irq > 0) {
+ 		res = devm_request_irq(&ara->dev, setup->irq, smbalert_irq,
+ 				       0, "smbus_alert", alert);
+-		if (res) {
+-			kfree(alert);
++		if (res)
+ 			return res;
+-		}
+ 	}
+ 
+ 	i2c_set_clientdata(ara, alert);
+@@ -167,14 +166,12 @@ static int smbalert_probe(struct i2c_client *ara,
+ 	return 0;
+ }
+ 
+-/* IRQ resource is managed so it is freed automatically */
++/* IRQ resource and alert are managed so they are freed automatically */
+ static int smbalert_remove(struct i2c_client *ara)
+ {
+ 	struct i2c_smbus_alert *alert = i2c_get_clientdata(ara);
+ 
+ 	cancel_work_sync(&alert->alert);
+-
+-	kfree(alert);
+ 	return 0;
+ }
+ 
+

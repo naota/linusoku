@@ -1,0 +1,130 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 099/122] ext4: use s_csum_seed instead of i_csum_seed for xattr block
+Date: Tue,  7 Aug 2012 15:26:27 -0700
+Lines: 65
+Approved: news@gmane.org
+Message-ID: <20120807221958.408099265@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344378819 15384 80.91.229.3 (7 Aug 2012 22:33:39 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:33:39 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Tao Ma <boyu.mt@taobao.com>,
+	"Theodore Tso" <tytso@mit.edu>,
+	"Darrick J. Wong" <djwong@us.ibm.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:33:33 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysLB-0004aE-8D
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:33:29 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030344Ab2HGWcU (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:32:20 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:57899 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030310Ab2HGWcM (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:32:12 -0400
+Original-Received: by mail-gh0-f174.google.com with SMTP id r11so160262ghr.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:32:12 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=aaiaa6XC+LqZMjdDG13Hu3vnU0eotWWn0PyPRvEjv00=;
+        b=fbjo/mc4ca6AMDw4PyUebhhKly6bdTQ95ffXqlHFzV/tMze4bNlI8fQD/n1UH0ZgAp
+         4F1Ni/f3ianFavnVR2zHFWLIjv/7WaIHAqvK3huCbPAcTGvs3fj06M6A17e5w7hv/D1D
+         bju66ocwY+IJRkJ5fLJnrAHVTDJe3QRrim04bdw/1nCO0fIlbQ9rqREG55VyrnALmaiQ
+         946NtWHNsAmq5Qei8AYQtl1WyeOfr6FYbQyjsRTvWIA9SEYGK6znjPopyCqD7oeV81Lu
+         wTnJkMt0RJC/Xa4zkZClxV4BGz75rk16XVwoWsWyago2QhhnizbG2Pfq0Kglcg1D89ZZ
+         JhBw==
+Original-Received: by 10.66.89.6 with SMTP id bk6mr28133278pab.81.1344378731756;
+        Tue, 07 Aug 2012 15:32:11 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id rm9sm4111754pbc.72.2012.08.07.15.32.09
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:32:10 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQmdNjtz0OC4SneiZpNDCGdyon4G1noYu/lNYLeRqvbbF7yvp6ctGH08Gz0SnHaftu/gB84w
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339454 gmane.linux.kernel.stable:29293
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339454>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Tao Ma <boyu.mt@taobao.com>
+
+commit 41eb70dde42b2360074a559a6f1fc49860a50179 upstream.
+
+In xattr block operation, we use h_refcount to indicate whether the
+xattr block is shared among many inodes. And xattr block csum uses
+s_csum_seed if it is shared and i_csum_seed if it belongs to
+one inode. But this has a problem. So consider the block is shared
+first bewteen inode A and B, and B has some xattr update and CoW
+the xattr block. When it updates the *old* xattr block(because
+of the h_refcount change) and calls ext4_xattr_release_block, we
+has no idea that inode A is the real owner of the *old* xattr
+block and we can't use the i_csum_seed of inode A either in xattr
+block csum calculation. And I don't think we have an easy way to
+find inode A.
+
+So this patch just removes the tricky i_csum_seed and we now uses
+s_csum_seed every time for the xattr block csum. The corresponding
+patch for the e2fsprogs will be sent in another patch.
+
+This is spotted by xfstests 117.
+
+Signed-off-by: Tao Ma <boyu.mt@taobao.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Acked-by: Darrick J. Wong <djwong@us.ibm.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ fs/ext4/xattr.c |   11 ++++-------
+ 1 file changed, 4 insertions(+), 7 deletions(-)
+
+--- a/fs/ext4/xattr.c
++++ b/fs/ext4/xattr.c
+@@ -127,19 +127,16 @@ static __le32 ext4_xattr_block_csum(stru
+ 				    struct ext4_xattr_header *hdr)
+ {
+ 	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
+-	struct ext4_inode_info *ei = EXT4_I(inode);
+ 	__u32 csum, old;
+ 
+ 	old = hdr->h_checksum;
+ 	hdr->h_checksum = 0;
+-	if (le32_to_cpu(hdr->h_refcount) != 1) {
+-		block_nr = cpu_to_le64(block_nr);
+-		csum = ext4_chksum(sbi, sbi->s_csum_seed, (__u8 *)&block_nr,
+-				   sizeof(block_nr));
+-	} else
+-		csum = ei->i_csum_seed;
++	block_nr = cpu_to_le64(block_nr);
++	csum = ext4_chksum(sbi, sbi->s_csum_seed, (__u8 *)&block_nr,
++			   sizeof(block_nr));
+ 	csum = ext4_chksum(sbi, csum, (__u8 *)hdr,
+ 			   EXT4_BLOCK_SIZE(inode->i_sb));
++
+ 	hdr->h_checksum = old;
+ 	return cpu_to_le32(csum);
+ }
+
+

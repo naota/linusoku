@@ -1,0 +1,95 @@
+Path: news.gmane.org!not-for-mail
+From: Mark Asselstine <mark.asselstine@windriver.com>
+Newsgroups: gmane.linux.kbuild.devel,gmane.linux.kernel
+Subject: [PATCH] firmware: fix directory creation rule matching with make 3.82
+Date: Wed, 8 Aug 2012 13:14:36 -0400
+Lines: 46
+Approved: news@gmane.org
+Message-ID: <1344446076-9135-1-git-send-email-mark.asselstine@windriver.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1344446111 25553 80.91.229.3 (8 Aug 2012 17:15:11 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 17:15:11 +0000 (UTC)
+Cc: <linux-kernel@vger.kernel.org>, <linux-kbuild@vger.kernel.org>,
+	<mark.asselstine@windriver.com>
+To: <mmarek@suse.cz>
+Original-X-From: linux-kbuild-owner@vger.kernel.org Wed Aug 08 19:15:09 2012
+Return-path: <linux-kbuild-owner@vger.kernel.org>
+Envelope-to: glkd-linux-kbuild@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kbuild-owner@vger.kernel.org>)
+	id 1Sz9qb-0007GN-Cn
+	for glkd-linux-kbuild@plane.gmane.org; Wed, 08 Aug 2012 19:15:05 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030710Ab2HHROt (ORCPT <rfc822;glkd-linux-kbuild@m.gmane.org>);
+	Wed, 8 Aug 2012 13:14:49 -0400
+Original-Received: from mail.windriver.com ([147.11.1.11]:34662 "EHLO
+	mail.windriver.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030663Ab2HHROs (ORCPT
+	<rfc822;linux-kbuild@vger.kernel.org>);
+	Wed, 8 Aug 2012 13:14:48 -0400
+Original-Received: from ALA-HCA.corp.ad.wrs.com (ala-hca [147.11.189.40])
+	by mail.windriver.com (8.14.5/8.14.3) with ESMTP id q78HEfF6012136
+	(version=TLSv1/SSLv3 cipher=AES128-SHA bits=128 verify=FAIL);
+	Wed, 8 Aug 2012 10:14:42 -0700 (PDT)
+Original-Received: from yow-masselst-d1.wrs.com (128.224.146.23) by
+ ALA-HCA.corp.ad.wrs.com (147.11.189.50) with Microsoft SMTP Server (TLS) id
+ 14.2.309.2; Wed, 8 Aug 2012 10:14:41 -0700
+X-Mailer: git-send-email 1.7.9.5
+X-Originating-IP: [128.224.146.23]
+Original-Sender: linux-kbuild-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kbuild.vger.kernel.org>
+X-Mailing-List: linux-kbuild@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kbuild.devel:8512 gmane.linux.kernel:1340186
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340186>
+
+Attempting to run 'firmware_install' with CONFIG_USB_SERIAL_TI=y when
+using make 3.82 results in an error
+
+make[2]: *** No rule to make target `/lib/firmware/./', needed by
+`/lib/firmware/ti_3410.fw'.  Stop.
+
+It turns out make 3.82 is picky when matching directory names with
+trailing slashes as a result, where make 3.81 would handle this
+correctly make 3.82 does not find the rule needed to create the
+directory.
+
+The './' seen in the error is added by $(dir) for firmware which
+resides in the base firmware src directory, such as
+ti_3410.fw.ihex. By performing $(dir) after we prepend the
+$(INSTALL_FW_PATH) we can ensure we don't end up with a './' in the
+middle of the path and the directory will be properly created.
+
+This change works with make 3.81 and should work with previous
+versions as well.
+
+Signed-off-by: Mark Asselstine <mark.asselstine@windriver.com>
+---
+ scripts/Makefile.fwinst |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/scripts/Makefile.fwinst b/scripts/Makefile.fwinst
+index 6bf8e87..c3f69ae 100644
+--- a/scripts/Makefile.fwinst
++++ b/scripts/Makefile.fwinst
+@@ -42,7 +42,7 @@ quiet_cmd_install = INSTALL $(subst $(srctree)/,,$@)
+ $(installed-fw-dirs):
+ 	$(call cmd,mkdir)
+ 
+-$(installed-fw): $(INSTALL_FW_PATH)/%: $(obj)/% | $(INSTALL_FW_PATH)/$$(dir %)
++$(installed-fw): $(INSTALL_FW_PATH)/%: $(obj)/% | $$(dir $(INSTALL_FW_PATH)/%)
+ 	$(call cmd,install)
+ 
+ PHONY +=  __fw_install __fw_modinst FORCE
+-- 
+1.7.9.5
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-kbuild" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

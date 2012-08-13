@@ -1,0 +1,101 @@
+Path: news.gmane.org!not-for-mail
+From: Arnd Bergmann <arnd@arndb.de>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: [PATCH 10/10] leds: renesas: fix error handling
+Date: Wed,  8 Aug 2012 23:27:58 +0200
+Lines: 46
+Approved: news@gmane.org
+Message-ID: <1344461278-28245-11-git-send-email-arnd@arndb.de>
+References: <1344461278-28245-1-git-send-email-arnd@arndb.de>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344461316 19027 80.91.229.3 (8 Aug 2012 21:28:36 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 21:28:36 +0000 (UTC)
+Cc: arm@kernel.org, linux-kernel@vger.kernel.org,
+	Arnd Bergmann <arnd@arndb.de>,
+	Bryan Wu <bryan.wu@canonical.com>,
+	Magnus Damm <damm@opensource.se>
+To: linux-arm-kernel@lists.infradead.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 23:28:33 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzDno-0002ZQ-Mb
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 23:28:29 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932223Ab2HHV2Q (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 17:28:16 -0400
+Original-Received: from moutng.kundenserver.de ([212.227.17.10]:60365 "EHLO
+	moutng.kundenserver.de" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754127Ab2HHV2O (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 17:28:14 -0400
+Original-Received: from localhost.localdomain (HSI-KBW-149-172-5-253.hsi13.kabel-badenwuerttemberg.de [149.172.5.253])
+	by mrelayeu.kundenserver.de (node=mreu2) with ESMTP (Nemesis)
+	id 0McRym-1TGkeK20Ho-00HwWj; Wed, 08 Aug 2012 23:28:12 +0200
+X-Mailer: git-send-email 1.7.10
+In-Reply-To: <1344461278-28245-1-git-send-email-arnd@arndb.de>
+X-Provags-ID: V02:K0:hvY4z4/xOwgaWQ46rzB4M5c4tk704IPNMqqJ68+eJgh
+ +qtdefototO85SwJJeZZfZcwRSgIvySgOQC7o4JYaJKsZwPQ3t
+ TcxEX4KWq3c/sYl9dcvHuvjTI7Rfh2COLlmJtxzUuHET96yErV
+ ghT0N2rv+V6q6wvRXhmziuBBhWfbL1PoOBoHvdSjwKka74lcW8
+ 8wLFjgeI2lLhX9LO+TbQlXoQCbEAr3RHiweVo2uB4qIcvlkfKx
+ P3eDM7L560+XjiC2L8w9zpjC7p+w9jzF589mEA/RlECewKf5+q
+ M011trnYOgUkOnSmTOJw9lPyAT7kPFw8MottF6kmnGDDSXAezi
+ qdTykJnMXMn4PZHXcmRw7w36Bo4HM9/Zca/KPt9nSVwzBs6eIt
+ vIb16MvYjpYtQ==
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340320 gmane.linux.ports.arm.kernel:181075
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340320>
+
+bfe4c041 "leds: convert Renesas TPU LED driver to devm_kzalloc() and
+cleanup error exit path" introduced a possible case in which r_tpu_probe
+calls iounmap on a wild pointer. This changes the one case that was
+missed in the same way as the other error paths.
+
+Without this patch, building kota2_defconfig results in:
+
+drivers/leds/leds-renesas-tpu.c: In function 'r_tpu_probe':
+drivers/leds/leds-renesas-tpu.c:246:6: warning: 'ret' may be used uninitialized in this function [-Wuninitialized]
+drivers/leds/leds-renesas-tpu.c:308:17: warning: 'p' may be used uninitialized in this function [-Wuninitialized]
+
+Signed-off-by: Arnd Bergmann <arnd@arndb.de>
+Cc: Bryan Wu <bryan.wu@canonical.com>
+Cc: Magnus Damm <damm@opensource.se>
+
+--- a/drivers/leds/leds-renesas-tpu.c
++++ b/drivers/leds/leds-renesas-tpu.c
+@@ -247,7 +247,7 @@ static int __devinit r_tpu_probe(struct platform_device *pdev)
+
+        if (!cfg) {
+                dev_err(&pdev->dev, "missing platform data\n");
+-               goto err0;
++               return -ENODEV;
+        }
+
+        p = devm_kzalloc(&pdev->dev, sizeof(*p), GFP_KERNEL);
+---
+ drivers/leds/leds-renesas-tpu.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/leds/leds-renesas-tpu.c b/drivers/leds/leds-renesas-tpu.c
+index 9ee12c2..771ea06 100644
+--- a/drivers/leds/leds-renesas-tpu.c
++++ b/drivers/leds/leds-renesas-tpu.c
+@@ -247,7 +247,7 @@ static int __devinit r_tpu_probe(struct platform_device *pdev)
+ 
+ 	if (!cfg) {
+ 		dev_err(&pdev->dev, "missing platform data\n");
+-		goto err0;
++		return -ENODEV;
+ 	}
+ 
+ 	p = devm_kzalloc(&pdev->dev, sizeof(*p), GFP_KERNEL);
+-- 
+1.7.10
+

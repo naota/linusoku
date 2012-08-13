@@ -1,0 +1,129 @@
+Path: news.gmane.org!not-for-mail
+From: Jiri Slaby <jslaby@suse.cz>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 12/41] mxser: allow overlapping vector
+Date: Tue,  7 Aug 2012 21:47:37 +0200
+Lines: 85
+Approved: news@gmane.org
+Message-ID: <1344368886-24033-13-git-send-email-jslaby@suse.cz>
+References: <1344368886-24033-1-git-send-email-jslaby@suse.cz>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344369763 3700 80.91.229.3 (7 Aug 2012 20:02:43 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 20:02:43 +0000 (UTC)
+Cc: alan@linux.intel.com, linux-kernel@vger.kernel.org,
+	jirislaby@gmail.com
+To: gregkh@linuxfoundation.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 22:02:43 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SypzG-0003aF-Bn
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 22:02:42 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756549Ab2HGUCe (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 16:02:34 -0400
+Original-Received: from mail.pripojeni.net ([178.22.112.14]:36549 "EHLO
+	smtp.pripojeni.net" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756438Ab2HGT7p (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 15:59:45 -0400
+Original-Received: from localhost.localdomain ([178.22.113.142])
+	by smtp.pripojeni.net (Kerio Connect 7.2.2);
+	Tue, 7 Aug 2012 21:48:08 +0200
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1344368886-24033-1-git-send-email-jslaby@suse.cz>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339351
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339351>
+
+For many cards, this saves some IO space because interrupt status port
+has precedence over the rest of ports on the card. Hence it can be
+mapped to a hole in I/O ports.
+
+Here we add a kernel parameter which allows that if a user wants to.
+But they need to explicitly enable it by a module parameter.
+
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ drivers/tty/mxser.c |   35 +++++++++++++++++++++++++++++++----
+ 1 file changed, 31 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/tty/mxser.c b/drivers/tty/mxser.c
+index c162ee9..e64fe40 100644
+--- a/drivers/tty/mxser.c
++++ b/drivers/tty/mxser.c
+@@ -2337,11 +2337,36 @@ static struct tty_port_operations mxser_port_ops = {
+  * The MOXA Smartio/Industio serial driver boot-time initialization code!
+  */
+ 
++static bool allow_overlapping_vector;
++module_param(allow_overlapping_vector, bool, 444);
++MODULE_PARM_DESC(allow_overlapping_vector, "whether we allow ISA cards to be configured such that vector overlabs IO ports (default=no)");
++
++static bool mxser_overlapping_vector(struct mxser_board *brd)
++{
++	return allow_overlapping_vector &&
++		brd->vector >= brd->ports[0].ioaddr &&
++		brd->vector < brd->ports[0].ioaddr + 8 * brd->info->nports;
++}
++
++static int mxser_request_vector(struct mxser_board *brd)
++{
++	if (mxser_overlapping_vector(brd))
++		return 0;
++	return request_region(brd->vector, 1, "mxser(vector)") ? 0 : -EIO;
++}
++
++static void mxser_release_vector(struct mxser_board *brd)
++{
++	if (mxser_overlapping_vector(brd))
++		return;
++	release_region(brd->vector, 1);
++}
++
+ static void mxser_release_ISA_res(struct mxser_board *brd)
+ {
+ 	free_irq(brd->irq, brd);
+ 	release_region(brd->ports[0].ioaddr, 8 * brd->info->nports);
+-	release_region(brd->vector, 1);
++	mxser_release_vector(brd);
+ }
+ 
+ static int __devinit mxser_initbrd(struct mxser_board *brd,
+@@ -2396,7 +2421,7 @@ static int __devinit mxser_initbrd(struct mxser_board *brd,
+ 
+ static int __init mxser_get_ISA_conf(int cap, struct mxser_board *brd)
+ {
+-	int id, i, bits;
++	int id, i, bits, ret;
+ 	unsigned short regs[16], irq;
+ 	unsigned char scratch, scratch2;
+ 
+@@ -2492,13 +2517,15 @@ static int __init mxser_get_ISA_conf(int cap, struct mxser_board *brd)
+ 				8 * brd->info->nports - 1);
+ 		return -EIO;
+ 	}
+-	if (!request_region(brd->vector, 1, "mxser(vector)")) {
++
++	ret = mxser_request_vector(brd);
++	if (ret) {
+ 		release_region(brd->ports[0].ioaddr, 8 * brd->info->nports);
+ 		printk(KERN_ERR "mxser: can't request interrupt vector region: "
+ 				"0x%.8lx-0x%.8lx\n",
+ 				brd->ports[0].ioaddr, brd->ports[0].ioaddr +
+ 				8 * brd->info->nports - 1);
+-		return -EIO;
++		return ret;
+ 	}
+ 	return brd->info->nports;
+ 
+-- 
+1.7.10.4
+
+

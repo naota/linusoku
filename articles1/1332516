@@ -1,0 +1,90 @@
+Path: news.gmane.org!not-for-mail
+From: Josh Boyer <jwboyer@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH v2] posix_types.h: make __NFDBITS compatible with glibc
+ definition
+Date: Tue, 24 Jul 2012 15:03:03 -0400
+Lines: 33
+Approved: news@gmane.org
+Message-ID: <20120724190302.GE10534@zod.bos.redhat.com>
+References: <20120724181209.GA10534@zod.bos.redhat.com>
+ <CA+55aFw-=vY1eAubQAtbqL33nCrQ7mPgXTaHnEJfbKvFDVdHtw@mail.gmail.com>
+ <20120724182409.GB10534@zod.bos.redhat.com>
+ <20120724183230.GC10534@zod.bos.redhat.com>
+ <CA+55aFwFcWoH=QB5tKgVjWcUH3SLCDVNqJY-oXRYy7AWOJfLPA@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343156612 6127 80.91.229.3 (24 Jul 2012 19:03:32 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 19:03:32 +0000 (UTC)
+Cc: Andrew Morton <akpm@linux-foundation.org>, law@redhat.com,
+	linux-kernel@vger.kernel.org
+To: Linus Torvalds <torvalds@linux-foundation.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 21:03:31 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StkOC-0007be-JK
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 21:03:24 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756124Ab2GXTDM (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 15:03:12 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:25892 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754238Ab2GXTDK (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 15:03:10 -0400
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6OJ39xO026048
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Tue, 24 Jul 2012 15:03:09 -0400
+Original-Received: from zod.bos.redhat.com (ovpn-112-32.phx2.redhat.com [10.3.112.32])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6OJ33R9018149
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES128-SHA bits=128 verify=NO);
+	Tue, 24 Jul 2012 15:03:07 -0400
+Content-Disposition: inline
+In-Reply-To: <CA+55aFwFcWoH=QB5tKgVjWcUH3SLCDVNqJY-oXRYy7AWOJfLPA@mail.gmail.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332516
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332516>
+
+On Tue, Jul 24, 2012 at 11:46:25AM -0700, Linus Torvalds wrote:
+> On Tue, Jul 24, 2012 at 11:32 AM, Josh Boyer <jwboyer@redhat.com> wrote:
+> > Recent glibc made a change to suppress sign-conversion warnings from FD_SET
+> > (glibc commit ceb9e56b3d1).  That patch solved the particular error it was
+> > aiming to, however applications that #include <linux/types.h> after
+> > including <sys/select.h> can now hit a build failure if -Werror=sign-compare
+> > and -D_FORTIFY_SOURCE=2 is passed to gcc.  This can be seen when building
+> > this trivial application against a recent enough glibc:
+> 
+> Looking more at this, I now hate it for *another* reason.
+> 
+> Making __NFDBITS be a signed value turns __FDELT() and __FDMASK() into
+> potentially pure and utter crap. Doing signed divisions (or modulus)
+> is a disaster - suddenly it's not just a bit shift any more.
+> 
+> Guys, the glibc people really seem to not have thought their change
+> through. Or maybe they fixed their __FDELT/__FDMASK at the same time?
+
+Jeff can probably answer this better than I can, so likely best to wait
+for him.
+
+FWIW, the definitions of __FD_ELT/__FD_MASK in glibc are:
+
+#define __FD_ELT(d)     ((d) / __NFDBITS)
+#define __FD_MASK(d)    ((__fd_mask) 1 << ((d) % __NFDBITS))
+
+where __fd_mask is 'typdef long int'.
+
+__NFDBITS was changed to int type with glibc commit eb0b6cb6e in 2009,
+and __FDELT/__FDMASK were basically renamed with glibc commit
+e529793b508 in 2011.
+
+josh

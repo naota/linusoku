@@ -1,0 +1,109 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 080/109] net: Fix memory leak - vlan_info struct
+Date: Tue,  7 Aug 2012 15:35:39 -0700
+Lines: 42
+Approved: news@gmane.org
+Message-ID: <20120807222050.116059350@linuxfoundation.org>
+References: <20120807222043.089735600@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344379269 18378 80.91.229.3 (7 Aug 2012 22:41:09 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:41:09 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Amir Hanania <amir.hanania@intel.com>,
+	John Fastabend <john.r.fastabend@intel.com>,
+	Aaron Brown <aaron.f.brown@intel.com>,
+	Jeff Kirsher <jeffrey.t.kirsher@intel.com>,
+	"David S. Miller" <davem@davemloft.net>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:41:06 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysSO-0005CG-Gy
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:40:56 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030737Ab2HGWka (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:40:30 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:56801 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030705Ab2HGWkW (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:40:22 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so358011pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:40:22 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=0IwH3LSnn2yogw7hisJEGV72yVb+jFyHgnFz9neAb68=;
+        b=IpXzOtF5ik/hLq4bbg1ywVzwKfTfDSou0OScTlglf2NvvdVoWn7PpQGq6eEil0TKwI
+         XF0p1fbg+my8z5rwaRoXU/mcUUaPPvR3shFdKDPtUP8I6ePu49jtxTj2vtVIgkwzyBJU
+         PzVLLhYDqnhR8rmZcKPlBVKKQSydlwfzC3SEpFFrArayl8arb6l1mlWnOeM9U2KZEsRR
+         tCSvZ6TYSAn5AeAaPCBFU7AqNq1iTzQyhw3imiVgyCPeSeIWB4qahApDesKkhiLrEKSW
+         dJkH+NjyNNaXs9KhQqpEH3KkQptatJ9cbeKLhmMzKJI9aqjVxDkAPf+CX5vbV9JPc0wc
+         jKzg==
+Original-Received: by 10.68.233.103 with SMTP id tv7mr31720134pbc.124.1344379221956;
+        Tue, 07 Aug 2012 15:40:21 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id op10sm8552631pbc.75.2012.08.07.15.40.19
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:40:21 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222043.089735600@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQkXcbQnxxPyDJE4w2SXKKfhyqmsw2HIDSkExAPn584U3r48xQcADv/zc+5RCvggPpWip1RS
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339509 gmane.linux.kernel.stable:29348
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339509>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.4-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+
+From: Amir Hanania <amir.hanania@intel.com>
+
+[ Upstream commit efc73f4bbc238d4f579fb612c04c8e1dd8a82979 ]
+
+In driver reload test there is a memory leak.
+The structure vlan_info was not freed when the driver was removed.
+It was not released since the nr_vids var is one after last vlan was removed.
+The nr_vids is one, since vlan zero is added to the interface when the interface
+is being set, but the vlan zero is not deleted at unregister.
+Fix - delete vlan zero when we unregister the device.
+
+Signed-off-by: Amir Hanania <amir.hanania@intel.com>
+Acked-by: John Fastabend <john.r.fastabend@intel.com>
+Tested-by: Aaron Brown <aaron.f.brown@intel.com>
+Signed-off-by: Jeff Kirsher <jeffrey.t.kirsher@intel.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ net/8021q/vlan.c |    3 +++
+ 1 file changed, 3 insertions(+)
+
+--- a/net/8021q/vlan.c
++++ b/net/8021q/vlan.c
+@@ -403,6 +403,9 @@ static int vlan_device_event(struct noti
+ 		break;
+ 
+ 	case NETDEV_DOWN:
++		if (dev->features & NETIF_F_HW_VLAN_FILTER)
++			vlan_vid_del(dev, 0);
++
+ 		/* Put all VLANs for this dev in the down state too.  */
+ 		for (i = 0; i < VLAN_N_VID; i++) {
+ 			vlandev = vlan_group_get_device(grp, i);
+
+

@@ -1,0 +1,253 @@
+Path: news.gmane.org!not-for-mail
+From: Steven Rostedt <rostedt@goodmis.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 02/19] ftrace: Consolidate arch dependent functions with list function
+Date: Fri, 20 Jul 2012 22:19:45 -0400
+Lines: 197
+Approved: news@gmane.org
+Message-ID: <20120721022105.958443021@goodmis.org>
+References: <20120721021943.274162381@goodmis.org>
+NNTP-Posting-Host: plane.gmane.org
+Content-Type: multipart/signed; micalg="pgp-sha1"; protocol="application/pgp-signature"; boundary="00GvhwF7k39YY"
+X-Trace: dough.gmane.org 1342837393 29439 80.91.229.3 (21 Jul 2012 02:23:13 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 21 Jul 2012 02:23:13 +0000 (UTC)
+Cc: Ingo Molnar <mingo@elte.hu>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Masami Hiramatsu <masami.hiramatsu.pt@hitachi.com>,
+	Frederic Weisbecker <fweisbec@gmail.com>,
+	Thomas Gleixner <tglx@linutronix.de>,
+	"H. Peter Anvin" <hpa@zytor.com>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Jul 21 04:23:11 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsPLZ-0007de-LS
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 21 Jul 2012 04:23:10 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753917Ab2GUCW2 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 22:22:28 -0400
+Original-Received: from hrndva-omtalb.mail.rr.com ([71.74.56.122]:26516 "EHLO
+	hrndva-omtalb.mail.rr.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751768Ab2GUCVI (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 22:21:08 -0400
+X-Authority-Analysis: v=2.0 cv=ZuBv2qHG c=1 sm=0 a=s5Htg7xnQOKvHEu9STBOug==:17 a=OpT9cpI26MMA:10 a=Ciwy3NGCPMMA:10 a=2wuEWFKPlS0A:10 a=5SG0PmZfjMsA:10 a=bbbx4UPp9XUA:10 a=meVymXHHAAAA:8 a=20KFwNOVAAAA:8 a=VwQbUJbxAAAA:8 a=3nbZYyFuAAAA:8 a=dwWg9rdAu8B17VaaaNQA:9 a=QEXdDO2ut3YA:10 a=jEp0ucaQiEUA:10 a=jeBq3FmKZ4MA:10 a=EvKJbDF4Ut8A:10 a=i1N4HCg-vScRYloSbH0A:9 a=s5Htg7xnQOKvHEu9STBOug==:117
+X-Cloudmark-Score: 0
+X-Originating-IP: 72.230.195.127
+Original-Received: from [72.230.195.127] ([72.230.195.127:42431] helo=gandalf.stny.rr.com)
+	by hrndva-oedge04.mail.rr.com (envelope-from <rostedt@goodmis.org>)
+	(ecelerity 2.2.3.46 r()) with ESMTP
+	id 56/9B-21135-2121A005; Sat, 21 Jul 2012 02:21:06 +0000
+Original-Received: from rostedt by gandalf.stny.rr.com with local (Exim 4.80)
+	(envelope-from <rostedt@goodmis.org>)
+	id 1SsPJa-0001nV-0u; Fri, 20 Jul 2012 22:21:06 -0400
+User-Agent: quilt/0.60-1
+Content-Disposition: inline; filename=0002-ftrace-Consolidate-arch-dependent-functions-with-lis.patch
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331136
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331136>
+
+--00GvhwF7k39YY
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+From: Steven Rostedt <srostedt@redhat.com>
+
+As the function tracer starts to get more features, the support for
+theses features will spread out throughout the different architectures
+over time. These features boil down to what each arch does in the
+mcount trampoline (the ftrace_caller).
+
+Currently there's two features that are not the same throughout the
+archs.
+
+ 1) Support to stop function tracing before the callback
+ 2) passing of the ftrace ops
+
+Both of these require placing an indirect function to support the
+features if the mcount trampoline does not.
+
+On a side note, for all architectures, when more than one callback
+is registered to the function tracer, an intermediate 'list' function
+is called by the mcount trampoline to iterate through the callbacks
+that are registered.
+
+Instead of making a separate function for each of these features,
+and requiring several indirect calls, just use the single 'list' function
+as the intermediate, to handle all cases. If an arch does not support
+the 'stop function tracing' or the passing of ftrace ops, just force
+it to use the list function that will handle the features required.
+
+This makes the code cleaner and simpler and removes a lot of
+ #ifdefs in the code.
+
+Link: http://lkml.kernel.org/r/20120612225424.495625483@goodmis.org
+
+Reviewed-by: Masami Hiramatsu <masami.hiramatsu.pt@hitachi.com>
+Signed-off-by: Steven Rostedt <rostedt@goodmis.org>
+---
+ include/linux/ftrace.h |   13 +++++++++++++
+ kernel/trace/ftrace.c  |   45 ++++-----------------------------------------
+ 2 files changed, 17 insertions(+), 41 deletions(-)
+
+diff --git a/include/linux/ftrace.h b/include/linux/ftrace.h
+index 2d59641..3651fdc 100644
+--- a/include/linux/ftrace.h
++++ b/include/linux/ftrace.h
+@@ -27,6 +27,19 @@
+ #define ARCH_SUPPORTS_FTRACE_OPS 0
+ #endif
+=20
++/*
++ * If the arch's mcount caller does not support all of ftrace's
++ * features, then it must call an indirect function that
++ * does. Or at least does enough to prevent any unwelcomed side effects.
++ */
++#if !defined(CONFIG_HAVE_FUNCTION_TRACE_MCOUNT_TEST) || \
++	!ARCH_SUPPORTS_FTRACE_OPS
++# define FTRACE_FORCE_LIST_FUNC 1
++#else
++# define FTRACE_FORCE_LIST_FUNC 0
++#endif
++
++
+ struct module;
+ struct ftrace_hash;
+=20
+diff --git a/kernel/trace/ftrace.c b/kernel/trace/ftrace.c
+index 4f2ab93..4cbca2e 100644
+--- a/kernel/trace/ftrace.c
++++ b/kernel/trace/ftrace.c
+@@ -97,8 +97,6 @@ static struct ftrace_ops *ftrace_global_list __read_mostl=
+y =3D &ftrace_list_end;
+ static struct ftrace_ops *ftrace_control_list __read_mostly =3D &ftrace_li=
+st_end;
+ static struct ftrace_ops *ftrace_ops_list __read_mostly =3D &ftrace_list_e=
+nd;
+ ftrace_func_t ftrace_trace_function __read_mostly =3D ftrace_stub;
+-static ftrace_func_t __ftrace_trace_function_delay __read_mostly =3D ftrac=
+e_stub;
+-ftrace_func_t __ftrace_trace_function __read_mostly =3D ftrace_stub;
+ ftrace_func_t ftrace_pid_function __read_mostly =3D ftrace_stub;
+ static struct ftrace_ops global_ops;
+ static struct ftrace_ops control_ops;
+@@ -162,26 +160,9 @@ static void set_ftrace_pid_function(ftrace_func_t func)
+ void clear_ftrace_function(void)
+ {
+ 	ftrace_trace_function =3D ftrace_stub;
+-	__ftrace_trace_function =3D ftrace_stub;
+-	__ftrace_trace_function_delay =3D ftrace_stub;
+ 	ftrace_pid_function =3D ftrace_stub;
+ }
+=20
+-#ifndef CONFIG_HAVE_FUNCTION_TRACE_MCOUNT_TEST
+-/*
+- * For those archs that do not test ftrace_trace_stop in their
+- * mcount call site, we need to do it from C.
+- */
+-static void ftrace_test_stop_func(unsigned long ip, unsigned long parent_i=
+p,
+-				  struct ftrace_ops *op)
+-{
+-	if (function_trace_stop)
+-		return;
+-
+-	__ftrace_trace_function(ip, parent_ip, op);
+-}
+-#endif
+-
+ static void control_ops_disable_all(struct ftrace_ops *ops)
+ {
+ 	int cpu;
+@@ -246,7 +227,7 @@ static void update_ftrace_function(void)
+ 	if (ftrace_ops_list =3D=3D &ftrace_list_end ||
+ 	    (ftrace_ops_list->next =3D=3D &ftrace_list_end &&
+ 	     !(ftrace_ops_list->flags & FTRACE_OPS_FL_DYNAMIC) &&
+-	     ARCH_SUPPORTS_FTRACE_OPS)) {
++	     !FTRACE_FORCE_LIST_FUNC)) {
+ 		/* Set the ftrace_ops that the arch callback uses */
+ 		if (ftrace_ops_list =3D=3D &global_ops)
+ 			function_trace_op =3D ftrace_global_list;
+@@ -259,18 +240,7 @@ static void update_ftrace_function(void)
+ 		func =3D ftrace_ops_list_func;
+ 	}
+=20
+-#ifdef CONFIG_HAVE_FUNCTION_TRACE_MCOUNT_TEST
+ 	ftrace_trace_function =3D func;
+-#else
+-#ifdef CONFIG_DYNAMIC_FTRACE
+-	/* do not update till all functions have been modified */
+-	__ftrace_trace_function_delay =3D func;
+-#else
+-	__ftrace_trace_function =3D func;
+-#endif
+-	ftrace_trace_function =3D
+-		(func =3D=3D ftrace_stub) ? func : ftrace_test_stop_func;
+-#endif
+ }
+=20
+ static void add_ftrace_ops(struct ftrace_ops **list, struct ftrace_ops *op=
+s)
+@@ -1902,16 +1872,6 @@ static void ftrace_run_update_code(int command)
+ 	 */
+ 	arch_ftrace_update_code(command);
+=20
+-#ifndef CONFIG_HAVE_FUNCTION_TRACE_MCOUNT_TEST
+-	/*
+-	 * For archs that call ftrace_test_stop_func(), we must
+-	 * wait till after we update all the function callers
+-	 * before we update the callback. This keeps different
+-	 * ops that record different functions from corrupting
+-	 * each other.
+-	 */
+-	__ftrace_trace_function =3D __ftrace_trace_function_delay;
+-#endif
+ 	function_trace_stop--;
+=20
+ 	ret =3D ftrace_arch_code_modify_post_process();
+@@ -3996,6 +3956,9 @@ __ftrace_ops_list_func(unsigned long ip, unsigned lon=
+g parent_ip,
+ {
+ 	struct ftrace_ops *op;
+=20
++	if (function_trace_stop)
++		return;
++
+ 	if (unlikely(trace_recursion_test(TRACE_INTERNAL_BIT)))
+ 		return;
+=20
+--=20
+1.7.10.4
+
+
+
+--00GvhwF7k39YY
+Content-Type: application/pgp-signature; name="signature.asc"
+Content-Description: This is a digitally signed message part
+
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.12 (GNU/Linux)
+
+iQIcBAABAgAGBQJQChISAAoJEIy3vGnGbaoAISAQANALfEGnc5dA+ZC88DFbYN8g
+31Z1CJ3TWrMUhb9pGeyaAQzbV8fVTViH9+MzcTcG7qri25AeQ9m/IUeXESjAvLfV
+Xz/7K40xBsDpbh2AV4MlVbhKAENivwfo90AFP6RSglBydBDIi2l32JU7HFbL0iPT
+oDsrBUGDy30Rt6tltTiG1NEep1lxk2O9SrbrF0tw/pn4Swe0oa3is22Y5jINDFIQ
+hoScjCF4mvPu1ppo6zgf0DmigSH0INIzcnXy1BSC5EXB9DHClpAeJVJCdnuI1I3d
+qpvfGyllF4jczzpmrXntscJsmASAhGVXl1g2fe/tiJaaPuTp6cJeeJyjCSVZQYmY
+/YtvDnONCNr+k7+uMWUvKxOOd9cySK1IPzdXcmlI8CTZ38XoDkeQ1/BGaxJ4QGok
+fVdgmfuTg6X9NIJwwmzsjXpaCd93X4F4fuNstFZWB76WeG5DHNdfw+Ij9AXDOpVn
+8zTTzm/IOBiZ60/zmGgWKRyn7RDRvBErw1OcXIZf1YfxXRrchXhh+SFKinLxIBgX
+g8GWDb1SfvpnbTu77DU5cNlJHQrETDQ77OmP+aJI15yugHCtLe/0IY5okFhJVINR
+T0CrVrVz87vrHpy+wMOXR0MzLyVJd28ieIm+ePra855RtkX57briqaxIxb/74znJ
+jUXf2UwZgh4x0Epa+zGb
+=y30s
+-----END PGP SIGNATURE-----
+
+--00GvhwF7k39YY--

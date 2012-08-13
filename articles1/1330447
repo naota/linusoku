@@ -1,0 +1,125 @@
+Path: news.gmane.org!not-for-mail
+From: Joe Perches <joe@perches.com>
+Newsgroups: gmane.linux.acpi.devel,gmane.linux.kernel
+Subject: Re: [PATCH 1/4] ACPI: Add acpi_pr_<level>() interfaces
+Date: Thu, 19 Jul 2012 09:34:47 -0700
+Lines: 67
+Approved: news@gmane.org
+Message-ID: <1342715687.1988.16.camel@joe2Laptop>
+References: <1342644027-19559-1-git-send-email-toshi.kani@hp.com>
+	 <1342644027-19559-2-git-send-email-toshi.kani@hp.com>
+	 <1342648771.5138.37.camel@lorien2>
+	 <1342650386.3010.55.camel@misato.fc.hp.com>
+	 <1342651257.5138.44.camel@lorien2>
+	 <1342651966.3010.66.camel@misato.fc.hp.com>
+	 <1342653482.5138.56.camel@lorien2>
+	 <1342658296.3010.136.camel@misato.fc.hp.com>
+	 <1342714515.3100.27.camel@lorien2>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342715702 10857 80.91.229.3 (19 Jul 2012 16:35:02 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 16:35:02 +0000 (UTC)
+Cc: Toshi Kani <toshi.kani@hp.com>, lenb@kernel.org,
+	linux-acpi@vger.kernel.org, linux-kernel@vger.kernel.org,
+	bhelgaas@google.com, isimatu.yasuaki@jp.fujitsu.com,
+	liuj97@gmail.com, srivatsa.bhat@linux.vnet.ibm.com,
+	prarit@redhat.com, imammedo@redhat.com,
+	vijaymohan.pandarathil@hp.com, shuahkhan@gmail.com
+To: shuah.khan@hp.com, "Moore, Robert" <robert.moore@intel.com>
+Original-X-From: linux-acpi-owner@vger.kernel.org Thu Jul 19 18:34:59 2012
+Return-path: <linux-acpi-owner@vger.kernel.org>
+Envelope-to: glad-acpi-devel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-acpi-owner@vger.kernel.org>)
+	id 1Srtgg-0006z2-Sx
+	for glad-acpi-devel@plane.gmane.org; Thu, 19 Jul 2012 18:34:51 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751645Ab2GSQet (ORCPT <rfc822;glad-acpi-devel@m.gmane.org>);
+	Thu, 19 Jul 2012 12:34:49 -0400
+Original-Received: from perches-mx.perches.com ([206.117.179.246]:59675 "EHLO
+	labridge.com" rhost-flags-OK-OK-OK-FAIL) by vger.kernel.org with ESMTP
+	id S1751300Ab2GSQes (ORCPT <rfc822;linux-acpi@vger.kernel.org>);
+	Thu, 19 Jul 2012 12:34:48 -0400
+Original-Received: from [96.240.34.65] (account joe@perches.com HELO [192.168.1.162])
+  by labridge.com (CommuniGate Pro SMTP 5.0.14)
+  with ESMTPA id 19393987; Thu, 19 Jul 2012 09:34:48 -0700
+In-Reply-To: <1342714515.3100.27.camel@lorien2>
+X-Mailer: Evolution 3.2.2- 
+Original-Sender: linux-acpi-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-acpi.vger.kernel.org>
+X-Mailing-List: linux-acpi@vger.kernel.org
+Xref: news.gmane.org gmane.linux.acpi.devel:54347 gmane.linux.kernel:1330447
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330447>
+
+On Thu, 2012-07-19 at 10:15 -0600, Shuah Khan wrote:
+> On Wed, 2012-07-18 at 18:38 -0600, Toshi Kani wrote:
+> 
+> > 
+> > This interface is defined in acpi/acpi_bus.h, which is intended for ACPI
+> > drivers which make many ACPI calls to proceed when they are called at
+> > run-time today.  This interface does not change that, and I believe
+> > acpi_get_name() is much faster compared to ACPI method calls these ACPI
+> > drivers make in their normal code path.  The extra work to call
+> > acpi_get_name() is simply a noise in this case (if you try to measure),
+> > and the use of this interface is limited in error paths of such ACPI
+> > drivers.
+> 
+> I understand the scope of the usage of this new interface. I don't think
+> I am able to explain the problem I see with this interface as it gets
+> used more and more from acpi drivers. Let me try another way.
+> 
+> If understand the this patch set, if and when acpi drivers that
+> currently use pr_* interfaces switch to using acpi_pr_*, the execution
+> path goes from a what printk() does to the following:
+> 
+> acpi_pr_*
+> - setup static buffer
+> - calls acpi_get_name()
+> - acpi_get_name() calls acpi_ut_validate_buffer() and then calls
+>   acpi_ns_handle_to_pathname()
+> - acpi_ns_handle_to_pathname() calls acpi_ns_validate_handle() followed
+>   by acpi_ns_get_pathname_length() and so on.
+> 
+> I think this should give you a good idea of my concern. I think
+> acpi_pr_* full functionality should be enabled under special cases such
+> as some acpi_debug level setting or some other way, and not for default
+> case. I propose the following:
+> 
+> Make acpi_pr_* versions execute the full path to do acpi_get_name()
+> conditionally and not as a default case.
+
+or maybe cache one or two.
+
+> To illustrate my point further, I currently see the following ACPI
+> messages in my dmesg buffer on my laptop. I haven't taken the time to
+> evaluate how many of them originate from acpi drivers, however I would
+> not want to see all of these becoming acpi_pr_* versions that do more
+> than what pr_* does today. I hope this explains my concern clearly.
+> 
+> [    0.000000] ACPI: RSDP 00000000000fc600 00024 (v02 HPQOEM)
+> [    0.000000] ACPI: XSDT 00000000bb7fe120 00084 (v01 HPQOEM SLIC-MPC
+> 0000000F      01000013)
+
+[120+ lines of ACPI stuff]
+
+> [    0.739844] ACPI: ACPI bus type pnp unregistered
+
+I think ACPI is the noisiest subsystem.
+
+I'd rather see this logging made quieter by conversion to
+KERN_DEBUG or another selective mechanism.
+
+There just aren't many ACPI_INFO calls around and that why
+I thought it reasonable to convert the macro to call a
+different named function.
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-acpi" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

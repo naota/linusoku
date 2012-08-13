@@ -1,0 +1,114 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 053/109] qeth: repair crash in qeth_l3_vlan_rx_kill_vid()
+Date: Tue,  7 Aug 2012 15:35:12 -0700
+Lines: 49
+Approved: news@gmane.org
+Message-ID: <20120807222047.744694424@linuxfoundation.org>
+References: <20120807222043.089735600@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344380870 30328 80.91.229.3 (7 Aug 2012 23:07:50 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 23:07:50 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Ursula Braun <ursula.braun@de.ibm.com>,
+	Frank Blaschka <frank.blaschka@de.ibm.com>,
+	"David S. Miller" <davem@davemloft.net>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 01:07:48 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyssN-0003zQ-9J
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 01:07:47 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030597Ab2HGWjc (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:39:32 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:41610 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1757412Ab2HGWjW (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:39:22 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so358014pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:39:22 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=4QB6HlACHEGe08D+5Q0/BJMBmW+H02H/VtasSuwZFCo=;
+        b=MdahDkLmZNTmFtJJVhnhv1PmAWcEVmOJslNof+YxQIc1f7Fm+TLbUgwTceypq7AS+R
+         Ou+d+vB5V25gK8kKpTyBzeKoHT2+QjfUjG9Z+zClyJSdq/MVHFu+YZBdLECJzPSBis2/
+         7x2M7YXvU+vbS7F2QhJFPhMCMJ+Cbws7UXgTKhEo2URJ3JRm0P7SFunEBJuP+nCrKHDx
+         v112YLtHv95qDk3trgmeLnQCrVy7lgE7UzdU/SUJRp8/+xqOeDYU6Wfd/WGUTRvxYZry
+         ZGrd9P1KABpb55U9SalkglVC9DI+KVwO1K4C4QiGss5Fm/eukicCDMXhfThF9gGmG1UI
+         fPqQ==
+Original-Received: by 10.68.224.70 with SMTP id ra6mr31039539pbc.11.1344379162331;
+        Tue, 07 Aug 2012 15:39:22 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id pz10sm1916440pbb.60.2012.08.07.15.39.20
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:39:21 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222043.089735600@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQn2PMegnU84ZFUpnpTkjWdfPw0aF/J5LmCzMuSTh+LyrjKdu0Deg3ZtVS74ohddfQ5f4LFm
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339607 gmane.linux.kernel.stable:29439
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339607>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.4-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Frank Blaschka <frank.blaschka@de.ibm.com>
+
+commit eabfbe6230ee7363681e7a561948d362b87169f0 upstream.
+
+Commit efc73f4b "net: Fix memory leak - vlan_info struct" adds deletion of
+VLAN 0 for devices with feature NETIF_F_HW_VLAN_FILTER. For driver
+qeth these are the layer 3 devices. Usually there exists no
+separate vlan net_device for VLAN 0. Thus the qeth functions
+qeth_l3_free_vlan_addresses4() and qeth_l3_free_vlan_addresses6()
+require an extra checking if function __vlan_find_dev_deep()
+returns with a net_device.
+
+Signed-off-by: Ursula Braun <ursula.braun@de.ibm.com>
+Signed-off-by: Frank Blaschka <frank.blaschka@de.ibm.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ drivers/s390/net/qeth_l3_main.c |    4 ++++
+ 1 file changed, 4 insertions(+)
+
+--- a/drivers/s390/net/qeth_l3_main.c
++++ b/drivers/s390/net/qeth_l3_main.c
+@@ -1818,6 +1818,8 @@ static void qeth_l3_free_vlan_addresses4
+ 	QETH_CARD_TEXT(card, 4, "frvaddr4");
+ 
+ 	netdev = __vlan_find_dev_deep(card->dev, vid);
++	if (!netdev)
++		return;
+ 	in_dev = in_dev_get(netdev);
+ 	if (!in_dev)
+ 		return;
+@@ -1846,6 +1848,8 @@ static void qeth_l3_free_vlan_addresses6
+ 	QETH_CARD_TEXT(card, 4, "frvaddr6");
+ 
+ 	netdev = __vlan_find_dev_deep(card->dev, vid);
++	if (!netdev)
++		return;
+ 	in6_dev = in6_dev_get(netdev);
+ 	if (!in6_dev)
+ 		return;
+
+

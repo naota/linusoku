@@ -1,0 +1,119 @@
+Path: news.gmane.org!not-for-mail
+From: Arnaldo Carvalho de Melo <acme@infradead.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 03/19] perf kvm: Guest userspace samples should not be lumped with host uspace
+Date: Wed, 25 Jul 2012 14:41:18 -0300
+Lines: 63
+Approved: news@gmane.org
+Message-ID: <1343238094-12481-4-git-send-email-acme@infradead.org>
+References: <1343238094-12481-1-git-send-email-acme@infradead.org>
+NNTP-Posting-Host: plane.gmane.org
+Content-Type: text/plain; charset="UTF-8"
+X-Trace: dough.gmane.org 1343238400 11667 80.91.229.3 (25 Jul 2012 17:46:40 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 17:46:40 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, David Ahern <dsahern@gmail.com>,
+	Frederic Weisbecker <fweisbec@gmail.com>,
+	Jiri Olsa <jolsa@redhat.com>,
+	Namhyung Kim <namhyung@kernel.org>,
+	Peter Zijlstra <peterz@infradead.org>,
+	Arnaldo Carvalho de Melo <acme@redhat.com>
+To: Ingo Molnar <mingo@kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 19:46:38 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su5fK-0001nc-Vm
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 19:46:31 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752148Ab2GYRqT (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 13:46:19 -0400
+Original-Received: from merlin.infradead.org ([205.233.59.134]:55591 "EHLO
+	merlin.infradead.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751285Ab2GYRlm (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 13:41:42 -0400
+Original-Received: from canuck.infradead.org ([134.117.69.58])
+	by merlin.infradead.org with esmtps (Exim 4.76 #1 (Red Hat Linux))
+	id 1Su5ad-0000LY-AA; Wed, 25 Jul 2012 17:41:39 +0000
+Original-Received: from 189.58.132.98.dynamic.adsl.gvt.net.br ([189.58.132.98] helo=sandy.ghostprotocols.net)
+	by canuck.infradead.org with esmtpsa (Exim 4.76 #1 (Red Hat Linux))
+	id 1Su5ab-0000rB-Uh; Wed, 25 Jul 2012 17:41:38 +0000
+Original-Received: by sandy.ghostprotocols.net (Postfix, from userid 500)
+	id 1848026038D; Wed, 25 Jul 2012 14:41:36 -0300 (BRT)
+X-Mailer: git-send-email 1.7.9.2.358.g22243
+In-Reply-To: <1343238094-12481-1-git-send-email-acme@infradead.org>
+X-SRS-Rewrite: SMTP reverse-path rewritten from <acme@infradead.org> by canuck.infradead.org
+	See http://www.infradead.org/rpr.html
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333180
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333180>
+
+From: David Ahern <dsahern@gmail.com>
+
+e.g., perf kvm --host  --guest report -i perf.data --stdio -D
+shows:
+
+1 599127912065356 0x143b8 [0x48]: PERF_RECORD_SAMPLE(IP, 5): 5671/5676: 0x7fdf95a061c0 period: 1 addr: 0
+... chain: nr:2
+.....  0: ffffffffffffff80
+.....  1: fffffffffffffe00
+ ... thread: qemu-kvm:5671
+ ...... dso: <not found>
+
+(IP, 5) means sample in guest userspace. Those samples should not be lumped
+into the VMM's host thread. i.e, the report output:
+
+    56.86%  qemu-kvm  [unknown]         [u] 0x00007fdf95a061c0
+
+With this patch the output emphasizes it is a guest userspace hit:
+
+    56.86%  [guest/5671]  [unknown]         [u] 0x00007fdf95a061c0
+
+Looking at 3 VMs (2 64-bit, 1 32-bit) with each running a CPU bound
+process (openssl speed), perf report currently shows:
+
+  93.84%  117726   qemu-kvm  [unknown]   [u] 0x00007fd7dcaea8e5
+
+which is wrong. With this patch you get:
+
+  31.50%   39258   [guest/18772]  [unknown]   [u] 0x00007fd7dcaea8e5
+  31.50%   39236   [guest/11230]  [unknown]   [u] 0x0000000000a57340
+  30.84%   39232   [guest/18395]  [unknown]   [u] 0x00007f66f641e107
+
+Tested-by: Jiri Olsa <jolsa@redhat.com>
+Signed-off-by: David Ahern <dsahern@gmail.com>
+Cc: Frederic Weisbecker <fweisbec@gmail.com>
+Cc: Ingo Molnar <mingo@kernel.org>
+Cc: Jiri Olsa <jolsa@redhat.com>
+Cc: Namhyung Kim <namhyung@kernel.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Link: http://lkml.kernel.org/r/1342826756-64663-4-git-send-email-dsahern@gmail.com
+Signed-off-by: Arnaldo Carvalho de Melo <acme@redhat.com>
+---
+ tools/perf/util/session.c |    4 +++-
+ 1 files changed, 3 insertions(+), 1 deletions(-)
+
+diff --git a/tools/perf/util/session.c b/tools/perf/util/session.c
+index 8e48559..90ee39d 100644
+--- a/tools/perf/util/session.c
++++ b/tools/perf/util/session.c
+@@ -918,7 +918,9 @@ static struct machine *
+ {
+ 	const u8 cpumode = event->header.misc & PERF_RECORD_MISC_CPUMODE_MASK;
+ 
+-	if (cpumode == PERF_RECORD_MISC_GUEST_KERNEL && perf_guest) {
++	if (perf_guest &&
++	    ((cpumode == PERF_RECORD_MISC_GUEST_KERNEL) ||
++	     (cpumode == PERF_RECORD_MISC_GUEST_USER))) {
+ 		u32 pid;
+ 
+ 		if (event->header.type == PERF_RECORD_MMAP)
+-- 
+1.7.1
+

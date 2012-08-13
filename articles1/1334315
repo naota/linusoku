@@ -1,0 +1,210 @@
+Path: news.gmane.org!not-for-mail
+From: Prarit Bhargava <prarit@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] tty, add kref to sysrq handlers
+Date: Fri, 27 Jul 2012 09:04:55 -0400
+Lines: 163
+Approved: news@gmane.org
+Message-ID: <1343394295-21504-1-git-send-email-prarit@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343394366 32729 80.91.229.3 (27 Jul 2012 13:06:06 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 13:06:06 +0000 (UTC)
+Cc: Prarit Bhargava <prarit@redhat.com>, gregkh@linuxfoundation.org,
+	John Stultz <johnstul@us.ibm.com>,
+	Thomas Gleixner <tglx@linutronix.de>, lwoodman@redhat.com,
+	jbaron@redhat.com, alan@linux.intel.com
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 15:06:04 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SukEw-0006bU-HL
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 15:05:58 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752868Ab2G0NFz (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 09:05:55 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:22232 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752778Ab2G0NFy (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 09:05:54 -0400
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6RD50e8001018
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Fri, 27 Jul 2012 09:05:00 -0400
+Original-Received: from prarit.bos.redhat.com (prarit.bos.redhat.com [10.16.184.34])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6RD4x1j020729;
+	Fri, 27 Jul 2012 09:04:59 -0400
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334315
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334315>
+
+On a large system with a large number of tasks, the output of
+
+echo t > /proc/sysrq-trigger
+
+can take a long period of time.  If this period is greater than the period
+of the current clocksource, the clocksource watchdog will mark the
+clocksource as unstable and fail the clocksource over.
+
+The problem with sysrq is that __handle_sysrq() takes a spin_lock with
+interrupts disabled and disables interrupts for the duration of the
+handler.  If this happens during sysrq-t on a large system with a large
+number of tasks, the result is a "brown-out" of the system.
+
+The spin_lock in question, sysrq_key_table_lock, is in place to prevent
+the removal of a sysrq handler while it is being executed in
+__handle_sysrq().
+
+A kref is added to each sysrq handler and is incremented and decremented
+in __handle_sysrq().  This, while more complicated than a lock , leads to
+minimizing the time that the sysrq_key_table_lock is acquired and results
+in a functional sysrq-t.
+
+I've tested both options and I no longer see the clocksource watchdog
+marking the TSC clocksource as unstable.
+
+Signed-off-by: Prarit Bhargava <prarit@redhat.com>
+Acked-by: Don Zickus <dzickus@redhat.com>
+Cc: gregkh@linuxfoundation.org
+Cc: John Stultz <johnstul@us.ibm.com>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Cc: lwoodman@redhat.com
+Cc: jbaron@redhat.com
+Cc: alan@linux.intel.com
+---
+ drivers/tty/sysrq.c   |   42 +++++++++++++++++++++++++++++++++++++++---
+ include/linux/sysrq.h |    2 ++
+ 2 files changed, 41 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/tty/sysrq.c b/drivers/tty/sysrq.c
+index 05728894..38c6ae6 100644
+--- a/drivers/tty/sysrq.c
++++ b/drivers/tty/sysrq.c
+@@ -458,6 +458,20 @@ static struct sysrq_key_op *sysrq_key_table[36] = {
+ 	&sysrq_ftrace_dump_op,		/* z */
+ };
+ 
++void sysrq_release(struct kref *kref)
++{
++	struct sysrq_key_op *release_op;
++	int i;
++	unsigned long flags;
++
++	spin_lock_irqsave(&sysrq_key_table_lock, flags);
++	release_op = container_of(kref, struct sysrq_key_op, kref);
++	for (i = 0; i < ARRAY_SIZE(sysrq_key_table); i++)
++		if (sysrq_key_table[i] == release_op)
++			sysrq_key_table[i] = NULL;
++	spin_unlock_irqrestore(&sysrq_key_table_lock, flags);
++}
++
+ /* key2index calculation, -1 on invalid index */
+ static int sysrq_key_table_key2index(int key)
+ {
+@@ -502,7 +516,6 @@ void __handle_sysrq(int key, bool check_mask)
+ 	int i;
+ 	unsigned long flags;
+ 
+-	spin_lock_irqsave(&sysrq_key_table_lock, flags);
+ 	/*
+ 	 * Raise the apparent loglevel to maximum so that the sysrq header
+ 	 * is shown to provide the user with positive feedback.  We do not
+@@ -513,7 +526,12 @@ void __handle_sysrq(int key, bool check_mask)
+ 	console_loglevel = 7;
+ 	printk(KERN_INFO "SysRq : ");
+ 
++	spin_lock_irqsave(&sysrq_key_table_lock, flags);
+         op_p = __sysrq_get_key_op(key);
++	if (op_p)
++		kref_get(&op_p->kref);
++	spin_unlock_irqrestore(&sysrq_key_table_lock, flags);
++
+         if (op_p) {
+ 		/*
+ 		 * Should we check for enabled operations (/proc/sysrq-trigger
+@@ -526,9 +544,14 @@ void __handle_sysrq(int key, bool check_mask)
+ 		} else {
+ 			printk("This sysrq operation is disabled.\n");
+ 		}
++
++		spin_lock_irqsave(&sysrq_key_table_lock, flags);
++		kref_put(&op_p->kref, sysrq_release);
++		spin_unlock_irqrestore(&sysrq_key_table_lock, flags);
+ 	} else {
+ 		printk("HELP : ");
+ 		/* Only print the help msg once per handler */
++		spin_lock_irqsave(&sysrq_key_table_lock, flags);
+ 		for (i = 0; i < ARRAY_SIZE(sysrq_key_table); i++) {
+ 			if (sysrq_key_table[i]) {
+ 				int j;
+@@ -541,10 +564,10 @@ void __handle_sysrq(int key, bool check_mask)
+ 				printk("%s ", sysrq_key_table[i]->help_msg);
+ 			}
+ 		}
++		spin_unlock_irqrestore(&sysrq_key_table_lock, flags);
+ 		printk("\n");
+ 		console_loglevel = orig_log_level;
+ 	}
+-	spin_unlock_irqrestore(&sysrq_key_table_lock, flags);
+ }
+ 
+ void handle_sysrq(int key)
+@@ -837,7 +860,12 @@ static int __sysrq_swap_key_ops(int key, struct sysrq_key_op *insert_op_p,
+ 
+ 	spin_lock_irqsave(&sysrq_key_table_lock, flags);
+ 	if (__sysrq_get_key_op(key) == remove_op_p) {
+-		__sysrq_put_key_op(key, insert_op_p);
++		if (!remove_op_p) { /* register */
++			__sysrq_put_key_op(key, insert_op_p);
++			kref_init(&insert_op_p->kref);
++		}
++		if (!insert_op_p) /* unregister */
++			kref_put(&remove_op_p->kref, sysrq_release);
+ 		retval = 0;
+ 	} else {
+ 		retval = -1;
+@@ -898,6 +926,14 @@ static inline void sysrq_init_procfs(void)
+ 
+ static int __init sysrq_init(void)
+ {
++	int i;
++
++	spin_lock_irqsave(&sysrq_key_table_lock, flags);
++	for (i = 0; i < ARRAY_SIZE(sysrq_key_table); i++)
++		if (sysrq_key_table[i])
++			kref_init(&sysrq_key_table[i]->kref);
++	spin_unlock_irqrestore(&sysrq_key_table_lock, flags);
++
+ 	sysrq_init_procfs();
+ 
+ 	if (sysrq_on())
+diff --git a/include/linux/sysrq.h b/include/linux/sysrq.h
+index 7faf933..d458f39 100644
+--- a/include/linux/sysrq.h
++++ b/include/linux/sysrq.h
+@@ -16,6 +16,7 @@
+ 
+ #include <linux/errno.h>
+ #include <linux/types.h>
++#include <linux/kref.h>
+ 
+ /* Enable/disable SYSRQ support by default (0==no, 1==yes). */
+ #define SYSRQ_DEFAULT_ENABLE	1
+@@ -36,6 +37,7 @@ struct sysrq_key_op {
+ 	char *help_msg;
+ 	char *action_msg;
+ 	int enable_mask;
++	struct kref kref;
+ };
+ 
+ #ifdef CONFIG_MAGIC_SYSRQ
+-- 
+1.7.9.3
+

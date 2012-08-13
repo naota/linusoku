@@ -1,0 +1,164 @@
+Path: news.gmane.org!not-for-mail
+From: Tejun Heo <tj@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 06/14] workqueue: unify local CPU queueing handling
+Date: Fri,  3 Aug 2012 10:43:51 -0700
+Lines: 101
+Approved: news@gmane.org
+Message-ID: <1344015839-21800-7-git-send-email-tj@kernel.org>
+References: <1344015839-21800-1-git-send-email-tj@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344016029 23104 80.91.229.3 (3 Aug 2012 17:47:09 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 17:47:09 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	padovan@profusion.mobi, marcel@holtmann.org, peterz@infradead.org,
+	mingo@redhat.com, davem@davemloft.net, dougthompson@xmission.com,
+	ibm-acpi@hmh.eng.br, cbou@mail.ru, rui.zhang@intel.com,
+	tomi.valkeinen@ti.com, Tejun Heo <tj@kernel.org>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 19:47:06 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxLxq-0000fo-8k
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 19:47:06 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753727Ab2HCRq6 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 13:46:58 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:34680 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753492Ab2HCRoS (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 13:44:18 -0400
+Original-Received: by mail-gh0-f174.google.com with SMTP id r11so1127356ghr.19
+        for <linux-kernel@vger.kernel.org>; Fri, 03 Aug 2012 10:44:18 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references;
+        bh=u4mJFaHVvlzzv5nbWsB7zS+gtheY1O7x13xFS05c7xY=;
+        b=m3M+eWOc2VQok8xc9VhVA26lfoLLQyQufM0NdX99DyauiXvE88nTkyegIck6vVvYud
+         ZAO5K+6qUUoOiDOBsiX/sKdco9ZDRXhsoeI9NeDafAAK5NLQfbtlpkjWYoYhERVGQj6X
+         pOyW+f8Y/zAnyCO/8jbb9oOBj95g7BUwBLjq65rZ7I008RyOcY3UxqJveuFfIxu4e8ZK
+         NTMo1qD3A95fRLjxEwE7HmSo+1I3WSfMyCQj13Itj7UHV3AbTSJYgyuZt/vooXQBvc8q
+         LKDZO981W6kGRmyUNrFWkDNnTU/PfeVAfbCS5ei2qbJNhS9DAPBmMPxjYbC8tdCjFQXU
+         JxfA==
+Original-Received: by 10.50.236.4 with SMTP id uq4mr4972031igc.18.1344015857939;
+        Fri, 03 Aug 2012 10:44:17 -0700 (PDT)
+Original-Received: from wtj.mtv.corp.google.com (wtj.mtv.corp.google.com [172.18.110.84])
+        by mx.google.com with ESMTPS id yh10sm4595318igb.0.2012.08.03.10.44.15
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 03 Aug 2012 10:44:17 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7.3
+In-Reply-To: <1344015839-21800-1-git-send-email-tj@kernel.org>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337461
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337461>
+
+Queueing functions have been using different methods to determine the
+local CPU.
+
+* queue_work() superflously uses get/put_cpu() to acquire and hold the
+  local CPU across queue_work_on().
+
+* delayed_work_timer_fn() uses smp_processor_id().
+
+* queue_delayed_work() calls queue_delayed_work_on() with -1 @cpu
+  which is interpreted as the local CPU.
+
+* flush_delayed_work[_sync]() were using raw_smp_processor_id().
+
+* __queue_work() interprets %WORK_CPU_UNBOUND as local CPU if the
+  target workqueue is bound one but nobody uses this.
+
+This patch converts all functions to uniformly use %WORK_CPU_UNBOUND
+to indicate local CPU and use the local binding feature of
+__queue_work().  unlikely() is dropped from %WORK_CPU_UNBOUND handling
+in __queue_work().
+
+Signed-off-by: Tejun Heo <tj@kernel.org>
+---
+ kernel/workqueue.c |   19 +++++++------------
+ 1 files changed, 7 insertions(+), 12 deletions(-)
+
+diff --git a/kernel/workqueue.c b/kernel/workqueue.c
+index 5539238..ce60bb5 100644
+--- a/kernel/workqueue.c
++++ b/kernel/workqueue.c
+@@ -1003,7 +1003,7 @@ static void __queue_work(unsigned int cpu, struct workqueue_struct *wq,
+ 	if (!(wq->flags & WQ_UNBOUND)) {
+ 		struct global_cwq *last_gcwq;
+ 
+-		if (unlikely(cpu == WORK_CPU_UNBOUND))
++		if (cpu == WORK_CPU_UNBOUND)
+ 			cpu = raw_smp_processor_id();
+ 
+ 		/*
+@@ -1103,12 +1103,7 @@ EXPORT_SYMBOL_GPL(queue_work_on);
+  */
+ bool queue_work(struct workqueue_struct *wq, struct work_struct *work)
+ {
+-	bool ret;
+-
+-	ret = queue_work_on(get_cpu(), wq, work);
+-	put_cpu();
+-
+-	return ret;
++	return queue_work_on(WORK_CPU_UNBOUND, wq, work);
+ }
+ EXPORT_SYMBOL_GPL(queue_work);
+ 
+@@ -1118,7 +1113,7 @@ void delayed_work_timer_fn(unsigned long __data)
+ 	struct cpu_workqueue_struct *cwq = get_work_cwq(&dwork->work);
+ 
+ 	local_irq_disable();
+-	__queue_work(smp_processor_id(), cwq->wq, &dwork->work);
++	__queue_work(WORK_CPU_UNBOUND, cwq->wq, &dwork->work);
+ 	local_irq_enable();
+ }
+ EXPORT_SYMBOL_GPL(delayed_work_timer_fn);
+@@ -1172,7 +1167,7 @@ bool queue_delayed_work_on(int cpu, struct workqueue_struct *wq,
+ 
+ 		timer->expires = jiffies + delay;
+ 
+-		if (unlikely(cpu >= 0))
++		if (unlikely(cpu != WORK_CPU_UNBOUND))
+ 			add_timer_on(timer, cpu);
+ 		else
+ 			add_timer(timer);
+@@ -1198,7 +1193,7 @@ bool queue_delayed_work(struct workqueue_struct *wq,
+ 	if (delay == 0)
+ 		return queue_work(wq, &dwork->work);
+ 
+-	return queue_delayed_work_on(-1, wq, dwork, delay);
++	return queue_delayed_work_on(WORK_CPU_UNBOUND, wq, dwork, delay);
+ }
+ EXPORT_SYMBOL_GPL(queue_delayed_work);
+ 
+@@ -2868,7 +2863,7 @@ bool flush_delayed_work(struct delayed_work *dwork)
+ {
+ 	local_irq_disable();
+ 	if (del_timer_sync(&dwork->timer))
+-		__queue_work(raw_smp_processor_id(),
++		__queue_work(WORK_CPU_UNBOUND,
+ 			     get_work_cwq(&dwork->work)->wq, &dwork->work);
+ 	local_irq_enable();
+ 	return flush_work(&dwork->work);
+@@ -2891,7 +2886,7 @@ bool flush_delayed_work_sync(struct delayed_work *dwork)
+ {
+ 	local_irq_disable();
+ 	if (del_timer_sync(&dwork->timer))
+-		__queue_work(raw_smp_processor_id(),
++		__queue_work(WORK_CPU_UNBOUND,
+ 			     get_work_cwq(&dwork->work)->wq, &dwork->work);
+ 	local_irq_enable();
+ 	return flush_work_sync(&dwork->work);
+-- 
+1.7.7.3
+

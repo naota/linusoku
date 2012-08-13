@@ -1,0 +1,193 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 56/70] mm: mmu_notifier: fix freed page still mapped in secondary MMU
+Date: Tue, 07 Aug 2012 04:28:51 +0100
+Lines: 136
+Approved: news@gmane.org
+Message-ID: <20120807032804.224482411@decadent.org.uk>
+References: <20120807032755.803571133@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344311303 21665 80.91.229.3 (7 Aug 2012 03:48:23 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 03:48:23 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>,
+	Avi Kivity <avi@redhat.com>,
+	Marcelo Tosatti <mtosatti@redhat.com>,
+	Paul Gortmaker <paul.gortmaker@windriver.com>,
+	Andrea Arcangeli <aarcange@redhat.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 05:48:22 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyamL-0001W8-4z
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 05:48:21 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932762Ab2HGDry (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 23:47:54 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:59782 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1757248Ab2HGDik (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 23:38:40 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Syace-00081r-Cp; Tue, 07 Aug 2012 04:38:20 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Syac6-0002qp-Md; Tue, 07 Aug 2012 04:37:46 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120807032755.803571133@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338755 gmane.linux.kernel.stable:29196
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338755>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+
+commit 3ad3d901bbcfb15a5e4690e55350db0899095a68 upstream.
+
+mmu_notifier_release() is called when the process is exiting.  It will
+delete all the mmu notifiers.  But at this time the page belonging to the
+process is still present in page tables and is present on the LRU list, so
+this race will happen:
+
+      CPU 0                 CPU 1
+mmu_notifier_release:    try_to_unmap:
+   hlist_del_init_rcu(&mn->hlist);
+                            ptep_clear_flush_notify:
+                                  mmu nofifler not found
+                            free page  !!!!!!
+                            /*
+                             * At the point, the page has been
+                             * freed, but it is still mapped in
+                             * the secondary MMU.
+                             */
+
+  mn->ops->release(mn, mm);
+
+Then the box is not stable and sometimes we can get this bug:
+
+[  738.075923] BUG: Bad page state in process migrate-perf  pfn:03bec
+[  738.075931] page:ffffea00000efb00 count:0 mapcount:0 mapping:          (null) index:0x8076
+[  738.075936] page flags: 0x20000000000014(referenced|dirty)
+
+The same issue is present in mmu_notifier_unregister().
+
+We can call ->release before deleting the notifier to ensure the page has
+been unmapped from the secondary MMU before it is freed.
+
+Signed-off-by: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Cc: Avi Kivity <avi@redhat.com>
+Cc: Marcelo Tosatti <mtosatti@redhat.com>
+Cc: Paul Gortmaker <paul.gortmaker@windriver.com>
+Cc: Andrea Arcangeli <aarcange@redhat.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ mm/mmu_notifier.c |   45 +++++++++++++++++++++++----------------------
+ 1 file changed, 23 insertions(+), 22 deletions(-)
+
+diff --git a/mm/mmu_notifier.c b/mm/mmu_notifier.c
+index 9a611d3..862b608 100644
+--- a/mm/mmu_notifier.c
++++ b/mm/mmu_notifier.c
+@@ -33,6 +33,24 @@
+ void __mmu_notifier_release(struct mm_struct *mm)
+ {
+ 	struct mmu_notifier *mn;
++	struct hlist_node *n;
++
++	/*
++	 * RCU here will block mmu_notifier_unregister until
++	 * ->release returns.
++	 */
++	rcu_read_lock();
++	hlist_for_each_entry_rcu(mn, n, &mm->mmu_notifier_mm->list, hlist)
++		/*
++		 * if ->release runs before mmu_notifier_unregister it
++		 * must be handled as it's the only way for the driver
++		 * to flush all existing sptes and stop the driver
++		 * from establishing any more sptes before all the
++		 * pages in the mm are freed.
++		 */
++		if (mn->ops->release)
++			mn->ops->release(mn, mm);
++	rcu_read_unlock();
+ 
+ 	spin_lock(&mm->mmu_notifier_mm->lock);
+ 	while (unlikely(!hlist_empty(&mm->mmu_notifier_mm->list))) {
+@@ -46,23 +64,6 @@ void __mmu_notifier_release(struct mm_struct *mm)
+ 		 * mmu_notifier_unregister to return.
+ 		 */
+ 		hlist_del_init_rcu(&mn->hlist);
+-		/*
+-		 * RCU here will block mmu_notifier_unregister until
+-		 * ->release returns.
+-		 */
+-		rcu_read_lock();
+-		spin_unlock(&mm->mmu_notifier_mm->lock);
+-		/*
+-		 * if ->release runs before mmu_notifier_unregister it
+-		 * must be handled as it's the only way for the driver
+-		 * to flush all existing sptes and stop the driver
+-		 * from establishing any more sptes before all the
+-		 * pages in the mm are freed.
+-		 */
+-		if (mn->ops->release)
+-			mn->ops->release(mn, mm);
+-		rcu_read_unlock();
+-		spin_lock(&mm->mmu_notifier_mm->lock);
+ 	}
+ 	spin_unlock(&mm->mmu_notifier_mm->lock);
+ 
+@@ -284,16 +285,13 @@ void mmu_notifier_unregister(struct mmu_notifier *mn, struct mm_struct *mm)
+ {
+ 	BUG_ON(atomic_read(&mm->mm_count) <= 0);
+ 
+-	spin_lock(&mm->mmu_notifier_mm->lock);
+ 	if (!hlist_unhashed(&mn->hlist)) {
+-		hlist_del_rcu(&mn->hlist);
+-
+ 		/*
+ 		 * RCU here will force exit_mmap to wait ->release to finish
+ 		 * before freeing the pages.
+ 		 */
+ 		rcu_read_lock();
+-		spin_unlock(&mm->mmu_notifier_mm->lock);
++
+ 		/*
+ 		 * exit_mmap will block in mmu_notifier_release to
+ 		 * guarantee ->release is called before freeing the
+@@ -302,8 +300,11 @@ void mmu_notifier_unregister(struct mmu_notifier *mn, struct mm_struct *mm)
+ 		if (mn->ops->release)
+ 			mn->ops->release(mn, mm);
+ 		rcu_read_unlock();
+-	} else
++
++		spin_lock(&mm->mmu_notifier_mm->lock);
++		hlist_del_rcu(&mn->hlist);
+ 		spin_unlock(&mm->mmu_notifier_mm->lock);
++	}
+ 
+ 	/*
+ 	 * Wait any running method to finish, of course including
+
+

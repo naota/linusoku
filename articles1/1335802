@@ -1,0 +1,115 @@
+Path: news.gmane.org!not-for-mail
+From: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.xen.devel
+Subject: [PATCH 1/6] xen/mmu: use copy_page instead of memcpy.
+Date: Tue, 31 Jul 2012 10:43:19 -0400
+Lines: 57
+Approved: news@gmane.org
+Message-ID: <1343745804-28028-2-git-send-email-konrad.wilk@oracle.com>
+References: <1343745804-28028-1-git-send-email-konrad.wilk@oracle.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343746385 11341 80.91.229.3 (31 Jul 2012 14:53:05 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 14:53:05 +0000 (UTC)
+Cc: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+To: linux-kernel@vger.kernel.org, xen-devel@lists.xensource.com,
+	jbeulich@suse.com, stefano.stabellini@eu.citrix.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 16:53:05 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwDoj-0005PP-MP
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 16:53:02 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754722Ab2GaOwk (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 10:52:40 -0400
+Original-Received: from rcsinet15.oracle.com ([148.87.113.117]:37989 "EHLO
+	rcsinet15.oracle.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753959Ab2GaOwh (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 10:52:37 -0400
+Original-Received: from ucsinet21.oracle.com (ucsinet21.oracle.com [156.151.31.93])
+	by rcsinet15.oracle.com (Sentrion-MTA-4.2.2/Sentrion-MTA-4.2.2) with ESMTP id q6VEqRKs007597
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Tue, 31 Jul 2012 14:52:27 GMT
+Original-Received: from acsmt357.oracle.com (acsmt357.oracle.com [141.146.40.157])
+	by ucsinet21.oracle.com (8.14.4+Sun/8.14.4) with ESMTP id q6VEqQaO029490
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Tue, 31 Jul 2012 14:52:26 GMT
+Original-Received: from abhmt117.oracle.com (abhmt117.oracle.com [141.146.116.69])
+	by acsmt357.oracle.com (8.12.11.20060308/8.12.11) with ESMTP id q6VEqQlR019295;
+	Tue, 31 Jul 2012 09:52:26 -0500
+Original-Received: from phenom.dumpdata.com (/209.6.85.33)
+	by default (Oracle Beehive Gateway v4.0)
+	with ESMTP ; Tue, 31 Jul 2012 07:52:25 -0700
+Original-Received: by phenom.dumpdata.com (Postfix, from userid 1000)
+	id B30BD402B5; Tue, 31 Jul 2012 10:43:25 -0400 (EDT)
+X-Mailer: git-send-email 1.7.7.6
+In-Reply-To: <1343745804-28028-1-git-send-email-konrad.wilk@oracle.com>
+X-Source-IP: ucsinet21.oracle.com [156.151.31.93]
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335802 gmane.comp.emulators.xen.devel:135985
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335802>
+
+After all, this is what it is there for.
+
+Acked-by: Jan Beulich <jbeulich@suse.com>
+Signed-off-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+---
+ arch/x86/xen/mmu.c |   13 ++++++-------
+ 1 files changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/arch/x86/xen/mmu.c b/arch/x86/xen/mmu.c
+index 6ba6100..7247e5a 100644
+--- a/arch/x86/xen/mmu.c
++++ b/arch/x86/xen/mmu.c
+@@ -1754,14 +1754,14 @@ void __init xen_setup_kernel_pagetable(pgd_t *pgd, unsigned long max_pfn)
+ 	 * it will be also modified in the __ka space! (But if you just
+ 	 * modify the PMD table to point to other PTE's or none, then you
+ 	 * are OK - which is what cleanup_highmap does) */
+-	memcpy(level2_ident_pgt, l2, sizeof(pmd_t) * PTRS_PER_PMD);
++	copy_page(level2_ident_pgt, l2);
+ 	/* Graft it onto L4[511][511] */
+-	memcpy(level2_kernel_pgt, l2, sizeof(pmd_t) * PTRS_PER_PMD);
++	copy_page(level2_kernel_pgt, l2);
+ 
+ 	/* Get [511][510] and graft that in level2_fixmap_pgt */
+ 	l3 = m2v(pgd[pgd_index(__START_KERNEL_map + PMD_SIZE)].pgd);
+ 	l2 = m2v(l3[pud_index(__START_KERNEL_map + PMD_SIZE)].pud);
+-	memcpy(level2_fixmap_pgt, l2, sizeof(pmd_t) * PTRS_PER_PMD);
++	copy_page(level2_fixmap_pgt, l2);
+ 	/* Note that we don't do anything with level1_fixmap_pgt which
+ 	 * we don't need. */
+ 
+@@ -1821,8 +1821,7 @@ static void __init xen_write_cr3_init(unsigned long cr3)
+ 	 */
+ 	swapper_kernel_pmd =
+ 		extend_brk(sizeof(pmd_t) * PTRS_PER_PMD, PAGE_SIZE);
+-	memcpy(swapper_kernel_pmd, initial_kernel_pmd,
+-	       sizeof(pmd_t) * PTRS_PER_PMD);
++	copy_page(swapper_kernel_pmd, initial_kernel_pmd);
+ 	swapper_pg_dir[KERNEL_PGD_BOUNDARY] =
+ 		__pgd(__pa(swapper_kernel_pmd) | _PAGE_PRESENT);
+ 	set_page_prot(swapper_kernel_pmd, PAGE_KERNEL_RO);
+@@ -1851,11 +1850,11 @@ void __init xen_setup_kernel_pagetable(pgd_t *pgd, unsigned long max_pfn)
+ 				  512*1024);
+ 
+ 	kernel_pmd = m2v(pgd[KERNEL_PGD_BOUNDARY].pgd);
+-	memcpy(initial_kernel_pmd, kernel_pmd, sizeof(pmd_t) * PTRS_PER_PMD);
++	copy_page(initial_kernel_pmd, kernel_pmd);
+ 
+ 	xen_map_identity_early(initial_kernel_pmd, max_pfn);
+ 
+-	memcpy(initial_page_table, pgd, sizeof(pgd_t) * PTRS_PER_PGD);
++	copy_page(initial_page_table, pgd);
+ 	initial_page_table[KERNEL_PGD_BOUNDARY] =
+ 		__pgd(__pa(initial_kernel_pmd) | _PAGE_PRESENT);
+ 
+-- 
+1.7.7.6
+

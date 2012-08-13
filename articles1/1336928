@@ -1,0 +1,121 @@
+Path: news.gmane.org!not-for-mail
+From: Johannes Weiner <hannes@cmpxchg.org>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [PATCH] slub: use free_page instead of put_page for freeing
+ kmalloc allocation
+Date: Thu, 2 Aug 2012 19:10:19 +0200
+Lines: 52
+Approved: news@gmane.org
+Message-ID: <20120802171019.GA1239@cmpxchg.org>
+References: <1343913065-14631-1-git-send-email-glommer@parallels.com>
+ <alpine.DEB.2.00.1208020902390.23049@router.home>
+ <20120802164203.GA30111@cmpxchg.org>
+ <501AB013.1090607@parallels.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343927436 5446 80.91.229.3 (2 Aug 2012 17:10:36 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 2 Aug 2012 17:10:36 +0000 (UTC)
+Cc: Christoph Lameter <cl@linux.com>, linux-kernel@vger.kernel.org,
+	Andrew Morton <akpm@linux-foundation.org>, linux-mm@kvack.org,
+	David Rientjes <rientjes@google.com>,
+	Pekka Enberg <penberg@kernel.org>,
+	Andrea Arcangeli <aarcange@redhat.com>
+To: Glauber Costa <glommer@parallels.com>
+Original-X-From: owner-linux-mm@kvack.org Thu Aug 02 19:10:32 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Swyus-0007dr-Ue
+	for glkm-linux-mm-2@m.gmane.org; Thu, 02 Aug 2012 19:10:31 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 67F256B004D; Thu,  2 Aug 2012 13:10:29 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 561A56B005A; Thu,  2 Aug 2012 13:10:29 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 05C7E6B005D; Thu,  2 Aug 2012 13:10:28 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx156.postini.com [74.125.245.156])
+	by kanga.kvack.org (Postfix) with SMTP id 3861B6B004D
+	for <linux-mm@kvack.org>; Thu,  2 Aug 2012 13:10:28 -0400 (EDT)
+Original-Received: from zene.cmpxchg.org ([85.214.230.12]) (using TLSv1) by na3sys010amx156.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 02 Aug 2012 17:10:28 GMT
+Original-Received: from hsi-kbw-109-192-095-238.hsi6.kabel-badenwuerttemberg.de ([109.192.95.238] helo=dexter.home.cmpxchg.org)
+	by zene.cmpxchg.org with esmtpsa (TLSv1:AES128-SHA:128)
+	(Exim 4.76)
+	(envelope-from <hannes@cmpxchg.org>)
+	id 1Swyuk-0003xV-KR; Thu, 02 Aug 2012 17:10:22 +0000
+Content-Disposition: inline
+In-Reply-To: <501AB013.1090607@parallels.com>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <hannes@cmpxchg.org> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83454 gmane.linux.kernel:1336928
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336928>
+
+On Thu, Aug 02, 2012 at 08:51:31PM +0400, Glauber Costa wrote:
+> On 08/02/2012 08:42 PM, Johannes Weiner wrote:
+> > On Thu, Aug 02, 2012 at 09:06:41AM -0500, Christoph Lameter wrote:
+> >> On Thu, 2 Aug 2012, Glauber Costa wrote:
+> >>
+> >>> diff --git a/mm/slub.c b/mm/slub.c
+> >>> index e517d43..9ca4e20 100644
+> >>> --- a/mm/slub.c
+> >>> +++ b/mm/slub.c
+> >>> @@ -3453,7 +3453,7 @@ void kfree(const void *x)
+> >>>  	if (unlikely(!PageSlab(page))) {
+> >>>  		BUG_ON(!PageCompound(page));
+> >>>  		kmemleak_free(x);
+> >>> -		put_page(page);
+> >>> +		__free_pages(page, compound_order(page));
+> >>
+> >> Hmmm... put_page would have called put_compound_page(). which would have
+> >> called the dtor function. dtor is set to __free_pages() ok which does
+> >> mlock checks and verifies that the page is in a proper condition for
+> >> freeing. Then it calls free_one_page().
+> >>
+> >> __free_pages() decrements the refcount and then calls __free_pages_ok().
+> >>
+> >> So we loose the checking and the dtor stuff with this patch. Guess that is
+> >> ok?
+> > 
+> > The changelog is not correct, however.  People DO get pages underlying
+> > slab objects and even free the slab objects before returning the page.
+> > See recent fix:
+> 
+> Well, yes, in the sense that slab objects are page-backed.
+> 
+> The point is that a user of kmalloc/kfree should not treat a memory area
+> as if it were a page, even if it is page-sized.
+
+I whole-heartedly agree.  But it's hard to verify there aren't any
+doing that.  And even though it's ugly to do, it's technically
+working, no?  No longer supporting it would be a regression.
+
+> If it is just the Changelog you are unhappy about, I can do another
+> submission rewording it.
+
+__free_pages still respects the refcount, so I think the Changelog is
+not actually appropriate for the change you're making.  You're just
+changing what Christoph outlined above, the compound page handling.
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

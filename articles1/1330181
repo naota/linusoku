@@ -1,0 +1,104 @@
+Path: news.gmane.org!not-for-mail
+From: Chen Gong <gong.chen@linux.intel.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 4/5] x86: mce: Remove the frozen cases in the hotplug code
+Date: Thu, 19 Jul 2012 13:59:40 -0400
+Lines: 57
+Approved: news@gmane.org
+Message-ID: <1342720781-4729-5-git-send-email-gong.chen@linux.intel.com>
+References: <1342720781-4729-1-git-send-email-gong.chen@linux.intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342677560 19057 80.91.229.3 (19 Jul 2012 05:59:20 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 05:59:20 +0000 (UTC)
+Cc: tony.luck@intel.com, bp@amd64.org, x86@kernel.org,
+	linux-kernel@vger.kernel.org
+To: tglx@linutronix.de
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 07:59:20 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Srjle-0008Vp-TF
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 07:59:19 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752763Ab2GSF67 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 01:58:59 -0400
+Original-Received: from mga11.intel.com ([192.55.52.93]:37058 "EHLO mga11.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752375Ab2GSF6z (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 01:58:55 -0400
+Original-Received: from fmsmga001.fm.intel.com ([10.253.24.23])
+  by fmsmga102.fm.intel.com with ESMTP; 18 Jul 2012 22:58:54 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="180240102"
+Original-Received: from gchen-sby.bj.intel.com (HELO localhost) ([10.238.158.78])
+  by fmsmga001.fm.intel.com with ESMTP; 18 Jul 2012 22:58:53 -0700
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1342720781-4729-1-git-send-email-gong.chen@linux.intel.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330181
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330181>
+
+From: Thomas Gleixner <tglx@linutronix.de>
+
+No point in having double cases if we can simply mask the FROZEN bit
+out.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+---
+ arch/x86/kernel/cpu/mcheck/mce.c |   12 +++++-------
+ 1 file changed, 5 insertions(+), 7 deletions(-)
+
+diff --git a/arch/x86/kernel/cpu/mcheck/mce.c b/arch/x86/kernel/cpu/mcheck/mce.c
+index 9bc425f..eff73e7 100644
+--- a/arch/x86/kernel/cpu/mcheck/mce.c
++++ b/arch/x86/kernel/cpu/mcheck/mce.c
+@@ -2260,34 +2260,32 @@ mce_cpu_callback(struct notifier_block *nfb, unsigned long action, void *hcpu)
+ 	unsigned int cpu = (unsigned long)hcpu;
+ 	struct timer_list *t = &per_cpu(mce_timer, cpu);
+ 
+-	switch (action) {
++	switch (action & ~CPU_TASKS_FROZEN) {
+ 	case CPU_ONLINE:
+-	case CPU_ONLINE_FROZEN:
+ 		mce_device_create(cpu);
+ 		if (threshold_cpu_callback)
+ 			threshold_cpu_callback(action, cpu);
+ 		break;
+ 	case CPU_DEAD:
+-	case CPU_DEAD_FROZEN:
+ 		if (threshold_cpu_callback)
+ 			threshold_cpu_callback(action, cpu);
+ 		mce_device_remove(cpu);
+ 		break;
+ 	case CPU_DOWN_PREPARE:
+-	case CPU_DOWN_PREPARE_FROZEN:
+ 		del_timer_sync(t);
+ 		smp_call_function_single(cpu, mce_disable_cpu, &action, 1);
+ 		break;
+ 	case CPU_DOWN_FAILED:
+-	case CPU_DOWN_FAILED_FROZEN:
+ 		smp_call_function_single(cpu, mce_reenable_cpu, &action, 1);
+ 		mce_start_timer(cpu, t);
+ 		break;
+-	case CPU_POST_DEAD:
++	}
++
++	if (action == CPU_POST_DEAD) {
+ 		/* intentionally ignoring frozen here */
+ 		cmci_rediscover(cpu);
+-		break;
+ 	}
++
+ 	return NOTIFY_OK;
+ }
+ 
+-- 
+1.7.10.4
+

@@ -1,0 +1,264 @@
+Path: news.gmane.org!not-for-mail
+From: Jiang Liu <liuj97@gmail.com>
+Newsgroups: gmane.linux.acpi.devel,gmane.linux.kernel,gmane.linux.kernel.pci
+Subject: [RFC PATCH 3/3] ACPIHP: detect ACPI hotplug slots by checking ACPI _EJ0 method
+Date: Sat, 28 Jul 2012 19:42:52 +0800
+Lines: 195
+Approved: news@gmane.org
+Message-ID: <1343475772-21345-4-git-send-email-jiang.liu@huawei.com>
+References: <1343475772-21345-1-git-send-email-jiang.liu@huawei.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343475955 14468 80.91.229.3 (28 Jul 2012 11:45:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 28 Jul 2012 11:45:55 +0000 (UTC)
+Cc: Jiang Liu <jiang.liu@huawei.com>,
+	Bjorn Helgaas <bhelgaas@google.com>,
+	Hanjun Guo <guohanjun@huawei.com>,
+	linux-kernel@vger.kernel.org, linux-acpi@vger.kernel.org,
+	linux-pci@vger.kernel.org, Gaohuai Han <hangaohuai@huawei.com>,
+	Jiang Liu <liuj97@gmail.com>
+To: Len Brown <lenb@kernel.org>, Tony Luck <tony.luch@intel.com>,
+	Bob Moore <robert.moore@intel.com>,
+	Huang Ying <ying.huang@intel.com>,
+	Yinghai Lu <yinghai@kernel.org>,
+	Yasuaki Ishimatsu <isimatu.yasuaki@jp.fujitsu.com>,
+	Kenji Kaneshige <kaneshige.kenji@jp.fujitsu.com>,
+	Wen Congyang <wency@cn.fujitsu.com>,
+	Taku Izumi <izumi.taku@jp.fujitsu.com>
+Original-X-From: linux-acpi-owner@vger.kernel.org Sat Jul 28 13:45:51 2012
+Return-path: <linux-acpi-owner@vger.kernel.org>
+Envelope-to: glad-acpi-devel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-acpi-owner@vger.kernel.org>)
+	id 1Sv5Su-0005jV-NT
+	for glad-acpi-devel@plane.gmane.org; Sat, 28 Jul 2012 13:45:49 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752546Ab2G1LpZ (ORCPT <rfc822;glad-acpi-devel@m.gmane.org>);
+	Sat, 28 Jul 2012 07:45:25 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:38228 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752511Ab2G1LpX (ORCPT
+	<rfc822;linux-acpi@vger.kernel.org>); Sat, 28 Jul 2012 07:45:23 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so6636375pbb.19
+        for <multiple recipients>; Sat, 28 Jul 2012 04:45:22 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=uhIpAm65ClYGRNDNqAvU9yv/Io+ltzSv40W18jvZsQw=;
+        b=VvkMzcLskTH75U6hMZN8pTgUdtfM7+NZpLVLsoRuCjDCeRoNH32gbEinRlyzMHAV+6
+         lezJO7DPf+rKlf1WDxfYPAguJV9+zsLQiLqBbcl14Fza946ZqNUk6KXh4oWjNn/qlVW4
+         4OLjJgKU6pbitv6RUmO/yJYEp8wPP8KCsTI4aKBxLuckhr0V4qV1IQ4fUqitnWEQyR+F
+         f7JPb4GlvBntB9xaWHOsItbtxUYi3od3irsyIvG5dCfh8LVaOxSrlU75JWxfJ+HOWWqz
+         MNREySq2SXrYnD5Ylz5pXzgmv0uzWzyZhaMJhvBWnqtrFGaIAa2vfmxNGF2DhTzJrFde
+         tHzw==
+Original-Received: by 10.68.218.162 with SMTP id ph2mr20692641pbc.114.1343475922718;
+        Sat, 28 Jul 2012 04:45:22 -0700 (PDT)
+Original-Received: from localhost.localdomain ([221.221.16.15])
+        by mx.google.com with ESMTPS id pi7sm3842042pbb.56.2012.07.28.04.45.10
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Sat, 28 Jul 2012 04:45:22 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1343475772-21345-1-git-send-email-jiang.liu@huawei.com>
+Original-Sender: linux-acpi-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-acpi.vger.kernel.org>
+X-Mailing-List: linux-acpi@vger.kernel.org
+Xref: news.gmane.org gmane.linux.acpi.devel:54660 gmane.linux.kernel:1334632 gmane.linux.kernel.pci:16680
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334632>
+
+This patch implements a default mechanism to detect and manage ACPI system
+device hotplug slots based on standard ACPI interfaces.
+1) Detech hotplug slot by checking existence of _EJ0 and _STA methods.
+2) Power off a slot by excuting _EJ0 method.
+
+It's the default hotplug slot enumerating mechanism, platform specifc drivers
+may provide advanced implementation to override the default implementation.
+
+Signed-off-by: Jiang Liu <jiang.liu@huawei.com>
+Signed-off-by: Gaohuai Han <hangaohuai@huawei.com>
+Signed-off-by: Jiang Liu <liuj97@gmail.com>
+---
+ drivers/acpi/Kconfig                 |   10 +++
+ drivers/acpi/hotplug/Makefile        |    1 +
+ drivers/acpi/hotplug/slot_enum.c     |    3 +
+ drivers/acpi/hotplug/slot_enum_ej0.c |  113 ++++++++++++++++++++++++++++++++++
+ 4 files changed, 127 insertions(+)
+ create mode 100644 drivers/acpi/hotplug/slot_enum_ej0.c
+
+diff --git a/drivers/acpi/Kconfig b/drivers/acpi/Kconfig
+index 711e18e..c9f7918 100644
+--- a/drivers/acpi/Kconfig
++++ b/drivers/acpi/Kconfig
+@@ -344,6 +344,16 @@ config ACPI_HOTPLUG_ENUM
+ 	  To compile this driver as a module, choose M here:
+ 	  the module will be called acpihp_enum.
+ 
++config ACPI_HOTPLUG_ENUM_EJ0
++	bool "Detecting ACPI Hotplug Slot by Checking _EJ0 Method"
++	depends on ACPI_HOTPLUG_ENUM
++	default y
++	help
++	  Enable detecting ACPI hotplug slots by checking ACPI _EJ0 method
++	  under ACPI device objects.
++
++	  It's the default method to detect ACPI hotplug slots.
++
+ config ACPI_CONTAINER
+ 	tristate "Container and Module Devices (EXPERIMENTAL)"
+ 	depends on EXPERIMENTAL
+diff --git a/drivers/acpi/hotplug/Makefile b/drivers/acpi/hotplug/Makefile
+index 41c0da9..23dfa93 100644
+--- a/drivers/acpi/hotplug/Makefile
++++ b/drivers/acpi/hotplug/Makefile
+@@ -7,3 +7,4 @@ acpihp-y					= core.o
+ 
+ obj-$(CONFIG_ACPI_HOTPLUG_ENUM)			+= acpihp_enum.o
+ acpihp_enum-y					= slot_enum.o
++acpihp_enum-y					+= slot_enum_ej0.o
+diff --git a/drivers/acpi/hotplug/slot_enum.c b/drivers/acpi/hotplug/slot_enum.c
+index 80396a3..a251ecf 100644
+--- a/drivers/acpi/hotplug/slot_enum.c
++++ b/drivers/acpi/hotplug/slot_enum.c
+@@ -40,11 +40,14 @@ struct acpihp_slot_id {
+ 
+ static struct acpihp_slot_ops *slot_ops_curr;
+ 
++extern struct acpihp_slot_ops acpihp_enum_ej0;
++
+ /*
+  * Array of platform specific enumeration methods.
+  * Entries in the array should be sorted by descending priority order.
+  */
+ static struct acpihp_slot_ops *slot_ops_array[] = {
++	&acpihp_enum_ej0,
+ 	NULL
+ };
+ 
+diff --git a/drivers/acpi/hotplug/slot_enum_ej0.c b/drivers/acpi/hotplug/slot_enum_ej0.c
+new file mode 100644
+index 0000000..2788860
+--- /dev/null
++++ b/drivers/acpi/hotplug/slot_enum_ej0.c
+@@ -0,0 +1,113 @@
++/*
++ * Copyright (C) 2011 Huawei Tech. Co., Ltd.
++ * Copyright (C) 2011 Gaohuai Han <hangaohuai@huawei.com>
++ * Copyright (C) 2011 Jiang Liu <jiang.liu@huawei.com>
++ *
++ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; either version 2 of the License, or (at
++ *  your option) any later version.
++ *
++ *  This program is distributed in the hope that it will be useful, but
++ *  WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ *  General Public License for more details.
++ *
++ *  You should have received a copy of the GNU General Public License along
++ *  with this program.
++ *
++ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ */
++
++#include <linux/acpi.h>
++#include <acpi/acpi.h>
++#include <acpi/acpi_hotplug.h>
++
++static acpi_status acpihp_enum_ej0_init(void)
++{
++	return AE_OK;
++}
++
++static void acpihp_enum_ej0_fini(void)
++{
++}
++
++static acpi_status acpihp_enum_ej0_check(acpi_handle handle)
++{
++	acpi_handle tmp;
++
++	/* Assume a device object with _EJ0 and _STA has a hotplug slot. */
++	if (ACPI_FAILURE(acpi_get_handle(handle, "_EJ0", &tmp)))
++		return AE_ERROR;
++	if (ACPI_FAILURE(acpi_get_handle(handle, METHOD_NAME__STA, &tmp)))
++		return AE_ERROR;
++
++	return AE_OK;
++}
++
++static acpi_status
++acpihp_enum_ej0_get_capabilities(acpi_handle handle, u32 *capability)
++{
++	/*
++	 * Assume device objects with _EJ0 are capable of:
++	 * ONLINE, OFFLINE, POWEROFF, HOTPLUG
++	 */
++	*capability = ACPIHP_SLOT_CAP_ONLINE | ACPIHP_SLOT_CAP_OFFLINE |
++		      ACPIHP_SLOT_CAP_POWEROFF | ACPIHP_SLOT_CAP_HOTPLUG;
++
++	return AE_OK;
++}
++
++static acpi_status acpihp_enum_ej0_poweron(acpi_handle handle)
++{
++	return AE_SUPPORT;
++}
++
++static acpi_status acpihp_enum_ej0_poweroff(acpi_handle handle)
++{
++	acpi_status status;
++	unsigned long long sta;
++	union acpi_object arg;
++	struct acpi_object_list arg_list;
++
++	if (!handle)
++		return AE_BAD_PARAMETER;
++
++	arg_list.count = 1;
++	arg_list.pointer = &arg;
++	arg.type = ACPI_TYPE_INTEGER;
++	arg.integer.value = 1;
++	status = acpi_evaluate_object(handle, "_EJ0", &arg_list, NULL);
++	if (ACPI_FAILURE(status)) {
++		ACPIHP_WARN("fails to power off object %p.\n", handle);
++		return status;
++	}
++
++	status = acpi_evaluate_integer(handle, METHOD_NAME__STA, NULL, &sta);
++	if (ACPI_FAILURE(status)) {
++		ACPIHP_WARN("fails to evaluate _STA method of object %p\n",
++			    handle);
++		return status;
++	}
++
++	if (sta & (ACPI_STA_DEVICE_FUNCTIONING | ACPI_STA_DEVICE_ENABLED)) {
++		ACPIHP_WARN("object %p is still active after executing _EJ0.\n",
++			    handle);
++		return AE_ERROR;
++	}
++
++	return AE_OK;
++}
++
++struct acpihp_slot_ops acpihp_enum_ej0 = {
++	.init = acpihp_enum_ej0_init,
++	.fini = acpihp_enum_ej0_fini,
++	.check = acpihp_enum_ej0_check,
++	.get_capabilities = acpihp_enum_ej0_get_capabilities,
++	.poweron = acpihp_enum_ej0_poweron,
++	.poweroff = acpihp_enum_ej0_poweroff,
++	.owner = THIS_MODULE,
++	.desc = "ACPI _EJ0 Based Hotplug Slot Enumerator"
++};
+-- 
+1.7.9.5
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-acpi" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

@@ -1,0 +1,126 @@
+Path: news.gmane.org!not-for-mail
+From: Serge Hallyn <serge@hallyn.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] Forbid invocation of kexec_load() outside initial PID
+	namespace
+Date: Sat, 04 Aug 2012 18:15:35 -0500
+Lines: 61
+Approved: news@gmane.org
+Message-ID: <1344122135.1422.2.camel@Nokia-N900-51-1>
+References: <1343991184-3619-1-git-send-email-berrange@redhat.com>
+	 <cfa2e2c9-db52-40cd-979b-7a6084427190@email.android.com>
+	 <20120803125210.GD12870@redhat.com>
+	  <bef31b2b-429b-4b2b-981b-b230f9c6bfad@email.android.com>
+Reply-To: Serge Hallyn <serge@hallyn.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: QUOTED-PRINTABLE
+X-Trace: dough.gmane.org 1344122160 32039 80.91.229.3 (4 Aug 2012 23:16:00 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 4 Aug 2012 23:16:00 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org,
+	containers@lists.linux-foundation.org,
+	Serge Hallyn <serge.hallyn@canonical.com>,
+	Daniel Lezcano <daniel.lezcano@free.fr>,
+	Michael Kerrisk <mtk.manpages@gmail.com>,
+	Tejun Heo <tj@kernel.org>, Oleg Nesterov <oleg@redhat.com>
+To: "Eric W. Biederman" <ebiederm@xmission.com>,
+	"Daniel P. Berrange" <berrange@redhat.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Aug 05 01:15:55 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxnZa-00019K-CN
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 05 Aug 2012 01:15:54 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754236Ab2HDXPr convert rfc822-to-quoted-printable (ORCPT
+	<rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 4 Aug 2012 19:15:47 -0400
+Original-Received: from 50-56-35-84.static.cloud-ips.com ([50.56.35.84]:35029 "EHLO
+	mail.hallyn.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754164Ab2HDXPp (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 4 Aug 2012 19:15:45 -0400
+Original-Received: by mail.hallyn.com (Postfix, from userid 5001)
+	id 1945AC80E7; Sat,  4 Aug 2012 23:16:51 +0000 (UTC)
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on mail
+X-Spam-Level: 
+X-Spam-Status: No, score=-2.9 required=10.0 tests=ALL_TRUSTED,BAYES_00
+	autolearn=unavailable version=3.3.1
+Original-Received: from [192.168.1.100] (173-123-216-172.pools.spcsdns.net [173.123.216.172])
+	by mail.hallyn.com (Postfix) with ESMTPSA id 0F113C80DA;
+	Sat,  4 Aug 2012 23:16:47 +0000 (UTC)
+X-Mailer: Modest 3.2
+In-Reply-To: <bef31b2b-429b-4b2b-981b-b230f9c6bfad@email.android.com>
+Content-ID: <1344122134.1422.1.camel@Nokia-N900-51-1>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337764
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337764>
+
+Eric,
+
+during the container reboot discussion, the agreement was reached that =
+rebooting for real fron non-init pid ns is not safe.  Restarting usersp=
+ace (in pidns caller owns) is.  I argue the same reasoning supports thi=
+s.
+
+I haven't had a chance to review the patch, but the idea gets my ack.  =
+I'll look at the patch asap.
+
+I'm also fine with splitting cap_sys_boot into a user and system caps. =
+ The former would only be needed targeted to the userns of the init pid=
+, while the latter would be required to init_user_ns.  Then containers =
+could safely be given cap_sys_restart or whatever, but not cap_sys_boot=
+ which authorizes kexec and machine reset/poweroff.
+
+----- Original message -----
+> "Daniel P. Berrange" <berrange@redhat.com> wrote:
+>=20
+> > On Fri, Aug 03, 2012 at 05:45:40AM -0700, Eric W. Biederman wrote:
+> > > The solution is to use user namespaces and to only test ns_capabl=
+e on
+> > the magic reboot path.
+> > >=20
+> > > For the 3.7 timeframe that should be a realistic solution.
+> >=20
+> > Hmm, that would imply that if LXC wants to allow reboot()/CAP_SYS_B=
+OOT
+> > they will be forced to use CLONE_NEWUSER. I was rather looking for =
+a
+> > way
+> > to allow the container to keep CAP_SYS_BOOT, without also mandating=
+ use
+> > of user namespaces.
+>=20
+> If we remove the use of CAP_SYS_BOOT on the container reboot path
+> perhaps.
+>=20
+> But you have hit one small issue in the huge pile of issues why givin=
+g
+> contaners capabilities is generally a bad idea.
+>=20
+> This is the reason I have been insisting on a reasonable version of u=
+ser
+> namespaces for a long time.
+>=20
+> When the security issues become important it is time for user
+> namespaces.=C2=A0 =C2=A0  That is their purpose.
+>=20
+> Eric
+>=20
+>=20
+>=20
+> --
+> To unsubscribe from this list: send the line "unsubscribe linux-kerne=
+l"
+> in the body of a message to majordomo@vger.kernel.org
+> More majordomo info at=C2=A0  http://vger.kernel.org/majordomo-info.h=
+tml
+> Please read the FAQ at=C2=A0  http://www.tux.org/lkml/
+

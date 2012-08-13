@@ -1,0 +1,111 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 050/109] Btrfs: call the ordered free operation without any locks held
+Date: Tue,  7 Aug 2012 15:35:09 -0700
+Lines: 48
+Approved: news@gmane.org
+Message-ID: <20120807222047.468579355@linuxfoundation.org>
+References: <20120807222043.089735600@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344379163 17652 80.91.229.3 (7 Aug 2012 22:39:23 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:39:23 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Chris Mason <chris.mason@fusionio.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:39:21 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysQi-0003EK-9W
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:39:12 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030550Ab2HGWiw (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:38:52 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:41610 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030535Ab2HGWis (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:38:48 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so358014pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:38:47 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=PBxILvQfuB0b73lOexP5Th1+JD3NMv5M1LCFwQTtNhw=;
+        b=ncq8yEKZsG8abCVeUv49LxkZHfDCdPBQi/a3kK4gcdKTG8KEmF2tWW8mmEFN7LlVWK
+         palcZpCCCX+5FmbaGY/SziOwF4y0+QGSp4RzVyQkhkm5BDx4GYeWiVr+fF+1/JRbJJaw
+         FI3GeGfC4MZAGt6IXtbU+Qe+Uzv2HXJzg6GS4N75t7C/cRRZgOjbS3JeC9zCPwcHQMR4
+         Q8toIGlVD2ILa2vuqjyPLrco+9SkyxwyLmcOzeKxXOaegG5PoCtgFhbEsABgw/S4AUBb
+         eW5uB/EfGWv0OrcUmEz80WaRDQ1mKkuqw32uSOQtyIV1qPy78aSN9uNmbgWQpX75lVtt
+         /0Og==
+Original-Received: by 10.68.203.98 with SMTP id kp2mr31100149pbc.132.1344379127727;
+        Tue, 07 Aug 2012 15:38:47 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id oa5sm11977521pbb.14.2012.08.07.15.38.45
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:38:46 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222043.089735600@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQknxZiPqLkPNREGb6M/AjftFn1Oh7kBccLUON5rzCeCKpBmixyykM5NBOmtIz1Dn8tAYbKh
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339496 gmane.linux.kernel.stable:29335
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339496>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.4-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Chris Mason <chris.mason@fusionio.com>
+
+commit e9fbcb42201c862fd6ab45c48ead4f47bb2dea9d upstream.
+
+Each ordered operation has a free callback, and this was called with the
+worker spinlock held.  Josef made the free callback also call iput,
+which we can't do with the spinlock.
+
+This drops the spinlock for the free operation and grabs it again before
+moving through the rest of the list.  We'll circle back around to this
+and find a cleaner way that doesn't bounce the lock around so much.
+
+Signed-off-by: Chris Mason <chris.mason@fusionio.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ fs/btrfs/async-thread.c |    9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+--- a/fs/btrfs/async-thread.c
++++ b/fs/btrfs/async-thread.c
+@@ -206,10 +206,17 @@ static noinline void run_ordered_complet
+ 
+ 		work->ordered_func(work);
+ 
+-		/* now take the lock again and call the freeing code */
++		/* now take the lock again and drop our item from the list */
+ 		spin_lock(&workers->order_lock);
+ 		list_del(&work->order_list);
++		spin_unlock(&workers->order_lock);
++
++		/*
++		 * we don't want to call the ordered free functions
++		 * with the lock held though
++		 */
+ 		work->ordered_free(work);
++		spin_lock(&workers->order_lock);
+ 	}
+ 
+ 	spin_unlock(&workers->order_lock);
+
+

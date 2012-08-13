@@ -1,0 +1,125 @@
+Path: news.gmane.org!not-for-mail
+From: Fengguang Wu <fengguang.wu@intel.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: NULL pointer dereference in iio_buffer_register()
+Date: Tue, 31 Jul 2012 21:04:42 +0800
+Lines: 67
+Approved: news@gmane.org
+Message-ID: <20120731130442.GA19051@localhost>
+References: <20120708115331.GA16281@localhost>
+ <20120731103155.GA16388@localhost>
+ <5017D2BD.1070109@metafoo.de>
+ <20120731125547.GA18655@localhost>
+ <5017D843.8070001@metafoo.de>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343739908 17640 80.91.229.3 (31 Jul 2012 13:05:08 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 13:05:08 +0000 (UTC)
+Cc: Jonathan Cameron <jic23@kernel.org>,
+	Greg Kroah-Hartman <gregkh@suse.de>,
+	LKML <linux-kernel@vger.kernel.org>
+To: Lars-Peter Clausen <lars@metafoo.de>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 15:05:02 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwC89-0006FG-DW
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 15:04:57 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756216Ab2GaNEt (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 09:04:49 -0400
+Original-Received: from mga11.intel.com ([192.55.52.93]:33639 "EHLO mga11.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754675Ab2GaNEs (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 09:04:48 -0400
+Original-Received: from fmsmga001.fm.intel.com ([10.253.24.23])
+  by fmsmga102.fm.intel.com with ESMTP; 31 Jul 2012 06:04:48 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="191123693"
+Original-Received: from unknown (HELO wfg-t420.sh.intel.com) ([10.255.20.167])
+  by fmsmga001.fm.intel.com with ESMTP; 31 Jul 2012 06:04:46 -0700
+Original-Received: from wfg by wfg-t420.sh.intel.com with local (Exim 4.77)
+	(envelope-from <fengguang.wu@intel.com>)
+	id 1SwC7u-0004xl-O8; Tue, 31 Jul 2012 21:04:42 +0800
+Content-Disposition: inline
+In-Reply-To: <5017D843.8070001@metafoo.de>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335679
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335679>
+
+On Tue, Jul 31, 2012 at 03:06:11PM +0200, Lars-Peter Clausen wrote:
+> On 07/31/2012 02:55 PM, Fengguang Wu wrote:
+> >>> The panic happens while trying to dereference the NULL indio_dev->buffer:
+> >>>
+> >>>         266 int iio_buffer_register(struct iio_dev *indio_dev,
+> >>>         267                         const struct iio_chan_spec *channels,
+> >>>         268                         int num_channels)
+> >>>         269 {  
+> >>>         270         struct iio_dev_attr *p;
+> >>>         271         struct attribute **attr;
+> >>>         272         struct iio_buffer *buffer = indio_dev->buffer;
+> >>>         273         int ret, i, attrn, attrcount, attrcount_orig = 0;
+> >>>         274 
+> >>> ==>     275         if (buffer->attrs)
+> >>>         276                 indio_dev->groups[indio_dev->groupcounter++] = buffer->attrs;
+> >>>
+> >>> iio_dummy_probe() has the code to configure that buffer, however
+> >>> iio_simple_dummy_configure_buffer() is defined to do nothing on
+> >>> !CONFIG_IIO_SIMPLE_DUMMY_BUFFER..
+> >>>
+> >>>         448         /* Configure buffered capture support. */
+> >>> ==>     449         ret = iio_simple_dummy_configure_buffer(indio_dev);
+> >>>         450         if (ret < 0)
+> >>>         451                 goto error_unregister_events;
+> >>>         452 
+> >>>         453         /*
+> >>>         454          * Register the channels with the buffer, but avoid the output
+> >>>         455          * channel being registered by reducing the number of channels by 1.
+> >>>         456          */
+> >>>         457         ret = iio_buffer_register(indio_dev, iio_dummy_channels, 5);
+> >>>         458         if (ret < 0)
+> >>>         459                 goto error_unconfigure_buffer;
+> >>>
+> >>> Any ideas to fix it?
+> >>>
+> >>
+> >> Hi,
+> >>
+> >> I think the best would be to move the iio_buffer_register to
+> >> iio_simple_dummy_configure_buffer.
+> > 
+> > Lars, thanks for the quick reply! Hmm, that looks more like a code
+> > refactor recommendation than fix ;)  In the simplest form, can the
+> > bug fixed like this?
+> > 
+> >   static inline int iio_simple_dummy_configure_buffer(struct iio_dev *indio_dev)
+> >   {
+> > -         return 0;
+> > +         return -1;
+> >   };
+> > 
+> 
+> No, we want iio_simple_dummy_configure_buffer to be a noop if buffer support
+> is disabled, since the driver works fine without it. Except for the issue
+> you discovered. This issue only appears if CONFIG_IIO_BUFFER=y and
+> CONFIG_IIO_SIMPLE_DUMMY_BUFFER=n. E.g. if both are not set the driver works
+> fine without buffers.
+
+OK.
+
+> I can prepare a patch which moves the iio_buffer_register to
+> iio_simple_dummy_configure_buffer if you want to.
+
+That would be good, thank you very much!
+
+Thanks,
+Fengguang

@@ -1,0 +1,115 @@
+Path: news.gmane.org!not-for-mail
+From: Tomoki Sekiyama <tomoki.sekiyama.qu@hitachi.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] x86/ioapic: Fix NULL pointer dereference on CPU hotplug after
+ disabling irqs
+Date: Wed, 25 Jul 2012 18:17:54 +0900
+Lines: 48
+Approved: news@gmane.org
+Message-ID: <500FB9C2.1030103@hitachi.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-2022-JP
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343207881 5632 80.91.229.3 (25 Jul 2012 09:18:01 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 09:18:01 +0000 (UTC)
+Cc: hpa@zytor.com, suresh.b.siddha@intel.com, yinghai@kernel.org,
+	agordeev@redhat.com, x86@kernel.org, linux-kernel@vger.kernel.org,
+	yrl.pp-manager.tt@hitachi.com
+To: tglx@linutronix.de, mingo@kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 11:17:59 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StxjA-00073R-Fe
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 11:17:56 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932900Ab2GYJRs (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 05:17:48 -0400
+Original-Received: from mail4.hitachi.co.jp ([133.145.228.5]:51234 "EHLO
+	mail4.hitachi.co.jp" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753888Ab2GYJRq (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 05:17:46 -0400
+Original-Received: from mlsv2.hitachi.co.jp (unknown [133.144.234.166])
+	by mail4.hitachi.co.jp (Postfix) with ESMTP id 745C833CC3;
+	Wed, 25 Jul 2012 18:17:45 +0900 (JST)
+Original-Received: from mfilter06.hitachi.co.jp by mlsv2.hitachi.co.jp (8.13.1/8.13.1) id q6P9Hj0N018330; Wed, 25 Jul 2012 18:17:45 +0900
+Original-Received: from vshuts1.hitachi.co.jp (vshuts1.hitachi.co.jp [10.201.6.70])
+	by mfilter06.hitachi.co.jp (Switch-3.3.4/Switch-3.3.4) with ESMTP id q6P9HiCa002112;
+	Wed, 25 Jul 2012 18:17:45 +0900
+X-AuditID: 0ac90646-96ec1ba000003485-c1-500fb9b8f995
+Original-Received: from hsdlmain.sdl.hitachi.co.jp (unknown [133.144.14.194])
+	by vshuts1.hitachi.co.jp (Symantec Mail Security) with ESMTP id 17E7C3D42CD;
+	Wed, 25 Jul 2012 18:17:44 +0900 (JST)
+Original-Received: from hsdlvgate2.sdl.hitachi.co.jp by hsdlmain.sdl.hitachi.co.jp (8.13.8/3.7W11021512) id q6P9HixT021933; Wed, 25 Jul 2012 18:17:44 +0900
+X-AuditID: 0ac90646-96ec1ba000003485-c1-500fb9b8f995
+Original-Received: from sdl99w.sdl.hitachi.co.jp (sdl99w.sdl.hitachi.co.jp [133.144.14.250])
+	by hsdlvgate2.sdl.hitachi.co.jp (Symantec Mail Security) with ESMTP id B5CDC236561;
+	Wed, 25 Jul 2012 18:17:43 +0900 (JST)
+Original-Received: from mailc.sdl.hitachi.co.jp (sdl99c.sdl.hitachi.co.jp [133.144.14.198])
+	by sdl99w.sdl.hitachi.co.jp (Postfix) with ESMTP id 0145E53C1FA;
+	Wed, 25 Jul 2012 18:17:44 +0900 (JST)
+Original-Received: from [127.0.0.1] (unknown [10.232.28.238])
+	by mailc.sdl.hitachi.co.jp (Postfix) with ESMTP id B0269495B7F;
+	Wed, 25 Jul 2012 18:17:43 +0900 (JST)
+User-Agent: Mozilla/5.0 (Windows NT 5.1; rv:12.0) Gecko/20120428 Thunderbird/12.0.1
+X-Brightmail-Tracker: AAAAAA==
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332829
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332829>
+
+Hi,
+
+In current Linux, percpu variable `vector_irq' is not always cleared when
+a CPU is offlined. If the cpu that has the disabled irqs in vector_irq is
+hotplugged again, __setup_vector_irq() hits invalid irq vector and may
+crash.
+
+Commit f6175f5bfb4c partially fixes this, but was not enough in
+environments with IOMMU IRQ remapper.
+
+This bug can be reproduced as following;
+ # echo 0 > /sys/devices/system/cpu/cpu7/online
+ # modprobe -r some_driver_using_interrupts     # vector_irq@cpu7 uncleared
+ # echo 1 > /sys/devices/system/cpu/cpu7/online # kernel may crash
+
+This patch fixes this bug by clearing vector_irq in __fixup_irqs() when
+the cpu is offlined.
+
+Signed-off-by: Tomoki Sekiyama <tomoki.sekiyama.qu@hitachi.com>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Cc: Ingo Molnar <mingo@redhat.com>
+Cc: "H. Peter Anvin" <hpa@zytor.com>
+Cc: Suresh Siddha <suresh.b.siddha@intel.com>
+Cc: Yinghai Lu <yinghai@kernel.org>
+Cc: Alexander Gordeev <agordeev@redhat.com>
+---
+ arch/x86/kernel/irq.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/arch/x86/kernel/irq.c b/arch/x86/kernel/irq.c
+index 3dafc60..d27b27d 100644
+--- a/arch/x86/kernel/irq.c
++++ b/arch/x86/kernel/irq.c
+@@ -328,6 +328,7 @@ void fixup_irqs(void)
+ 				chip->irq_retrigger(data);
+ 			raw_spin_unlock(&desc->lock);
+ 		}
++		__this_cpu_write(vector_irq[vector], -1);
+ 	}
+ }
+ #endif
+-- 
+1.7.7.6
+-- 
+Tomoki Sekiyama <tomoki.sekiyama.qu@hitachi.com>
+Linux Technology Center
+Hitachi, Ltd., Yokohama Research Laboratory
+

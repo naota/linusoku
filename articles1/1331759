@@ -1,0 +1,112 @@
+Path: news.gmane.org!not-for-mail
+From: Mel Gorman <mgorman@suse.de>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel.stable,gmane.linux.kernel
+Subject: [PATCH 16/34] mm: compaction: Allow compaction to isolate dirty pages
+Date: Mon, 23 Jul 2012 14:38:29 +0100
+Lines: 52
+Approved: news@gmane.org
+Message-ID: <1343050727-3045-17-git-send-email-mgorman@suse.de>
+References: <1343050727-3045-1-git-send-email-mgorman@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343050797 20824 80.91.229.3 (23 Jul 2012 13:39:57 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 13:39:57 +0000 (UTC)
+Cc: Linux-MM <linux-mm@kvack.org>,
+	LKML <linux-kernel@vger.kernel.org>, Mel Gorman <mgorman@suse.de>
+To: Stable <stable@vger.kernel.org>
+Original-X-From: owner-linux-mm@kvack.org Mon Jul 23 15:39:56 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1StIra-0006ke-Rw
+	for glkm-linux-mm-2@m.gmane.org; Mon, 23 Jul 2012 15:39:55 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 718B16B0088; Mon, 23 Jul 2012 09:39:19 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id CCF8B6B0083; Mon, 23 Jul 2012 09:39:14 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id EDF266B0099; Mon, 23 Jul 2012 09:39:06 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx106.postini.com [74.125.245.106])
+	by kanga.kvack.org (Postfix) with SMTP id DDE706B0062
+	for <linux-mm@kvack.org>; Mon, 23 Jul 2012 09:38:59 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx106.postini.com ([74.125.244.10]) with SMTP;
+	Mon, 23 Jul 2012 13:39:00 GMT
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 3E759A3DE0;
+	Mon, 23 Jul 2012 15:38:58 +0200 (CEST)
+X-Mailer: git-send-email 1.7.9.2
+In-Reply-To: <1343050727-3045-1-git-send-email-mgorman@suse.de>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:87.01782/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mgorman@suse.de> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82868 gmane.linux.kernel.stable:28744 gmane.linux.kernel:1331759
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331759>
+
+commit a77ebd333cd810d7b680d544be88c875131c2bd3 upstream.
+
+Stable note: Not tracked in Bugzilla. A fix aimed at preserving page aging
+	information by reducing LRU list churning had the side-effect of
+	reducing THP allocation success rates. This was part of a series
+	to restore the success rates while preserving the reclaim fix.
+
+Commit [39deaf85: mm: compaction: make isolate_lru_page() filter-aware]
+noted that compaction does not migrate dirty or writeback pages and
+that is was meaningless to pick the page and re-add it to the LRU list.
+
+What was missed during review is that asynchronous migration moves
+dirty pages if their ->migratepage callback is migrate_page() because
+these can be moved without blocking. This potentially impacted
+hugepage allocation success rates by a factor depending on how many
+dirty pages are in the system.
+
+This patch partially reverts 39deaf85 to allow migration to isolate
+dirty pages again. This increases how much compaction disrupts the
+LRU but that is addressed later in the series.
+
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Reviewed-by: Andrea Arcangeli <aarcange@redhat.com>
+Reviewed-by: Rik van Riel <riel@redhat.com>
+Reviewed-by: Minchan Kim <minchan.kim@gmail.com>
+---
+ mm/compaction.c |    3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/mm/compaction.c b/mm/compaction.c
+index 61e68a5..afdc416 100644
+--- a/mm/compaction.c
++++ b/mm/compaction.c
+@@ -371,9 +371,6 @@ static isolate_migrate_t isolate_migratepages(struct zone *zone,
+ 			continue;
+ 		}
+ 
+-		if (!cc->sync)
+-			mode |= ISOLATE_CLEAN;
+-
+ 		/* Try isolate the page */
+ 		if (__isolate_lru_page(page, mode, 0) != 0)
+ 			continue;
+-- 
+1.7.9.2
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

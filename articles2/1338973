@@ -1,0 +1,107 @@
+Path: news.gmane.org!not-for-mail
+From: Will Deacon <will.deacon@arm.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: RFC: mutex: hung tasks on SMP platforms with asm-generic/mutex-xchg.h
+Date: Tue, 7 Aug 2012 12:56:47 +0100
+Lines: 57
+Approved: news@gmane.org
+Message-ID: <20120807115647.GA12828@mudshark.cambridge.arm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344340654 5369 80.91.229.3 (7 Aug 2012 11:57:34 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 11:57:34 +0000 (UTC)
+Cc: Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Ingo Molnar <mingo@elte.hu>,
+	Thomas Gleixner <tglx@linutronix.de>,
+	Chris Mason <chris.mason@fusionio.com>,
+	Nicolas Pitre <nico@fluxnic.net>,
+	Arnd Bergmann <arnd@arndb.de>,
+	linux-arm-kernel@lists.infradead.org
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 13:57:33 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyiPk-0007IV-4b
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 13:57:32 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754480Ab2HGL5Z (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 07:57:25 -0400
+Original-Received: from cam-admin0.cambridge.arm.com ([217.140.96.50]:59636 "EHLO
+	cam-admin0.cambridge.arm.com" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1754310Ab2HGL5Y (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 07:57:24 -0400
+Original-Received: from mudshark.cambridge.arm.com (mudshark.cambridge.arm.com [10.1.79.58])
+	by cam-admin0.cambridge.arm.com (8.12.6/8.12.6) with ESMTP id q77BumOK027737;
+	Tue, 7 Aug 2012 12:56:48 +0100 (BST)
+Content-Disposition: inline
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338973 gmane.linux.ports.arm.kernel:180638
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338973>
+
+Hello,
+
+ARM recently moved to asm-generic/mutex-xchg.h for its mutex implementation
+after our previous implementation was found to be missing some crucial
+memory barriers. However, I'm seeing some problems running hackbench on
+SMP platforms due to the way in which the MUTEX_SPIN_ON_OWNER code operates.
+
+The symptoms are that a bunch of hackbench tasks are left waiting on an
+unlocked mutex and therefore never get woken up to claim it. I think this
+boils down to the following sequence:
+
+
+        Task A        Task B        Task C        Lock value
+0                                                     1
+1       lock()                                        0
+2                     lock()                          0
+3                     spin(A)                         0
+4       unlock()                                      1
+5                                   lock()            0
+6                     cmpxchg(1,0)                    0
+7                     contended()                    -1
+8       lock()                                        0
+9       spin(C)                                       0
+10                                  unlock()          1
+11      cmpxchg(1,0)                                  0
+12      unlock()                                      1
+
+
+At this point, the lock is unlocked, but Task B is in an uninterruptible
+sleep with nobody to wake it up.
+
+The following patch fixes the problem by ensuring we put the lock into
+the contended state if we acquire it from the spin loop on the slowpath
+but I'd like to be sure that this won't cause problems with other mutex
+implementations:
+
+
+diff --git a/kernel/mutex.c b/kernel/mutex.c
+index a307cc9..27b7887 100644
+--- a/kernel/mutex.c
++++ b/kernel/mutex.c
+@@ -170,7 +170,7 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
+                if (owner && !mutex_spin_on_owner(lock, owner))
+                        break;
+ 
+-               if (atomic_cmpxchg(&lock->count, 1, 0) == 1) {
++               if (atomic_cmpxchg(&lock->count, 1, -1) == 1) {
+                        lock_acquired(&lock->dep_map, ip);
+                        mutex_set_owner(lock);
+                        preempt_enable();
+
+
+All comments welcome.
+
+Cheers,
+
+Will

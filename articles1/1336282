@@ -1,0 +1,127 @@
+Path: news.gmane.org!not-for-mail
+From: "J. Bruce Fields" <bfields@fieldses.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.nfs,gmane.linux.file-systems
+Subject: [PATCH] locks: remove unused lm_release_private
+Date: Wed, 1 Aug 2012 07:56:16 -0400
+Lines: 78
+Approved: news@gmane.org
+Message-ID: <20120801115616.GA3958@fieldses.org>
+References: <20120731142948.GC27834@fieldses.org>
+ <20120731143600.GD27834@fieldses.org>
+ <CA+55aFzM8S0sEAAUXK9f1OhSL-OXmZ_jx_UHF81Eo0-Mi-+T_w@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343822194 22544 80.91.229.3 (1 Aug 2012 11:56:34 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 1 Aug 2012 11:56:34 +0000 (UTC)
+Cc: linux-nfs@vger.kernel.org, linux-fsdevel@vger.kernel.org,
+	linux-kernel@vger.kernel.org, viro@zeniv.linux.org.uk,
+	matthew@wil.cx
+To: Linus Torvalds <torvalds@linux-foundation.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 01 13:56:34 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwXXQ-00054I-QL
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 01 Aug 2012 13:56:29 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755084Ab2HAL4V (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 1 Aug 2012 07:56:21 -0400
+Original-Received: from fieldses.org ([174.143.236.118]:52809 "EHLO fieldses.org"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751910Ab2HAL4U (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 1 Aug 2012 07:56:20 -0400
+Original-Received: from bfields by fieldses.org with local (Exim 4.72)
+	(envelope-from <bfields@fieldses.org>)
+	id 1SwXXE-00015I-Nh; Wed, 01 Aug 2012 07:56:16 -0400
+Content-Disposition: inline
+In-Reply-To: <CA+55aFzM8S0sEAAUXK9f1OhSL-OXmZ_jx_UHF81Eo0-Mi-+T_w@mail.gmail.com>
+User-Agent: Mutt/1.5.20 (2009-06-14)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336282 gmane.linux.nfs:51258 gmane.linux.file-systems:66362
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336282>
+
+From: "J. Bruce Fields" <bfields@redhat.com>
+
+3b6e2723f32de42028617f2c99b244ccd72cd959 "locks: prevent side-effects of
+locks_release_private before file_lock is initialized" removed the last
+user of lm_release_private without removing the field itself.
+
+Signed-off-by: J. Bruce Fields <bfields@redhat.com>
+---
+ Documentation/filesystems/Locking |    2 --
+ fs/locks.c                        |    6 +-----
+ include/linux/fs.h                |    1 -
+ 3 files changed, 1 insertion(+), 8 deletions(-)
+
+On Tue, Jul 31, 2012 at 02:54:05PM -0700, Linus Torvalds wrote:
+> Maybe I missed some odd user that somehow avoids the grep, but I don't
+> think so. So there is nothing that ever sets it, why the hell does the
+> thing still remain at all?
+
+Embarassingly: I had work in progress that could make use of
+lm_release_private soon, so I didn't bother removing it.
+
+But "soon" was optimistic, and anyway why leave the code in a confusing
+state, so: agreed it should have gone, apologies.
+
+--b.
+
+diff --git a/Documentation/filesystems/Locking b/Documentation/filesystems/Locking
+index 8e2da1e..f11d51f 100644
+--- a/Documentation/filesystems/Locking
++++ b/Documentation/filesystems/Locking
+@@ -343,7 +343,6 @@ prototypes:
+ 	int (*lm_compare_owner)(struct file_lock *, struct file_lock *);
+ 	void (*lm_notify)(struct file_lock *);  /* unblock callback */
+ 	int (*lm_grant)(struct file_lock *, struct file_lock *, int);
+-	void (*lm_release_private)(struct file_lock *);
+ 	void (*lm_break)(struct file_lock *); /* break_lease callback */
+ 	int (*lm_change)(struct file_lock **, int);
+ 
+@@ -352,7 +351,6 @@ locking rules:
+ lm_compare_owner:	yes		no
+ lm_notify:		yes		no
+ lm_grant:		no		no
+-lm_release_private:	maybe		no
+ lm_break:		yes		no
+ lm_change		yes		no
+ 
+diff --git a/fs/locks.c b/fs/locks.c
+index 541075a..5cf874c 100644
+--- a/fs/locks.c
++++ b/fs/locks.c
+@@ -200,11 +200,7 @@ void locks_release_private(struct file_lock *fl)
+ 			fl->fl_ops->fl_release_private(fl);
+ 		fl->fl_ops = NULL;
+ 	}
+-	if (fl->fl_lmops) {
+-		if (fl->fl_lmops->lm_release_private)
+-			fl->fl_lmops->lm_release_private(fl);
+-		fl->fl_lmops = NULL;
+-	}
++	fl->fl_lmops = NULL;
+ 
+ }
+ EXPORT_SYMBOL_GPL(locks_release_private);
+diff --git a/include/linux/fs.h b/include/linux/fs.h
+index a1e7727..9a6ac61 100644
+--- a/include/linux/fs.h
++++ b/include/linux/fs.h
+@@ -1154,7 +1154,6 @@ struct lock_manager_operations {
+ 	int (*lm_compare_owner)(struct file_lock *, struct file_lock *);
+ 	void (*lm_notify)(struct file_lock *);	/* unblock callback */
+ 	int (*lm_grant)(struct file_lock *, struct file_lock *, int);
+-	void (*lm_release_private)(struct file_lock *);
+ 	void (*lm_break)(struct file_lock *);
+ 	int (*lm_change)(struct file_lock **, int);
+ };
+-- 
+1.7.9.5
+

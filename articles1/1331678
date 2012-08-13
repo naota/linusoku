@@ -1,0 +1,101 @@
+Path: news.gmane.org!not-for-mail
+From: Peter De Schrijver <pdeschrijver@nvidia.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCHSET] workqueue: reimplement CPU hotplug to keep idle
+ workers
+Date: Mon, 23 Jul 2012 11:38:18 +0300
+Lines: 34
+Approved: news@gmane.org
+Message-ID: <20120723083818.GA12034@tbergstrom-lnx.Nvidia.com>
+References: <1342545149-3515-1-git-send-email-tj@kernel.org>
+ <1342808550.2583.48.camel@twins>
+ <20120720183400.GL32763@google.com>
+ <201207202144.05154.rjw@sisk.pl>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+X-Trace: dough.gmane.org 1343032769 6723 80.91.229.3 (23 Jul 2012 08:39:29 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 08:39:29 +0000 (UTC)
+Cc: Tejun Heo <tj@kernel.org>, Peter Zijlstra <peterz@infradead.org>,
+	"linux-kernel@vger.kernel.org" <linux-kernel@vger.kernel.org>,
+	"torvalds@linux-foundation.org" <torvalds@linux-foundation.org>,
+	"tglx@linutronix.de" <tglx@linutronix.de>,
+	"linux-pm@vger.kernel.org" <linux-pm@vger.kernel.org>
+To: "Rafael J. Wysocki" <rjw@sisk.pl>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 10:39:27 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StEAg-0007uh-0C
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 10:39:18 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754111Ab2GWIjI (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 04:39:08 -0400
+Original-Received: from hqemgate03.nvidia.com ([216.228.121.140]:13423 "EHLO
+	hqemgate03.nvidia.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751691Ab2GWIjG (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 04:39:06 -0400
+Original-Received: from hqnvupgp07.nvidia.com (Not Verified[216.228.121.13]) by hqemgate03.nvidia.com
+	id <B500d0da40001>; Mon, 23 Jul 2012 01:39:00 -0700
+Original-Received: from hqemhub01.nvidia.com ([172.17.108.22])
+  by hqnvupgp07.nvidia.com (PGP Universal service);
+  Mon, 23 Jul 2012 01:33:59 -0700
+X-PGP-Universal: processed;
+	by hqnvupgp07.nvidia.com on Mon, 23 Jul 2012 01:33:59 -0700
+Original-Received: from deemhub01.nvidia.com (10.21.69.137) by hqemhub01.nvidia.com
+ (172.20.150.30) with Microsoft SMTP Server (TLS) id 8.3.264.0; Mon, 23 Jul
+ 2012 01:38:20 -0700
+Original-Received: from tbergstrom-lnx.Nvidia.com (10.21.65.27) by deemhub01.nvidia.com
+ (10.21.69.137) with Microsoft SMTP Server id 8.3.264.0; Mon, 23 Jul 2012
+ 10:38:18 +0200
+Original-Received: by tbergstrom-lnx.Nvidia.com (Postfix, from userid 1002)	id
+ AFBB7218B1; Mon, 23 Jul 2012 11:38:18 +0300 (EEST)
+Content-Disposition: inline
+In-Reply-To: <201207202144.05154.rjw@sisk.pl>
+X-NVConfidentiality: public
+User-Agent: Mutt/1.5.20 (2009-06-14)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331678
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331678>
+
+On Fri, Jul 20, 2012 at 09:44:04PM +0200, Rafael J. Wysocki wrote:
+> On Friday, July 20, 2012, Tejun Heo wrote:
+> > Hello,
+> > 
+> > On Fri, Jul 20, 2012 at 08:22:30PM +0200, Peter Zijlstra wrote:
+> > > I really think people who use hotplug at high frequencies are on drugs
+> > > and doing it wrong.
+> > 
+> > I don't know.  It does make some sense.  It's not like we have any
+> > other mechanism to keep some processors completely quiesient, which
+> > could make a noticeable difference from powersaving POV compared to
+> > mostly idle.  Rafael, can you please chime in and explain how / where
+> > / how freqeuntly / etc CPU hotplug is used for powersaving?
+> 
+> Well, there are use cases I'm not really familiar with.
+> 
+> Pretty much the only use case I'm sufficiently familiar with is
+> suspend/hibernate where we unplug all of the nonboot CPUs at one point.
+> 
+> The other use cases, which I don't really think are entirely valid,
+> are on some ARM platforms where CPUs are unplugged instead of being put into
+> C-states or equivalent (because we don't have a good mechanism for handling
+> multiprocessor C-states; there's a set of patches for that waiting for
+> the merge window in the Len's tree).  I'm hoping to get rid of those
+> use cases in future entirely.
+
+I don't see how we can get rid of hotplug (or some other state where
+some processors are completely quiesient) in systems which have CPU clusters
+with a different number of CPUs in each cluster. (eg 4 and 1 in case of
+Tegra30).
+
+Cheers,
+
+Peter.

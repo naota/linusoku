@@ -1,0 +1,120 @@
+Path: news.gmane.org!not-for-mail
+From: "Srivatsa S. Bhat" <srivatsa.bhat@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] cpuidle: coupled: fix sleeping while atomic in cpu notifier
+Date: Wed, 01 Aug 2012 11:29:50 +0530
+Lines: 56
+Approved: news@gmane.org
+Message-ID: <5018C5D6.4000304@linux.vnet.ibm.com>
+References: <1343251216-24106-1-git-send-email-ccross@android.com> <5017FD3E.7090003@linux.vnet.ibm.com> <CAMbhsRT_h=dTfUVRmMUj5Bz7ZqcJ7UA2svwNP9CNa9=f=cL4+Q@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343800857 22371 80.91.229.3 (1 Aug 2012 06:00:57 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 1 Aug 2012 06:00:57 +0000 (UTC)
+Cc: Len Brown <lenb@kernel.org>, Len Brown <len.brown@intel.com>,
+	Kevin Hilman <khilman@ti.com>,
+	Santosh Shilimkar <santosh.shilimkar@ti.com>,
+	"Rafael J. Wysocki" <rjw@sisk.pl>, linux-kernel@vger.kernel.org,
+	Linux PM mailing list <linux-pm@vger.kernel.org>
+To: Colin Cross <ccross@android.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 01 08:00:54 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwRzI-0002c6-81
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 01 Aug 2012 08:00:52 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753502Ab2HAGAe (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 1 Aug 2012 02:00:34 -0400
+Original-Received: from e28smtp02.in.ibm.com ([122.248.162.2]:57420 "EHLO
+	e28smtp02.in.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752930Ab2HAGAd (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 1 Aug 2012 02:00:33 -0400
+Original-Received: from /spool/local
+	by e28smtp02.in.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <srivatsa.bhat@linux.vnet.ibm.com>;
+	Wed, 1 Aug 2012 11:30:30 +0530
+Original-Received: from d28relay01.in.ibm.com (9.184.220.58)
+	by e28smtp02.in.ibm.com (192.168.1.132) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Wed, 1 Aug 2012 11:29:57 +0530
+Original-Received: from d28av05.in.ibm.com (d28av05.in.ibm.com [9.184.220.67])
+	by d28relay01.in.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q715xurb27066560;
+	Wed, 1 Aug 2012 11:29:57 +0530
+Original-Received: from d28av05.in.ibm.com (loopback [127.0.0.1])
+	by d28av05.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q715xtXo005275;
+	Wed, 1 Aug 2012 15:59:56 +1000
+Original-Received: from [9.124.35.188] (srivatsabhat.in.ibm.com [9.124.35.188])
+	by d28av05.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q715xtes005242;
+	Wed, 1 Aug 2012 15:59:55 +1000
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:14.0) Gecko/20120717 Thunderbird/14.0
+In-Reply-To: <CAMbhsRT_h=dTfUVRmMUj5Bz7ZqcJ7UA2svwNP9CNa9=f=cL4+Q@mail.gmail.com>
+x-cbid: 12080105-5816-0000-0000-000003CFBBEC
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336170
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336170>
+
+On 07/31/2012 11:57 PM, Colin Cross wrote:
+> On Tue, Jul 31, 2012 at 8:43 AM, Srivatsa S. Bhat
+> <srivatsa.bhat@linux.vnet.ibm.com> wrote:
+>> On 07/26/2012 02:50 AM, Colin Cross wrote:
+>>> The cpu hotplug notifier gets called in both atomic and non-atomic
+>>> contexts, it is not always safe to lock a mutex.  Filter out all events
+>>> except the six necessary ones, which are all sleepable, before taking
+>>> the mutex.
+>>>
+>>> Signed-off-by: Colin Cross <ccross@android.com>
+>>> ---
+>>>  drivers/cpuidle/coupled.c |   12 ++++++++++++
+>>>  1 files changed, 12 insertions(+), 0 deletions(-)
+>>>
+>>> diff --git a/drivers/cpuidle/coupled.c b/drivers/cpuidle/coupled.c
+>>> index 2c9bf26..c24dda0 100644
+>>> --- a/drivers/cpuidle/coupled.c
+>>> +++ b/drivers/cpuidle/coupled.c
+>>> @@ -678,6 +678,18 @@ static int cpuidle_coupled_cpu_notify(struct notifier_block *nb,
+>>>       int cpu = (unsigned long)hcpu;
+>>>       struct cpuidle_device *dev;
+>>>
+>>> +     switch (action & ~CPU_TASKS_FROZEN) {
+>>> +     case CPU_UP_PREPARE:
+>>> +     case CPU_DOWN_PREPARE:
+>>> +     case CPU_ONLINE:
+>>> +     case CPU_DEAD:
+>>> +     case CPU_UP_CANCELED:
+>>> +     case CPU_DOWN_FAILED:
+>>> +             break;
+>>> +     default:
+>>> +             return NOTIFY_OK;
+>>> +     }
+>>> +
+>>
+>> Instead, wouldn't it be better to have case statements for the
+>> 2 cases that imply atomic context and return immediately?
+>>
+>> Something like:
+>>         switch (action & ~CPU_TASKS_FROZEN) {
+>>         case CPU_STARTING:
+>>         case CPU_DYING:
+>>                 return NOTIFY_OK;
+>>         }
+> 
+> No, because then it would need updating whenever a new notification
+> event was added.
+> 
+
+Hmm.. Fair enough.
+
+Reviewed-by: Srivatsa S. Bhat <srivatsa.bhat@linux.vnet.ibm.com>
+
+Regards,
+Srivatsa S. Bhat
+

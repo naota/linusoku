@@ -1,0 +1,170 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 64/70] drop_monitor: fix sleeping in invalid context warning
+Date: Tue, 07 Aug 2012 04:28:59 +0100
+Lines: 115
+Approved: news@gmane.org
+Message-ID: <20120807032805.385461541@decadent.org.uk>
+References: <20120807032755.803571133@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344311433 22497 80.91.229.3 (7 Aug 2012 03:50:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 03:50:33 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Neil Horman <nhorman@tuxdriver.com>,
+	Eric Dumazet <eric.dumazet@gmail.com>,
+	David Miller <davem@davemloft.net>,
+	Eric Dumazet <edumazet@google.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 05:50:32 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyaoP-00036e-B2
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 05:50:29 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932803Ab2HGDuR (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 23:50:17 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:59735 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1757351Ab2HGDid (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 23:38:33 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1SyacZ-00081k-Oa; Tue, 07 Aug 2012 04:38:15 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Syac8-0002rZ-U7; Tue, 07 Aug 2012 04:37:48 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120807032755.803571133@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338762 gmane.linux.kernel.stable:29203
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338762>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Neil Horman <nhorman@tuxdriver.com>
+
+commit cde2e9a651b76d8db36ae94cd0febc82b637e5dd upstream.
+
+Eric Dumazet pointed out this warning in the drop_monitor protocol to me:
+
+[   38.352571] BUG: sleeping function called from invalid context at kernel/mutex.c:85
+[   38.352576] in_atomic(): 1, irqs_disabled(): 0, pid: 4415, name: dropwatch
+[   38.352580] Pid: 4415, comm: dropwatch Not tainted 3.4.0-rc2+ #71
+[   38.352582] Call Trace:
+[   38.352592]  [<ffffffff8153aaf0>] ? trace_napi_poll_hit+0xd0/0xd0
+[   38.352599]  [<ffffffff81063f2a>] __might_sleep+0xca/0xf0
+[   38.352606]  [<ffffffff81655b16>] mutex_lock+0x26/0x50
+[   38.352610]  [<ffffffff8153aaf0>] ? trace_napi_poll_hit+0xd0/0xd0
+[   38.352616]  [<ffffffff810b72d9>] tracepoint_probe_register+0x29/0x90
+[   38.352621]  [<ffffffff8153a585>] set_all_monitor_traces+0x105/0x170
+[   38.352625]  [<ffffffff8153a8ca>] net_dm_cmd_trace+0x2a/0x40
+[   38.352630]  [<ffffffff8154a81a>] genl_rcv_msg+0x21a/0x2b0
+[   38.352636]  [<ffffffff810f8029>] ? zone_statistics+0x99/0xc0
+[   38.352640]  [<ffffffff8154a600>] ? genl_rcv+0x30/0x30
+[   38.352645]  [<ffffffff8154a059>] netlink_rcv_skb+0xa9/0xd0
+[   38.352649]  [<ffffffff8154a5f0>] genl_rcv+0x20/0x30
+[   38.352653]  [<ffffffff81549a7e>] netlink_unicast+0x1ae/0x1f0
+[   38.352658]  [<ffffffff81549d76>] netlink_sendmsg+0x2b6/0x310
+[   38.352663]  [<ffffffff8150824f>] sock_sendmsg+0x10f/0x130
+[   38.352668]  [<ffffffff8150abe0>] ? move_addr_to_kernel+0x60/0xb0
+[   38.352673]  [<ffffffff81515f04>] ? verify_iovec+0x64/0xe0
+[   38.352677]  [<ffffffff81509c46>] __sys_sendmsg+0x386/0x390
+[   38.352682]  [<ffffffff810ffaf9>] ? handle_mm_fault+0x139/0x210
+[   38.352687]  [<ffffffff8165b5bc>] ? do_page_fault+0x1ec/0x4f0
+[   38.352693]  [<ffffffff8106ba4d>] ? set_next_entity+0x9d/0xb0
+[   38.352699]  [<ffffffff81310b49>] ? tty_ldisc_deref+0x9/0x10
+[   38.352703]  [<ffffffff8106d363>] ? pick_next_task_fair+0x63/0x140
+[   38.352708]  [<ffffffff8150b8d4>] sys_sendmsg+0x44/0x80
+[   38.352713]  [<ffffffff8165f8e2>] system_call_fastpath+0x16/0x1b
+
+It stems from holding a spinlock (trace_state_lock) while attempting to register
+or unregister tracepoint hooks, making in_atomic() true in this context, leading
+to the warning when the tracepoint calls might_sleep() while its taking a mutex.
+Since we only use the trace_state_lock to prevent trace protocol state races, as
+well as hardware stat list updates on an rcu write side, we can just convert the
+spinlock to a mutex to avoid this problem.
+
+Signed-off-by: Neil Horman <nhorman@tuxdriver.com>
+Reported-by: Eric Dumazet <eric.dumazet@gmail.com>
+CC: David Miller <davem@davemloft.net>
+Acked-by: Eric Dumazet <edumazet@google.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ net/core/drop_monitor.c |   14 +++++++-------
+ 1 file changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/net/core/drop_monitor.c b/net/core/drop_monitor.c
+index 5c3c81a..a221a5b 100644
+--- a/net/core/drop_monitor.c
++++ b/net/core/drop_monitor.c
+@@ -42,7 +42,7 @@ static void send_dm_alert(struct work_struct *unused);
+  * netlink alerts
+  */
+ static int trace_state = TRACE_OFF;
+-static DEFINE_SPINLOCK(trace_state_lock);
++static DEFINE_MUTEX(trace_state_mutex);
+ 
+ struct per_cpu_dm_data {
+ 	struct work_struct dm_alert_work;
+@@ -214,7 +214,7 @@ static int set_all_monitor_traces(int state)
+ 	struct dm_hw_stat_delta *new_stat = NULL;
+ 	struct dm_hw_stat_delta *temp;
+ 
+-	spin_lock(&trace_state_lock);
++	mutex_lock(&trace_state_mutex);
+ 
+ 	if (state == trace_state) {
+ 		rc = -EAGAIN;
+@@ -253,7 +253,7 @@ static int set_all_monitor_traces(int state)
+ 		rc = -EINPROGRESS;
+ 
+ out_unlock:
+-	spin_unlock(&trace_state_lock);
++	mutex_unlock(&trace_state_mutex);
+ 
+ 	return rc;
+ }
+@@ -296,12 +296,12 @@ static int dropmon_net_event(struct notifier_block *ev_block,
+ 
+ 		new_stat->dev = dev;
+ 		new_stat->last_rx = jiffies;
+-		spin_lock(&trace_state_lock);
++		mutex_lock(&trace_state_mutex);
+ 		list_add_rcu(&new_stat->list, &hw_stats_list);
+-		spin_unlock(&trace_state_lock);
++		mutex_unlock(&trace_state_mutex);
+ 		break;
+ 	case NETDEV_UNREGISTER:
+-		spin_lock(&trace_state_lock);
++		mutex_lock(&trace_state_mutex);
+ 		list_for_each_entry_safe(new_stat, tmp, &hw_stats_list, list) {
+ 			if (new_stat->dev == dev) {
+ 				new_stat->dev = NULL;
+@@ -312,7 +312,7 @@ static int dropmon_net_event(struct notifier_block *ev_block,
+ 				}
+ 			}
+ 		}
+-		spin_unlock(&trace_state_lock);
++		mutex_unlock(&trace_state_mutex);
+ 		break;
+ 	}
+ out:
+
+

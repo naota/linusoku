@@ -1,0 +1,183 @@
+Path: news.gmane.org!not-for-mail
+From: Mikulas Patocka <mpatocka@redhat.com>
+Newsgroups: gmane.linux.file-systems,gmane.linux.kernel,gmane.linux.kernel.device-mapper.devel
+Subject: [PATCH 2/3] Introduce percpu rw semaphores
+Date: Sat, 28 Jul 2012 12:41:55 -0400 (EDT)
+Lines: 115
+Approved: news@gmane.org
+Message-ID: <Pine.LNX.4.64.1207281240270.30415@file.rdu.redhat.com>
+References: <Pine.LNX.4.64.1206272226050.22857@file.rdu.redhat.com>
+ <20120628111541.GB17515@quack.suse.cz> <Pine.LNX.4.64.1207152051490.4240@file.rdu.redhat.com>
+ <x49ipdmyz4q.fsf@segfault.boston.devel.redhat.com>
+ <Pine.LNX.4.64.1207181512530.10923@file.rdu.redhat.com>
+ <x49k3xzq3jc.fsf@segfault.boston.devel.redhat.com>
+ <Pine.LNX.4.64.1207281236230.30415@file.rdu.redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: TEXT/PLAIN; charset=US-ASCII
+X-Trace: dough.gmane.org 1343493734 9409 80.91.229.3 (28 Jul 2012 16:42:14 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 28 Jul 2012 16:42:14 +0000 (UTC)
+Cc: Jan Kara <jack@suse.cz>, Alexander Viro <viro@zeniv.linux.org.uk>,
+	Jens Axboe <axboe@kernel.dk>,
+	"Alasdair G. Kergon" <agk@redhat.com>,
+	linux-kernel@vger.kernel.org, linux-fsdevel@vger.kernel.org,
+	dm-devel@redhat.com, lwoodman@redhat.com,
+	Andrea Arcangeli <aarcange@redhat.com>,
+	kosaki.motohiro@jp.fujitsu.com
+To: Jeff Moyer <jmoyer@redhat.com>
+Original-X-From: linux-fsdevel-owner@vger.kernel.org Sat Jul 28 18:42:11 2012
+Return-path: <linux-fsdevel-owner@vger.kernel.org>
+Envelope-to: lnx-linux-fsdevel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-fsdevel-owner@vger.kernel.org>)
+	id 1SvA5j-0003fF-0J
+	for lnx-linux-fsdevel@plane.gmane.org; Sat, 28 Jul 2012 18:42:11 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752911Ab2G1QmI (ORCPT <rfc822;lnx-linux-fsdevel@m.gmane.org>);
+	Sat, 28 Jul 2012 12:42:08 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:35949 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752844Ab2G1QmH (ORCPT <rfc822;linux-fsdevel@vger.kernel.org>);
+	Sat, 28 Jul 2012 12:42:07 -0400
+Original-Received: from int-mx12.intmail.prod.int.phx2.redhat.com (int-mx12.intmail.prod.int.phx2.redhat.com [10.5.11.25])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6SGg1w1013817
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Sat, 28 Jul 2012 12:42:01 -0400
+Original-Received: from file.rdu.redhat.com (file.rdu.redhat.com [10.11.255.147])
+	by int-mx12.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6SGft7t014239
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Sat, 28 Jul 2012 12:41:56 -0400
+Original-Received: from file.rdu.redhat.com (localhost [127.0.0.1])
+	by file.rdu.redhat.com (8.14.4/8.14.4) with ESMTP id q6SGft1H031678;
+	Sat, 28 Jul 2012 12:41:55 -0400
+Original-Received: from localhost (mpatocka@localhost)
+	by file.rdu.redhat.com (8.14.4/8.14.4/Submit) with ESMTP id q6SGft9j031675;
+	Sat, 28 Jul 2012 12:41:55 -0400
+X-Authentication-Warning: file.rdu.redhat.com: mpatocka owned process doing -bs
+X-X-Sender: mpatocka@file.rdu.redhat.com
+In-Reply-To: <Pine.LNX.4.64.1207281236230.30415@file.rdu.redhat.com>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.25
+Original-Sender: linux-fsdevel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-fsdevel.vger.kernel.org>
+X-Mailing-List: linux-fsdevel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.file-systems:66307 gmane.linux.kernel:1334659 gmane.linux.kernel.device-mapper.devel:16441
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334659>
+
+Introduce percpu rw semaphores
+
+When many CPUs are locking a rw semaphore for read concurrently, cache
+line bouncing occurs. When a CPU acquires rw semaphore for read, the
+CPU writes to the cache line holding the semaphore. Consequently, the
+cache line is being moved between CPUs and this slows down semaphore
+acquisition.
+
+This patch introduces new percpu rw semaphores. They are functionally
+identical to existing rw semaphores, but locking the percpu rw semaphore
+for read is faster and locking for write is slower.
+
+The percpu rw semaphore is implemented as a percpu array of rw
+semaphores, each semaphore for one CPU. When some thread needs to lock
+the semaphore for read, only semaphore on the current CPU is locked for
+read. When some thread needs to lock the semaphore for write, semaphores
+for all CPUs are locked for write. This avoids cache line bouncing.
+
+Note that the thread that is locking percpu rw semaphore may be
+rescheduled, it doesn't cause bug, but cache line bouncing occurs in
+this case.
+
+Signed-off-by: Mikulas Patocka <mpatocka@redhat.com>
+
+---
+ include/linux/percpu-rwsem.h |   77 +++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 77 insertions(+)
+
+Index: linux-3.5-fast/include/linux/percpu-rwsem.h
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ linux-3.5-fast/include/linux/percpu-rwsem.h	2012-07-28 18:41:05.000000000 +0200
+@@ -0,0 +1,77 @@
++#ifndef _LINUX_PERCPU_RWSEM_H
++#define _LINUX_PERCPU_RWSEM_H
++
++#include <linux/rwsem.h>
++#include <linux/percpu.h>
++
++#ifndef CONFIG_SMP
++
++#define percpu_rw_semaphore	rw_semaphore
++#define percpu_rwsem_ptr	int
++#define percpu_down_read(x)	(down_read(x), 0)
++#define percpu_up_read(x, y)	up_read(x)
++#define percpu_down_write	down_write
++#define percpu_up_write		up_write
++#define percpu_init_rwsem(x)	(({init_rwsem(x);}), 0)
++#define percpu_free_rwsem(x)	do { } while (0)
++
++#else
++
++struct percpu_rw_semaphore {
++	struct rw_semaphore __percpu *s;
++};
++
++typedef struct rw_semaphore *percpu_rwsem_ptr;
++
++static inline percpu_rwsem_ptr percpu_down_read(struct percpu_rw_semaphore *sem)
++{
++	struct rw_semaphore *s = __this_cpu_ptr(sem->s);
++	down_read(s);
++	return s;
++}
++
++static inline void percpu_up_read(struct percpu_rw_semaphore *sem, percpu_rwsem_ptr s)
++{
++	up_read(s);
++}
++
++static inline void percpu_down_write(struct percpu_rw_semaphore *sem)
++{
++	int cpu;
++	for_each_possible_cpu(cpu) {
++		struct rw_semaphore *s = per_cpu_ptr(sem->s, cpu);
++		down_write(s);
++	}
++}
++
++static inline void percpu_up_write(struct percpu_rw_semaphore *sem)
++{
++	int cpu;
++	for_each_possible_cpu(cpu) {
++		struct rw_semaphore *s = per_cpu_ptr(sem->s, cpu);
++		up_write(s);
++	}
++}
++
++static inline int percpu_init_rwsem(struct percpu_rw_semaphore *sem)
++{
++	int cpu;
++	sem->s = alloc_percpu(struct rw_semaphore);
++	if (unlikely(!sem->s))
++		return -ENOMEM;
++	for_each_possible_cpu(cpu) {
++		struct rw_semaphore *s = per_cpu_ptr(sem->s, cpu);
++		init_rwsem(s);
++	}
++	return 0;
++}
++
++static inline void percpu_free_rwsem(struct percpu_rw_semaphore *sem)
++{
++	free_percpu(sem->s);
++	sem->s = NULL;		/* catch use after free bugs */
++}
++
++#endif
++
++#endif
+--
+To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

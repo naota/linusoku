@@ -1,0 +1,87 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 37/73] udf: Improve table length check to avoid possible overflow
+Date: Tue, 31 Jul 2012 05:43:47 +0100
+Lines: 35
+Approved: news@gmane.org
+Message-ID: <20120731044317.184294372@decadent.org.uk>
+References: <20120731044310.013763753@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343710650 23945 80.91.229.3 (31 Jul 2012 04:57:30 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 04:57:30 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Jan Kara <jack@suse.cz>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 06:57:26 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sw4WH-0002QT-TZ
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 06:57:22 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755893Ab2GaE5R (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 00:57:17 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:48786 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1755639Ab2GaEu4 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 00:50:56 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Sw4Ps-0003QW-Bi; Tue, 31 Jul 2012 05:50:44 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Sw4On-0000Ax-Bx; Tue, 31 Jul 2012 05:49:37 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120731044310.013763753@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335443 gmane.linux.kernel.stable:29012
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335443>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Jan Kara <jack@suse.cz>
+
+commit 57b9655d01ef057a523e810d29c37ac09b80eead upstream.
+
+When a partition table length is corrupted to be close to 1 << 32, the
+check for its length may overflow on 32-bit systems and we will think
+the length is valid. Later on the kernel can crash trying to read beyond
+end of buffer. Fix the check to avoid possible overflow.
+
+Reported-by: Ben Hutchings <ben@decadent.org.uk>
+Signed-off-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ fs/udf/super.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/udf/super.c b/fs/udf/super.c
+index 8a75838..dcbf987 100644
+--- a/fs/udf/super.c
++++ b/fs/udf/super.c
+@@ -1340,7 +1340,7 @@ static int udf_load_logicalvol(struct super_block *sb, sector_t block,
+ 	BUG_ON(ident != TAG_IDENT_LVD);
+ 	lvd = (struct logicalVolDesc *)bh->b_data;
+ 	table_len = le32_to_cpu(lvd->mapTableLength);
+-	if (sizeof(*lvd) + table_len > sb->s_blocksize) {
++	if (table_len > sb->s_blocksize - sizeof(*lvd)) {
+ 		udf_err(sb, "error loading logical volume descriptor: "
+ 			"Partition table too long (%u > %lu)\n", table_len,
+ 			sb->s_blocksize - sizeof(*lvd));
+
+

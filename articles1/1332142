@@ -1,0 +1,362 @@
+Path: news.gmane.org!not-for-mail
+From: James Bottomley <James.Bottomley@HansenPartnership.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.scsi
+Subject: [GIT PULL] First round of SCSI updates for the 3.5+ merge window
+Date: Tue, 24 Jul 2012 09:21:39 +0400
+Lines: 310
+Approved: news@gmane.org
+Message-ID: <1343107299.3513.7.camel@dabdike>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343107318 30615 80.91.229.3 (24 Jul 2012 05:21:58 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 05:21:58 +0000 (UTC)
+Cc: linux-scsi <linux-scsi@vger.kernel.org>,
+	linux-kernel <linux-kernel@vger.kernel.org>
+To: Andrew Morton <akpm@linux-foundation.org>,
+	Linus Torvalds <torvalds@linux-foundation.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 07:21:58 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StXZF-0002we-BD
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 07:21:58 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753020Ab2GXFVr (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 01:21:47 -0400
+Original-Received: from bedivere.hansenpartnership.com ([66.63.167.143]:42716 "EHLO
+	bedivere.hansenpartnership.com" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1751229Ab2GXFVp (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 01:21:45 -0400
+Original-Received: from localhost (localhost [127.0.0.1])
+	by bedivere.hansenpartnership.com (Postfix) with ESMTP id E3F7D8EE0E4;
+	Mon, 23 Jul 2012 22:21:44 -0700 (PDT)
+Original-Received: from bedivere.hansenpartnership.com ([127.0.0.1])
+	by localhost (bedivere.hansenpartnership.com [127.0.0.1]) (amavisd-new, port 10024)
+	with ESMTP id LfBdoePP9bku; Mon, 23 Jul 2012 22:21:44 -0700 (PDT)
+Original-Received: from [10.0.0.166] (unknown [194.186.187.194])
+	by bedivere.hansenpartnership.com (Postfix) with ESMTPSA id A7B088EE092;
+	Mon, 23 Jul 2012 22:21:42 -0700 (PDT)
+X-Mailer: Evolution 3.2.3 
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332142 gmane.linux.scsi:76505
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332142>
+
+The most important feature of this patch set is the new async
+infrastructure that makes sure async_synchronize_full() synchronizes all
+domains and allows us to remove all the hacks (like having
+scsi_complete_async_scans() in the device base code) and means that the
+async infrastructure will "just work" in future. The rest is assorted
+driver updates (aacraid, bnx2fc, virto-scsi, megaraid, bfa, lpfc,
+qla2xxx, qla4xxx) plus a lot of infrastructure work in sas and FC.
+
+The patch is available here:
+
+git://git.kernel.org/pub/scm/linux/kernel/git/jejb/scsi.git scsi-misc
+
+The short changelog is
+
+Alan Cox (1):
+      aha152x: Allow use on 64bit systems
+
+Bart Van Assche (5):
+      Stop accepting SCSI requests before removing a device
+      Change return type of scsi_queue_insert() into void
+      Avoid dangling pointer in scsi_requeue_command()
+      Fix device removal NULL pointer dereference
+      scsi_dh_alua: Re-enable STPG for unavailable ports
+
+Ben Collins (4):
+      aacraid: Fix endian issues in core and SRC portions of driver
+      aacraid: Relax the tight timeout loop on fib commands
+      aacraid: Better handling of in-flight events on thread stop
+      aacraid: Use resource_size_t for IO mem pointers and offsets
+
+Bhanu Prakash Gollapudi (4):
+      bnx2fc: Bumped version to 1.0.12
+      bnx2fc: use list_entry instead of explicit cast
+      bnx2fc: Improve error recovery by handling parity errors
+      bnx2fc: Support interface creation on non-VLAN interface also.
+
+Cong Meng (1):
+      virtio-scsi: hotplug support for virtio-scsi
+
+Dan Carpenter (6):
+      mvsas: remove unused variable in mvs_task_exec()
+      megaraid: remove a spurious IRQ enable
+      megaraid: cleanup type issue in mega_build_cmd()
+      bfa: dereferencing freed memory in bfad_im_probe()
+      bfa: off by one in bfa_ioc_mbox_isr()
+      arcmsr: fix misuse of | instead of &
+
+Dan Williams (17):
+      Revert "[SCSI] fix async probe regression"
+      cleanup usages of scsi_complete_async_scans
+      queue async scan work to an async_schedule domain
+      async: make async_synchronize_full() flush all work regardless of
+domain
+      async: introduce 'async_domain' type
+      libsas: trim sas_task of slow path infrastructure
+      libsas: drop sata port multiplier infrastructure
+      libsas: fix sas_discover_devices return code handling
+      libsas: continue revalidation
+      isci: use sas eh strategy handlers
+      libsas: use ->lldd_I_T_nexus_reset for ->eh_bus_reset_handler
+      libsas: add sas_eh_abort_handler
+      libsas: enforce eh strategy handlers only in eh context
+      cleanup setting task state in scsi_error_handler()
+      fix eh wakeup (scsi_schedule_eh vs scsi_restart_operations)
+      libata, libsas: introduce sched_eh and end_eh port ops
+      fix hot unplug vs async scan race
+
+Eric Dumazet (1):
+      bnx2fc: use kthread_create_on_node
+
+HighPoint Linux Team (1):
+      hptiop: fix RR312x in hosts with >12GB
+
+James Bottomley (2):
+      lpfc: fix problems with -Werror
+      Remove scsi_wait_scan module
+
+James Smart (10):
+      lpfc 8.3.32: Update lpfc to version 8.3.32
+      lpfc 8.3.32: Fix error reporting of misconfigured ports
+      lpfc 8.3.32: Fix system panic due to node state change
+      lpfc 8.3.32: Fix ability to change FCP EQ delay multiplier
+      lpfc 8.3.32: Correct successful aborts returning error status
+      lpfc 8.3.32: Correct provisioning change failure on local function
+      lpfc 8.3.32: Correct host DIF configuration that hung system
+      lpfc 8.3.32: Fix CQ and EQ dump failure for debugfs
+      lpfc 8.3.32: Correct null pointer Error in lpfc_sli.c
+      lpfc 8.3.32: lpfc_sli.c: add missing jumps to mempool_free
+
+Jeff Skirvin (1):
+      libsas: sas_rediscover_dev did not look at the SMP exec status.
+
+Joe Perches (1):
+      bnx2fc: Reduce object size by consolidating formats
+
+Jon Mason (2):
+      qla2xxx: remove unnecessary reads of PCI_CAP_ID_EXP
+      qla4xxx: remove unnecessary read of PCI_CAP_ID_EXP
+
+Josh Hunt (1):
+      properly initialize atomic_t
+
+Karen Xie (1):
+      cxgb4i: tcp push bit fix
+
+Krishna Gudipati (1):
+      bfa: Fix to set correct return error codes and misc cleanup.
+
+Kyle McMartin (1):
+      bfa: squelch lockdep complaint with a spin_lock_init
+
+Lin Ming (1):
+      scsi_pm: set device runtime state before parent suspended
+
+Maciej Trela (1):
+      libsas: cleanup spurious calls to scsi_schedule_eh
+
+Mahesh Rajashekhara (1):
+      aacraid: Series 7 Async. (performance) mode support
+
+Mark Rustad (1):
+      libfcoe: Fix section mismatch
+
+Mike Christie (3):
+      remove old comment from block/unblock functions
+      core, classes, mpt2sas: have scsi_internal_device_unblock take new
+state
+      add new SDEV_TRANSPORT_OFFLINE state
+
+Mike Snitzer (1):
+      scsi_dh: add scsi_dh_attached_handler_name
+
+Muthukumar Ratty (1):
+      block: Fix blk_execute_rq_nowait() dead queue handling
+
+Namjae Jeon (4):
+      ufs: fix incorrect return value about SUCCESS and FAILED
+      usb-storage: update usb devices for write cache quirk in quirk
+list.
+      usb-storage: add support for write cache quirk
+      set to WCE if usb cache quirk is present.
+
+Neil Horman (1):
+      fcoe: Cleanup locking on fcoe_percpu_receive_thread
+
+Nicholas Bellinger (1):
+      virtio-scsi: Add vdrv->scan for post VIRTIO_CONFIG_S_DRIVER_OK LUN
+scanning
+
+Paolo Bonzini (4):
+      virtio-scsi: split scatterlist per target
+      virtio-scsi: release sg_lock after add_buf
+      virtio-scsi: split locking per vq
+      virtio-scsi: unlock during kick
+
+Rob Evers (3):
+      scsi_dh_alua: backoff alua rtpg retry linearly vs. geometrically
+      scsi_dh_alua: retry alua rtpg extended header for illegal request
+response
+      scsi_dh_alua: implement 'implied transition timeout'
+
+Robert Love (1):
+      fcoe: Remove redundant 'less than zero' check
+
+Vasu Dev (6):
+      libfc: fix retries with FDMI lport states
+      libfc: add exch timer debug info
+      libfc: update fcp and exch stats
+      libfc: adds FCP failures stats
+      libfc, fcoe, bnx2fc: cleanup fcoe_dev_stats
+      fc: add some more FC specific stats to fc_host
+
+Venkatraman S (2):
+      ufs: reverse the ufshcd_is_device_present logic
+      ufs: use module_pci_driver
+
+Vikas Chaudhary (4):
+      qla4xxx: Update driver version to 5.02.00-k18
+      qla4xxx: Fix Spell check.
+      qla4xxx: Fix a Sparse warning message
+      qla4xxx: multi-session fix for flash ddbs
+
+Yi Zou (2):
+      libfc: fix sending REC after FCP_RESP is received
+      libfc: don't exch_done() on invalid sequence ptr
+
+And the diffstat:
+
+ Documentation/kernel-parameters.txt        |    2 +
+ block/blk-exec.c                           |   11 +-
+ drivers/ata/libata-core.c                  |    4 +
+ drivers/ata/libata-eh.c                    |   57 ++++-
+ drivers/base/dd.c                          |    2 -
+ drivers/regulator/core.c                   |    2 +-
+ drivers/scsi/Kconfig                       |   19 +-
+ drivers/scsi/Makefile                      |    2 -
+ drivers/scsi/aacraid/aachba.c              |  237 ++++++++++++++++---
+ drivers/scsi/aacraid/aacraid.h             |   79 +++++--
+ drivers/scsi/aacraid/commctrl.c            |    2 +
+ drivers/scsi/aacraid/comminit.c            |   54 +++--
+ drivers/scsi/aacraid/commsup.c             |   31 ++-
+ drivers/scsi/aacraid/dpcsup.c              |    6 +-
+ drivers/scsi/aacraid/linit.c               |   16 +-
+ drivers/scsi/aacraid/nark.c                |    4 +-
+ drivers/scsi/aacraid/rkt.c                 |    2 +-
+ drivers/scsi/aacraid/rx.c                  |    4 +-
+ drivers/scsi/aacraid/sa.c                  |    4 +-
+ drivers/scsi/aacraid/src.c                 |   96 ++++----
+ drivers/scsi/arcmsr/arcmsr_hba.c           |    4 +-
+ drivers/scsi/bfa/bfa_fcs_lport.c           |    4 +-
+ drivers/scsi/bfa/bfa_ioc.c                 |    2 +-
+ drivers/scsi/bfa/bfad.c                    |    2 +
+ drivers/scsi/bfa/bfad_bsg.c                |    5 +-
+ drivers/scsi/bfa/bfad_im.c                 |   12 +-
+ drivers/scsi/bnx2fc/Makefile               |    3 +-
+ drivers/scsi/bnx2fc/bnx2fc.h               |    9 +-
+ drivers/scsi/bnx2fc/bnx2fc_debug.c         |   70 ++++++
+ drivers/scsi/bnx2fc/bnx2fc_debug.h         |   73 ++----
+ drivers/scsi/bnx2fc/bnx2fc_fcoe.c          |   56 +++--
+ drivers/scsi/bnx2fc/bnx2fc_hwi.c           |    4 +-
+ drivers/scsi/bnx2fc/bnx2fc_io.c            |   25 +--
+ drivers/scsi/bnx2fc/bnx2fc_tgt.c           |   40 ++--
+ drivers/scsi/cxgbi/cxgb4i/cxgb4i.c         |    4 +-
+ drivers/scsi/device_handler/scsi_dh.c      |   38 +++-
+ drivers/scsi/device_handler/scsi_dh_alua.c |   71 +++++-
+ drivers/scsi/fcoe/fcoe.c                   |   36 +--
+ drivers/scsi/fcoe/fcoe_ctlr.c              |   13 +-
+ drivers/scsi/fcoe/fcoe_sysfs.c             |    2 +-
+ drivers/scsi/fcoe/fcoe_transport.c         |   12 +-
+ drivers/scsi/hosts.c                       |    9 +-
+ drivers/scsi/hptiop.c                      |   10 +-
+ drivers/scsi/hptiop.h                      |    1 +
+ drivers/scsi/isci/init.c                   |    3 +
+ drivers/scsi/libfc/fc_exch.c               |  130 ++++++-----
+ drivers/scsi/libfc/fc_fcp.c                |   22 +-
+ drivers/scsi/libfc/fc_frame.c              |    2 +-
+ drivers/scsi/libfc/fc_lport.c              |   69 +++---
+ drivers/scsi/libsas/sas_ata.c              |   41 +++-
+ drivers/scsi/libsas/sas_discover.c         |   23 +-
+ drivers/scsi/libsas/sas_event.c            |   12 +-
+ drivers/scsi/libsas/sas_expander.c         |   74 +++---
+ drivers/scsi/libsas/sas_init.c             |   39 +++-
+ drivers/scsi/libsas/sas_scsi_host.c        |  195 ++++++++++++++--
+ drivers/scsi/lpfc/Makefile                 |    2 +
+ drivers/scsi/lpfc/lpfc.h                   |    4 +
+ drivers/scsi/lpfc/lpfc_attr.c              |   93 +++++++-
+ drivers/scsi/lpfc/lpfc_crtn.h              |    4 +-
+ drivers/scsi/lpfc/lpfc_debugfs.h           |   18 +-
+ drivers/scsi/lpfc/lpfc_hbadisc.c           |    2 +-
+ drivers/scsi/lpfc/lpfc_hw4.h               |   45 ++++
+ drivers/scsi/lpfc/lpfc_init.c              |  233 +++++++++++++++----
+ drivers/scsi/lpfc/lpfc_scsi.c              |   32 ++-
+ drivers/scsi/lpfc/lpfc_sli.c               |  131 +++++++++--
+ drivers/scsi/lpfc/lpfc_sli4.h              |    1 +
+ drivers/scsi/lpfc/lpfc_version.h           |    2 +-
+ drivers/scsi/megaraid.c                    |    4 +-
+ drivers/scsi/megaraid/megaraid_mbox.c      |    2 +-
+ drivers/scsi/mpt2sas/mpt2sas_base.h        |    3 +-
+ drivers/scsi/mpt2sas/mpt2sas_scsih.c       |    4 +-
+ drivers/scsi/mvsas/mv_sas.c                |   21 +-
+ drivers/scsi/pm8001/pm8001_sas.c           |   37 +--
+ drivers/scsi/qla2xxx/qla_init.c            |    4 +-
+ drivers/scsi/qla2xxx/qla_nx.c              |    4 +-
+ drivers/scsi/qla2xxx/qla_os.c              |    4 +-
+ drivers/scsi/qla4xxx/ql4_def.h             |    1 +
+ drivers/scsi/qla4xxx/ql4_glbl.h            |    3 +-
+ drivers/scsi/qla4xxx/ql4_init.c            |    2 +-
+ drivers/scsi/qla4xxx/ql4_nx.c              |    2 +-
+ drivers/scsi/qla4xxx/ql4_os.c              |  156 +++++++++++--
+ drivers/scsi/qla4xxx/ql4_version.h         |    2 +-
+ drivers/scsi/scsi.c                        |    4 +-
+ drivers/scsi/scsi_error.c                  |   18 +-
+ drivers/scsi/scsi_lib.c                    |  104 +++++----
+ drivers/scsi/scsi_pm.c                     |   23 +-
+ drivers/scsi/scsi_priv.h                   |   10 +-
+ drivers/scsi/scsi_scan.c                   |   34 +--
+ drivers/scsi/scsi_sysfs.c                  |   56 +++--
+ drivers/scsi/scsi_transport_fc.c           |   34 ++-
+ drivers/scsi/scsi_transport_iscsi.c        |    6 +-
+ drivers/scsi/scsi_wait_scan.c              |   37 ---
+ drivers/scsi/sd.c                          |   10 +-
+ drivers/scsi/ufs/ufshcd.c                  |   35 +--
+ drivers/scsi/virtio_scsi.c                 |  337 ++++++++++++++++++++++------
+ drivers/usb/storage/scsiglue.c             |    5 +
+ drivers/usb/storage/unusual_devs.h         |   12 +
+ drivers/usb/storage/usb.c                  |    5 +-
+ drivers/virtio/virtio.c                    |    5 +-
+ include/linux/async.h                      |   36 ++-
+ include/linux/libata.h                     |    4 +
+ include/linux/usb_usual.h                  |    4 +-
+ include/linux/virtio.h                     |    1 +
+ include/linux/virtio_scsi.h                |    9 +
+ include/scsi/libfc.h                       |   24 +-
+ include/scsi/libsas.h                      |   30 ++-
+ include/scsi/sas_ata.h                     |    5 +
+ include/scsi/scsi.h                        |    2 +
+ include/scsi/scsi_device.h                 |    5 +-
+ include/scsi/scsi_dh.h                     |    6 +
+ include/scsi/scsi_scan.h                   |   11 -
+ include/scsi/scsi_transport_fc.h           |   12 +
+ kernel/async.c                             |   76 +++++--
+ sound/soc/soc-dapm.c                       |    2 +-
+ 114 files changed, 2509 insertions(+), 1018 deletions(-)
+ create mode 100644 drivers/scsi/bnx2fc/bnx2fc_debug.c
+ delete mode 100644 drivers/scsi/scsi_wait_scan.c
+ delete mode 100644 include/scsi/scsi_scan.h
+
+James
+
+

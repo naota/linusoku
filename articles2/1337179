@@ -1,0 +1,119 @@
+Path: news.gmane.org!not-for-mail
+From: Jens Axboe <axboe@kernel.dk>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] block: Don't use static to define "void *p" in show_partition_start().
+Date: Fri, 03 Aug 2012 10:41:34 +0200
+Lines: 68
+Approved: news@gmane.org
+Message-ID: <501B8EBE.5040006@kernel.dk>
+References: <201208031307389214790@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=GB2312
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343983328 9794 80.91.229.3 (3 Aug 2012 08:42:08 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 08:42:08 +0000 (UTC)
+Cc: linux-kernel <linux-kernel@vger.kernel.org>
+To: majianpeng <majianpeng@gmail.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 10:42:06 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxDSL-0002Am-NS
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 10:42:02 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753389Ab2HCIlx (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 04:41:53 -0400
+Original-Received: from merlin.infradead.org ([205.233.59.134]:33999 "EHLO
+	merlin.infradead.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753238Ab2HCIlq (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 04:41:46 -0400
+Original-Received: from canuck.infradead.org ([2001:4978:20e::1])
+	by merlin.infradead.org with esmtps (Exim 4.76 #1 (Red Hat Linux))
+	id 1SxDS5-0004kz-DU; Fri, 03 Aug 2012 08:41:45 +0000
+Original-Received: from brick.kernel.dk ([87.104.106.3] helo=kernel.dk)
+	by canuck.infradead.org with esmtpsa (Exim 4.76 #1 (Red Hat Linux))
+	id 1SxDS4-000291-4j; Fri, 03 Aug 2012 08:41:44 +0000
+Original-Received: from [192.168.0.33] (nelson.home.kernel.dk [192.168.0.33])
+	by kernel.dk (Postfix) with ESMTPA id AE1E8484001;
+	Fri,  3 Aug 2012 10:41:42 +0200 (CEST)
+In-Reply-To: <201208031307389214790@gmail.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337179
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337179>
+
+On 08/03/2012 07:07 AM, majianpeng wrote:
+> I met a odd prblem:read /proc/partitions may return zero.
+> 
+> I wrote a file test.c:
+> int main()
+> {
+> 	char buff[4096];
+> 	int ret;
+> 	int fd;
+> 	printf("pid=%d\n",getpid());
+> 	while (1) {
+> 		fd = open("/proc/partitions", O_RDONLY);
+> 		if (fd < 0) {
+> 			printf("open error %s\n", strerror(errno));
+> 			return 0;
+> 		}
+> 		ret = read(fd, buff, 4096);
+> 		if (ret <= 0)
+> 			printf("ret=%d, %s, %ld\n", ret,
+> 				strerror(errno), lseek(fd,0,SEEK_CUR));
+> 		close(fd);
+> 	}
+> 	exit(0);
+> }
+> 
+> You can reproduce by:
+> 1:while true;do cat /proc/partitions > /dev/null ;done
+> 2:./test
+> 
+> I reviewed the code and found:
+>>> static void *show_partition_start(struct seq_file *seqf, loff_t *pos)
+>>> {
+>>> 	static void *p;
+> 
+>>> 	p = disk_seqf_start(seqf, pos);
+>>> 	if (!IS_ERR_OR_NULL(p) && !*pos)
+>>> 		seq_puts(seqf, "major minor  #blocks  name\n\n");
+>>> 	return p;
+>>> }
+> 		test								cat /proc/partitions
+> 	p = disk_seqf_start()(Not NULL)
+> 									p = disk_seqf_start()(NULL because pos)
+> 	if (!IS_ERR_OR_NULL(p) && !*pos)
+> 
+> Signed-off-by: Jianpeng Ma <majianpeng@gmail.com>
+> ---
+>  block/genhd.c |    2 +-
+>  1 file changed, 1 insertion(+), 1 deletion(-)
+> 
+> diff --git a/block/genhd.c b/block/genhd.c
+> index cac7366..d839723 100644
+> --- a/block/genhd.c
+> +++ b/block/genhd.c
+> @@ -835,7 +835,7 @@ static void disk_seqf_stop(struct seq_file *seqf, void *v)
+>  
+>  static void *show_partition_start(struct seq_file *seqf, loff_t *pos)
+>  {
+> -	static void *p;
+> +	void *p;
+>  
+>  	p = disk_seqf_start(seqf, pos);
+>  	if (!IS_ERR_OR_NULL(p) && !*pos)
+
+Huh, that looks like a clear bug. I've applied it, thanks.
+
+-- 
+Jens Axboe
+

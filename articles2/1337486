@@ -1,0 +1,107 @@
+Path: news.gmane.org!not-for-mail
+From: Haiyang Zhang <haiyangz@microsoft.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.network,gmane.linux.drivers.driver-project.devel
+Subject: [PATCH net-next,1/1] hyperv: Move wait completion msg code into rndis_filter_halt_device()
+Date: Fri,  3 Aug 2012 12:32:18 -0700
+Lines: 62
+Approved: news@gmane.org
+Message-ID: <1344022338-3010-1-git-send-email-haiyangz@microsoft.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344021425 1247 80.91.229.3 (3 Aug 2012 19:17:05 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 19:17:05 +0000 (UTC)
+Cc: haiyangz@microsoft.com, kys@microsoft.com, olaf@aepfle.de,
+	jasowang@redhat.com, linux-kernel@vger.kernel.org,
+	devel@linuxdriverproject.org
+To: davem@davemloft.net, netdev@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 21:17:04 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxNMt-0002mx-BO
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 21:17:03 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753469Ab2HCTQs (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 15:16:48 -0400
+Original-Received: from p3plsmtps2ded01.prod.phx3.secureserver.net ([208.109.80.58]:48882
+	"HELO p3plsmtps2ded01-02.prod.phx3.secureserver.net"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with SMTP
+	id S1752981Ab2HCTQq (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 15:16:46 -0400
+Original-Received: (qmail 1405 invoked from network); 3 Aug 2012 19:16:45 -0000
+Original-Received: from unknown (HELO linuxonhyperv.com) (72.167.245.219)
+  by p3plsmtps2ded01-02.prod.phx3.secureserver.net (208.109.80.58) with ESMTP; 03 Aug 2012 19:16:45 -0000
+Original-Received: by linuxonhyperv.com (Postfix, from userid 503)
+	id A1D041901D2; Fri,  3 Aug 2012 12:32:29 -0700 (PDT)
+X-Mailer: git-send-email 1.7.4.1
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337486 gmane.linux.network:239074 gmane.linux.drivers.driver-project.devel:29166
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337486>
+
+We need to wait for send_completion msg before put_rndis_request() at
+the end of rndis_filter_halt_device(). Otherwise, netvsc_send_completion()
+may reference freed memory which is overwritten, and cause panic.
+
+Reported-by: Long Li <longli@microsoft.com>
+Reported-by: Jason Wang <jasowang@redhat.com>
+Signed-off-by: Haiyang Zhang <haiyangz@microsoft.com>
+---
+ drivers/net/hyperv/netvsc.c       |    7 -------
+ drivers/net/hyperv/rndis_filter.c |   11 +++++++++++
+ 2 files changed, 11 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/net/hyperv/netvsc.c b/drivers/net/hyperv/netvsc.c
+index 6cee291..4a1a5f5 100644
+--- a/drivers/net/hyperv/netvsc.c
++++ b/drivers/net/hyperv/netvsc.c
+@@ -383,13 +383,6 @@ int netvsc_device_remove(struct hv_device *device)
+ 	unsigned long flags;
+ 
+ 	net_device = hv_get_drvdata(device);
+-	spin_lock_irqsave(&device->channel->inbound_lock, flags);
+-	net_device->destroy = true;
+-	spin_unlock_irqrestore(&device->channel->inbound_lock, flags);
+-
+-	/* Wait for all send completions */
+-	wait_event(net_device->wait_drain,
+-		   atomic_read(&net_device->num_outstanding_sends) == 0);
+ 
+ 	netvsc_disconnect_vsp(net_device);
+ 
+diff --git a/drivers/net/hyperv/rndis_filter.c b/drivers/net/hyperv/rndis_filter.c
+index e5d6146..1e88a10 100644
+--- a/drivers/net/hyperv/rndis_filter.c
++++ b/drivers/net/hyperv/rndis_filter.c
+@@ -718,6 +718,9 @@ static void rndis_filter_halt_device(struct rndis_device *dev)
+ {
+ 	struct rndis_request *request;
+ 	struct rndis_halt_request *halt;
++	struct netvsc_device *nvdev = dev->net_dev;
++	struct hv_device *hdev = nvdev->dev;
++	ulong flags;
+ 
+ 	/* Attempt to do a rndis device halt */
+ 	request = get_rndis_request(dev, RNDIS_MSG_HALT,
+@@ -735,6 +738,14 @@ static void rndis_filter_halt_device(struct rndis_device *dev)
+ 	dev->state = RNDIS_DEV_UNINITIALIZED;
+ 
+ cleanup:
++	spin_lock_irqsave(&hdev->channel->inbound_lock, flags);
++	nvdev->destroy = true;
++	spin_unlock_irqrestore(&hdev->channel->inbound_lock, flags);
++
++	/* Wait for all send completions */
++	wait_event(nvdev->wait_drain,
++		atomic_read(&nvdev->num_outstanding_sends) == 0);
++
+ 	if (request)
+ 		put_rndis_request(dev, request);
+ 	return;
+-- 
+1.7.4.1
+

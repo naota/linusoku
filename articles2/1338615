@@ -1,0 +1,149 @@
+Path: news.gmane.org!not-for-mail
+From: "Rafael J. Wysocki" <rjw@sisk.pl>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.sh.devel
+Subject: [PATCH 4/12] PM / Domains: Make it possible to use names when adding subdomains
+Date: Tue, 7 Aug 2012 01:08:37 +0200
+Lines: 92
+Approved: news@gmane.org
+Message-ID: <201208070108.38081.rjw@sisk.pl>
+References: <201208070105.23262.rjw@sisk.pl>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain;
+  charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344294705 8962 80.91.229.3 (6 Aug 2012 23:11:45 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 23:11:45 +0000 (UTC)
+Cc: LKML <linux-kernel@vger.kernel.org>,
+	Linux PM list <linux-pm@vger.kernel.org>,
+	Magnus Damm <magnus.damm@gmail.com>
+To: "Linux-sh list" <linux-sh@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 01:11:45 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyWSc-0006RC-Rp
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 01:11:43 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932149Ab2HFXLU (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 19:11:20 -0400
+Original-Received: from ogre.sisk.pl ([193.178.161.156]:44950 "EHLO ogre.sisk.pl"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1756777Ab2HFXLO (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 19:11:14 -0400
+Original-Received: from localhost (localhost.localdomain [127.0.0.1])
+	by ogre.sisk.pl (Postfix) with ESMTP id 55F571DB9C1;
+	Tue,  7 Aug 2012 01:01:17 +0200 (CEST)
+Original-Received: from ogre.sisk.pl ([127.0.0.1])
+ by localhost (ogre.sisk.pl [127.0.0.1]) (amavisd-new, port 10024) with ESMTP
+ id 03968-08; Tue,  7 Aug 2012 01:00:54 +0200 (CEST)
+Original-Received: from ferrari.rjw.lan (62-121-64-87.home.aster.pl [62.121.64.87])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by ogre.sisk.pl (Postfix) with ESMTP id A2B971DB9EA;
+	Tue,  7 Aug 2012 01:00:54 +0200 (CEST)
+User-Agent: KMail/1.13.6 (Linux/3.5.0+; KDE/4.6.0; x86_64; ; )
+In-Reply-To: <201208070105.23262.rjw@sisk.pl>
+X-Virus-Scanned: amavisd-new at ogre.sisk.pl using MkS_Vir for Linux
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338615 gmane.linux.ports.sh.devel:16151
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338615>
+
+
+Add a new helper function, pm_genpd_add_subdomain_names(), allowing
+the caller to add a subdomain to a generic PM domain using names for
+domain identification (both domains have to be initialized before).
+
+This function is useful for adding subdomains to PM domains whose
+representations are stored in tables, when the caller doesn't know
+the indices of the domain to add the subdomain to and of the
+subdomain itself, but it knows the domains' names.
+
+Signed-off-by: Rafael J. Wysocki <rjw@sisk.pl>
+---
+ drivers/base/power/domain.c |   32 +++++++++++++++++++++++++++++++-
+ include/linux/pm_domain.h   |    7 +++++++
+ 2 files changed, 38 insertions(+), 1 deletion(-)
+
+Index: linux/drivers/base/power/domain.c
+===================================================================
+--- linux.orig/drivers/base/power/domain.c
++++ linux/drivers/base/power/domain.c
+@@ -1584,7 +1584,8 @@ int pm_genpd_add_subdomain(struct generi
+ 	struct gpd_link *link;
+ 	int ret = 0;
+ 
+-	if (IS_ERR_OR_NULL(genpd) || IS_ERR_OR_NULL(subdomain))
++	if (IS_ERR_OR_NULL(genpd) || IS_ERR_OR_NULL(subdomain)
++	    || genpd == subdomain)
+ 		return -EINVAL;
+ 
+  start:
+@@ -1631,6 +1632,35 @@ int pm_genpd_add_subdomain(struct generi
+ }
+ 
+ /**
++ * pm_genpd_add_subdomain_names - Add a subdomain to an I/O PM domain.
++ * @master_name: Name of the master PM domain to add the subdomain to.
++ * @subdomain_name: Name of the subdomain to be added.
++ */
++int pm_genpd_add_subdomain_names(const char *master_name,
++				 const char *subdomain_name)
++{
++	struct generic_pm_domain *master = NULL, *subdomain = NULL, *gpd;
++
++	if (IS_ERR_OR_NULL(master_name) || IS_ERR_OR_NULL(subdomain_name))
++		return -EINVAL;
++
++	mutex_lock(&gpd_list_lock);
++	list_for_each_entry(gpd, &gpd_list, gpd_list_node) {
++		if (!master && !strcmp(gpd->name, master_name))
++			master = gpd;
++
++		if (!subdomain && !strcmp(gpd->name, subdomain_name))
++			subdomain = gpd;
++
++		if (master && subdomain)
++			break;
++	}
++	mutex_unlock(&gpd_list_lock);
++
++	return pm_genpd_add_subdomain(master, subdomain);
++}
++
++/**
+  * pm_genpd_remove_subdomain - Remove a subdomain from an I/O PM domain.
+  * @genpd: Master PM domain to remove the subdomain from.
+  * @subdomain: Subdomain to be removed.
+Index: linux/include/linux/pm_domain.h
+===================================================================
+--- linux.orig/include/linux/pm_domain.h
++++ linux/include/linux/pm_domain.h
+@@ -147,6 +147,8 @@ extern int pm_genpd_remove_device(struct
+ extern void pm_genpd_dev_need_restore(struct device *dev, bool val);
+ extern int pm_genpd_add_subdomain(struct generic_pm_domain *genpd,
+ 				  struct generic_pm_domain *new_subdomain);
++extern int pm_genpd_add_subdomain_names(const char *master_name,
++					const char *subdomain_name);
+ extern int pm_genpd_remove_subdomain(struct generic_pm_domain *genpd,
+ 				     struct generic_pm_domain *target);
+ extern int pm_genpd_add_callbacks(struct device *dev,
+@@ -201,6 +203,11 @@ static inline int pm_genpd_add_subdomain
+ {
+ 	return -ENOSYS;
+ }
++static inline int pm_genpd_add_subdomain_names(const char *master_name,
++					       const char *subdomain_name)
++{
++	return -ENOSYS;
++}
+ static inline int pm_genpd_remove_subdomain(struct generic_pm_domain *genpd,
+ 					    struct generic_pm_domain *target)
+ {
+

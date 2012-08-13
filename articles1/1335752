@@ -1,0 +1,103 @@
+Path: news.gmane.org!not-for-mail
+From: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.xen.devel
+Subject: [PATCH 1/5] xen/swiotlb: Simplify the logic.
+Date: Tue, 31 Jul 2012 10:00:19 -0400
+Lines: 44
+Approved: news@gmane.org
+Message-ID: <1343743223-30092-2-git-send-email-konrad.wilk@oracle.com>
+References: <1343743223-30092-1-git-send-email-konrad.wilk@oracle.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343743854 21228 80.91.229.3 (31 Jul 2012 14:10:54 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 14:10:54 +0000 (UTC)
+Cc: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+To: fujita.tomonori@lab.ntt.co.jp, xen-devel@lists.xensource.com,
+	linux-kernel@vger.kernel.org, stefano.stabellini@eu.citrix.com,
+	JBeulich@suse.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 16:10:53 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwD9u-0002oF-UB
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 16:10:51 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754085Ab2GaOJ4 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 10:09:56 -0400
+Original-Received: from acsinet15.oracle.com ([141.146.126.227]:46673 "EHLO
+	acsinet15.oracle.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753131Ab2GaOJv (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 10:09:51 -0400
+Original-Received: from ucsinet21.oracle.com (ucsinet21.oracle.com [156.151.31.93])
+	by acsinet15.oracle.com (Sentrion-MTA-4.2.2/Sentrion-MTA-4.2.2) with ESMTP id q6VE9Vu4025636
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Tue, 31 Jul 2012 14:09:32 GMT
+Original-Received: from acsmt356.oracle.com (acsmt356.oracle.com [141.146.40.156])
+	by ucsinet21.oracle.com (8.14.4+Sun/8.14.4) with ESMTP id q6VE9TSi022427
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Tue, 31 Jul 2012 14:09:31 GMT
+Original-Received: from abhmt103.oracle.com (abhmt103.oracle.com [141.146.116.55])
+	by acsmt356.oracle.com (8.12.11.20060308/8.12.11) with ESMTP id q6VE9S9n023804;
+	Tue, 31 Jul 2012 09:09:29 -0500
+Original-Received: from phenom.dumpdata.com (/209.6.85.33)
+	by default (Oracle Beehive Gateway v4.0)
+	with ESMTP ; Tue, 31 Jul 2012 07:09:28 -0700
+Original-Received: by phenom.dumpdata.com (Postfix, from userid 1000)
+	id 4D704402B5; Tue, 31 Jul 2012 10:00:28 -0400 (EDT)
+X-Mailer: git-send-email 1.7.7.6
+In-Reply-To: <1343743223-30092-1-git-send-email-konrad.wilk@oracle.com>
+X-Source-IP: ucsinet21.oracle.com [156.151.31.93]
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335752 gmane.comp.emulators.xen.devel:135966
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335752>
+
+Its pretty easy:
+ 1). We only check to see if we need Xen SWIOTLB for PV guests.
+ 2). If swiotlb=force or iommu=soft is set, then Xen SWIOTLB will
+     be enabled.
+ 3). If it is an initial domain, then Xen SWIOTLB will be enabled.
+ 4). Native SWIOTLB must be disabled for PV guests.
+
+Signed-off-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+---
+ arch/x86/xen/pci-swiotlb-xen.c |    9 +++++----
+ 1 files changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/arch/x86/xen/pci-swiotlb-xen.c b/arch/x86/xen/pci-swiotlb-xen.c
+index 967633a..b6a5340 100644
+--- a/arch/x86/xen/pci-swiotlb-xen.c
++++ b/arch/x86/xen/pci-swiotlb-xen.c
+@@ -34,19 +34,20 @@ static struct dma_map_ops xen_swiotlb_dma_ops = {
+ int __init pci_xen_swiotlb_detect(void)
+ {
+ 
++	if (!xen_pv_domain())
++		return 0;
++
+ 	/* If running as PV guest, either iommu=soft, or swiotlb=force will
+ 	 * activate this IOMMU. If running as PV privileged, activate it
+ 	 * irregardless.
+ 	 */
+-	if ((xen_initial_domain() || swiotlb || swiotlb_force) &&
+-	    (xen_pv_domain()))
++	if ((xen_initial_domain() || swiotlb || swiotlb_force))
+ 		xen_swiotlb = 1;
+ 
+ 	/* If we are running under Xen, we MUST disable the native SWIOTLB.
+ 	 * Don't worry about swiotlb_force flag activating the native, as
+ 	 * the 'swiotlb' flag is the only one turning it on. */
+-	if (xen_pv_domain())
+-		swiotlb = 0;
++	swiotlb = 0;
+ 
+ 	return xen_swiotlb;
+ }
+-- 
+1.7.7.6
+

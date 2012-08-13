@@ -1,0 +1,123 @@
+Path: news.gmane.org!not-for-mail
+From: Stephen Boyd <sboyd@quicinc.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH 1/2] vsprintf: Fix %ps on non symbols when using kallsyms
+Date: Wed, 25 Jul 2012 18:38:00 -0700
+Lines: 69
+Approved: news@gmane.org
+Message-ID: <50109F78.4040409@quicinc.com>
+References: <1335217525-30709-1-git-send-email-sboyd@codeaurora.org> <20120423145545.e7c41906.akpm@linux-foundation.org>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="ISO-8859-1"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343266694 26421 80.91.229.3 (26 Jul 2012 01:38:14 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 01:38:14 +0000 (UTC)
+Cc: <linux-kernel@vger.kernel.org>
+To: Andrew Morton <akpm@linux-foundation.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 03:38:14 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuD1p-0007ce-4U
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 03:38:13 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751982Ab2GZBiE (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 21:38:04 -0400
+Original-Received: from wolverine02.qualcomm.com ([199.106.114.251]:15208 "EHLO
+	wolverine02.qualcomm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751252Ab2GZBiD (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 21:38:03 -0400
+X-IronPort-AV: E=McAfee;i="5400,1158,6783"; a="212239912"
+Original-Received: from ironmsg02-l.qualcomm.com ([172.30.48.16])
+  by wolverine02.qualcomm.com with ESMTP; 25 Jul 2012 18:38:03 -0700
+X-IronPort-AV: E=Sophos;i="4.77,656,1336374000"; 
+   d="scan'208";a="121870262"
+Original-Received: from nasanexhc08.na.qualcomm.com ([172.30.39.7])
+  by ironmsg02-L.qualcomm.com with ESMTP/TLS/RC4-SHA; 25 Jul 2012 18:38:02 -0700
+Original-Received: from [10.46.164.20] (172.30.39.5) by qcmail1.qualcomm.com
+ (172.30.39.7) with Microsoft SMTP Server (TLS) id 14.2.309.2; Wed, 25 Jul
+ 2012 18:38:01 -0700
+User-Agent: Mozilla/5.0 (X11; Linux i686 on x86_64; rv:12.0) Gecko/20120428 Thunderbird/12.0.1
+In-Reply-To: <20120423145545.e7c41906.akpm@linux-foundation.org>
+X-Originating-IP: [172.30.39.5]
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333364
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333364>
+
+Hi Andrew,
+
+On 4/23/2012 2:55 PM, Andrew Morton wrote:
+> On Mon, 23 Apr 2012 14:45:24 -0700
+> Stephen Boyd <sboyd@codeaurora.org> wrote:
+>
+>> Using %ps in a printk format will sometimes fail silently and
+>> print the empty string if the address passed in does not match a
+>> symbol that kallsyms knows about.
+
+A coworker pointed out that the second patch in this series now prints
+the symbol closest to the address passed in if kallsyms sees the address
+is between two symbols. So if I have a pointer to some member of a
+structure %ps prints the symbol for the containing structure, which is
+not really helpful.
+
+For example
+
+struct test {
+  int i;
+  int j;
+} my_test;
+
+printk("%ps\n", &my_test.j)
+
+
+would print out "my_test" instead of "0xc4523400".
+
+This is especially bad for the spinlock debugging case where there could
+be two locks embedded in some static structure. I think it would be a
+good idea to apply this patch so we get a good middle ground by printing
+the name and the offset. Or we can revert the patch and I'll add more
+info by printing lockdep information about the lock.
+
+-----8<------
+
+From: Stephen Boyd <sboyd@codeaurora.org>
+Subject: [PATCH] spinlock_debug: Print offset in addition to symbol name
+
+If there are two spinlocks embedded in a structure that kallsyms
+knows about and one of the spinlocks locks up we will print the
+name of the containing structure instead of the address of the
+lock. This is quite bad, so let's use %pS instead of %ps so we
+get an offset in addition to the symbol so we can determine which
+particular lock is having problems.
+
+Signed-off-by: Stephen Boyd <sboyd@codeaurora.org>
+---
+ lib/spinlock_debug.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/lib/spinlock_debug.c b/lib/spinlock_debug.c
+index e91fbc2..eb10578 100644
+--- a/lib/spinlock_debug.c
++++ b/lib/spinlock_debug.c
+@@ -58,7 +58,7 @@ static void spin_dump(raw_spinlock_t *lock, const char *msg)
+ 	printk(KERN_EMERG "BUG: spinlock %s on CPU#%d, %s/%d\n",
+ 		msg, raw_smp_processor_id(),
+ 		current->comm, task_pid_nr(current));
+-	printk(KERN_EMERG " lock: %ps, .magic: %08x, .owner: %s/%d, "
++	printk(KERN_EMERG " lock: %pS, .magic: %08x, .owner: %s/%d, "
+ 			".owner_cpu: %d\n",
+ 		lock, lock->magic,
+ 		owner ? owner->comm : "<none>",
+
+-- 
+Sent by an employee of the Qualcomm Innovation Center, Inc.
+The Qualcomm Innovation Center, Inc. is a member of the Code Aurora Forum.
+

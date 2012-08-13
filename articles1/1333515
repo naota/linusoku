@@ -1,0 +1,374 @@
+Path: news.gmane.org!not-for-mail
+From: Kishon Vijay Abraham I <kishon@ti.com>
+Newsgroups: gmane.linux.kernel
+Subject: [RFC PATCH] drivers: regulator: add error checks for exported APIs
+Date: Thu, 26 Jul 2012 16:00:03 +0530
+Lines: 322
+Approved: news@gmane.org
+Message-ID: <1343298603-25442-1-git-send-email-kishon@ti.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1343298684 16625 80.91.229.3 (26 Jul 2012 10:31:24 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 10:31:24 +0000 (UTC)
+To: <kishon@ti.com>, <lrg@ti.com>,
+	<broonie@opensource.wolfsonmicro.com>, <balbi@ti.com>,
+	<linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 12:31:20 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuLLg-0006Cr-DP
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 12:31:17 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752582Ab2GZKaZ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 06:30:25 -0400
+Original-Received: from comal.ext.ti.com ([198.47.26.152]:39929 "EHLO comal.ext.ti.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751481Ab2GZKaV (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 06:30:21 -0400
+Original-Received: from dbdp20.itg.ti.com ([172.24.170.38])
+	by comal.ext.ti.com (8.13.7/8.13.7) with ESMTP id q6QAUGlM022486;
+	Thu, 26 Jul 2012 05:30:17 -0500
+Original-Received: from DBDE70.ent.ti.com (localhost [127.0.0.1])
+	by dbdp20.itg.ti.com (8.13.8/8.13.8) with ESMTP id q6QAUCxo016200;
+	Thu, 26 Jul 2012 16:00:12 +0530 (IST)
+Original-Received: from dbdp33.itg.ti.com (172.24.170.252) by dbde70.ent.ti.com
+ (172.24.170.148) with Microsoft SMTP Server id 14.1.323.3; Thu, 26 Jul 2012
+ 16:00:12 +0530
+Original-Received: from a0393678lt.apr.dhcp.ti.com (smtpvbd.itg.ti.com
+ [172.24.170.250])	by dbdp33.itg.ti.com (8.13.8/8.13.8) with ESMTP id
+ q6QAU8cB008276;	Thu, 26 Jul 2012 16:00:08 +0530
+X-Mailer: git-send-email 1.7.9.5
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333515
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333515>
+
+Added error checks for exported APIs in regulator framework so that
+incorrect use of these APIs does not result in a crash.
+
+Signed-off-by: Kishon Vijay Abraham I <kishon@ti.com>
+---
+compile tested omap2plus_defconfig
+
+ drivers/regulator/core.c |  119 ++++++++++++++++++++++++++++++++++++++++------
+ 1 file changed, 104 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/regulator/core.c b/drivers/regulator/core.c
+index f092588..5e88bb2 100644
+--- a/drivers/regulator/core.c
++++ b/drivers/regulator/core.c
+@@ -1506,12 +1506,17 @@ static int _regulator_enable(struct regulator_dev *rdev)
+  */
+ int regulator_enable(struct regulator *regulator)
+ {
+-	struct regulator_dev *rdev = regulator->rdev;
++	struct regulator_dev *rdev;
+ 	int ret = 0;
+ 
++	if (IS_ERR_OR_NULL(regulator))
++		return -ENODEV;
++
+ 	if (regulator->always_on)
+ 		return 0;
+ 
++	rdev = regulator->rdev;
++
+ 	if (rdev->supply) {
+ 		ret = regulator_enable(rdev->supply);
+ 		if (ret != 0)
+@@ -1603,12 +1608,17 @@ static int _regulator_disable(struct regulator_dev *rdev)
+  */
+ int regulator_disable(struct regulator *regulator)
+ {
+-	struct regulator_dev *rdev = regulator->rdev;
++	struct regulator_dev *rdev;
+ 	int ret = 0;
+ 
++	if (IS_ERR_OR_NULL(regulator))
++		return -ENODEV;
++
+ 	if (regulator->always_on)
+ 		return 0;
+ 
++	rdev = regulator->rdev;
++
+ 	mutex_lock(&rdev->mutex);
+ 	ret = _regulator_disable(rdev);
+ 	mutex_unlock(&rdev->mutex);
+@@ -1652,9 +1662,13 @@ static int _regulator_force_disable(struct regulator_dev *rdev)
+  */
+ int regulator_force_disable(struct regulator *regulator)
+ {
+-	struct regulator_dev *rdev = regulator->rdev;
++	struct regulator_dev *rdev;
+ 	int ret;
+ 
++	if (IS_ERR_OR_NULL(regulator))
++		return -ENODEV;
++
++	rdev = regulator->rdev;
+ 	mutex_lock(&rdev->mutex);
+ 	regulator->uA_load = 0;
+ 	ret = _regulator_force_disable(regulator->rdev);
+@@ -1714,12 +1728,16 @@ static void regulator_disable_work(struct work_struct *work)
+  */
+ int regulator_disable_deferred(struct regulator *regulator, int ms)
+ {
+-	struct regulator_dev *rdev = regulator->rdev;
++	struct regulator_dev *rdev;
+ 	int ret;
+ 
++	if (IS_ERR_OR_NULL(regulator))
++		return -ENODEV;
++
+ 	if (regulator->always_on)
+ 		return 0;
+ 
++	rdev = regulator->rdev;
+ 	mutex_lock(&rdev->mutex);
+ 	rdev->deferred_disables++;
+ 	mutex_unlock(&rdev->mutex);
+@@ -1817,6 +1835,9 @@ int regulator_is_enabled(struct regulator *regulator)
+ {
+ 	int ret;
+ 
++	if (IS_ERR_OR_NULL(regulator))
++		return -ENODEV;
++
+ 	if (regulator->always_on)
+ 		return 1;
+ 
+@@ -1838,7 +1859,12 @@ EXPORT_SYMBOL_GPL(regulator_is_enabled);
+  */
+ int regulator_count_voltages(struct regulator *regulator)
+ {
+-	struct regulator_dev	*rdev = regulator->rdev;
++	struct regulator_dev	*rdev;
++
++	if (IS_ERR_OR_NULL(regulator))
++		return -ENODEV;
++
++	rdev = regulator->rdev;
+ 
+ 	return rdev->desc->n_voltages ? : -EINVAL;
+ }
+@@ -1901,10 +1927,16 @@ EXPORT_SYMBOL_GPL(regulator_list_voltage_table);
+  */
+ int regulator_list_voltage(struct regulator *regulator, unsigned selector)
+ {
+-	struct regulator_dev	*rdev = regulator->rdev;
+-	struct regulator_ops	*ops = rdev->desc->ops;
++	struct regulator_dev	*rdev;
++	struct regulator_ops	*ops;
+ 	int			ret;
+ 
++	if (IS_ERR_OR_NULL(regulator))
++		return -ENODEV;
++
++	rdev = regulator->rdev;
++	ops = rdev->desc->ops;
++
+ 	if (!ops->list_voltage || selector >= rdev->desc->n_voltages)
+ 		return -EINVAL;
+ 
+@@ -1935,9 +1967,14 @@ EXPORT_SYMBOL_GPL(regulator_list_voltage);
+ int regulator_is_supported_voltage(struct regulator *regulator,
+ 				   int min_uV, int max_uV)
+ {
+-	struct regulator_dev *rdev = regulator->rdev;
++	struct regulator_dev *rdev;
+ 	int i, voltages, ret;
+ 
++	if (IS_ERR_OR_NULL(regulator))
++		return -ENODEV;
++
++	rdev = regulator->rdev;
++
+ 	/* If we can't change voltage check the current voltage */
+ 	if (!(rdev->constraints->valid_ops_mask & REGULATOR_CHANGE_VOLTAGE)) {
+ 		ret = regulator_get_voltage(regulator);
+@@ -2207,9 +2244,14 @@ static int _regulator_do_set_voltage(struct regulator_dev *rdev,
+  */
+ int regulator_set_voltage(struct regulator *regulator, int min_uV, int max_uV)
+ {
+-	struct regulator_dev *rdev = regulator->rdev;
++	struct regulator_dev *rdev;
+ 	int ret = 0;
+ 
++	if (IS_ERR_OR_NULL(regulator))
++		return -ENODEV;
++
++	rdev = regulator->rdev;
++
+ 	mutex_lock(&rdev->mutex);
+ 
+ 	/* If we're setting the same range as last time the change
+@@ -2258,13 +2300,19 @@ EXPORT_SYMBOL_GPL(regulator_set_voltage);
+ int regulator_set_voltage_time(struct regulator *regulator,
+ 			       int old_uV, int new_uV)
+ {
+-	struct regulator_dev	*rdev = regulator->rdev;
+-	struct regulator_ops	*ops = rdev->desc->ops;
++	struct regulator_dev	*rdev;
++	struct regulator_ops	*ops;
+ 	int old_sel = -1;
+ 	int new_sel = -1;
+ 	int voltage;
+ 	int i;
+ 
++	if (IS_ERR_OR_NULL(regulator))
++		return -ENODEV;
++
++	rdev = regulator->rdev;
++	ops = rdev->desc->ops;
++
+ 	/* Currently requires operations to do this */
+ 	if (!ops->list_voltage || !ops->set_voltage_time_sel
+ 	    || !rdev->desc->n_voltages)
+@@ -2340,9 +2388,14 @@ EXPORT_SYMBOL_GPL(regulator_set_voltage_time_sel);
+  */
+ int regulator_sync_voltage(struct regulator *regulator)
+ {
+-	struct regulator_dev *rdev = regulator->rdev;
++	struct regulator_dev *rdev;
+ 	int ret, min_uV, max_uV;
+ 
++	if (IS_ERR_OR_NULL(regulator))
++		return -ENODEV;
++
++	rdev = regulator->rdev;
++
+ 	mutex_lock(&rdev->mutex);
+ 
+ 	if (!rdev->desc->ops->set_voltage &&
+@@ -2410,6 +2463,9 @@ int regulator_get_voltage(struct regulator *regulator)
+ {
+ 	int ret;
+ 
++	if (IS_ERR_OR_NULL(regulator))
++		return -ENODEV;
++
+ 	mutex_lock(&regulator->rdev->mutex);
+ 
+ 	ret = _regulator_get_voltage(regulator->rdev);
+@@ -2439,9 +2495,14 @@ EXPORT_SYMBOL_GPL(regulator_get_voltage);
+ int regulator_set_current_limit(struct regulator *regulator,
+ 			       int min_uA, int max_uA)
+ {
+-	struct regulator_dev *rdev = regulator->rdev;
++	struct regulator_dev *rdev;
+ 	int ret;
+ 
++	if (IS_ERR_OR_NULL(regulator))
++		return -ENODEV;
++
++	rdev = regulator->rdev;
++
+ 	mutex_lock(&rdev->mutex);
+ 
+ 	/* sanity check */
+@@ -2491,6 +2552,9 @@ out:
+  */
+ int regulator_get_current_limit(struct regulator *regulator)
+ {
++	if (IS_ERR_OR_NULL(regulator))
++		return -ENODEV;
++
+ 	return _regulator_get_current_limit(regulator->rdev);
+ }
+ EXPORT_SYMBOL_GPL(regulator_get_current_limit);
+@@ -2508,10 +2572,15 @@ EXPORT_SYMBOL_GPL(regulator_get_current_limit);
+  */
+ int regulator_set_mode(struct regulator *regulator, unsigned int mode)
+ {
+-	struct regulator_dev *rdev = regulator->rdev;
++	struct regulator_dev *rdev;
+ 	int ret;
+ 	int regulator_curr_mode;
+ 
++	if (IS_ERR_OR_NULL(regulator))
++		return -ENODEV;
++
++	rdev = regulator->rdev;
++
+ 	mutex_lock(&rdev->mutex);
+ 
+ 	/* sanity check */
+@@ -2567,6 +2636,9 @@ out:
+  */
+ unsigned int regulator_get_mode(struct regulator *regulator)
+ {
++	if (IS_ERR_OR_NULL(regulator))
++		return -ENODEV;
++
+ 	return _regulator_get_mode(regulator->rdev);
+ }
+ EXPORT_SYMBOL_GPL(regulator_get_mode);
+@@ -2599,11 +2671,16 @@ EXPORT_SYMBOL_GPL(regulator_get_mode);
+  */
+ int regulator_set_optimum_mode(struct regulator *regulator, int uA_load)
+ {
+-	struct regulator_dev *rdev = regulator->rdev;
++	struct regulator_dev *rdev;
+ 	struct regulator *consumer;
+ 	int ret, output_uV, input_uV = 0, total_uA_load = 0;
+ 	unsigned int mode;
+ 
++	if (IS_ERR_OR_NULL(regulator))
++		return -ENODEV;
++
++	rdev = regulator->rdev;
++
+ 	if (rdev->supply)
+ 		input_uV = regulator_get_voltage(rdev->supply);
+ 
+@@ -2683,6 +2760,9 @@ EXPORT_SYMBOL_GPL(regulator_set_optimum_mode);
+ int regulator_register_notifier(struct regulator *regulator,
+ 			      struct notifier_block *nb)
+ {
++	if (IS_ERR_OR_NULL(regulator))
++		return -ENODEV;
++
+ 	return blocking_notifier_chain_register(&regulator->rdev->notifier,
+ 						nb);
+ }
+@@ -2698,6 +2778,9 @@ EXPORT_SYMBOL_GPL(regulator_register_notifier);
+ int regulator_unregister_notifier(struct regulator *regulator,
+ 				struct notifier_block *nb)
+ {
++	if (IS_ERR_OR_NULL(regulator))
++		return -ENODEV;
++
+ 	return blocking_notifier_chain_unregister(&regulator->rdev->notifier,
+ 						  nb);
+ }
+@@ -3477,6 +3560,9 @@ EXPORT_SYMBOL_GPL(rdev_get_drvdata);
+  */
+ void *regulator_get_drvdata(struct regulator *regulator)
+ {
++	if (IS_ERR_OR_NULL(regulator))
++		return NULL;
++
+ 	return regulator->rdev->reg_data;
+ }
+ EXPORT_SYMBOL_GPL(regulator_get_drvdata);
+@@ -3488,6 +3574,9 @@ EXPORT_SYMBOL_GPL(regulator_get_drvdata);
+  */
+ void regulator_set_drvdata(struct regulator *regulator, void *data)
+ {
++	if (IS_ERR_OR_NULL(regulator))
++		return;
++
+ 	regulator->rdev->reg_data = data;
+ }
+ EXPORT_SYMBOL_GPL(regulator_set_drvdata);
+-- 
+1.7.9.5
+

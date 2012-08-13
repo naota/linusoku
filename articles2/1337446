@@ -1,0 +1,91 @@
+Path: news.gmane.org!not-for-mail
+From: Oleg Nesterov <oleg@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH 2/2] ptrace: fix
+	set_task_blockstep()->update_debugctlmsr() logic
+Date: Fri, 3 Aug 2012 19:38:30 +0200
+Lines: 31
+Approved: news@gmane.org
+Message-ID: <20120803173830.GA22687@redhat.com>
+References: <20120803162954.GA19806@redhat.com> <501BFF95.8040202@linutronix.de>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344015788 21063 80.91.229.3 (3 Aug 2012 17:43:08 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 17:43:08 +0000 (UTC)
+Cc: Ingo Molnar <mingo@elte.hu>,
+	Ananth N Mavinakayanahalli <ananth@in.ibm.com>,
+	Anton Arapov <anton@redhat.com>,
+	"H. Peter Anvin" <hpa@zytor.com>,
+	Peter Zijlstra <peterz@infradead.org>,
+	Roland McGrath <roland@hack.frob.com>,
+	Srikar Dronamraju <srikar@linux.vnet.ibm.com>,
+	linux-kernel@vger.kernel.org
+To: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 19:43:06 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxLtx-0006wI-7c
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 19:43:05 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752868Ab2HCRm6 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 13:42:58 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:42804 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752062Ab2HCRm4 (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 13:42:56 -0400
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q73HfWDS011809
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Fri, 3 Aug 2012 13:41:32 -0400
+Original-Received: from tranklukator.englab.brq.redhat.com (dhcp-1-232.brq.redhat.com [10.34.1.232])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with SMTP id q73HfTiB015753;
+	Fri, 3 Aug 2012 13:41:30 -0400
+Original-Received: by tranklukator.englab.brq.redhat.com (nbSMTP-1.00) for uid 500
+	oleg@redhat.com; Fri,  3 Aug 2012 19:38:33 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <501BFF95.8040202@linutronix.de>
+User-Agent: Mutt/1.5.18 (2008-05-17)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337446
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337446>
+
+On 08/03, Sebastian Andrzej Siewior wrote:
+>
+> On 08/03/2012 06:29 PM, Oleg Nesterov wrote:
+>> diff --git a/arch/x86/kernel/step.c b/arch/x86/kernel/step.c
+>> index afa60db..636402e 100644
+>> --- a/arch/x86/kernel/step.c
+>> +++ b/arch/x86/kernel/step.c
+>> @@ -166,12 +166,18 @@ static void set_task_blockstep(struct task_struct *task, bool on)
+>>   	else
+>>   		clear_tsk_thread_flag(task, TIF_BLOCKSTEP);
+>>
+>> +	if (task != current)
+>> +		return;
+>> +
+>> +	/* ensure irq/preemption can't change debugctl in between */
+>> +	local_irq_disable();
+>>   	debugctl = get_debugctlmsr();
+>>   	if (on)
+>>   		debugctl |= DEBUGCTLMSR_BTF;
+>>   	else
+>>   		debugctl&= ~DEBUGCTLMSR_BTF;
+>>   	update_debugctlmsr(debugctl);
+>> +	local_irq_enable();
+>
+> wouldn't preempt_disable() be enough?
+
+preempt_disable() can't help if interrupt handler changes
+other bits in between?
+
+Oleg.
+

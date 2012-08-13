@@ -1,0 +1,124 @@
+Path: news.gmane.org!not-for-mail
+From: Mel Gorman <mgorman@suse.de>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel.stable,gmane.linux.kernel
+Subject: Re: [PATCH 03/34] mm: Reduce the amount of work done when updating
+ min_free_kbytes
+Date: Wed, 25 Jul 2012 08:57:37 +0100
+Lines: 58
+Approved: news@gmane.org
+Message-ID: <20120725075737.GW9222@suse.de>
+References: <1343050727-3045-1-git-send-email-mgorman@suse.de>
+ <1343050727-3045-4-git-send-email-mgorman@suse.de>
+ <20120724224712.GB4245@kroah.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=iso-8859-15
+X-Trace: dough.gmane.org 1343203070 31747 80.91.229.3 (25 Jul 2012 07:57:50 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 07:57:50 +0000 (UTC)
+Cc: Stable <stable@vger.kernel.org>, Linux-MM <linux-mm@kvack.org>,
+	LKML <linux-kernel@vger.kernel.org>
+To: Greg KH <gregkh@linuxfoundation.org>
+Original-X-From: owner-linux-mm@kvack.org Wed Jul 25 09:57:48 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1StwTb-0003ej-VZ
+	for glkm-linux-mm-2@m.gmane.org; Wed, 25 Jul 2012 09:57:48 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 378656B0044; Wed, 25 Jul 2012 03:57:45 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id DD3E16B005D; Wed, 25 Jul 2012 03:57:44 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 2EBFE6B0062; Wed, 25 Jul 2012 03:57:44 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx124.postini.com [74.125.245.124])
+	by kanga.kvack.org (Postfix) with SMTP id 9B2386B0044
+	for <linux-mm@kvack.org>; Wed, 25 Jul 2012 03:57:42 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx124.postini.com ([74.125.244.10]) with SMTP;
+	Wed, 25 Jul 2012 00:57:42 PDT
+Original-Received: from relay1.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 5CE4EA3E85;
+	Wed, 25 Jul 2012 09:57:40 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <20120724224712.GB4245@kroah.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mgorman@suse.de> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82964 gmane.linux.kernel.stable:28793 gmane.linux.kernel:1332794
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332794>
+
+On Tue, Jul 24, 2012 at 03:47:12PM -0700, Greg KH wrote:
+> On Mon, Jul 23, 2012 at 02:38:16PM +0100, Mel Gorman wrote:
+> > commit 938929f14cb595f43cd1a4e63e22d36cab1e4a1f upstream.
+> > 
+> > Stable note: Fixes https://bugzilla.novell.com/show_bug.cgi?id=726210 .
+> > 	Large machines with 1TB or more of RAM take a long time to boot
+> > 	without this patch and may spew out soft lockup warnings.
+> 
+> In comparing this with the upstream version, you have a few different
+> coding style differences, but no real content difference.  Why?
+> 
+
+This was a mistake in my workflow that needs a bit of ironing out.
+
+The mistake is that I took the patch from the distribution kernel which was
+merged at a time before the coding style fixes were applied. The upstream
+commit and signed-off lines were "fixed" but I failed to refresh the
+patch and missed that it differed from upstream. Thanks for catching this.
+I'll adjust my workflow and assistant scripts to watch for this sort of
+problem in the future.
+
+> > 
+> > When min_free_kbytes is updated blocks marked MIGRATE_RESERVE are
+> > updated. Ordinarily, this work is unnoticable as it happens early
+> > in boot. However, on large machines with 1TB of memory, this can take
+> > a considerable time when NUMA distances are taken into account. The bulk
+> > of the work is done by pageblock_is_reserved() which examines the
+> > metadata for almost every page in the system. Currently, we are doing
+> > this far more than necessary as it is only required while there are
+> > still blocks to be marked MIGRATE_RESERVE. This patch significantly
+> > reduces the amount of work done by setup_zone_migrate_reserve()
+> > improving boot times on 1TB machines.
+> > 
+> > [akpm@linux-foundation.org: coding-style fixes]
+> 
+> I'm guessing you didn't pick these up?
+> 
+
+Correct but due to a mistake, not for any good reason.
+
+> Anyway, I've taken it now as the original one from Linus's tree,
+> hopefully this doesn't burn me later in the series...
+> 
+
+I hope it didn't.
+
+Thanks Greg.
+
+-- 
+Mel Gorman
+SUSE Labs
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

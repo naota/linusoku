@@ -1,0 +1,113 @@
+Path: news.gmane.org!not-for-mail
+From: Stefano Stabellini <stefano.stabellini@eu.citrix.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.xen.devel
+Subject: Re: [Xen-devel] [PATCH 2/4] xen/x86: Use memblock_reserve for
+ sensitive areas.
+Date: Mon, 30 Jul 2012 15:43:48 +0100
+Lines: 59
+Approved: news@gmane.org
+Message-ID: <alpine.DEB.2.02.1207301542120.4645@kaball.uk.xensource.com>
+References: <1343334845-5340-1-git-send-email-konrad.wilk@oracle.com> <1343334845-5340-3-git-send-email-konrad.wilk@oracle.com> <alpine.DEB.2.02.1207271139140.26163@kaball.uk.xensource.com> <20120727174534.GF17427@andromeda.dapyr.net>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="US-ASCII"
+X-Trace: dough.gmane.org 1343659472 25705 80.91.229.3 (30 Jul 2012 14:44:32 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 14:44:32 +0000 (UTC)
+Cc: Stefano Stabellini <Stefano.Stabellini@eu.citrix.com>,
+	Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>,
+	"xen-devel@lists.xensource.com" <xen-devel@lists.xensource.com>,
+	"linux-kernel@vger.kernel.org" <linux-kernel@vger.kernel.org>
+To: Konrad Rzeszutek Wilk <konrad@darnok.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 16:44:31 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvrCw-0002CQ-CT
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 16:44:30 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754870Ab2G3OoJ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 10:44:09 -0400
+Original-Received: from smtp.ctxuk.citrix.com ([62.200.22.115]:28497 "EHLO
+	SMTP.EU.CITRIX.COM" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754703Ab2G3OoF (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 10:44:05 -0400
+X-IronPort-AV: E=Sophos;i="4.77,679,1336348800"; 
+   d="scan'208";a="13764326"
+Original-Received: from lonpmailmx01.citrite.net ([10.30.203.162])
+  by LONPIPO01.EU.CITRIX.COM with ESMTP/TLS/RC4-MD5; 30 Jul 2012 14:44:04 +0000
+Original-Received: from kaball.uk.xensource.com (10.80.2.59) by
+ LONPMAILMX01.citrite.net (10.30.203.162) with Microsoft SMTP Server id
+ 8.3.213.0; Mon, 30 Jul 2012 15:44:03 +0100
+X-X-Sender: sstabellini@kaball.uk.xensource.com
+In-Reply-To: <20120727174534.GF17427@andromeda.dapyr.net>
+User-Agent: Alpine 2.02 (DEB 1266 2009-07-14)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335113 gmane.comp.emulators.xen.devel:135855
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335113>
+
+On Fri, 27 Jul 2012, Konrad Rzeszutek Wilk wrote:
+> On Fri, Jul 27, 2012 at 11:49:02AM +0100, Stefano Stabellini wrote:
+> > On Thu, 26 Jul 2012, Konrad Rzeszutek Wilk wrote:
+> > > instead of a big memblock_reserve. This way we can be more
+> > > selective in freeing regions (and it also makes it easier
+> > > to understand where is what).
+> > > 
+> > > [v1: Move the auto_translate_physmap to proper line]
+> > > Signed-off-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+> > > ---
+> > >  arch/x86/xen/enlighten.c |   38 ++++++++++++++++++++++++++++++++++++++
+> > >  arch/x86/xen/p2m.c       |    5 +++++
+> > >  arch/x86/xen/setup.c     |    9 ---------
+> > >  3 files changed, 43 insertions(+), 9 deletions(-)
+> > > 
+> > > diff --git a/arch/x86/xen/enlighten.c b/arch/x86/xen/enlighten.c
+> > > index ff962d4..9b1afa4 100644
+> > > --- a/arch/x86/xen/enlighten.c
+> > > +++ b/arch/x86/xen/enlighten.c
+> > > @@ -998,7 +998,44 @@ static int xen_write_msr_safe(unsigned int msr, unsigned low, unsigned high)
+> > >  
+> > >  	return ret;
+> > >  }
+> > > +static void __init xen_reserve_mfn(unsigned long mfn)
+> > > +{
+> > > +	unsigned long pfn;
+> > > +
+> > > +	if (!mfn)
+> > > +		return;
+> > > +	pfn = mfn_to_pfn(mfn);
+> > > +	if (phys_to_machine_mapping_valid(pfn))
+> > > +		memblock_reserve(PFN_PHYS(pfn), PAGE_SIZE);
+> > > +}
+> > 
+> > If the mfn is not in the m2p xen_reserve_mfn won't do anything. It is
+> > worth writing it down in a comment.
+> 
+> Meaning in a printk?
+
+I meant a comment in the code.
+
+
+> > > +static void __init xen_reserve_internals(void)
+> > > +{
+> > > +	unsigned long size;
+> > > +
+> > > +	if (!xen_pv_domain())
+> > > +		return;
+> > > +
+> > > +	memblock_reserve(__pa(xen_start_info), PAGE_SIZE);
+> > 
+> > xen_start_info is not in the m2p, so you cannot use xen_reserve_mfn
+> 
+> It seems to work for me. For both the toolstack created guests
+> and dom0. Let me double check thought.
+
+I was just thinking out loud: you are calling memblock_reserve rather
+than xen_reserve_mfn, because xen_reserve_mfn wouldn't work in this case
+as xen_start_info is not in the m2p.

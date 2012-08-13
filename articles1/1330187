@@ -1,0 +1,102 @@
+Path: news.gmane.org!not-for-mail
+From: Eric Dumazet <eric.dumazet@gmail.com>
+Newsgroups: gmane.linux.network,gmane.linux.kernel
+Subject: Re: [RFC PATCH] tun: don't zeroize sock->file on detach
+Date: Thu, 19 Jul 2012 08:06:38 +0200
+Lines: 40
+Approved: news@gmane.org
+Message-ID: <1342677998.2626.3844.camel@edumazet-glaptop>
+References: <20120711114753.24395.53193.stgit@localhost6.localdomain6>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342678017 22019 80.91.229.3 (19 Jul 2012 06:06:57 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 06:06:57 +0000 (UTC)
+Cc: davem@davemloft.net, netdev@vger.kernel.org,
+	ruanzhijie@hotmail.com, linux-kernel@vger.kernel.org
+To: Stanislav Kinsbursky <skinsbursky@parallels.com>
+Original-X-From: netdev-owner@vger.kernel.org Thu Jul 19 08:06:56 2012
+Return-path: <netdev-owner@vger.kernel.org>
+Envelope-to: linux-netdev-2@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <netdev-owner@vger.kernel.org>)
+	id 1Srjst-0003Lk-Kf
+	for linux-netdev-2@plane.gmane.org; Thu, 19 Jul 2012 08:06:47 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751255Ab2GSGGp (ORCPT <rfc822;linux-netdev-2@m.gmane.org>);
+	Thu, 19 Jul 2012 02:06:45 -0400
+Original-Received: from mail-qc0-f174.google.com ([209.85.216.174]:34218 "EHLO
+	mail-qc0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750779Ab2GSGGn (ORCPT
+	<rfc822;netdev@vger.kernel.org>); Thu, 19 Jul 2012 02:06:43 -0400
+Original-Received: by qcro28 with SMTP id o28so1452195qcr.19
+        for <multiple recipients>; Wed, 18 Jul 2012 23:06:42 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=subject:from:to:cc:in-reply-to:references:content-type:date
+         :message-id:mime-version:x-mailer:content-transfer-encoding;
+        bh=05tIEClkODkLsatWxaZODUcjOqIde2Q3A191fBIjL6c=;
+        b=hL34qbDp6ZU0eH9LtrVNUKvkn7A65dSrABYwH3CgH42g0tafd7MSjgShprv/suwdUq
+         29bVcYpaVy3AhSbAGcExxNK+ogyi8O/gpFC4gcVmcCGrIy+SxWeF8XAwArocCmG1dcn3
+         0vIJUo8CZXG1l3HqYvoqXjRwzfGmVhieBbh9+fYWNtZgV+41nKRFhZY4zSh2nCJ9cTMP
+         HvxuURY17hT/f/iJVEhI6ipQq0Ed8V2qDDgsodNnq4IROpHabg+M4B9i2ANfiRqFuS1m
+         kVaDXv2D0oFpDRE9wh8R9WHB5F6fLQjz8XKe8xgxxCQ0tdWZ5pWm0yCIsgem32T7UUNd
+         xhhg==
+Original-Received: by 10.224.71.15 with SMTP id f15mr1447684qaj.74.1342678002699;
+        Wed, 18 Jul 2012 23:06:42 -0700 (PDT)
+Original-Received: from [172.26.36.172] ([172.26.36.172])
+        by mx.google.com with ESMTPS id cz12sm2103181qab.5.2012.07.18.23.06.40
+        (version=SSLv3 cipher=OTHER);
+        Wed, 18 Jul 2012 23:06:41 -0700 (PDT)
+In-Reply-To: <20120711114753.24395.53193.stgit@localhost6.localdomain6>
+X-Mailer: Evolution 2.28.3 
+Original-Sender: netdev-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <netdev.vger.kernel.org>
+X-Mailing-List: netdev@vger.kernel.org
+Xref: news.gmane.org gmane.linux.network:237667 gmane.linux.kernel:1330187
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330187>
+
+On Wed, 2012-07-11 at 15:48 +0400, Stanislav Kinsbursky wrote:
+> This is a fix for bug, introduced in 3.4 kernel by commit
+> 1ab5ecb90cb6a3df1476e052f76a6e8f6511cb3d, which, among other things, replaced
+> simple sock_put() by sk_release_kernel(). Below is sequence, which leads to
+> oops for non-persistent devices:
+> 
+> tun_chr_close()
+> tun_detach()				<== tun->socket.file = NULL
+> tun_free_netdev()
+> sk_release_sock()
+> sock_release(sock->file == NULL)
+> iput(SOCK_INODE(sock))			<== dereference on NULL pointer
+> 
+> This patch just removes zeroing of socket's file from __tun_detach().
+> sock_release() will do this.
+> 
+> Signed-off-by: Stanislav Kinsbursky <skinsbursky@parallels.com>
+> ---
+>  drivers/net/tun.c |    1 -
+>  1 files changed, 0 insertions(+), 1 deletions(-)
+> 
+> diff --git a/drivers/net/tun.c b/drivers/net/tun.c
+> index 987aeef..c1639f3 100644
+> --- a/drivers/net/tun.c
+> +++ b/drivers/net/tun.c
+> @@ -185,7 +185,6 @@ static void __tun_detach(struct tun_struct *tun)
+>  	netif_tx_lock_bh(tun->dev);
+>  	netif_carrier_off(tun->dev);
+>  	tun->tfile = NULL;
+> -	tun->socket.file = NULL;
+>  	netif_tx_unlock_bh(tun->dev);
+>  
+>  	/* Drop read queue */
+> 
+
+Acked-by: Eric Dumazet <edumazet@google.com>
+
+Thanks !
+
+

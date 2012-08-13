@@ -1,0 +1,81 @@
+Path: news.gmane.org!not-for-mail
+From: Chen Gong <gong.chen@linux.intel.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 1/5] x86: mce: Disable preemption when calling raise_local()
+Date: Thu, 19 Jul 2012 13:59:37 -0400
+Lines: 34
+Approved: news@gmane.org
+Message-ID: <1342720781-4729-2-git-send-email-gong.chen@linux.intel.com>
+References: <1342720781-4729-1-git-send-email-gong.chen@linux.intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342677537 18942 80.91.229.3 (19 Jul 2012 05:58:57 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 05:58:57 +0000 (UTC)
+Cc: tony.luck@intel.com, bp@amd64.org, x86@kernel.org,
+	linux-kernel@vger.kernel.org
+To: tglx@linutronix.de
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 07:58:57 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SrjlI-0007va-61
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 07:58:56 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752312Ab2GSF6u (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 01:58:50 -0400
+Original-Received: from mga03.intel.com ([143.182.124.21]:11423 "EHLO mga03.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1750852Ab2GSF6s (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 01:58:48 -0400
+Original-Received: from azsmga001.ch.intel.com ([10.2.17.19])
+  by azsmga101.ch.intel.com with ESMTP; 18 Jul 2012 22:58:47 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="170218977"
+Original-Received: from gchen-sby.bj.intel.com (HELO localhost) ([10.238.158.78])
+  by azsmga001.ch.intel.com with ESMTP; 18 Jul 2012 22:58:45 -0700
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1342720781-4729-1-git-send-email-gong.chen@linux.intel.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330180
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330180>
+
+From: Thomas Gleixner <tglx@linutronix.de>
+
+raise_mce() has a code path which does not disable preemption when the
+raise_local() is called. The per cpu variable access in raise_local()
+depends on preemption being disabled to be functional. So that code
+path was either never tested or never tested with CONFIG_DEBUG_PREEMPT
+enabled.
+
+Add the missing preempt_disable/enable() pair around the call.
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+---
+ arch/x86/kernel/cpu/mcheck/mce-inject.c |    4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/arch/x86/kernel/cpu/mcheck/mce-inject.c b/arch/x86/kernel/cpu/mcheck/mce-inject.c
+index fc4beb3..753746f 100644
+--- a/arch/x86/kernel/cpu/mcheck/mce-inject.c
++++ b/arch/x86/kernel/cpu/mcheck/mce-inject.c
+@@ -194,7 +194,11 @@ static void raise_mce(struct mce *m)
+ 		put_online_cpus();
+ 	} else
+ #endif
++	{
++		preempt_disable();
+ 		raise_local();
++		preempt_enable();
++	}
+ }
+ 
+ /* Error injection interface */
+-- 
+1.7.10.4
+

@@ -1,0 +1,732 @@
+Path: news.gmane.org!not-for-mail
+From: Andy Getzendanner <suertreus@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] block: extends name_to_dev_t() syntax for specifying e.g. root=.
+Date: Mon, 30 Jul 2012 01:01:58 -0700
+Lines: 676
+Approved: news@gmane.org
+Message-ID: <1343635318-5824-1-git-send-email-suertreus@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343635382 16284 80.91.229.3 (30 Jul 2012 08:03:02 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 08:03:02 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, suertreus@gmail.com
+To: Jens Axboe <axboe@kernel.dk>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 10:03:02 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvkwN-00058C-4k
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 10:02:59 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754097Ab2G3ICs (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 04:02:48 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:55842 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751233Ab2G3ICo (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 04:02:44 -0400
+Original-Received: by pbbrp8 with SMTP id rp8so9431617pbb.19
+        for <linux-kernel@vger.kernel.org>; Mon, 30 Jul 2012 01:02:44 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer;
+        bh=c0k/Joc04k1Xelt6PyGN9B8uZbQzk9jSuKOoW+leZAU=;
+        b=yfUdXFAc8IeRhXm+3cpykc8uJphZxwtVXJJEAAz8OsgLkF4YC2sRFcOP2sdH8HS3fZ
+         YM72EeYz3PqNAFR2u2nR0zvmrLpRVSo4+/wXMtoRksIQMlpwoFZrARoIARlco5s8qqkv
+         rT3dxc11upGrDiuwp9vfJ6y+Vm2xVrn18p0N7lzudJIlAVXGdihg+hkH2xPwRaL/km9n
+         LAwONw/Vxkaqdp2P+0BRVo7eUOeXo8CUFqii91GEfz54aH22XWEVO65KAsUHdbQAAGre
+         DQfrEFflotlGdsWfObxpLN8Okk0CKIVKz6ILDDhMPkP/1YXiR1v+oY7AkRa+bpKOQyUs
+         RXXQ==
+Original-Received: by 10.68.236.102 with SMTP id ut6mr32863494pbc.113.1343635363985;
+        Mon, 30 Jul 2012 01:02:43 -0700 (PDT)
+Original-Received: from localhost.localdomain (50-78-99-14-static.hfc.comcastbusiness.net. [50.78.99.14])
+        by mx.google.com with ESMTPS id ot4sm7437151pbb.65.2012.07.30.01.02.42
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 30 Jul 2012 01:02:43 -0700 (PDT)
+X-Mailer: git-send-email 1.7.8.6
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334943
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334943>
+
+Enables use of GPT partition labels, APM partition labels, and MBR
+disk signatures to specify block devices during early boot.
+Traditional device names and GPT partition UUIDs are still supported.
+This is useful on systems with nondeterministic device ordering.
+
+Signed-off-by: Andy Getzendanner <suertreus@gmail.com>
+
+---
+
+Tested with an MBR disk, an APM disk, and a GPT disk on ppc32 and
+amd64 using qemu.
+
+ block/genhd.c             |   18 +++---
+ block/partition-generic.c |    3 +-
+ block/partitions/check.h  |    1 -
+ block/partitions/efi.c    |   10 +++-
+ block/partitions/mac.c    |   20 +++++-
+ block/partitions/msdos.c  |   97 ++++++++++++++++++++++------
+ include/linux/genhd.h     |    2 +
+ init/do_mounts.c          |  153 +++++++++++++++++++++++++++++++++++++++++++--
+ 8 files changed, 260 insertions(+), 44 deletions(-)
+
+diff --git a/block/genhd.c b/block/genhd.c
+index 9cf5583..139ec46 100644
+--- a/block/genhd.c
++++ b/block/genhd.c
+@@ -743,7 +743,6 @@ void __init printk_all_partitions(void)
+ 		struct hd_struct *part;
+ 		char name_buf[BDEVNAME_SIZE];
+ 		char devt_buf[BDEVT_SIZE];
+-		char uuid_buf[PARTITION_META_INFO_UUIDLTH * 2 + 5];
+ 
+ 		/*
+ 		 * Don't show empty devices or things that have been
+@@ -762,16 +761,17 @@ void __init printk_all_partitions(void)
+ 		while ((part = disk_part_iter_next(&piter))) {
+ 			bool is_part0 = part == &disk->part0;
+ 
+-			uuid_buf[0] = '\0';
+-			if (part->info)
+-				snprintf(uuid_buf, sizeof(uuid_buf), "%pU",
+-					 part->info->uuid);
+-
+-			printk("%s%s %10llu %s %s", is_part0 ? "" : "  ",
++			printk("%s%s %10llu %s", is_part0 ? "" : "  ",
+ 			       bdevt_str(part_devt(part), devt_buf),
+ 			       (unsigned long long)part->nr_sects >> 1,
+-			       disk_name(disk, part->partno, name_buf),
+-			       uuid_buf);
++			       disk_name(disk, part->partno, name_buf));
++			if (part->info && part->info->has_uuid)
++				printk(" PARTUUID=%pUb", part->info->uuid);
++			if (part->info && part->info->has_volname)
++				printk(" PARTLABEL=%s", part->info->volname);
++			if (part->info && part->info->has_diskid)
++				printk(" DISKID=%08x/PARTNR=%d",
++				       part->info->diskid, part->partno);
+ 			if (is_part0) {
+ 				if (disk->driverfs_dev != NULL &&
+ 				    disk->driverfs_dev->driver != NULL)
+diff --git a/block/partition-generic.c b/block/partition-generic.c
+index 6df5d69..ff4a10d 100644
+--- a/block/partition-generic.c
++++ b/block/partition-generic.c
+@@ -508,8 +508,7 @@ rescan:
+ 			}
+ 		}
+ 
+-		if (state->parts[p].has_info)
+-			info = &state->parts[p].info;
++		info = &state->parts[p].info;
+ 		part = add_partition(disk, p, from, size,
+ 				     state->parts[p].flags,
+ 				     &state->parts[p].info);
+diff --git a/block/partitions/check.h b/block/partitions/check.h
+index 52b1003..2cb2378 100644
+--- a/block/partitions/check.h
++++ b/block/partitions/check.h
+@@ -13,7 +13,6 @@ struct parsed_partitions {
+ 		sector_t from;
+ 		sector_t size;
+ 		int flags;
+-		bool has_info;
+ 		struct partition_meta_info info;
+ 	} parts[DISK_MAX_PARTS];
+ 	int next;
+diff --git a/block/partitions/efi.c b/block/partitions/efi.c
+index 6296b40..4cfb646 100644
+--- a/block/partitions/efi.c
++++ b/block/partitions/efi.c
+@@ -25,6 +25,9 @@
+  * TODO:
+  *
+  * Changelog:
++ * Sun Jul 22 2012 Andy Getzendanner <suertreus@gmail.com>
++ * - generalized partition_meta_info and populated volname field from GPT
++ *
+  * Mon Nov 09 2004 Matt Domsch <Matt_Domsch@dell.com>
+  * - test for valid PMBR and valid PGPT before ever reading
+  *   AGPT, allow override with 'gpt' kernel command line option.
+@@ -95,6 +98,7 @@
+  ************************************************************/
+ #include <linux/crc32.h>
+ #include <linux/ctype.h>
++#include <linux/genhd.h>
+ #include <linux/math64.h>
+ #include <linux/slab.h>
+ #include "check.h"
+@@ -654,19 +658,21 @@ int efi_partition(struct parsed_partitions *state)
+ 		 */
+ 		efi_guid_unparse(&ptes[i].unique_partition_guid, unparsed_guid);
+ 		part_pack_uuid(unparsed_guid, info->uuid);
++		info->has_uuid = true;
+ 
+ 		/* Naively convert UTF16-LE to 7 bits. */
+ 		label_max = min(sizeof(info->volname) - 1,
+ 				sizeof(ptes[i].partition_name));
+ 		info->volname[label_max] = 0;
+ 		while (label_count < label_max) {
+-			u8 c = ptes[i].partition_name[label_count] & 0xff;
++			u8 c = le16_to_cpu(
++				ptes[i].partition_name[label_count]) & 0xff;
+ 			if (c && !isprint(c))
+ 				c = '!';
+ 			info->volname[label_count] = c;
+ 			label_count++;
+ 		}
+-		state->parts[i + 1].has_info = true;
++		info->has_volname = true;
+ 	}
+ 	kfree(ptes);
+ 	kfree(gpt);
+diff --git a/block/partitions/mac.c b/block/partitions/mac.c
+index 11f688b..13c1519 100644
+--- a/block/partitions/mac.c
++++ b/block/partitions/mac.c
+@@ -7,6 +7,8 @@
+  */
+ 
+ #include <linux/ctype.h>
++#include <linux/genhd.h>
++#include <linux/string.h>
+ #include "check.h"
+ #include "mac.h"
+ 
+@@ -66,6 +68,9 @@ int mac_partition(struct parsed_partitions *state)
+ 	strlcat(state->pp_buf, " [mac]", PAGE_SIZE);
+ 	for (slot = 1; slot <= blocks_in_map; ++slot) {
+ 		int pos = slot * secsize;
++		unsigned volname_max;
++		struct partition_meta_info *info;
++
+ 		put_dev_sector(sect);
+ 		data = read_part_sector(state, pos/512, &sect);
+ 		if (!data)
+@@ -79,6 +84,13 @@ int mac_partition(struct parsed_partitions *state)
+ 
+ 		if (!strnicmp(part->type, "Linux_RAID", 10))
+ 			state->parts[slot].flags = ADDPART_FLAG_RAID;
++
++		mac_fix_string(part->name, sizeof(part->name));
++		info = &state->parts[slot].info;
++		volname_max = min(sizeof(info->volname), sizeof(part->name));
++		strlcpy(info->volname, part->name, volname_max);
++		info->has_volname = true;
++
+ #ifdef CONFIG_PPC_PMAC
+ 		/*
+ 		 * If this is the first bootable partition, tell the
+@@ -87,10 +99,10 @@ int mac_partition(struct parsed_partitions *state)
+ 		if (machine_is(powermac)) {
+ 			int goodness = 0;
+ 
+-			mac_fix_string(part->processor, 16);
+-			mac_fix_string(part->name, 32);
+-			mac_fix_string(part->type, 32);					
+-		    
++			mac_fix_string(part->processor,
++				       sizeof(part->processor));
++			mac_fix_string(part->type, sizeof(part->type));
++
+ 			if ((be32_to_cpu(part->status) & MAC_STATUS_BOOTABLE)
+ 			    && strcasecmp(part->processor, "powerpc") == 0)
+ 				goodness++;
+diff --git a/block/partitions/msdos.c b/block/partitions/msdos.c
+index 5f79a66..75d614b 100644
+--- a/block/partitions/msdos.c
++++ b/block/partitions/msdos.c
+@@ -18,6 +18,7 @@
+  *
+  *  Re-organised Feb 1998 Russell King
+  */
++#include <linux/genhd.h>
+ #include <linux/msdos_fs.h>
+ 
+ #include "check.h"
+@@ -106,7 +107,8 @@ static int aix_magic_present(struct parsed_partitions *state, unsigned char *p)
+  */
+ 
+ static void parse_extended(struct parsed_partitions *state,
+-			   sector_t first_sector, sector_t first_size)
++			   sector_t first_sector, sector_t first_size,
++			   u32 diskid)
+ {
+ 	struct partition *p;
+ 	Sector sect;
+@@ -148,6 +150,7 @@ static void parse_extended(struct parsed_partitions *state,
+ 		 */
+ 		for (i=0; i<4; i++, p++) {
+ 			sector_t offs, size, next;
++			struct partition_meta_info *info;
+ 			if (!nr_sects(p) || is_extended_partition(p))
+ 				continue;
+ 
+@@ -168,6 +171,11 @@ static void parse_extended(struct parsed_partitions *state,
+ 			put_partition(state, state->next, next, size);
+ 			if (SYS_IND(p) == LINUX_RAID_PARTITION)
+ 				state->parts[state->next].flags = ADDPART_FLAG_RAID;
++
++			info = &state->parts[state->next].info;
++			info->diskid = diskid;
++			info->has_diskid = true;
++
+ 			loopct = 0;
+ 			if (++state->next == state->limit)
+ 				goto done;
+@@ -198,7 +206,8 @@ done:
+    indicates linux swap.  Be careful before believing this is Solaris. */
+ 
+ static void parse_solaris_x86(struct parsed_partitions *state,
+-			      sector_t offset, sector_t size, int origin)
++			      sector_t offset, sector_t size, int origin,
++			      u32 diskid)
+ {
+ #ifdef CONFIG_SOLARIS_X86_PARTITION
+ 	Sector sect;
+@@ -233,6 +242,7 @@ static void parse_solaris_x86(struct parsed_partitions *state,
+ 	for (i=0; i<max_nparts && state->next<state->limit; i++) {
+ 		struct solaris_x86_slice *s = &v->v_slice[i];
+ 		char tmp[3 + 10 + 1 + 1];
++		struct partition_meta_info *info;
+ 
+ 		if (s->s_size == 0)
+ 			continue;
+@@ -240,9 +250,13 @@ static void parse_solaris_x86(struct parsed_partitions *state,
+ 		strlcat(state->pp_buf, tmp, PAGE_SIZE);
+ 		/* solaris partitions are relative to current MS-DOS
+ 		 * one; must add the offset of the current partition */
+-		put_partition(state, state->next++,
++		put_partition(state, state->next,
+ 				 le32_to_cpu(s->s_start)+offset,
+ 				 le32_to_cpu(s->s_size));
++		info = &state->parts[state->next].info;
++		info->diskid = diskid;
++		info->has_diskid = true;
++		state->next++;
+ 	}
+ 	put_dev_sector(sect);
+ 	strlcat(state->pp_buf, " >\n", PAGE_SIZE);
+@@ -255,8 +269,8 @@ static void parse_solaris_x86(struct parsed_partitions *state,
+  * dos-like partition. See parse_extended() for more information.
+  */
+ static void parse_bsd(struct parsed_partitions *state,
+-		      sector_t offset, sector_t size, int origin, char *flavour,
+-		      int max_partitions)
++		      sector_t offset, sector_t size, int origin,
++		      u32 diskid, char *flavour, int max_partitions)
+ {
+ 	Sector sect;
+ 	struct bsd_disklabel *l;
+@@ -278,6 +292,7 @@ static void parse_bsd(struct parsed_partitions *state,
+ 		max_partitions = le16_to_cpu(l->d_npartitions);
+ 	for (p = l->d_partitions; p - l->d_partitions < max_partitions; p++) {
+ 		sector_t bsd_start, bsd_size;
++		struct partition_meta_info *info;
+ 
+ 		if (state->next == state->limit)
+ 			break;
+@@ -292,7 +307,12 @@ static void parse_bsd(struct parsed_partitions *state,
+ 			strlcat(state->pp_buf, "bad subpartition - ignored\n", PAGE_SIZE);
+ 			continue;
+ 		}
+-		put_partition(state, state->next++, bsd_start, bsd_size);
++		put_partition(state, state->next, bsd_start, bsd_size);
++
++		info = &state->parts[state->next].info;
++		info->diskid = diskid;
++		info->has_diskid = true;
++		state->next++;
+ 	}
+ 	put_dev_sector(sect);
+ 	if (le16_to_cpu(l->d_npartitions) > max_partitions) {
+@@ -305,26 +325,31 @@ static void parse_bsd(struct parsed_partitions *state,
+ #endif
+ 
+ static void parse_freebsd(struct parsed_partitions *state,
+-			  sector_t offset, sector_t size, int origin)
++			  sector_t offset, sector_t size, int origin,
++			  u32 diskid)
+ {
+ #ifdef CONFIG_BSD_DISKLABEL
+-	parse_bsd(state, offset, size, origin, "bsd", BSD_MAXPARTITIONS);
++	parse_bsd(state, offset, size, origin, diskid, "bsd",
++		  BSD_MAXPARTITIONS);
+ #endif
+ }
+ 
+ static void parse_netbsd(struct parsed_partitions *state,
+-			 sector_t offset, sector_t size, int origin)
++			 sector_t offset, sector_t size, int origin,
++			 u32 diskid)
+ {
+ #ifdef CONFIG_BSD_DISKLABEL
+-	parse_bsd(state, offset, size, origin, "netbsd", BSD_MAXPARTITIONS);
++	parse_bsd(state, offset, size, origin, diskid, "netbsd",
++		  BSD_MAXPARTITIONS);
+ #endif
+ }
+ 
+ static void parse_openbsd(struct parsed_partitions *state,
+-			  sector_t offset, sector_t size, int origin)
++			  sector_t offset, sector_t size, int origin,
++			  u32 diskid)
+ {
+ #ifdef CONFIG_BSD_DISKLABEL
+-	parse_bsd(state, offset, size, origin, "openbsd",
++	parse_bsd(state, offset, size, origin, diskid, "openbsd",
+ 		  OPENBSD_MAXPARTITIONS);
+ #endif
+ }
+@@ -334,7 +359,8 @@ static void parse_openbsd(struct parsed_partitions *state,
+  * dos-like partition. See parse_extended() for more information.
+  */
+ static void parse_unixware(struct parsed_partitions *state,
+-			   sector_t offset, sector_t size, int origin)
++			   sector_t offset, sector_t size, int origin,
++			   u32 diskid)
+ {
+ #ifdef CONFIG_UNIXWARE_DISKLABEL
+ 	Sector sect;
+@@ -361,10 +387,18 @@ static void parse_unixware(struct parsed_partitions *state,
+ 		if (state->next == state->limit)
+ 			break;
+ 
+-		if (p->s_label != UNIXWARE_FS_UNUSED)
+-			put_partition(state, state->next++,
++		if (p->s_label != UNIXWARE_FS_UNUSED) {
++			struct partition_meta_info *info;
++
++			put_partition(state, state->next,
+ 				      le32_to_cpu(p->start_sect),
+ 				      le32_to_cpu(p->nr_sects));
++
++			info = &state->parts[state->next].info;
++			info->diskid = diskid;
++			info->has_diskid = true;
++			state->next++;
++		}
+ 		p++;
+ 	}
+ 	put_dev_sector(sect);
+@@ -378,7 +412,8 @@ static void parse_unixware(struct parsed_partitions *state,
+  * Rajeev V. Pillai    <rajeevvp@yahoo.com>
+  */
+ static void parse_minix(struct parsed_partitions *state,
+-			sector_t offset, sector_t size, int origin)
++			sector_t offset, sector_t size, int origin,
++			u32 diskid)
+ {
+ #ifdef CONFIG_MINIX_SUBPARTITION
+ 	Sector sect;
+@@ -405,9 +440,17 @@ static void parse_minix(struct parsed_partitions *state,
+ 			if (state->next == state->limit)
+ 				break;
+ 			/* add each partition in use */
+-			if (SYS_IND(p) == MINIX_PARTITION)
+-				put_partition(state, state->next++,
++			if (SYS_IND(p) == MINIX_PARTITION) {
++				struct partition_meta_info *info;
++
++				put_partition(state, state->next,
+ 					      start_sect(p), nr_sects(p));
++
++				info = &state->parts[state->next].info;
++				info->diskid = diskid;
++				info->has_diskid = true;
++				state->next++;
++			}
+ 		}
+ 		strlcat(state->pp_buf, " >\n", PAGE_SIZE);
+ 	}
+@@ -417,7 +460,7 @@ static void parse_minix(struct parsed_partitions *state,
+ 
+ static struct {
+ 	unsigned char id;
+-	void (*parse)(struct parsed_partitions *, sector_t, sector_t, int);
++	void (*parse)(struct parsed_partitions *, sector_t, sector_t, int, u32);
+ } subtypes[] = {
+ 	{FREEBSD_PARTITION, parse_freebsd},
+ 	{NETBSD_PARTITION, parse_netbsd},
+@@ -437,6 +480,7 @@ int msdos_partition(struct parsed_partitions *state)
+ 	struct partition *p;
+ 	struct fat_boot_sector *fb;
+ 	int slot;
++	u32 diskid;
+ 
+ 	data = read_part_sector(state, 0, &sect);
+ 	if (!data)
+@@ -490,6 +534,8 @@ int msdos_partition(struct parsed_partitions *state)
+ 	}
+ #endif
+ 	p = (struct partition *) (data + 0x1be);
++	/* fdisk interprets this field as little-endian, so we do too */
++	diskid = le32_to_cpu(*(u32 *) (data + 0x1b8));
+ 
+ 	/*
+ 	 * Look for partitions in two passes:
+@@ -501,6 +547,7 @@ int msdos_partition(struct parsed_partitions *state)
+ 	for (slot = 1 ; slot <= 4 ; slot++, p++) {
+ 		sector_t start = start_sect(p)*sector_size;
+ 		sector_t size = nr_sects(p)*sector_size;
++		struct partition_meta_info *info;
+ 		if (!size)
+ 			continue;
+ 		if (is_extended_partition(p)) {
+@@ -514,8 +561,12 @@ int msdos_partition(struct parsed_partitions *state)
+ 			n = min(size, max(sector_size, n));
+ 			put_partition(state, slot, start, n);
+ 
++			info = &state->parts[slot].info;
++			info->diskid = diskid;
++			info->has_diskid = true;
++
+ 			strlcat(state->pp_buf, " <", PAGE_SIZE);
+-			parse_extended(state, start, size);
++			parse_extended(state, start, size, diskid);
+ 			strlcat(state->pp_buf, " >", PAGE_SIZE);
+ 			continue;
+ 		}
+@@ -526,6 +577,10 @@ int msdos_partition(struct parsed_partitions *state)
+ 			strlcat(state->pp_buf, "[DM]", PAGE_SIZE);
+ 		if (SYS_IND(p) == EZD_PARTITION)
+ 			strlcat(state->pp_buf, "[EZD]", PAGE_SIZE);
++
++		info = &state->parts[slot].info;
++		info->diskid = diskid;
++		info->has_diskid = true;
+ 	}
+ 
+ 	strlcat(state->pp_buf, "\n", PAGE_SIZE);
+@@ -545,7 +600,7 @@ int msdos_partition(struct parsed_partitions *state)
+ 		if (!subtypes[n].parse)
+ 			continue;
+ 		subtypes[n].parse(state, start_sect(p) * sector_size,
+-				  nr_sects(p) * sector_size, slot);
++				  nr_sects(p) * sector_size, slot, diskid);
+ 	}
+ 	put_dev_sector(sect);
+ 	return 1;
+diff --git a/include/linux/genhd.h b/include/linux/genhd.h
+index ae0aaa9..9ae9af1 100644
+--- a/include/linux/genhd.h
++++ b/include/linux/genhd.h
+@@ -91,7 +91,9 @@ struct disk_stats {
+ #define PARTITION_META_INFO_UUIDLTH	16
+ 
+ struct partition_meta_info {
++	bool has_uuid, has_diskid, has_volname;
+ 	u8 uuid[PARTITION_META_INFO_UUIDLTH];	/* always big endian */
++	u32 diskid;
+ 	u8 volname[PARTITION_META_INFO_VOLNAMELTH];
+ };
+ 
+diff --git a/init/do_mounts.c b/init/do_mounts.c
+index d3f0aee..b34e3aa 100644
+--- a/init/do_mounts.c
++++ b/init/do_mounts.c
+@@ -81,11 +81,11 @@ static int match_dev_by_uuid(struct device *dev, void *data)
+ 	u8 *uuid = data;
+ 	struct hd_struct *part = dev_to_part(dev);
+ 
+-	if (!part->info)
++	if (!part->info || !part->info->has_uuid)
+ 		goto no_match;
+ 
+ 	if (memcmp(uuid, part->info->uuid, sizeof(part->info->uuid)))
+-			goto no_match;
++		goto no_match;
+ 
+ 	return 1;
+ no_match:
+@@ -94,14 +94,14 @@ no_match:
+ 
+ 
+ /**
+- * devt_from_partuuid - looks up the dev_t of a partition by its UUID
+- * @uuid:	min 36 byte char array containing a hex ascii UUID
++ * devt_from_partuuid - looks up the dev_t of a partition by its GPT UUID
++ * @uuid_str:	min 36 byte char array containing a hex ascii UUID
+  *
+  * The function will return the first partition which contains a matching
+  * UUID value in its partition_meta_info struct.  This does not search
+  * by filesystem UUIDs.
+  *
+- * If @uuid is followed by a "/PARTNROFF=%d", then the number will be
++ * If @uuid_str is followed by a "/PARTNROFF=%d", then the number will be
+  * extracted and used as an offset from the partition identified by the UUID.
+  *
+  * Returns the matching dev_t on success or 0 on failure.
+@@ -160,6 +160,130 @@ no_offset:
+ done:
+ 	return res;
+ }
++
++/**
++ * match_dev_by_volname - callback for finding a partition using its volname
++ * @dev:	device passed in by the caller
++ * @data:	opaque pointer to a string label
++ *
++ * Returns 1 if the device matches, and 0 otherwise.
++ */
++static int match_dev_by_volname(struct device *dev, void *data)
++{
++	char *label = data;
++	struct hd_struct *part = dev_to_part(dev);
++
++	if (!part->info || !part->info->has_volname)
++		goto no_match;
++
++	if (strncmp(label, part->info->volname, sizeof(part->info->volname)))
++		goto no_match;
++
++	return 1;
++no_match:
++	return 0;
++}
++
++
++/**
++ * devt_from_partlabel - looks up the dev_t of a partition by its GPT label
++ * @label:	char array containing label to match
++ *
++ * The function will return the first partition which contains a matching
++ * volname value in its partition_meta_info struct.  This does not search
++ * by filesystem labels.
++ *
++ * Returns the matching dev_t on success or 0 on failure.
++ */
++static dev_t devt_from_partlabel(char *label)
++{
++	dev_t res = 0;
++	struct device *dev = NULL;
++
++	dev = class_find_device(&block_class, NULL, label,
++				&match_dev_by_volname);
++	if (!dev)
++		goto done;
++	res = dev->devt;
++	put_device(dev);
++done:
++	return res;
++}
++
++struct diskid_partno {
++	u32 diskid;
++	int partno;
++};
++
++/**
++ * match_dev_by_diskid - callback for finding a partition using its diskid
++ * @dev:	device passed in by the caller
++ * @data:	opaque pointer to a struct diskid_partno
++ *
++ * Returns 1 if the device matches, and 0 otherwise.
++ */
++static int match_dev_by_diskid(struct device *dev, void *data)
++{
++	struct diskid_partno *match = data;
++	struct hd_struct *part = dev_to_part(dev);
++
++	if (!part->info || !part->info->has_diskid)
++		goto no_match;
++
++	if (part->partno != match->partno ||
++	    part->info->diskid != match->diskid)
++		goto no_match;
++
++	return 1;
++no_match:
++	return 0;
++}
++
++
++/**
++ * devt_from_diskid - looks up the dev_t of a partition by its diskid
++ * @diskid_str:	min 17 byte char array containing a hex ascii diskid followed by
++ *		"/PARTNR=%d", where the integer is a partition ordinal
++ *
++ * The function will return the first partition which contains a matching
++ * diskid value in its partition_meta_info struct and has the right ordinality.
++ * Whole block devices can't be specified, but it wouldn't make sense to use one
++ * with an MBR on it anyway.
++ *
++ * Returns the matching dev_t on success or 0 on failure.
++ */
++static dev_t devt_from_diskid(char *diskid_str)
++{
++	dev_t res = 0;
++	struct device *dev = NULL;
++	struct diskid_partno match;
++	char c = 0;
++
++	if (strlen(diskid_str) < 17)
++		goto done;
++
++	/* Explicitly fail on poor DISKID syntax. */
++	if (sscanf(diskid_str, "%x/PARTNR=%d%c",
++		   &match.diskid, &match.partno, &c) != 2) {
++		printk(KERN_ERR "VFS: DISKID= is invalid.\n"
++		       "Expected DISKID=%%08x/PARTNR=%%d\n");
++		if (root_wait)
++			printk(KERN_ERR
++			       "Disabling rootwait; root= is invalid.\n");
++		root_wait = 0;
++		goto done;
++	}
++
++	dev = class_find_device(&block_class, NULL, &match,
++				&match_dev_by_diskid);
++	if (!dev)
++		goto done;
++
++	res = dev->devt;
++	put_device(dev);
++done:
++	return res;
++}
+ #endif
+ 
+ /*
+@@ -176,6 +300,11 @@ done:
+  *	   unique id of a partition if the partition table provides it.
+  *	7) PARTUUID=<UUID>/PARTNROFF=<int> to select a partition in relation to
+  *	   a partition with a known unique id.
++ *	8) PARTLABEL=<string> for partition tables (Apple and GPT) that store
++ *	   volume labels
++ *	9) DISKID=DE:AD:BE:EF/PARTNR=<int> for identifying MSDOS-format disks by
++ *	   a 4-byte signature in their header; PARTNR is an ordinary partition
++ *	   number rather than an offset
+  *
+  *	If name doesn't have fall into the categories above, we return (0,0).
+  *	block_class is used to check if something is a disk name. If the disk
+@@ -198,6 +327,20 @@ dev_t name_to_dev_t(char *name)
+ 			goto fail;
+ 		goto done;
+ 	}
++	if (strncmp(name, "PARTLABEL=", 10) == 0) {
++		name += 10;
++		res = devt_from_partlabel(name);
++		if (!res)
++			goto fail;
++		goto done;
++	}
++	if (strncmp(name, "DISKID=", 7) == 0) {
++		name += 7;
++		res = devt_from_diskid(name);
++		if (!res)
++			goto fail;
++		goto done;
++	}
+ #endif
+ 
+ 	if (strncmp(name, "/dev/", 5) != 0) {
+-- 
+1.7.8.6
+

@@ -1,0 +1,96 @@
+Path: news.gmane.org!not-for-mail
+From: Cyrill Gorcunov <gorcunov@openvz.org>
+Newsgroups: gmane.linux.kernel
+Subject: Re: kcmp() races?
+Date: Sun, 22 Jul 2012 21:30:53 +0400
+Lines: 32
+Approved: news@gmane.org
+Message-ID: <20120722173053.GA19964@moon>
+References: <20120722154705.GA31729@ZenIV.linux.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1342978326 20214 80.91.229.3 (22 Jul 2012 17:32:06 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 22 Jul 2012 17:32:06 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, Pavel Emelyanov <xemul@parallels.com>
+To: Al Viro <viro@ZenIV.linux.org.uk>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 22 19:32:05 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1St00d-0005aG-17
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 22 Jul 2012 19:31:59 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752247Ab2GVRa6 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 13:30:58 -0400
+Original-Received: from mail-lb0-f174.google.com ([209.85.217.174]:56043 "EHLO
+	mail-lb0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752158Ab2GVRa5 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 13:30:57 -0400
+Original-Received: by lbbgm6 with SMTP id gm6so7053321lbb.19
+        for <linux-kernel@vger.kernel.org>; Sun, 22 Jul 2012 10:30:56 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:date:from:to:cc:subject:message-id:references:mime-version
+         :content-type:content-disposition:in-reply-to:user-agent;
+        bh=Lu6j7ugFUCzSKGjSj1dBqLTGH26Gx1v/Mi/YO3BVN2I=;
+        b=eIdA7rE303rdANhZsoUsbfUcTXzXVfBq5BpJddVc+1EgBFPT5LucnA61738YysMo01
+         IBGTSPGhVeMgio1I7w6A4jOL0YmJheb90io+Hx8ygDcvQmaE6msO3kzUw8u4+zlLJCr9
+         c9okNQScCmUkvtNPnZLf6ykAnPLGSgzKeQ8kqSY416urkEs0pEq4vRlX+zhT0HdXA2V9
+         1xE2acBiGHh8PJF1VHlnOFtBdciGFqca2uBQmVmhbmnrUgAJGRYQatZu5S3g+sp8bVER
+         AiMfbjsFFmOOOWIIga+rJ+kqQ1tAJ/gTGrFQIipcqMf87eT/uwP8VtmrFjunXmt7Dkgy
+         UzKA==
+Original-Received: by 10.152.105.51 with SMTP id gj19mr13615811lab.38.1342978256158;
+        Sun, 22 Jul 2012 10:30:56 -0700 (PDT)
+Original-Received: from moon.localdomain ([188.134.33.180])
+        by mx.google.com with ESMTPS id hi14sm10960230lab.4.2012.07.22.10.30.54
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Sun, 22 Jul 2012 10:30:55 -0700 (PDT)
+Original-Received: by moon.localdomain (Postfix, from userid 1000)
+	id 6122FA0008; Sun, 22 Jul 2012 21:30:53 +0400 (MSK)
+Content-Disposition: inline
+In-Reply-To: <20120722154705.GA31729@ZenIV.linux.org.uk>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331380
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331380>
+
+On Sun, Jul 22, 2012 at 04:47:05PM +0100, Al Viro wrote:
+>   I don't know how much of that is by design, but at the very least
+> it needs to be clearly documented in manpage: kcmp() can give false
+> positives.  Very easily.  There is nothing to prevent the objects
+> being compared from getting freed and reused; consider unshare(2), for
+> example.  Or close(2), for that matter.  Suppose we look at the descriptor
+> table for task1 just as it (or somebody sharing that table) closes the
+> descriptor we are after.  We got struct file *; it'll stay allocated
+> until we do rcu_read_unlock().  Which we promptly do and turn to
+> examining the descriptor table of task2.  Which is doing e.g. pipe(2)
+> at the moment (or somebody sharing its descriptor table is).  It
+> allocates struct file, getting the one that just had been freed by
+> task1.  And puts a reference to it into its descriptor table, which
+> is where we find it.  And we see the same pointer...
+> 
+>   Sure, if the processes are stopped, we are fine (except that
+> we need to stop everybody sharing the descriptor table with either
+> of our processes as well).  *IF* that is the intended behaviour
+> (and it could be argued that way - after all, if we want the values
+> we get to stay valid long enough for us to do sorting, we'd better
+> make sure that these guys won't get changed between the calls of
+> kcmp(2)), then we'd better document that in the manpage...
+
+Hi Al,
+
+yes, good point, this might result false positives if tasks are not
+stopped (or it's not guaranteed on userspace level that say files
+being compared are not closed when kcmp runs). I'll update man-page.
+And yes this was intentional (I tried to keep task-locks/rcu-locks
+as minimum time as possible).
+
+	Cyrill

@@ -1,0 +1,83 @@
+Path: news.gmane.org!not-for-mail
+From: David Teigland <teigland@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 0/6] dlm patches for 3.6
+Date: Mon, 23 Jul 2012 13:17:41 -0500
+Lines: 40
+Approved: news@gmane.org
+Message-ID: <1343067467-24308-1-git-send-email-teigland@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343067486 1750 80.91.229.3 (23 Jul 2012 18:18:06 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 18:18:06 +0000 (UTC)
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 20:18:06 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StNCg-0006zn-8E
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 20:17:58 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754585Ab2GWSR4 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 14:17:56 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:46910 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754512Ab2GWSRw (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 14:17:52 -0400
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6NIHp9S003245
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK)
+	for <linux-kernel@vger.kernel.org>; Mon, 23 Jul 2012 14:17:51 -0400
+Original-Received: from null.lab.msp.redhat.com (null.msp.redhat.com [10.15.80.136])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6NIHpC3021544
+	for <linux-kernel@vger.kernel.org>; Mon, 23 Jul 2012 14:17:51 -0400
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331901
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331901>
+
+
+These are the dlm patches from -next for 3.6.  The first is a major
+internal redesign of the way master nodes are recorded.  The old dirtbl
+hash table, which just recorded the master node of a resource, has been
+removed.  The rsbtbl hash table has always duplicated the master value
+from dirtbl, but is now the only record of the master node.
+
+Having two full hash tables of all resources has always been inefficient,
+especially since one just duplicated information from the other.  Requests
+that are all local will require one instead of two lengthy hash table
+searches.
+
+The other substantial patch is made possible by the dirtbl removal, and
+fixes a long standing race between resource removal and lookup by
+reworking how removal is done.  At the same time it improves the shrink
+function efficiency by avoiding repeated searches through hash buckets.
+
+David Teigland (6):
+      dlm: use rsbtbl as resource directory
+      dlm: use idr instead of list for recovered rsbs
+      dlm: fix race between remove and lookup
+      dlm: use wait_event_timeout
+      dlm: fix conversion deadlock from recovery
+      dlm: fix missing dir remove
+
+ fs/dlm/config.c       |    7 -
+ fs/dlm/config.h       |    1 -
+ fs/dlm/debug_fs.c     |  103 +++-
+ fs/dlm/dir.c          |  287 +++--------
+ fs/dlm/dir.h          |    7 +-
+ fs/dlm/dlm_internal.h |   62 ++-
+ fs/dlm/lock.c         | 1292 ++++++++++++++++++++++++++++++++++++++++---------
+ fs/dlm/lock.h         |    5 +-
+ fs/dlm/lockspace.c    |   45 +-
+ fs/dlm/rcom.c         |  147 ++++--
+ fs/dlm/rcom.h         |    1 +
+ fs/dlm/recover.c      |  295 +++++++----
+ fs/dlm/recover.h      |    2 +-
+ fs/dlm/recoverd.c     |   14 +-
+ 14 files changed, 1600 insertions(+), 668 deletions(-)

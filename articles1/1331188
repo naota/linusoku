@@ -1,0 +1,85 @@
+Path: news.gmane.org!not-for-mail
+From: Ashish Sangwan <ashishsangwan2@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] UDF: During mount free lvid_bh before rescanning with different blocksize
+Date: Sat, 21 Jul 2012 16:35:17 +0530
+Lines: 27
+Approved: news@gmane.org
+Message-ID: <1342868717-1712-1-git-send-email-ashish.sangwan2@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342868775 15910 80.91.229.3 (21 Jul 2012 11:06:15 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 21 Jul 2012 11:06:15 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org,
+	Ashish Sangwan <ashish.sangwan2@gmail.com>,
+	Namjae Jeon <linkinjeon@gmail.com>
+To: Jan Kara <jack@suse.cz>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Jul 21 13:06:14 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsXVl-0007Qn-Rq
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 21 Jul 2012 13:06:14 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751934Ab2GULF5 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 21 Jul 2012 07:05:57 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:46786 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751394Ab2GULF4 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 21 Jul 2012 07:05:56 -0400
+Original-Received: by pbbrp8 with SMTP id rp8so7714143pbb.19
+        for <linux-kernel@vger.kernel.org>; Sat, 21 Jul 2012 04:05:55 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer;
+        bh=YBnMcKs7ZkXh6XQ1trud850e/qKSlGlSCGhbFw5PueM=;
+        b=m1wgG5e/uNDy+D5IDKSAxQ1jJeJNRSFy5ZsFXwYHUyNTFnk17AV/uPzeycu6nWQl98
+         bvWiztFGXSoPI+/0C1ox9h8ZqR3Naw3LkKBvF7o5q04gVOgSJHKfX/9N3V9dKoNvTLA9
+         iiCwjfg43hgjzW1bXDcoctbKiqTVEI6N04BXTmp+mwv35YpwrzWqA7WGQpS6QQeol7pM
+         iAReGpynXeC1FZmgAJswB0w4Dhr+/mJ5sEl1l9l23SnqreUeF3Mi2XCOHDJWMKCJ5zs4
+         ynTaneEOWoWpmPrAeadT4VQP68JzX4csN0HEp4+xdtWL+lNFN1ncW+vXE0Jb/SGBn6GF
+         DfOA==
+Original-Received: by 10.66.79.40 with SMTP id g8mr17790185pax.27.1342868755573;
+        Sat, 21 Jul 2012 04:05:55 -0700 (PDT)
+Original-Received: from sputnik.202.56.215.29 ([122.177.146.83])
+        by mx.google.com with ESMTPS id oi5sm5863700pbb.39.2012.07.21.04.05.53
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Sat, 21 Jul 2012 04:05:55 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.4
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331188
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331188>
+
+If s_lvid_bh is not freed and set to NULL before re-scanning partition 
+with default block size, we might end up using wrong lvid in case
+s_lvid_bh is not updated in udf_load_logicalvolint during rescan.
+
+Signed-off-by: Ashish Sangwan <ashish.sangwan2@gmail.com>
+Signed-off-by: Namjae Jeon <linkinjeon@gmail.com>
+
+---
+ fs/udf/super.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/fs/udf/super.c b/fs/udf/super.c
+index ac8a348..4a95c56 100644
+--- a/fs/udf/super.c
++++ b/fs/udf/super.c
+@@ -1961,6 +1961,8 @@ static int udf_fill_super(struct super_block *sb, void *options, int silent)
+ 			if (!silent)
+ 				pr_notice("Rescanning with blocksize %d\n",
+ 					  UDF_DEFAULT_BLOCKSIZE);
++			brelse(sbi->s_lvid_bh);
++			sbi->s_lvid_bh = NULL;
+ 			uopt.blocksize = UDF_DEFAULT_BLOCKSIZE;
+ 			ret = udf_load_vrs(sb, &uopt, silent, &fileset);
+ 		}
+-- 
+1.7.2.3
+

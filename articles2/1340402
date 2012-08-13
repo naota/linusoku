@@ -1,0 +1,150 @@
+Path: news.gmane.org!not-for-mail
+From: Namhyung Kim <namhyung@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH v5 3/5] perf script/python: Pass event/thread/dso name and symbol info to event handler in python
+Date: Thu, 09 Aug 2012 10:06:02 +0900
+Lines: 96
+Approved: news@gmane.org
+Message-ID: <87r4rgyiv9.fsf@sejong.aot.lge.com>
+References: <1344419875-21665-1-git-send-email-feng.tang@intel.com>
+	<1344419875-21665-4-git-send-email-feng.tang@intel.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1344474732 16069 80.91.229.3 (9 Aug 2012 01:12:12 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 01:12:12 +0000 (UTC)
+Cc: Arnaldo Carvalho de Melo <acme@redhat.com>,
+	David Ahern <dsahern@gmail.com>,
+	Peter Zijlstra <peterz@infradead.org>,
+	Ingo Molnar <mingo@elte.hu>, linux-kernel@vger.kernel.org,
+	Robert Richter <robert.richter@amd.com>,
+	Andi Kleen <andi@firstfloor.org>,
+	Stephane Eranian <eranian@google.com>
+To: Feng Tang <feng.tang@intel.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 09 03:12:11 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzHIH-0000En-VK
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 09 Aug 2012 03:12:10 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1759460Ab2HIBL6 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 21:11:58 -0400
+Original-Received: from LGEMRELSE6Q.lge.com ([156.147.1.121]:49588 "EHLO
+	LGEMRELSE6Q.lge.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1758961Ab2HIBL5 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 21:11:57 -0400
+X-AuditID: 9c930179-b7bdcae000003d91-6b-50230e5bf754
+Original-Received: from sejong.aot.lge.com.lge.com ( [10.177.220.181])
+	by LGEMRELSE6Q.lge.com (Symantec Brightmail Gateway) with SMTP id F2.FF.15761.B5E03205; Thu,  9 Aug 2012 10:11:55 +0900 (KST)
+In-Reply-To: <1344419875-21665-4-git-send-email-feng.tang@intel.com> (Feng
+	Tang's message of "Wed, 8 Aug 2012 17:57:53 +0800")
+User-Agent: Gnus/5.13 (Gnus v5.13) Emacs/24.1 (gnu/linux)
+X-Brightmail-Tracker: AAAAAA==
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340402
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340402>
+
+On Wed,  8 Aug 2012 17:57:53 +0800, Feng Tang wrote:
+> Also as suggested by Arnaldo, pack all these parameters to a dictionary,
+> which is more expandable for adding new parameters while keeping the
+> compatibility for old scripts.
+>
+Just minor nits.
+
+
+> Signed-off-by: Feng Tang <feng.tang@intel.com>
+> Cc: David Ahern <dsahern@gmail.com>
+> Cc: Peter Zijlstra <peterz@infradead.org>
+> Cc: Robert Richter <robert.richter@amd.com>
+> Cc: Andi Kleen <andi@firstfloor.org>
+> Cc: Stephane Eranian <eranian@google.com>
+> ---
+>  .../util/scripting-engines/trace-event-python.c    |   35 ++++++++++++++++---
+>  1 files changed, 29 insertions(+), 6 deletions(-)
+>
+> diff --git a/tools/perf/util/scripting-engines/trace-event-python.c b/tools/perf/util/scripting-engines/trace-event-python.c
+> index 24711b3..7e3f576 100644
+> --- a/tools/perf/util/scripting-engines/trace-event-python.c
+> +++ b/tools/perf/util/scripting-engines/trace-event-python.c
+> @@ -345,15 +345,23 @@ static void python_process_general_event(union perf_event *perf_event __unused,
+>  					 struct machine *machine __unused,
+>  					 struct addr_location *al __unused)
+
+@al is used now.
+
+
+>  {
+> -	PyObject *handler, *retval, *t;
+> +	PyObject *handler, *retval, *t, *dict;
+>  	static char handler_name[64];
+>  	unsigned n = 0;
+> -	void *data = sample->raw_data;
+> +	struct thread *thread = al->thread;
+>  
+> +	/*
+> +	 * Use the MAX_FIELDS to make the function expandable, though
+> +	 * currently there is only one itme for the tuple.
+
+s/itme/item/
+
+Thanks,
+Namhyung
+
+
+> +	 */
+>  	t = PyTuple_New(MAX_FIELDS);
+>  	if (!t)
+>  		Py_FatalError("couldn't create Python tuple");
+>  
+> +	dict = PyDict_New();
+> +	if (!dict)
+> +		Py_FatalError("couldn't create Python dictionary");
+> +
+>  	snprintf(handler_name, sizeof(handler_name), "%s", "process_event");
+>  
+>  	handler = PyDict_GetItemString(main_dict, handler_name);
+> @@ -362,11 +370,25 @@ static void python_process_general_event(union perf_event *perf_event __unused,
+>  		goto exit;
+>  	}
+>  
+> -	/* Pass 4 parameters: event_attr, perf_sample, raw data, thread name */
+> -	PyTuple_SetItem(t, n++, PyString_FromStringAndSize((void *)&evsel->attr, sizeof(evsel->attr)));
+> -	PyTuple_SetItem(t, n++, PyString_FromStringAndSize((void *)sample, sizeof(*sample)));
+> -	PyTuple_SetItem(t, n++, PyString_FromStringAndSize(data, sample->raw_size));
+> +	PyDict_SetItemString(dict, "ev_name", PyString_FromString(perf_evsel__name(evsel)));
+> +	PyDict_SetItemString(dict, "attr", PyString_FromStringAndSize(
+> +			(const char *)&evsel->attr, sizeof(evsel->attr)));
+> +	PyDict_SetItemString(dict, "sample", PyString_FromStringAndSize(
+> +			(const char *)sample, sizeof(*sample)));
+> +	PyDict_SetItemString(dict, "raw_buf", PyString_FromStringAndSize(
+> +			(const char *)sample->raw_data, sample->raw_size));
+> +	PyDict_SetItemString(dict, "comm",
+> +			PyString_FromString(thread->comm));
+> +	if (al->map) {
+> +		PyDict_SetItemString(dict, "dso",
+> +			PyString_FromString(al->map->dso->name));
+> +	}
+> +	if (al->sym) {
+> +		PyDict_SetItemString(dict, "symbol",
+> +			PyString_FromString(al->sym->name));
+> +	}
+>  
+> +	PyTuple_SetItem(t, n++, dict);
+>  	if (_PyTuple_Resize(&t, n) == -1)
+>  		Py_FatalError("error resizing Python tuple");
+>  
+> @@ -374,6 +396,7 @@ static void python_process_general_event(union perf_event *perf_event __unused,
+>  	if (retval == NULL)
+>  		handler_call_die(handler_name);
+>  exit:
+> +	Py_DECREF(dict);
+>  	Py_DECREF(t);
+>  }

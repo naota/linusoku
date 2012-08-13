@@ -1,0 +1,152 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 10/23] mm: fix lost kswapd wakeup in kswapd_stop()
+Date: Thu, 26 Jul 2012 14:19:49 -0700
+Lines: 85
+Approved: news@gmane.org
+Message-ID: <20120726211406.798340041@linuxfoundation.org>
+References: <20120726211420.GA7678@kroah.com>
+ <20120726211405.959857593@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343337710 4721 80.91.229.3 (26 Jul 2012 21:21:50 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 21:21:50 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	Aaditya Kumar <aaditya.kumar@ap.sony.com>,
+	KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>,
+	Minchan Kim <minchan@kernel.org>, Mel Gorman <mel@csn.ul.ie>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 23:21:47 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuVV7-0006yW-By
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 23:21:41 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753008Ab2GZVV0 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 17:21:26 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:55834 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752933Ab2GZVVD (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 17:21:03 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so3808655pbb.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 14:21:03 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=ls+ezf2RHkkS9siUo2bOfYWKhz1XXdHfWd/h+RIk0KU=;
+        b=m3A/8bfHi9kZeyfczvzKZvtnPPF1OgvU11JHC4CtcipYX99nxODRKqSxGJj+nEFTCF
+         I5rK6PmQKtnScxw7P6NRP5xupqXlAy4Xh59zuifYIy7RULAnVyN1TVKNmYSpk1vagbuv
+         hfA2rjv0L8BGHrD3TIrua3punwmM5f6e1cLaJiODmVbO/QffAIV+CD/DSURqQmRYvE+0
+         RKAjJVgYeqpIqOlAS20+eAgRLGP+iLYnxwnsMwiwmB2uzCHATfE37ms3ealn2hq5rSbb
+         yICIAri6FL4fsOktYwwQJlQc5zw2JHz+MBajW6CaJJ5UKN6Vj3tYiIL50v3m/m74CyVW
+         RJhA==
+Original-Received: by 10.68.216.2 with SMTP id om2mr8426654pbc.26.1343337662772;
+        Thu, 26 Jul 2012 14:21:02 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id rg9sm413091pbc.67.2012.07.26.14.21.00
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 14:21:01 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120726211405.959857593@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQk4LHxCMbj31HK79MWPgMZ9n5cf/Ihf3vUd3WNTDVzPghcfnN64oUq/3CXkMoIYF5ek9jkK
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333903 gmane.linux.kernel.stable:28845
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333903>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.4-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Aaditya Kumar <aaditya.kumar.30@gmail.com>
+
+commit 1c7e7f6c0703d03af6bcd5ccc11fc15d23e5ecbe upstream.
+
+Offlining memory may block forever, waiting for kswapd() to wake up
+because kswapd() does not check the event kthread->should_stop before
+sleeping.
+
+The proper pattern, from Documentation/memory-barriers.txt, is:
+
+   ---  waker  ---
+   event_indicated = 1;
+   wake_up_process(event_daemon);
+
+   ---  sleeper  ---
+   for (;;) {
+      set_current_state(TASK_UNINTERRUPTIBLE);
+      if (event_indicated)
+         break;
+      schedule();
+   }
+
+   set_current_state() may be wrapped by:
+      prepare_to_wait();
+
+In the kswapd() case, event_indicated is kthread->should_stop.
+
+  === offlining memory (waker) ===
+   kswapd_stop()
+      kthread_stop()
+         kthread->should_stop = 1
+         wake_up_process()
+         wait_for_completion()
+
+  ===  kswapd_try_to_sleep (sleeper) ===
+   kswapd_try_to_sleep()
+      prepare_to_wait()
+           .
+           .
+      schedule()
+           .
+           .
+      finish_wait()
+
+The schedule() needs to be protected by a test of kthread->should_stop,
+which is wrapped by kthread_should_stop().
+
+Reproducer:
+   Do heavy file I/O in background.
+   Do a memory offline/online in a tight loop
+
+Signed-off-by: Aaditya Kumar <aaditya.kumar@ap.sony.com>
+Acked-by: KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>
+Reviewed-by: Minchan Kim <minchan@kernel.org>
+Acked-by: Mel Gorman <mel@csn.ul.ie>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ mm/vmscan.c |    5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -3013,7 +3013,10 @@ static void kswapd_try_to_sleep(pg_data_
+ 		 * them before going back to sleep.
+ 		 */
+ 		set_pgdat_percpu_threshold(pgdat, calculate_normal_threshold);
+-		schedule();
++
++		if (!kthread_should_stop())
++			schedule();
++
+ 		set_pgdat_percpu_threshold(pgdat, calculate_pressure_threshold);
+ 	} else {
+ 		if (remaining)
+
+

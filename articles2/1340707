@@ -1,0 +1,131 @@
+Path: news.gmane.org!not-for-mail
+From: Mel Gorman <mgorman@suse.de>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH 2/5] mm: vmscan: Scale number of pages reclaimed by reclaim/compaction based on failures
+Date: Thu,  9 Aug 2012 14:49:22 +0100
+Lines: 70
+Approved: news@gmane.org
+Message-ID: <1344520165-24419-3-git-send-email-mgorman@suse.de>
+References: <1344520165-24419-1-git-send-email-mgorman@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344520184 25411 80.91.229.3 (9 Aug 2012 13:49:44 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 13:49:44 +0000 (UTC)
+Cc: Rik van Riel <riel@redhat.com>, Minchan Kim <minchan@kernel.org>,
+	Jim Schutt <jaschut@sandia.gov>, LKML <linux-kernel@vger.kernel.org>,
+	Mel Gorman <mgorman@suse.de>
+To: Linux-MM <linux-mm@kvack.org>
+Original-X-From: owner-linux-mm@kvack.org Thu Aug 09 15:49:43 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SzT7I-0004XR-T0
+	for glkm-linux-mm-2@m.gmane.org; Thu, 09 Aug 2012 15:49:37 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 312C66B0068; Thu,  9 Aug 2012 09:49:32 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 1A68C6B006E; Thu,  9 Aug 2012 09:49:31 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id CD4B86B0069; Thu,  9 Aug 2012 09:49:31 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx179.postini.com [74.125.245.179])
+	by kanga.kvack.org (Postfix) with SMTP id 4B4FD6B0062
+	for <linux-mm@kvack.org>; Thu,  9 Aug 2012 09:49:30 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx179.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 09 Aug 2012 13:49:30 GMT
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 972A6A329C;
+	Thu,  9 Aug 2012 15:49:28 +0200 (CEST)
+X-Mailer: git-send-email 1.7.9.2
+In-Reply-To: <1344520165-24419-1-git-send-email-mgorman@suse.de>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:98.30624/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mgorman@suse.de> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83914 gmane.linux.kernel:1340707
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340707>
+
+If allocation fails after compaction then compaction may be deferred for
+a number of allocation attempts. If there are subsequent failures,
+compact_defer_shift is increased to defer for longer periods. This patch
+uses that information to scale the number of pages reclaimed with
+compact_defer_shift until allocations succeed again. The rationale is
+that reclaiming the normal number of pages still allowed compaction to
+fail and its success depends on the number of pages. If it's failing,
+reclaim more pages until it succeeds again.
+
+Note that this is not implying that VM reclaim is not reclaiming enough
+pages or that its logic is broken. try_to_free_pages() always asks for
+SWAP_CLUSTER_MAX pages to be reclaimed regardless of order and that is
+what it does. Direct reclaim stops normally with this check.
+
+	if (sc->nr_reclaimed >= sc->nr_to_reclaim)
+		goto out;
+
+should_continue_reclaim delays when that check is made until a minimum number
+of pages for reclaim/compaction are reclaimed. It is possible that this patch
+could instead set nr_to_reclaim in try_to_free_pages() and drive it from
+there but that's behaves differently and not necessarily for the better. If
+driven from do_try_to_free_pages(), it is also possible that priorities
+will rise. When they reach DEF_PRIORITY-2, it will also start stalling
+and setting pages for immediate reclaim which is more disruptive than not
+desirable in this case. That is a more wide-reaching change that could
+cause another regression related to THP requests causing interactive jitter.
+
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Acked-by: Rik van Riel <riel@redhat.com>
+---
+ mm/vmscan.c |   10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/mm/vmscan.c b/mm/vmscan.c
+index 66e4310..7a43fd8 100644
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -1708,6 +1708,7 @@ static inline bool should_continue_reclaim(struct lruvec *lruvec,
+ {
+ 	unsigned long pages_for_compaction;
+ 	unsigned long inactive_lru_pages;
++	struct zone *zone;
+ 
+ 	/* If not in reclaim/compaction mode, stop */
+ 	if (!in_reclaim_compaction(sc))
+@@ -1741,6 +1742,15 @@ static inline bool should_continue_reclaim(struct lruvec *lruvec,
+ 	 * inactive lists are large enough, continue reclaiming
+ 	 */
+ 	pages_for_compaction = (2UL << sc->order);
++
++	/*
++	 * If compaction is deferred for sc->order then scale the number of
++	 * pages reclaimed based on the number of consecutive allocation
++	 * failures
++	 */
++	zone = lruvec_zone(lruvec);
++	if (zone->compact_order_failed <= sc->order)
++		pages_for_compaction <<= zone->compact_defer_shift;
+ 	inactive_lru_pages = get_lru_size(lruvec, LRU_INACTIVE_FILE);
+ 	if (nr_swap_pages > 0)
+ 		inactive_lru_pages += get_lru_size(lruvec, LRU_INACTIVE_ANON);
+-- 
+1.7.9.2
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

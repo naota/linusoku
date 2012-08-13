@@ -1,0 +1,147 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 33/73] x86, microcode: Sanitize per-cpu microcode reloading interface
+Date: Tue, 31 Jul 2012 05:43:43 +0100
+Lines: 91
+Approved: news@gmane.org
+Message-ID: <20120731044316.585695559@decadent.org.uk>
+References: <20120731044310.013763753@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343710478 22962 80.91.229.3 (31 Jul 2012 04:54:38 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 04:54:38 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	Borislav Petkov <borislav.petkov@amd.com>,
+	Henrique de Moraes Holschuh <hmh@hmh.eng.br>,
+	Peter Zijlstra <peterz@infradead.org>,
+	"H. Peter Anvin" <hpa@zytor.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 06:54:37 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sw4Tc-0001BC-OL
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 06:54:37 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755862Ab2GaEyd (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 00:54:33 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:48847 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1755691Ab2GaEvE (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 00:51:04 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Sw4Q7-0003QH-Hz; Tue, 31 Jul 2012 05:50:59 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Sw4Om-0000Ad-An; Tue, 31 Jul 2012 05:49:36 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120731044310.013763753@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335429 gmane.linux.kernel.stable:28998
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335429>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Borislav Petkov <borislav.petkov@amd.com>
+
+commit c9fc3f778a6a215ace14ee556067c73982b6d40f upstream.
+
+Microcode reloading in a per-core manner is a very bad idea for both
+major x86 vendors. And the thing is, we have such interface with which
+we can end up with different microcode versions applied on different
+cores of an otherwise homogeneous wrt (family,model,stepping) system.
+
+So turn off the possibility of doing that per core and allow it only
+system-wide.
+
+This is a minimal fix which we'd like to see in stable too thus the
+more-or-less arbitrary decision to allow system-wide reloading only on
+the BSP:
+
+$ echo 1 > /sys/devices/system/cpu/cpu0/microcode/reload
+...
+
+and disable the interface on the other cores:
+
+$ echo 1 > /sys/devices/system/cpu/cpu23/microcode/reload
+-bash: echo: write error: Invalid argument
+
+Also, allowing the reload only from one CPU (the BSP in
+that case) doesn't allow the reload procedure to degenerate
+into an O(n^2) deal when triggering reloads from all
+/sys/devices/system/cpu/cpuX/microcode/reload sysfs nodes
+simultaneously.
+
+A more generic fix will follow.
+
+Cc: Henrique de Moraes Holschuh <hmh@hmh.eng.br>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Signed-off-by: Borislav Petkov <borislav.petkov@amd.com>
+Link: http://lkml.kernel.org/r/1340280437-7718-2-git-send-email-bp@amd64.org
+Signed-off-by: H. Peter Anvin <hpa@zytor.com>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ arch/x86/kernel/microcode_core.c |   26 +++++++++++++++++++-------
+ 1 file changed, 19 insertions(+), 7 deletions(-)
+
+diff --git a/arch/x86/kernel/microcode_core.c b/arch/x86/kernel/microcode_core.c
+index fbdfc69..24b852b 100644
+--- a/arch/x86/kernel/microcode_core.c
++++ b/arch/x86/kernel/microcode_core.c
+@@ -298,19 +298,31 @@ static ssize_t reload_store(struct device *dev,
+ 			    const char *buf, size_t size)
+ {
+ 	unsigned long val;
+-	int cpu = dev->id;
+-	ssize_t ret = 0;
++	int cpu;
++	ssize_t ret = 0, tmp_ret;
++
++	/* allow reload only from the BSP */
++	if (boot_cpu_data.cpu_index != dev->id)
++		return -EINVAL;
+ 
+ 	ret = kstrtoul(buf, 0, &val);
+ 	if (ret)
+ 		return ret;
+ 
+-	if (val == 1) {
+-		get_online_cpus();
+-		if (cpu_online(cpu))
+-			ret = reload_for_cpu(cpu);
+-		put_online_cpus();
++	if (val != 1)
++		return size;
++
++	get_online_cpus();
++	for_each_online_cpu(cpu) {
++		tmp_ret = reload_for_cpu(cpu);
++		if (tmp_ret != 0)
++			pr_warn("Error reloading microcode on CPU %d\n", cpu);
++
++		/* save retval of the first encountered reload error */
++		if (!ret)
++			ret = tmp_ret;
+ 	}
++	put_online_cpus();
+ 
+ 	if (!ret)
+ 		ret = size;
+
+

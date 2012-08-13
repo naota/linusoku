@@ -1,0 +1,142 @@
+Path: news.gmane.org!not-for-mail
+From: Namhyung Kim <namhyung@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 09/12] perf ui/gtk: Add support to group viewing
+Date: Tue, 24 Jul 2012 18:01:30 +0900
+Lines: 89
+Approved: news@gmane.org
+Message-ID: <1343120493-23059-10-git-send-email-namhyung@kernel.org>
+References: <1343120493-23059-1-git-send-email-namhyung@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343120968 29005 80.91.229.3 (24 Jul 2012 09:09:28 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 09:09:28 +0000 (UTC)
+Cc: Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Paul Mackerras <paulus@samba.org>,
+	Ingo Molnar <mingo@kernel.org>,
+	LKML <linux-kernel@vger.kernel.org>,
+	Stephane Eranian <eranian@google.com>,
+	Jiri Olsa <jolsa@redhat.com>,
+	Ulrich Drepper <drepper@gmail.com>,
+	Andi Kleen <andi@firstfloor.org>,
+	Namhyung Kim <namhyung.kim@lge.com>,
+	Pekka Enberg <penberg@kernel.org>
+To: Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 11:09:23 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Stb7D-0003If-7L
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 11:09:15 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753104Ab2GXJJC (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 05:09:02 -0400
+Original-Received: from LGEMRELSE6Q.lge.com ([156.147.1.121]:53057 "EHLO
+	LGEMRELSE6Q.lge.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753019Ab2GXJHC (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 05:07:02 -0400
+X-AuditID: 9c930179-b7bdcae000003d91-07-500e65b2f35d
+Original-Received: from sejong.aot.lge.com ( [10.177.220.181])
+	by LGEMRELSE6Q.lge.com (Symantec Brightmail Gateway) with SMTP id 8E.33.15761.2B56E005; Tue, 24 Jul 2012 18:06:58 +0900 (KST)
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1343120493-23059-1-git-send-email-namhyung@kernel.org>
+X-Brightmail-Tracker: AAAAAA==
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332215
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332215>
+
+From: Namhyung Kim <namhyung.kim@lge.com>
+
+Show group members' overhead also when showing the leader's.
+
+Cc: Stephane Eranian <eranian@google.com>
+Cc: Jiri Olsa <jolsa@redhat.com>
+Cc: Pekka Enberg <penberg@kernel.org>
+Signed-off-by: Namhyung Kim <namhyung@kernel.org>
+---
+ tools/perf/ui/gtk/browser.c |   57 +++++++++++++++++++++++++++++++++----------
+ 1 file changed, 44 insertions(+), 13 deletions(-)
+
+diff --git a/tools/perf/ui/gtk/browser.c b/tools/perf/ui/gtk/browser.c
+index 91e11f7bffbf..e39c83cd5ac5 100644
+--- a/tools/perf/ui/gtk/browser.c
++++ b/tools/perf/ui/gtk/browser.c
+@@ -44,25 +44,56 @@ static const char *perf_gtk__get_percent_color(double percent)
+ 	return NULL;
+ }
+ 
++static int perf_gtk__percent_color_snprintf(char *s, size_t size,
++					    u64 period, u64 total_period)
++{
++	double percent = 100.0 * period / total_period;
++	const char *markup;
++	int ret = 0;
++
++	markup = perf_gtk__get_percent_color(percent);
++	if (markup)
++		ret += scnprintf(s, size, "%s", markup);
++
++	ret += scnprintf(s + ret, size - ret, "%5.2f%%", percent);
++
++	if (markup)
++		ret += scnprintf(s + ret, size - ret, "</span>");
++
++	return ret;
++}
++
++static int perf_gtk__hpp_color_overhead(struct hist_print_context *ctx,
++					struct hist_entry *he)
++{
++	int ret;
++
++	ret = perf_gtk__percent_color_snprintf(ctx->s, ctx->size,
++					he->stat.period, ctx->total_period);
++
++	if (symbol_conf.report_group) {
++		int i;
++		struct perf_evsel *evsel = hists_2_evsel(ctx->hists);
++
++		for (i = 0; i < evsel->nr_children; i++) {
++			ret += scnprintf(ctx->s + ret, ctx->size - ret, "  ");
++			ret += perf_gtk__percent_color_snprintf(ctx->s + ret,
++					ctx->size - ret,
++					he->group_stats[i].period,
++					ctx->hists->group_stats[i].total_period);
++		}
++	}
++	return ret;
++}
++
+ #define HPP_COLOR_FN(_name, _field)						\
+ static int perf_gtk__hpp_color_ ## _name(struct hist_print_context *ctx,	\
+ 					 struct hist_entry *he)			\
+ {										\
+-	double percent = 100.0 * he->stat._field / ctx->total_period;		\
+-	const char *markup;							\
+-	int ret = 0;								\
+-										\
+-	markup = perf_gtk__get_percent_color(percent);				\
+-	if (markup)								\
+-		ret += scnprintf(ctx->s, ctx->size, "%s", markup);		\
+-	ret += scnprintf(ctx->s + ret, ctx->size - ret, "%5.2f%%", percent); 	\
+-	if (markup)								\
+-		ret += scnprintf(ctx->s + ret, ctx->size - ret, "</span>"); 	\
+-										\
+-	return ret;								\
++	return perf_gtk__percent_color_snprintf(ctx->s, ctx->size,		\
++					he->stat._field, ctx->total_period); 	\
+ }
+ 
+-HPP_COLOR_FN(overhead, period)
+ HPP_COLOR_FN(overhead_sys, period_sys)
+ HPP_COLOR_FN(overhead_us, period_us)
+ HPP_COLOR_FN(overhead_guest_sys, period_guest_sys)
+-- 
+1.7.10.4
+

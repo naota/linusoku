@@ -1,0 +1,153 @@
+Path: news.gmane.org!not-for-mail
+From: Anton Vorontsov <anton.vorontsov@linaro.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: [PATCH 0/9] Get rid of FIQ_START/enable/disable_fiq() + some FIQ
+ cleanups
+Date: Sun, 5 Aug 2012 16:02:38 -0700
+Lines: 83
+Approved: news@gmane.org
+Message-ID: <20120805230238.GA1663@lizard>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+X-Trace: dough.gmane.org 1344207969 13573 80.91.229.3 (5 Aug 2012 23:06:09 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 5 Aug 2012 23:06:09 +0000 (UTC)
+Cc: John Stultz <john.stultz@linaro.org>, linux-kernel@vger.kernel.org,
+	linux-arm-kernel@lists.infradead.org,
+	linaro-kernel@lists.linaro.org, patches@linaro.org,
+	kernel-team@android.com, Ben Dooks <ben-linux@fluff.org>,
+	Kukjin Kim <kgene.kim@samsung.com>,
+	Sascha Hauer <kernel@pengutronix.de>,
+	Tony Lindgren <tony@atomide.com>,
+	Mark Brown <broonie@opensource.wolfsonmicro.com>,
+	Liam Girdwood <lrg@ti.com>
+To: Russell King <linux@arm.linux.org.uk>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Aug 06 01:06:06 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sy9te-0008DZ-As
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 06 Aug 2012 01:06:06 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755246Ab2HEXFJ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 5 Aug 2012 19:05:09 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:34869 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753065Ab2HEXFH (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 5 Aug 2012 19:05:07 -0400
+Original-Received: by pbbrr13 with SMTP id rr13so1585035pbb.19
+        for <linux-kernel@vger.kernel.org>; Sun, 05 Aug 2012 16:05:06 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=date:from:to:cc:subject:message-id:mime-version:content-type
+         :content-disposition:user-agent:x-gm-message-state;
+        bh=Cbs5g7L97AhODQgQ+bNbnA//m3pHC6ZOO3Rz5emsqJM=;
+        b=l1+0WaoNvF9D32z9TxaYheVcN+3bTTocU2Wx2N93tBdgSbqqYHX51l4LIu9CMF2lbZ
+         W/+l+YdREgto4Iqw8J5mY7dus3xXKR/iUDrF/zA1dlDE5YaHnWT2/BBFxGChMi2Jo9No
+         V5UL6F0KcmKSTPvq7NcBWb0w/aqpc+pKOctVR4Hqyc+5PoyPCLqqyNovJyvZrLvDozLP
+         CNX3W+f873pKLpL1/1MYI2/kiVmmvV1PELsWcbHxhS+9ZSBL8uyOJCioknWhkNr3RfAy
+         Lloe6Qv9PNJoOU8aJBqgVAAPZWWtVddUJaJ4HKpj3AovUrPMpBMWRDzB0L8d3fhhMiQf
+         ZCQQ==
+Original-Received: by 10.66.89.36 with SMTP id bl4mr14057388pab.58.1344207906742;
+        Sun, 05 Aug 2012 16:05:06 -0700 (PDT)
+Original-Received: from localhost (m9f0536d0.tmodns.net. [208.54.5.159])
+        by mx.google.com with ESMTPS id wh7sm4164689pbc.33.2012.08.05.16.04.56
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Sun, 05 Aug 2012 16:05:06 -0700 (PDT)
+Content-Disposition: inline
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Gm-Message-State: ALoCoQmRDP3fLjz7jc/3I7gPNpNvc2V9ffk8nU7TnfeRRbxM0+ezXTdYS0ENftV1UfxZx5DdN7Sn
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337929 gmane.linux.ports.arm.kernel:180287
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337929>
+
+Hello Russell,
+
+During KDB FIQ patches review you mentioned that I should not introduce
+another FIQ_START. It seems that in v3.6-rc the FIQ_START issue was
+somewhat band-aided, i.e. machines don't necessary need to define this
+stuff any longer, but I also read the background of the issue, and you
+once said that you don't want the FIQ subsystem to mess with genirq.
+
+It is surely makes sense as FIQs are arch-specific, plus FIQs are special
+in that way that platform makers are free to connects device directly
+to the FIQ line, avoiding IC routing, and then enable_fiq(<IRQ>) would
+look awkward, at the best.
+
+So, given that, it seems that the only entity that knows for sure how
+the particular FIQ is routed is whoever claims the FIQ and fills-in the
+fiq_handler struct. It might make sense to introduce disable/enable
+callbacks in the fiq_handler struct, and then prototypes for disable/
+enable FIQ calls would look like this:
+
+	enable_fiq(struct fiq_handler *fh);
+	disable_fiq(struct fiq_handler *fh);
+
+I.e. completely abstracted from the genirq.
+
+Although, to not duplicate IC code, I think it's pretty legitimate to
+call genirq functions iff the caller knows for sure that FIQ comes from
+IRQ line and it is is routed through the well-known platform IC.
+
+In that case (which is a majority), the typical user would do this:
+
+	static int irq_line;
+
+	void foo_enable_fiq(struct fiq_handler *fh)
+	{
+		enable_irq(irq_line);
+	}
+
+	static struct fiq_handler foo_fiq = {
+		.name = "foo",
+		.enable_fiq = foo_enable_fiq,
+	};
+
+	claim_fiq(&foo_fiq);
+	enable_fiq(&foo_fiq);
+
+Obviously, it's needless indirection, so I don't do this. If we ever
+pass 'foo_fiq' to some device, which does not know all the routing
+details, then it would make sense to introduce it, but not now.
+
+So, the patch set is pretty straightforward:
+
+- Get rid of FIQ_START. Nobody but platform-specific code (and drivers)
+  should know the details about which interrupt can be routed to FIQ
+  and which cannot;
+
+- Remove disable/enable_fiq() calls from the FIQ subsys (the calls can
+  be reintroduced w/ new prototypes when/if needed).
+
+Does the approach make sense?
+
+Thanks!
+
+--
+ arch/arm/include/asm/fiq.h                |    2 --
+ arch/arm/include/asm/mach/irq.h           |    9 +++++++--
+ arch/arm/kernel/fiq.c                     |   22 +++-------------------
+ arch/arm/kernel/irq.c                     |    2 --
+ arch/arm/mach-rpc/dma.c                   |    4 ++--
+ arch/arm/mach-rpc/include/mach/irqs.h     |    8 ++++----
+ arch/arm/mach-rpc/irq.c                   |   21 +++++----------------
+ arch/arm/mach-s3c24xx/include/mach/irqs.h |    3 ---
+ arch/arm/plat-mxc/avic.c                  |    4 +---
+ arch/arm/plat-mxc/include/mach/irqs.h     |    2 --
+ arch/arm/plat-mxc/tzic.c                  |    4 +---
+ arch/arm/plat-omap/include/plat/irqs.h    |    4 ----
+ arch/arm/plat-s3c24xx/irq.c               |    6 ++----
+ drivers/media/video/mx1_camera.c          |    6 +++---
+ sound/soc/fsl/imx-pcm-fiq.c               |    4 ++--
+ 15 files changed, 30 insertions(+), 71 deletions(-)
+
+-- 
+Anton Vorontsov
+Email: cbouatmailru@gmail.com

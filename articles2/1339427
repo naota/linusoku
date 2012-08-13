@@ -1,0 +1,139 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 046/122] mac80211: fix crash with single-queue drivers
+Date: Tue,  7 Aug 2012 15:25:34 -0700
+Lines: 75
+Approved: news@gmane.org
+Message-ID: <20120807221952.349761527@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344378620 14021 80.91.229.3 (7 Aug 2012 22:30:20 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:30:20 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Larry Finger <Larry.Finger@lwfinger.net>,
+	Johannes Berg <johannes.berg@intel.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:30:15 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysHy-0000lk-Id
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:30:10 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932593Ab2HGW32 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:29:28 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:54583 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S932574Ab2HGW3W (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:29:22 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so346924pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:29:22 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=a1Brwj5U+f/7ECplEFvRCkTpMqeLc0HGaiOExDsfOgA=;
+        b=Rhse/m6IwXbRQMiEkgFekBovrIWDi6W3JxJr4igaAfNJiCbUp3icpD9+tar+U34UOT
+         uca3BvvzyDRTpWCS4PnfLUo7ldnWHA7c2le+7FGsov1gIMPxhW7EelFsmSf0/x4XRHYB
+         3j3UxGKPWtPqkFNlnOTr6XNEVlwejjhaXVrUOk07I6/VtKiDFqTQWklajaDi4rq/BJfw
+         AuJYYbHhB4hLJkqXe3kptTUrgXtU5Eeij1I1j41r6pYgxfH6vJjFskVEGKPcUvTtOfnH
+         LkCSd3AA/4sXYxW96I2KcdEV8SINLXCROVCpjVwYdJ3tXqxCh+bfWhjHAGRbLLMacjpa
+         1iJA==
+Original-Received: by 10.68.125.131 with SMTP id mq3mr29765675pbb.31.1344378562505;
+        Tue, 07 Aug 2012 15:29:22 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id oo6sm8536595pbc.22.2012.08.07.15.29.19
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:29:21 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQmVSnxVuv1hiOAX0P98YMKSspnnG3VbC7ntlfOwtsCz+03fcb5Giyq1oXgyqJU5qRnvv5eC
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339427 gmane.linux.kernel.stable:29266
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339427>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Johannes Berg <johannes.berg@intel.com>
+
+commit a6f38ac3cc853189705006cc1e0f17ce8467a1df upstream.
+
+Larry (and some others I think) reported that with
+single-queue drivers mac80211 crashes when waking
+the queues. This happens because we allocate just
+a single queue for each virtual interface in case
+the driver doesn't have at least 4 queues, but the
+code stopping/waking the virtual interface queues
+wasn't taking this into account.
+
+Reported-by: Larry Finger <Larry.Finger@lwfinger.net>
+Tested-by: Larry Finger <Larry.Finger@lwfinger.net>
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ net/mac80211/util.c |   12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+--- a/net/mac80211/util.c
++++ b/net/mac80211/util.c
+@@ -268,6 +268,10 @@ EXPORT_SYMBOL(ieee80211_ctstoself_durati
+ void ieee80211_propagate_queue_wake(struct ieee80211_local *local, int queue)
+ {
+ 	struct ieee80211_sub_if_data *sdata;
++	int n_acs = IEEE80211_NUM_ACS;
++
++	if (local->hw.queues < IEEE80211_NUM_ACS)
++		n_acs = 1;
+ 
+ 	list_for_each_entry_rcu(sdata, &local->interfaces, list) {
+ 		int ac;
+@@ -279,7 +283,7 @@ void ieee80211_propagate_queue_wake(stru
+ 		    local->queue_stop_reasons[sdata->vif.cab_queue] != 0)
+ 			continue;
+ 
+-		for (ac = 0; ac < IEEE80211_NUM_ACS; ac++) {
++		for (ac = 0; ac < n_acs; ac++) {
+ 			int ac_queue = sdata->vif.hw_queue[ac];
+ 
+ 			if (ac_queue == queue ||
+@@ -341,6 +345,7 @@ static void __ieee80211_stop_queue(struc
+ {
+ 	struct ieee80211_local *local = hw_to_local(hw);
+ 	struct ieee80211_sub_if_data *sdata;
++	int n_acs = IEEE80211_NUM_ACS;
+ 
+ 	trace_stop_queue(local, queue, reason);
+ 
+@@ -352,11 +357,14 @@ static void __ieee80211_stop_queue(struc
+ 
+ 	__set_bit(reason, &local->queue_stop_reasons[queue]);
+ 
++	if (local->hw.queues < IEEE80211_NUM_ACS)
++		n_acs = 1;
++
+ 	rcu_read_lock();
+ 	list_for_each_entry_rcu(sdata, &local->interfaces, list) {
+ 		int ac;
+ 
+-		for (ac = 0; ac < IEEE80211_NUM_ACS; ac++) {
++		for (ac = 0; ac < n_acs; ac++) {
+ 			if (sdata->vif.hw_queue[ac] == queue ||
+ 			    sdata->vif.cab_queue == queue)
+ 				netif_stop_subqueue(sdata->dev, ac);
+
+

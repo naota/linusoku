@@ -1,0 +1,104 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 107/109] futex: Test for pi_mutex on fault in futex_wait_requeue_pi()
+Date: Tue,  7 Aug 2012 15:36:06 -0700
+Lines: 38
+Approved: news@gmane.org
+Message-ID: <20120807222052.456416861@linuxfoundation.org>
+References: <20120807222043.089735600@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344379396 19500 80.91.229.3 (7 Aug 2012 22:43:16 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:43:16 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Darren Hart <dvhart@linux.intel.com>,
+	Dave Jones <davej@redhat.com>,
+	Dan Carpenter <dan.carpenter@oracle.com>,
+	Thomas Gleixner <tglx@linutronix.de>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:43:13 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysUX-0007yj-T7
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:43:10 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030945Ab2HGWm7 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:42:59 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:56573 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030964Ab2HGWmz (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:42:55 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so359594pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:42:55 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=f/ma8cJsPs+aT5/cLw9bOAJurVwbiuTasLTq3oHdo+Q=;
+        b=UNqqr0pBhkf6A1fOiChrk54/q7HWUvtquthhUv1rDyDCMpzEwo+vJ4aKyDMnDM4OHs
+         7Y5qygZQUeKUkF8EvUx9411WL0Jnq58XXl1KkYTu50l6Zs0pav22xQiIy+XuNhnVWt5J
+         p4G4Lt/iyioW/I0iQ5KtHjRjU1JIFlfKPDhrY/LZI0F908jhwiFY5Ffis5oYkhxHptho
+         YwHTBJGafw6lkjDswpKwPx4KwjMO8wT7TqlljEdnRKBBRyMVzCebC+lG7kiI+yt1/frO
+         6gjxFz7kWp/e18Zsd1bUmmWZR6gJA+YVurmNaJuw/biWC5O3ZUYWwSCao2bJVQybTTyD
+         TlRg==
+Original-Received: by 10.68.134.161 with SMTP id pl1mr31098383pbb.29.1344379375288;
+        Tue, 07 Aug 2012 15:42:55 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id pe8sm8556062pbc.76.2012.08.07.15.42.53
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:42:54 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222043.089735600@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQmaQL7s2ntQAxRsl3y0Ml2hpXklZBGR3YMcxWuTogJvPKXOc+Tlafk03biKIiWJoHIw2/6D
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339522 gmane.linux.kernel.stable:29361
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339522>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.4-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Darren Hart <dvhart@linux.intel.com>
+
+commit b6070a8d9853eda010a549fa9a09eb8d7269b929 upstream.
+
+If fixup_pi_state_owner() faults, pi_mutex may be NULL. Test
+for pi_mutex != NULL before testing the owner against current
+and possibly unlocking it.
+
+Signed-off-by: Darren Hart <dvhart@linux.intel.com>
+Cc: Dave Jones <davej@redhat.com>
+Cc: Dan Carpenter <dan.carpenter@oracle.com>
+Link: http://lkml.kernel.org/r/dc59890338fc413606f04e5c5b131530734dae3d.1342809673.git.dvhart@linux.intel.com
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ kernel/futex.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/kernel/futex.c
++++ b/kernel/futex.c
+@@ -2370,7 +2370,7 @@ static int futex_wait_requeue_pi(u32 __u
+ 	 * fault, unlock the rt_mutex and return the fault to userspace.
+ 	 */
+ 	if (ret == -EFAULT) {
+-		if (rt_mutex_owner(pi_mutex) == current)
++		if (pi_mutex && rt_mutex_owner(pi_mutex) == current)
+ 			rt_mutex_unlock(pi_mutex);
+ 	} else if (ret == -EINTR) {
+ 		/*
+
+

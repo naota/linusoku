@@ -1,0 +1,114 @@
+Path: news.gmane.org!not-for-mail
+From: Jiri Slaby <jslaby@suse.cz>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 25/41] TTY: add tty_port_link_device
+Date: Tue,  7 Aug 2012 21:47:50 +0200
+Lines: 70
+Approved: news@gmane.org
+Message-ID: <1344368886-24033-26-git-send-email-jslaby@suse.cz>
+References: <1344368886-24033-1-git-send-email-jslaby@suse.cz>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344369741 3534 80.91.229.3 (7 Aug 2012 20:02:21 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 20:02:21 +0000 (UTC)
+Cc: alan@linux.intel.com, linux-kernel@vger.kernel.org,
+	jirislaby@gmail.com
+To: gregkh@linuxfoundation.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 22:02:20 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sypyp-00039t-6r
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 22:02:15 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756583Ab2HGUBh (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 16:01:37 -0400
+Original-Received: from mail.pripojeni.net ([178.22.112.14]:36555 "EHLO
+	smtp.pripojeni.net" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756531Ab2HGT7r (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 15:59:47 -0400
+Original-Received: from localhost.localdomain ([178.22.113.142])
+	by smtp.pripojeni.net (Kerio Connect 7.2.2);
+	Tue, 7 Aug 2012 21:48:12 +0200
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1344368886-24033-1-git-send-email-jslaby@suse.cz>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339350
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339350>
+
+This is for those drivers which do not have dynamic device creation
+(do not call tty_port_register_device) and do not want to implement
+tty->ops->install (will not call tty_port_install). They still have to
+provide the link somehow though.
+
+And this newly added function is exactly to serve that purpose.
+
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ drivers/tty/tty_port.c |   22 +++++++++++++++++++++-
+ include/linux/tty.h    |    2 ++
+ 2 files changed, 23 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/tty/tty_port.c b/drivers/tty/tty_port.c
+index b36b33a..b4be732 100644
+--- a/drivers/tty/tty_port.c
++++ b/drivers/tty/tty_port.c
+@@ -34,6 +34,26 @@ void tty_port_init(struct tty_port *port)
+ EXPORT_SYMBOL(tty_port_init);
+ 
+ /**
++ * tty_port_link_device - link tty and tty_port
++ * @port: tty_port of the device
++ * @driver: tty_driver for this device
++ * @index: index of the tty
++ *
++ * Provide the tty layer wit ha link from a tty (specified by @index) to a
++ * tty_port (@port). Use this only if neither tty_port_register_device nor
++ * tty_port_install is used in the driver. If used, this has to be called before
++ * tty_register_driver.
++ */
++void tty_port_link_device(struct tty_port *port,
++		struct tty_driver *driver, unsigned index)
++{
++	if (WARN_ON(index >= driver->num))
++		return;
++	driver->ports[index] = port;
++}
++EXPORT_SYMBOL_GPL(tty_port_link_device);
++
++/**
+  * tty_port_register_device - register tty device
+  * @port: tty_port of the device
+  * @driver: tty_driver for this device
+@@ -48,7 +68,7 @@ struct device *tty_port_register_device(struct tty_port *port,
+ 		struct tty_driver *driver, unsigned index,
+ 		struct device *device)
+ {
+-	driver->ports[index] = port;
++	tty_port_link_device(port, driver, index);
+ 	return tty_register_device(driver, index, device);
+ }
+ EXPORT_SYMBOL_GPL(tty_port_register_device);
+diff --git a/include/linux/tty.h b/include/linux/tty.h
+index a39e723..aebf2ab 100644
+--- a/include/linux/tty.h
++++ b/include/linux/tty.h
+@@ -496,6 +496,8 @@ extern int tty_write_lock(struct tty_struct *tty, int ndelay);
+ #define tty_is_writelocked(tty)  (mutex_is_locked(&tty->atomic_write_lock))
+ 
+ extern void tty_port_init(struct tty_port *port);
++extern void tty_port_link_device(struct tty_port *port,
++		struct tty_driver *driver, unsigned index);
+ extern struct device *tty_port_register_device(struct tty_port *port,
+ 		struct tty_driver *driver, unsigned index,
+ 		struct device *device);
+-- 
+1.7.10.4
+
+

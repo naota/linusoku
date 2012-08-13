@@ -1,0 +1,107 @@
+Path: news.gmane.org!not-for-mail
+From: Mike Galbraith <efault@gmx.de>
+Newsgroups: gmane.linux.kernel,gmane.linux.file-systems
+Subject: Re: Deadlocks due to per-process plugging
+Date: Sun, 22 Jul 2012 20:43:09 +0200
+Lines: 36
+Approved: news@gmane.org
+Message-ID: <1342982589.7210.25.camel@marge.simpson.net>
+References: <20120711133735.GA8122@quack.suse.cz>
+	 <x49ehoii8ps.fsf@segfault.boston.devel.redhat.com>
+	 <20120711201601.GB9779@quack.suse.cz>
+	 <alpine.LFD.2.02.1207121552111.32033@ionos>
+	 <20120713123318.GB20361@quack.suse.cz>
+	 <alpine.LFD.2.02.1207131444490.32033@ionos>
+	 <20120713144622.GB28715@quack.suse.cz>
+	 <alpine.LFD.2.02.1207151057010.32033@ionos>
+	 <1342343673.28142.2.camel@marge.simpson.net>
+	 <1342405366.7659.35.camel@marge.simpson.net>
+	 <alpine.LFD.2.02.1207161058550.32033@ionos>
+	 <1342432094.7659.39.camel@marge.simpson.net>
+	 <1342433303.7659.42.camel@marge.simpson.net>
+	 <alpine.LFD.2.02.1207161216200.32033@ionos>
+	 <1342530621.7353.116.camel@marge.simpson.net>
+	 <1342586692.7321.45.camel@marge.simpson.net>
+	 <1342589411.7321.59.camel@marge.simpson.net>
+	 <1342856835.7739.19.camel@marge.simpson.net>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342982610 16729 80.91.229.3 (22 Jul 2012 18:43:30 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 22 Jul 2012 18:43:30 +0000 (UTC)
+Cc: Jan Kara <jack@suse.cz>, Jeff Moyer <jmoyer@redhat.com>,
+	LKML <linux-kernel@vger.kernel.org>,
+	linux-fsdevel@vger.kernel.org, Tejun Heo <tj@kernel.org>,
+	Jens Axboe <jaxboe@fusionio.com>, mgalbraith@suse.com,
+	Steven Rostedt <rostedt@goodmis.org>
+To: Thomas Gleixner <tglx@linutronix.de>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 22 20:43:26 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1St17m-0004SN-59
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 22 Jul 2012 20:43:26 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752402Ab2GVSnT (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 14:43:19 -0400
+Original-Received: from mailout-de.gmx.net ([213.165.64.22]:44786 "HELO
+	mailout-de.gmx.net" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with SMTP id S1752234Ab2GVSnR (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 14:43:17 -0400
+Original-Received: (qmail invoked by alias); 22 Jul 2012 18:43:14 -0000
+Original-Received: from p4FE1844E.dip0.t-ipconnect.de (EHLO [192.168.178.27]) [79.225.132.78]
+  by mail.gmx.net (mp030) with SMTP; 22 Jul 2012 20:43:14 +0200
+X-Authenticated: #14349625
+X-Provags-ID: V01U2FsdGVkX1+YJQgcCcaYSaWBC2ZMKcUi5aDe8Qj69u6kQs+3vE
+	xcIjcLVi5DHwJf
+In-Reply-To: <1342856835.7739.19.camel@marge.simpson.net>
+X-Mailer: Evolution 3.2.3 
+X-Y-GMX-Trusted: 0
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331389 gmane.linux.file-systems:66141
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331389>
+
+On Sat, 2012-07-21 at 09:47 +0200, Mike Galbraith wrote: 
+> On Wed, 2012-07-18 at 07:30 +0200, Mike Galbraith wrote: 
+> > On Wed, 2012-07-18 at 06:44 +0200, Mike Galbraith wrote:
+> > 
+> > > The patch in question for missing Cc.  Maybe should be only mutex, but I
+> > > see no reason why IO dependency can only possibly exist for mutexes...
+> > 
+> > Well that was easy, box quickly said "nope, mutex only does NOT cut it".
+> 
+> And I also learned (ouch) that both doesn't cut it either.  Ksoftirqd
+> (or sirq-blk) being nailed by q->lock in blk_done_softirq() is.. not
+> particularly wonderful.  As long as that doesn't happen, IO deadlock
+> doesn't happen, troublesome filesystems just work.  If it does happen
+> though, you've instantly got a problem.
+
+That problem being slab_lock in practice btw, though I suppose it could
+do the same with any number of others.  In encountered case, ksoftirqd
+(or sirq-blk) blocks on slab_lock while holding q->queue_lock, while a
+userspace task (dbench) blocks on q->queue_lock while holding slab_lock
+on the same cpu.  Game over.
+
+Odd is that it doesn't seem to materialize if you have rt_mutex deadlock
+detector enabled, not that that matters.  My 64 core box beat on ext3
+for 35 hours without ever hitting it with no deadlock detector (this
+time.. other long runs on top thereof, totaling lots of hours), and my
+x3550 beat crap out of several fs for a very long day week without
+hitting it with deadlock detector, but hits it fairly easily without.  
+
+Hohum, regardless of fickle timing gods mood of the moment, deadlocks
+are most definitely possible, and will happen, which leaves us with at
+least two filesystems needing strategically placed -rt unplug points,
+with no guarantee that this is really solving anything at all (other
+than empirical evidence that the bad thing ain't happening 'course).
+
+-Mike
+

@@ -1,0 +1,167 @@
+Path: news.gmane.org!not-for-mail
+From: Oleg Nesterov <oleg@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 2/7] uprobes: kill dup_mmap()->uprobe_mmap(), simplify
+	uprobe_mmap/munmap
+Date: Wed, 8 Aug 2012 19:37:39 +0200
+Lines: 112
+Approved: news@gmane.org
+Message-ID: <20120808173739.GA13259@redhat.com>
+References: <20120808173659.GA13220@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344447750 6504 80.91.229.3 (8 Aug 2012 17:42:30 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 17:42:30 +0000 (UTC)
+Cc: Ananth N Mavinakayanahalli <ananth@in.ibm.com>,
+	Anton Arapov <anton@redhat.com>, linux-kernel@vger.kernel.org
+To: Ingo Molnar <mingo@elte.hu>, Peter Zijlstra <peterz@infradead.org>,
+	Srikar Dronamraju <srikar@linux.vnet.ibm.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 19:42:27 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzAH4-0006LT-LA
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 19:42:26 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030391Ab2HHRmT (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 13:42:19 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:55960 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1759052Ab2HHRlC (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 13:41:02 -0400
+Original-Received: from int-mx11.intmail.prod.int.phx2.redhat.com (int-mx11.intmail.prod.int.phx2.redhat.com [10.5.11.24])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q78HelHJ002528
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Wed, 8 Aug 2012 13:40:47 -0400
+Original-Received: from tranklukator.brq.redhat.com (dhcp-1-232.brq.redhat.com [10.34.1.232])
+	by int-mx11.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with SMTP id q78HejFq026222;
+	Wed, 8 Aug 2012 13:40:45 -0400
+Original-Received: by tranklukator.brq.redhat.com (nbSMTP-1.00) for uid 500
+	oleg@redhat.com; Wed,  8 Aug 2012 19:37:41 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <20120808173659.GA13220@redhat.com>
+User-Agent: Mutt/1.5.18 (2008-05-17)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.24
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340212
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340212>
+
+1. Kill dup_mmap()->uprobe_mmap(), it was only needed to calculate
+   new_mm->uprobes_state.count removed by the previous patch.
+
+   If the forking process has a pending uprobe (int3) in vma, it will
+   be copied by copy_page_range(), note that it checks vma->anon_vma
+   so "Don't copy ptes" is not possible after install_breakpoint()
+   which does anon_vma_prepare().
+
+2. Remove is_swbp_at_addr() and "int count" in uprobe_mmap(). Again,
+   this was needed for uprobes_state.count.
+
+   As a side effect this fixes the bug pointed out by Srikar,
+   this code lacked the necessary put_uprobe().
+
+3. uprobe_munmap() becomes a nop after the previous patch. Remove the
+   meaningless code but do not remove the helper, we will need it.
+
+Signed-off-by: Oleg Nesterov <oleg@redhat.com>
+---
+ kernel/events/uprobes.c |   30 +++---------------------------
+ kernel/fork.c           |    3 ---
+ 2 files changed, 3 insertions(+), 30 deletions(-)
+
+diff --git a/kernel/events/uprobes.c b/kernel/events/uprobes.c
+index f0bb387..08ea627 100644
+--- a/kernel/events/uprobes.c
++++ b/kernel/events/uprobes.c
+@@ -1012,7 +1012,7 @@ int uprobe_mmap(struct vm_area_struct *vma)
+ 	struct list_head tmp_list;
+ 	struct uprobe *uprobe, *u;
+ 	struct inode *inode;
+-	int ret, count;
++	int ret;
+ 
+ 	if (!atomic_read(&uprobe_events) || !valid_vma(vma, true))
+ 		return 0;
+@@ -1025,8 +1025,6 @@ int uprobe_mmap(struct vm_area_struct *vma)
+ 	build_probe_list(inode, vma, vma->vm_start, vma->vm_end, &tmp_list);
+ 
+ 	ret = 0;
+-	count = 0;
+-
+ 	list_for_each_entry_safe(uprobe, u, &tmp_list, pending_list) {
+ 		if (!ret) {
+ 			unsigned long vaddr = offset_to_vaddr(vma, uprobe->offset);
+@@ -1036,19 +1034,11 @@ int uprobe_mmap(struct vm_area_struct *vma)
+ 			 * We can race against uprobe_register(), see the
+ 			 * comment near uprobe_hash().
+ 			 */
+-			if (ret == -EEXIST) {
++			if (ret == -EEXIST)
+ 				ret = 0;
+-
+-				if (!is_swbp_at_addr(vma->vm_mm, vaddr))
+-					continue;
+-			}
+-
+-			if (!ret)
+-				count++;
+ 		}
+ 		put_uprobe(uprobe);
+ 	}
+-
+ 	mutex_unlock(uprobes_mmap_hash(inode));
+ 
+ 	return ret;
+@@ -1059,27 +1049,13 @@ int uprobe_mmap(struct vm_area_struct *vma)
+  */
+ void uprobe_munmap(struct vm_area_struct *vma, unsigned long start, unsigned long end)
+ {
+-	struct list_head tmp_list;
+-	struct uprobe *uprobe, *u;
+-	struct inode *inode;
+-
+ 	if (!atomic_read(&uprobe_events) || !valid_vma(vma, false))
+ 		return;
+ 
+ 	if (!atomic_read(&vma->vm_mm->mm_users)) /* called by mmput() ? */
+ 		return;
+ 
+-	inode = vma->vm_file->f_mapping->host;
+-	if (!inode)
+-		return;
+-
+-	mutex_lock(uprobes_mmap_hash(inode));
+-	build_probe_list(inode, vma, start, end, &tmp_list);
+-
+-	list_for_each_entry_safe(uprobe, u, &tmp_list, pending_list) {
+-		put_uprobe(uprobe);
+-	}
+-	mutex_unlock(uprobes_mmap_hash(inode));
++	/* TODO: unmapping uprobe(s) will need more work */
+ }
+ 
+ /* Slot allocation for XOL */
+diff --git a/kernel/fork.c b/kernel/fork.c
+index 54bb88a..0e419ab 100644
+--- a/kernel/fork.c
++++ b/kernel/fork.c
+@@ -453,9 +453,6 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
+ 
+ 		if (retval)
+ 			goto out;
+-
+-		if (file)
+-			uprobe_mmap(tmp);
+ 	}
+ 	/* a new mm has just been created */
+ 	arch_dup_mmap(oldmm, mm);
+-- 
+1.5.5.1
+

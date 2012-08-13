@@ -1,0 +1,134 @@
+Path: news.gmane.org!not-for-mail
+From: Stephen Rothwell <sfr@canb.auug.org.au>
+Newsgroups: gmane.linux.kernel.next,gmane.linux.kernel
+Subject: linux-next: build failure after merge of the tty tree
+Date: Fri, 20 Jul 2012 13:28:40 +1000
+Lines: 87
+Approved: news@gmane.org
+Message-ID: <20120720132840.f8269e2c3658daa010904dca@canb.auug.org.au>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: multipart/signed; protocol="application/pgp-signature";
+ micalg="PGP-SHA256";
+ boundary="Signature=_Fri__20_Jul_2012_13_28_40_+1000_ZFQaNyPUeWwyG6mT"
+X-Trace: dough.gmane.org 1342754935 3438 80.91.229.3 (20 Jul 2012 03:28:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 03:28:55 +0000 (UTC)
+Cc: linux-next@vger.kernel.org, linux-kernel@vger.kernel.org,
+	Alan Cox <alan@linux.intel.com>
+To: Greg KH <greg@kroah.com>
+Original-X-From: linux-next-owner@vger.kernel.org Fri Jul 20 05:28:54 2012
+Return-path: <linux-next-owner@vger.kernel.org>
+Envelope-to: glkn-linux-next@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-next-owner@vger.kernel.org>)
+	id 1Ss3tb-0007ql-MN
+	for glkn-linux-next@plane.gmane.org; Fri, 20 Jul 2012 05:28:52 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751353Ab2GTD2u (ORCPT <rfc822;glkn-linux-next@m.gmane.org>);
+	Thu, 19 Jul 2012 23:28:50 -0400
+Original-Received: from haggis.pcug.org.au ([203.10.76.10]:60542 "EHLO
+	members.tip.net.au" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750789Ab2GTD2t (ORCPT
+	<rfc822;linux-next@vger.kernel.org>); Thu, 19 Jul 2012 23:28:49 -0400
+Original-Received: from canb.auug.org.au (ash.rothwell.emu.id.au [IPv6:2402:b800:7003:7010:223:14ff:fe30:c8e4])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by members.tip.net.au (Postfix) with ESMTPSA id 4F0A41640E4;
+	Fri, 20 Jul 2012 13:28:45 +1000 (EST)
+X-Mailer: Sylpheed 3.2.0 (GTK+ 2.24.10; i486-pc-linux-gnu)
+Original-Sender: linux-next-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-next.vger.kernel.org>
+X-Mailing-List: linux-next@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel.next:23438 gmane.linux.kernel:1330651
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330651>
+
+--Signature=_Fri__20_Jul_2012_13_28_40_+1000_ZFQaNyPUeWwyG6mT
+Content-Type: text/plain; charset=US-ASCII
+Content-Disposition: inline
+Content-Transfer-Encoding: quoted-printable
+
+Hi Greg,
+
+After merging the tty tree, today's linux-next build (x86_64 allmodconfig)
+failed like this:
+
+drivers/staging/ipack/devices/ipoctal.c: In function 'ipoctal_set_termios':
+drivers/staging/ipack/devices/ipoctal.c:614:22: error: invalid type argumen=
+t of '->' (have 'struct ktermios')
+drivers/staging/ipack/devices/ipoctal.c:640:15: error: invalid type argumen=
+t of '->' (have 'struct ktermios')
+drivers/staging/ipack/devices/ipoctal.c:654:14: error: invalid type argumen=
+t of '->' (have 'struct ktermios')
+drivers/staging/ipack/devices/ipoctal.c:691:2: error: incompatible type for=
+ argument 1 of 'tty_termios_encode_baud_rate'
+include/linux/tty.h:449:13: note: expected 'struct ktermios *' but argument=
+ is of type 'struct ktermios'
+drivers/staging/ipack/devices/ipoctal.c:694:22: error: invalid type argumen=
+t of '->' (have 'struct ktermios')
+drivers/staging/ipack/devices/ipoctal.c:735:3: error: incompatible type for=
+ argument 1 of 'tty_termios_encode_baud_rate'
+include/linux/tty.h:449:13: note: expected 'struct ktermios *' but argument=
+ is of type 'struct ktermios'
+
+Presumably caused by commit adc8d746caa6 ("tty: move the termios object
+into the tty").
+
+Under previous instructions about staging drivers, I have added the
+following patch for today:
+
+=46rom c4bc70a8fc9cc687690aaf51865561ffcd6190f9 Mon Sep 17 00:00:00 2001
+From: Stephen Rothwell <sfr@canb.auug.org.au>
+Date: Fri, 20 Jul 2012 13:25:12 +1000
+Subject: [PATCH] disable SERIAL_IPOCTAL broken by tty updates
+
+Signed-off-by: Stephen Rothwell <sfr@canb.auug.org.au>
+---
+ drivers/staging/ipack/devices/Kconfig |    1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/staging/ipack/devices/Kconfig b/drivers/staging/ipack/=
+devices/Kconfig
+index 39f7188..8d69ce3 100644
+--- a/drivers/staging/ipack/devices/Kconfig
++++ b/drivers/staging/ipack/devices/Kconfig
+@@ -1,6 +1,7 @@
+ config SERIAL_IPOCTAL
+ 	tristate "IndustryPack IP-OCTAL uart support"
+ 	depends on IPACK_BUS
++	depends on BROKEN
+ 	help
+ 	  This driver supports the IPOCTAL serial port device for the IndustryPac=
+k bus.
+ 	default n
+--=20
+1.7.10.280.gaa39
+
+--=20
+Cheers,
+Stephen Rothwell                    sfr@canb.auug.org.au
+
+--Signature=_Fri__20_Jul_2012_13_28_40_+1000_ZFQaNyPUeWwyG6mT
+Content-Type: application/pgp-signature
+
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.12 (GNU/Linux)
+
+iQIcBAEBCAAGBQJQCNBoAAoJEECxmPOUX5FET2gP/R2RiO6lO5un70X4pkiGJgzO
+xR9mLIsicmoXdWNP9h4QtFQ9P1jc/crZg9AY0kSnfGSunT/iQ1QkrlP6nIuVtLj/
+8nxNKN3k1ExzCU3yc9QSUJ2y40027WyVGqD8SnF+2+A7S1d5CfD64J3BgphzFecC
+hibUYpHHgZBSKZMVE3SA+gQuQL4kmFAQQsb6NSH8eIeKs/aFn1MBIo/qxKvrYptJ
+g7TiGVD59NWb8PJBkj8ZSC9aa5qgNr7SYZiTeSZM11+VDQY4f8k37P3l9+fVLOVi
+Mhkbt5g3f93vKcSCHl1eqvfuCQ6nX/WbGyNlCVojpUVDkwaL4blQf7WVROZaUMeV
+4GbgPY87Oxuzq2PXPU7P9eM43zavXuHmTEEARtqfnaiWptF03pep8yWO9GjBdpsE
+cSz6G5v4zKYbKDEqOrjPULv6OVPi7ABjEe1ilvfRF8nG3Cs9LcLSvXiAuuqTFG06
+cxVvJq5GuMqgHpOG9OFrdUxxdmggj7u52rB1bvEi+IOgH9GxpcbcxUXXfmZzvIvA
+0fBoHlnhHiOVpk/qdKws6N4N+U3jzkJXdYsE3eIiIRnWv0UmclE+mRBAcsd+AqYQ
+ATQXJvj1dLXh8tT6YccH3NlGnkdfkz4SneOY1ej1MGE8v4DgWBy/uDTaqrCJxrZG
+LyuZMxAF+g1dj77S7feq
+=1/UZ
+-----END PGP SIGNATURE-----
+
+--Signature=_Fri__20_Jul_2012_13_28_40_+1000_ZFQaNyPUeWwyG6mT--

@@ -1,0 +1,108 @@
+Path: news.gmane.org!not-for-mail
+From: Stephen Boyd <sboyd@codeaurora.org>
+Newsgroups: gmane.linux.kernel.cpufreq,gmane.linux.kernel
+Subject: Re: [PATCH] cpufreq: Fix sysfs deadlock with concurrent hotplug/frequency
+ switch
+Date: Fri, 20 Jul 2012 10:34:04 -0700
+Lines: 58
+Approved: news@gmane.org
+Message-ID: <5009968C.8030303@codeaurora.org>
+References: <1342749433-17676-1-git-send-email-sboyd@codeaurora.org> <201207201205.36635.rjw@sisk.pl>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-2
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342805650 5682 80.91.229.3 (20 Jul 2012 17:34:10 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 17:34:10 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, cpufreq@vger.kernel.org,
+	linux-pm@vger.kernel.org
+To: "Rafael J. Wysocki" <rjw@sisk.pl>
+Original-X-From: cpufreq-owner@vger.kernel.org Fri Jul 20 19:34:09 2012
+Return-path: <cpufreq-owner@vger.kernel.org>
+Envelope-to: glkc-cpufreq2@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <cpufreq-owner@vger.kernel.org>)
+	id 1SsH5c-0003x6-4o
+	for glkc-cpufreq2@plane.gmane.org; Fri, 20 Jul 2012 19:34:08 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753453Ab2GTReG (ORCPT <rfc822;glkc-cpufreq2@m.gmane.org>);
+	Fri, 20 Jul 2012 13:34:06 -0400
+Original-Received: from wolverine02.qualcomm.com ([199.106.114.251]:17319 "EHLO
+	wolverine02.qualcomm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753140Ab2GTReF (ORCPT
+	<rfc822;cpufreq@vger.kernel.org>); Fri, 20 Jul 2012 13:34:05 -0400
+X-IronPort-AV: E=McAfee;i="5400,1158,6778"; a="210489692"
+Original-Received: from pdmz-ns-snip_114_130.qualcomm.com (HELO mostmsg01.qualcomm.com) ([199.106.114.130])
+  by wolverine02.qualcomm.com with ESMTP/TLS/DHE-RSA-AES256-SHA; 20 Jul 2012 10:34:05 -0700
+Original-Received: from [10.46.164.20] (pdmz-ns-snip_218_1.qualcomm.com [192.168.218.1])
+	by mostmsg01.qualcomm.com (Postfix) with ESMTPA id A57D410004AC;
+	Fri, 20 Jul 2012 10:34:04 -0700 (PDT)
+User-Agent: Mozilla/5.0 (X11; Linux i686 on x86_64; rv:12.0) Gecko/20120428 Thunderbird/12.0.1
+In-Reply-To: <201207201205.36635.rjw@sisk.pl>
+Original-Sender: cpufreq-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <cpufreq.vger.kernel.org>
+X-Mailing-List: cpufreq@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel.cpufreq:8179 gmane.linux.kernel:1330973
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330973>
+
+On 07/20/12 03:05, Rafael J. Wysocki wrote:
+>
+> The following part of your changelog has confused Patchwork.  I guess it
+> will also confuse other tools, so care to describe what to do instead?
+
+Sure. I thought that might happen but I put a space in front in hopes it
+wouldn't cause troubles.
+
+>
+>>  diff --git a/drivers/cpufreq/cpufreq.c b/drivers/cpufreq/cpufreq.c
+>>  index a290771..62af12d 100644
+>>  --- a/drivers/cpufreq/cpufreq.c
+>>  +++ b/drivers/cpufreq/cpufreq.c
+>>  @@ -675,6 +675,7 @@ static ssize_t store(struct kobject *kobj
+>>
+>>          unlock_policy_rwsem_write(policy->cpu);
+>>   fail:
+>>  +       msleep(10000);
+>>          cpufreq_cpu_put_sysfs(policy);
+>>   no_policy:
+>>          return ret;
+>>
+>> and then write scaling_setspeed in one task and offline the cpu
+>> in another. The first task will hang and be detected by the hung
+>> task detector.
+>>
+>> Signed-off-by: Stephen Boyd <sboyd@codeaurora.org>
+>> ---
+>>
+>> Before you ask, I've seen the comment above cpufreq_add_dev() about
+>> concurrent hotplug/cpufreq.
+>>
+>>  drivers/cpufreq/cpufreq.c | 35 +++++++++++++++++++++++++++--------
+>>  1 file changed, 27 insertions(+), 8 deletions(-)
+>>
+>> diff --git a/drivers/cpufreq/cpufreq.c b/drivers/cpufreq/cpufreq.c
+>> index 7f2f149..a290771 100644
+>> --- a/drivers/cpufreq/cpufreq.c
+>> +++ b/drivers/cpufreq/cpufreq.c
+>> @@ -138,7 +138,7 @@ void disable_cpufreq(void)
+>>  static LIST_HEAD(cpufreq_governor_list);
+>>  static DEFINE_MUTEX(cpufreq_governor_mutex);
+>>  
+>> -struct cpufreq_policy *cpufreq_cpu_get(unsigned int cpu)
+>> +static struct cpufreq_policy *__cpufreq_cpu_get(unsigned int cpu, int sysfs)
+> I'd prefer the sysfs arg to be a bool.
+
+Sure. V2 coming right up.
+
+-- 
+Sent by an employee of the Qualcomm Innovation Center, Inc.
+The Qualcomm Innovation Center, Inc. is a member of the Code Aurora Forum.
+
+--
+To unsubscribe from this list: send the line "unsubscribe cpufreq" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

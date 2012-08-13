@@ -1,0 +1,123 @@
+Path: news.gmane.org!not-for-mail
+From: Ingo Molnar <mingo@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] x86/ioapic: Fix NULL pointer dereference on CPU hotplug
+ after disabling irqs
+Date: Thu, 26 Jul 2012 12:21:06 +0200
+Lines: 56
+Approved: news@gmane.org
+Message-ID: <20120726102106.GA22573@gmail.com>
+References: <BC5CD145C5D9E74D86490E60F52766FF1EBCFCDD@ORSMSX105.amr.corp.intel.com>
+ <50111146.7070707@hitachi.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343298084 11670 80.91.229.3 (26 Jul 2012 10:21:24 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 10:21:24 +0000 (UTC)
+Cc: tglx@linutronix.de, mingo@redhat.com, suresh.b.siddha@intel.com,
+	hpa@zytor.com, yinghai@kernel.org, agordeev@redhat.com,
+	x86@kernel.org, linux-kernel@vger.kernel.org,
+	yrl.pp-manager.tt@hitachi.com
+To: Tomoki Sekiyama <tomoki.sekiyama.qu@hitachi.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 12:21:22 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuLC6-0007c2-1L
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 12:21:22 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752003Ab2GZKVN (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 06:21:13 -0400
+Original-Received: from mail-bk0-f46.google.com ([209.85.214.46]:49067 "EHLO
+	mail-bk0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751341Ab2GZKVM (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 06:21:12 -0400
+Original-Received: by bkwj10 with SMTP id j10so1164548bkw.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 03:21:11 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:date:from:to:cc:subject:message-id:references:mime-version
+         :content-type:content-disposition:in-reply-to:user-agent;
+        bh=2GnIwF1AdwCawsML7GRZx1Ub7B6gzV0XnXSMP/0Z/9A=;
+        b=DSKaW+Z/uiV/SHuUmuHQq5rt+nQW7QHukBNK16AT4jSH0bMfMUSP0NVWgj97Qzg5/w
+         Hq3ajxi14NgOuYqUIx+epKIoypV0ib89XTgYtZHy8ThhcKnKaKis1IboW56qm0w0Awlj
+         rE293XgpV2khrdn0HKGDdqD8OdHaB2u87yuVceZkwf4vjkvbGZLX3jgEL7lfOdQ6Zx4R
+         5fz1W1xTp9O5rqL/vPSCjdjw8OBW0ZFeHhVg5fSlrta51ofly0l7GrjGkyxa7gv1DWgp
+         vl6z41M8SfIKz6gq6ol4UGtdxearACCo7K4kn7wGD9vVe1IgBwgCS0CEUOAnPxN8GKzb
+         sAeQ==
+Original-Received: by 10.205.117.3 with SMTP id fk3mr13781838bkc.136.1343298071030;
+        Thu, 26 Jul 2012 03:21:11 -0700 (PDT)
+Original-Received: from gmail.com (54033750.catv.pool.telekom.hu. [84.3.55.80])
+        by mx.google.com with ESMTPS id t23sm14219892bks.4.2012.07.26.03.21.09
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 03:21:10 -0700 (PDT)
+Content-Disposition: inline
+In-Reply-To: <50111146.7070707@hitachi.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333503
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333503>
+
+
+* Tomoki Sekiyama <tomoki.sekiyama.qu@hitachi.com> wrote:
+
+> In current Linux, percpu variable `vector_irq' is not always cleared when
+> a CPU is offlined. If the CPU that has the disabled irqs in vector_irq is
+> hotplugged again, __setup_vector_irq() hits invalid irq vector and may
+> crash.
+> 
+> This bug can be reproduced as following;
+>  # echo 0 > /sys/devices/system/cpu/cpu7/online
+>  # modprobe -r some_driver_using_interrupts     # vector_irq@cpu7 uncleared
+>  # echo 1 > /sys/devices/system/cpu/cpu7/online # kernel may crash
+> 
+> To fix this problem, this patch clears vector_irq in __fixup_irqs() when
+> the CPU is offlined.
+> 
+> This also reverts commit f6175f5bfb4c, which partially fixes this bug by
+> clearing vector in __clear_irq_vector(). But in environments with IOMMU IRQ
+> remapper, it could fail because cfg->domain doesn't contain offlined CPUs.
+> With this patch, the fix in __clear_irq_vector() can be reverted because
+> every vector_irq is already cleared in __fixup_irqs() on offlined CPUs.
+> 
+> Signed-off-by: Tomoki Sekiyama <tomoki.sekiyama.qu@hitachi.com>
+> Cc: Thomas Gleixner <tglx@linutronix.de>
+> Cc: Ingo Molnar <mingo@redhat.com>
+> Cc: "H. Peter Anvin" <hpa@zytor.com>
+> Cc: Suresh Siddha <suresh.b.siddha@intel.com>
+> Cc: Yinghai Lu <yinghai@kernel.org>
+> Cc: Alexander Gordeev <agordeev@redhat.com>
+> ---
+>  arch/x86/kernel/apic/io_apic.c |    4 ++--
+>  arch/x86/kernel/irq.c          |    1 +
+>  2 files changed, 3 insertions(+), 2 deletions(-)
+> 
+> diff --git a/arch/x86/kernel/apic/io_apic.c b/arch/x86/kernel/apic/io_apic.c
+> index 5f0ff59..ac96561 100644
+> --- a/arch/x86/kernel/apic/io_apic.c
+> +++ b/arch/x86/kernel/apic/io_apic.c
+> @@ -1195,7 +1195,7 @@ static void __clear_irq_vector(int irq, struct irq_cfg *cfg)
+>  	BUG_ON(!cfg->vector);
+>   	vector = cfg->vector;
+> -	for_each_cpu(cpu, cfg->domain)
+> +	for_each_cpu_and(cpu, cfg->domain, cpu_online_mask)
+>  		per_cpu(vector_irq, cpu)[vector] = -1;
+>   	cfg->vector = 0;
+> @@ -1203,7 +1203,7 @@ static void __clear_irq_vector(int irq, struct irq_cfg *cfg)
+>   	if (likely(!cfg->move_in_progress))
+>  		return;
+> -	for_each_cpu(cpu, cfg->old_domain) {
+
+that's not a valid diff - something in your mailer ate lines or 
+such. See Documentation/email-clients.txt.
+
+Thanks,
+
+	Ingo

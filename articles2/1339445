@@ -1,0 +1,157 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 097/122] ext4: undo ext4_calc_metadata_amount if we fail to claim space
+Date: Tue,  7 Aug 2012 15:26:25 -0700
+Lines: 93
+Approved: news@gmane.org
+Message-ID: <20120807221958.198071238@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344378815 15329 80.91.229.3 (7 Aug 2012 22:33:35 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:33:35 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Brian Foster <bfoster@redhat.com>,
+	"Theodore Tso" <tytso@mit.edu>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:33:30 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysLA-0004aE-NU
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:33:29 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030329Ab2HGWcL (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:32:11 -0400
+Original-Received: from mail-yw0-f46.google.com ([209.85.213.46]:41377 "EHLO
+	mail-yw0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030310Ab2HGWcG (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:32:06 -0400
+Original-Received: by mail-yw0-f46.google.com with SMTP id m54so154930yhm.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:32:05 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=cjX3fNys75oY5IjZf+rta197Y+lWOhvB1GWQrdAYeb4=;
+        b=OfhK84wcU0TTiIlJTQOrw/9juStgDnkrIpVxzdeRDUKRsAwg3xtvb1C0msMRdN2ZvC
+         o9uOza4KwieX2IGVgA6zI8koG60REli6RQPhsQKAiJtxgKt+oqT69yhcb/xMKtZqBJmf
+         F4LpImpR6U7CahnGvjZKYqYnZYVoE6EUzh1ubhvG/jydeW0/3v0zEuQP65Nmzpuw0cqP
+         mYYQMcor2gfl6dbOKZUI+hHNyXCOs1RRntffvV69/qQBJ0m+UO0wbA0jOTDcOf4xukhK
+         rjJUIH5XcojM2ufKMDJlzxOVb8DqH9AtZfBEHxIAWlq4j4I01w4Xwg5NgIyDn/0u3UGZ
+         P2qQ==
+Original-Received: by 10.66.75.162 with SMTP id d2mr29190857paw.59.1344378725253;
+        Tue, 07 Aug 2012 15:32:05 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id nv6sm11961620pbc.42.2012.08.07.15.32.03
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:32:04 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQmysDUY3xIn7ypF94zULEimrpTpuCN8acJWHvbbKNpb/liAAsGu0nOBvT5MeDu1GyeBp71n
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339445 gmane.linux.kernel.stable:29284
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339445>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Theodore Ts'o <tytso@mit.edu>
+
+commit 03179fe92318e7934c180d96f12eff2cb36ef7b6 upstream.
+
+The function ext4_calc_metadata_amount() has side effects, although
+it's not obvious from its function name.  So if we fail to claim
+space, regardless of whether we retry to claim the space again, or
+return an error, we need to undo these side effects.
+
+Otherwise we can end up incorrectly calculating the number of metadata
+blocks needed for the operation, which was responsible for an xfstests
+failure for test #271 when using an ext2 file system with delalloc
+enabled.
+
+Reported-by: Brian Foster <bfoster@redhat.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ fs/ext4/inode.c |   32 +++++++++++++++++++++-----------
+ 1 file changed, 21 insertions(+), 11 deletions(-)
+
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -1180,6 +1180,17 @@ static int ext4_da_reserve_space(struct
+ 	struct ext4_inode_info *ei = EXT4_I(inode);
+ 	unsigned int md_needed;
+ 	int ret;
++	ext4_lblk_t save_last_lblock;
++	int save_len;
++
++	/*
++	 * We will charge metadata quota at writeout time; this saves
++	 * us from metadata over-estimation, though we may go over by
++	 * a small amount in the end.  Here we just reserve for data.
++	 */
++	ret = dquot_reserve_block(inode, EXT4_C2B(sbi, 1));
++	if (ret)
++		return ret;
+ 
+ 	/*
+ 	 * recalculate the amount of metadata blocks to reserve
+@@ -1188,32 +1199,31 @@ static int ext4_da_reserve_space(struct
+ 	 */
+ repeat:
+ 	spin_lock(&ei->i_block_reservation_lock);
++	/*
++	 * ext4_calc_metadata_amount() has side effects, which we have
++	 * to be prepared undo if we fail to claim space.
++	 */
++	save_len = ei->i_da_metadata_calc_len;
++	save_last_lblock = ei->i_da_metadata_calc_last_lblock;
+ 	md_needed = EXT4_NUM_B2C(sbi,
+ 				 ext4_calc_metadata_amount(inode, lblock));
+ 	trace_ext4_da_reserve_space(inode, md_needed);
+-	spin_unlock(&ei->i_block_reservation_lock);
+ 
+ 	/*
+-	 * We will charge metadata quota at writeout time; this saves
+-	 * us from metadata over-estimation, though we may go over by
+-	 * a small amount in the end.  Here we just reserve for data.
+-	 */
+-	ret = dquot_reserve_block(inode, EXT4_C2B(sbi, 1));
+-	if (ret)
+-		return ret;
+-	/*
+ 	 * We do still charge estimated metadata to the sb though;
+ 	 * we cannot afford to run out of free blocks.
+ 	 */
+ 	if (ext4_claim_free_clusters(sbi, md_needed + 1, 0)) {
+-		dquot_release_reservation_block(inode, EXT4_C2B(sbi, 1));
++		ei->i_da_metadata_calc_len = save_len;
++		ei->i_da_metadata_calc_last_lblock = save_last_lblock;
++		spin_unlock(&ei->i_block_reservation_lock);
+ 		if (ext4_should_retry_alloc(inode->i_sb, &retries)) {
+ 			yield();
+ 			goto repeat;
+ 		}
++		dquot_release_reservation_block(inode, EXT4_C2B(sbi, 1));
+ 		return -ENOSPC;
+ 	}
+-	spin_lock(&ei->i_block_reservation_lock);
+ 	ei->i_reserved_data_blocks++;
+ 	ei->i_reserved_meta_blocks += md_needed;
+ 	spin_unlock(&ei->i_block_reservation_lock);
+
+

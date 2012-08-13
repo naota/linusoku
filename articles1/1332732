@@ -1,0 +1,92 @@
+Path: news.gmane.org!not-for-mail
+From: Ming Lei <ming.lei@canonical.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] kernel/watchdog.c : fix smp_processor_id() warning
+Date: Wed, 25 Jul 2012 12:39:45 +0800
+Lines: 44
+Approved: news@gmane.org
+Message-ID: <1343191185-7746-1-git-send-email-ming.lei@canonical.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343191234 17488 80.91.229.3 (25 Jul 2012 04:40:34 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 04:40:34 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, Ming Lei <ming.lei@canonical.com>
+To: Sameer Nanda <snanda@chromium.org>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Ingo Molnar <mingo@kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 06:40:33 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SttOi-0001q7-MG
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 06:40:32 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751574Ab2GYEkH (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 00:40:07 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:35808 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751314Ab2GYEkC (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 00:40:02 -0400
+Original-Received: by pbbrp8 with SMTP id rp8so764139pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 24 Jul 2012 21:40:01 -0700 (PDT)
+Original-Received: by 10.68.220.231 with SMTP id pz7mr49897346pbc.110.1343191201676;
+        Tue, 24 Jul 2012 21:40:01 -0700 (PDT)
+Original-Received: from localhost ([183.37.206.82])
+        by mx.google.com with ESMTPS id nu5sm13542459pbb.53.2012.07.24.21.39.59
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 24 Jul 2012 21:40:01 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9.5
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332732
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332732>
+
+Use raw_smp_processor_id in lockup_detector_bootcpu_resume()
+because it is enough when non-boot CPUs are offline.
+
+This patch fixes the following warning when DEBUG_PREEMPT
+is enabled.
+
+[  168.259429] BUG: using smp_processor_id() in preemptible [00000000] code: pm/1577
+[  168.259460] caller is lockup_detector_bootcpu_resume+0x8/0x48
+[  168.259490] [<c001558c>] (unwind_backtrace+0x0/0x11c) from [<c0296874>] (debug_smp_processor_id+0xbc/0xf0)
+[  168.259521] [<c0296874>] (debug_smp_processor_id+0xbc/0xf0) from [<c0090114>] (lockup_detector_bootcpu_res
+ume+0x8/0x48)
+[  168.259552] [<c0090114>] (lockup_detector_bootcpu_resume+0x8/0x48) from [<c006facc>] (suspend_devices_and_
+enter+0x1f8/0x358)
+[  168.259552] [<c006facc>] (suspend_devices_and_enter+0x1f8/0x358) from [<c006fd68>] (pm_suspend+0x13c/0x204
+)
+[  168.259582] [<c006fd68>] (pm_suspend+0x13c/0x204) from [<c006f0d0>] (state_store+0xb0/0xd4)
+[  168.259582] [<c006f0d0>] (state_store+0xb0/0xd4) from [<c028a3d8>] (kobj_attr_store+0x14/0x20)
+[  168.259613] [<c028a3d8>] (kobj_attr_store+0x14/0x20) from [<c014d344>] (sysfs_write_file+0x10c/0x140)
+[  168.259643] [<c014d344>] (sysfs_write_file+0x10c/0x140) from [<c00f5a88>] (vfs_write+0xb0/0x138)
+[  168.259643] [<c00f5a88>] (vfs_write+0xb0/0x138) from [<c00f5ce8>] (sys_write+0x3c/0x68)
+[  168.259674] [<c00f5ce8>] (sys_write+0x3c/0x68) from [<c000e020>] (ret_fast_syscall+0x0/0x48)
+[  168.260375] Enabling non-boot CPUs ...
+
+Signed-off-by: Ming Lei <ming.lei@canonical.com>
+---
+ kernel/watchdog.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/kernel/watchdog.c b/kernel/watchdog.c
+index 69add8a..7ddb11b 100644
+--- a/kernel/watchdog.c
++++ b/kernel/watchdog.c
+@@ -623,7 +623,7 @@ static struct notifier_block cpu_nfb = {
+  */
+ void lockup_detector_bootcpu_resume(void)
+ {
+-	void *cpu = (void *)(long)smp_processor_id();
++	void *cpu = (void *)(long)raw_smp_processor_id();
+ 
+ 	cpu_callback(&cpu_nfb, CPU_DEAD_FROZEN, cpu);
+ 	cpu_callback(&cpu_nfb, CPU_UP_PREPARE_FROZEN, cpu);
+-- 
+1.7.9.5
+

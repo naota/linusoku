@@ -1,0 +1,107 @@
+Path: news.gmane.org!not-for-mail
+From: Jim Cromie <jim.cromie@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 1/3] drivers-core: make structured logging play nice with dynamic-debug
+Date: Thu, 19 Jul 2012 13:46:21 -0600
+Lines: 48
+Approved: news@gmane.org
+Message-ID: <1342727183-4520-3-git-send-email-jim.cromie@gmail.com>
+References: <1342727183-4520-1-git-send-email-jim.cromie@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342727237 9546 80.91.229.3 (19 Jul 2012 19:47:17 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 19:47:17 +0000 (UTC)
+Cc: kay@vrfy.com, joe@perches.com, greg@kroah.com,
+	Jim Cromie <jim.cromie@gmail.com>
+To: jbaron@redhat.com, linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 21:47:16 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Srwgt-0004ov-8Z
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 21:47:15 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751594Ab2GSTrJ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 15:47:09 -0400
+Original-Received: from mail-yx0-f174.google.com ([209.85.213.174]:60039 "EHLO
+	mail-yx0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751466Ab2GSTqs (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 15:46:48 -0400
+Original-Received: by mail-yx0-f174.google.com with SMTP id l2so3201050yen.19
+        for <linux-kernel@vger.kernel.org>; Thu, 19 Jul 2012 12:46:48 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=TsjLQHvqIG5nFNqQtYDHXe5lAJrP82/H4mOSvQJRR5s=;
+        b=hQlHkuHw/W1wnxeIkVYCl+yXZlJ2gzzTjQRz6jjjRJ1o5Zyc0N0r+YzNZQm3SPeSXw
+         bw/mMjEqahsOwmfV3YOToRIjznAIyCl3nO6coH7BO3ZkXdAmIKfCFnBKVQ6XQbsVGflt
+         qDhmtyEIWlGkSzXMNDc6OpPujeR6/yFXn8iUYroE0wuoSYQLCUqb7ze2Cmo5mrCczRnl
+         WguZB2w4N8hVrJbxHQ3nQN1jDTa/vayYHI6uny1gD2FXn8mpVpzXjZqEl1izwO8TGe0N
+         DeF5txnDQ7j8LEvOLXNYtIihsrsY3cT/wKTWjdm0Vi/Ysmn8+KAdZHgRPQKG4SG5W6C8
+         roCg==
+Original-Received: by 10.42.41.11 with SMTP id n11mr2070369ice.13.1342727207753;
+        Thu, 19 Jul 2012 12:46:47 -0700 (PDT)
+Original-Received: from groucho.jimc.earth.net (c-75-70-77-50.hsd1.co.comcast.net. [75.70.77.50])
+        by mx.google.com with ESMTPS id ai6sm5165926igc.0.2012.07.19.12.46.45
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 19 Jul 2012 12:46:46 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1342727183-4520-1-git-send-email-jim.cromie@gmail.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330515
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330515>
+
+commit c4e00daaa96d3a0786f1f4fe6456281c60ef9a16 changed __dev_printk
+in a way that broke dynamic-debug's ability to control the dynamic
+prefix of dev_dbg(dev,..), but not dev_dbg(NULL,..) or pr_debug(..),
+which is why it wasnt noticed sooner.
+
+When dev==NULL, __dev_printk() just calls printk(), which just works.
+But otherwise, it assumed that level was always a string like "<L>"
+and just plucked out the 'L', ignoring the rest.  However,
+dynamic_emit_prefix() adds "[tid] module:func:line:" to the string,
+those additions all got lost.
+
+Signed-off-by: Jim Cromie <jim.cromie@gmail.com>
+---
+ drivers/base/core.c |    9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/base/core.c b/drivers/base/core.c
+index 346be8b..ebdb7c5 100644
+--- a/drivers/base/core.c
++++ b/drivers/base/core.c
+@@ -1848,6 +1848,7 @@ int __dev_printk(const char *level, const struct device *dev,
+ 		 struct va_format *vaf)
+ {
+ 	char dict[128];
++	const char *level_extra = "";
+ 	size_t dictlen = 0;
+ 	const char *subsys;
+ 
+@@ -1894,10 +1895,14 @@ int __dev_printk(const char *level, const struct device *dev,
+ 				    "DEVICE=+%s:%s", subsys, dev_name(dev));
+ 	}
+ skip:
++	if (level[3])
++		level_extra = &level[3]; /* skip past "<L>" */
++
+ 	return printk_emit(0, level[1] - '0',
+ 			   dictlen ? dict : NULL, dictlen,
+-			   "%s %s: %pV",
+-			   dev_driver_string(dev), dev_name(dev), vaf);
++			   "%s %s: %s%pV", 
++			   dev_driver_string(dev), dev_name(dev),
++			   level_extra, vaf);
+ }
+ EXPORT_SYMBOL(__dev_printk);
+ 
+-- 
+1.7.10.4
+

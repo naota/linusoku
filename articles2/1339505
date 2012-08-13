@@ -1,0 +1,115 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 086/109] net: Fix references to out-of-scope variables in put_cmsg_compat()
+Date: Tue,  7 Aug 2012 15:35:45 -0700
+Lines: 51
+Approved: news@gmane.org
+Message-ID: <20120807222050.636634471@linuxfoundation.org>
+References: <20120807222043.089735600@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344379267 18356 80.91.229.3 (7 Aug 2012 22:41:07 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:41:07 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Jesper Juhl <jj@chaosbits.net>,
+	"David S. Miller" <davem@davemloft.net>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:41:03 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysSP-0005CG-Ig
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:40:57 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030785Ab2HGWkt (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:40:49 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:56801 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030711Ab2HGWkl (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:40:41 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so358011pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:40:41 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=z96gR9a1CEKovX+MKFlo10JF5r6BOaVm8Vmipe5KV30=;
+        b=JH3NqjxDI3NIs4CbiB1sLb3dFc6r36BCnvbNDD+aJjaLCbNEgND0NTLPM9Cpux6Dkx
+         W/v4VEQ3LVBBt6175vVDj3JCnesR8tPYB8Qbb98nVlBkhsehyPbNpB/2EJSJQvSEvXR9
+         9yCzBhxSbrZzD+bl7cgO2qTKiLTjevwxzPlckFGxNAm4GfNuD4RK+frWLnzV8JZuec92
+         RLelebxPb0L+FJYzihSNaOrnkli/7btwv46O6CFyVADh415AuA8zW2ayjzhl83DLDLCO
+         4LWwwN22xSCmorS0kG4TCrp8JzLZCm28TRq24wBqpvxkdaQSXPd3sUFQkm9yzO+6Sfdr
+         GRJQ==
+Original-Received: by 10.68.130.37 with SMTP id ob5mr31025553pbb.62.1344379240896;
+        Tue, 07 Aug 2012 15:40:40 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id kh1sm11977781pbc.23.2012.08.07.15.40.38
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:40:40 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222043.089735600@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQmk/Soa7KsW3fh6WNAM8phtW4MQCGI/N5EawKhLF2IZhsE6B5nvCD1XnJjvxAh+HATim/7R
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339505 gmane.linux.kernel.stable:29344
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339505>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.4-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+
+From: Jesper Juhl <jj@chaosbits.net>
+
+[ Upstream commit 818810472b129004c16fc51bf0a570b60776bfb7 ]
+
+In net/compat.c::put_cmsg_compat() we may assign 'data' the address of
+either the 'ctv' or 'cts' local variables inside the 'if
+(!COMPAT_USE_64BIT_TIME)' branch.
+
+Those variables go out of scope at the end of the 'if' statement, so
+when we use 'data' further down in 'copy_to_user(CMSG_COMPAT_DATA(cm),
+data, cmlen - sizeof(struct compat_cmsghdr))' there's no telling what
+it may be refering to - not good.
+
+Fix the problem by simply giving 'ctv' and 'cts' function scope.
+
+Signed-off-by: Jesper Juhl <jj@chaosbits.net>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ net/compat.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/net/compat.c
++++ b/net/compat.c
+@@ -221,6 +221,8 @@ int put_cmsg_compat(struct msghdr *kmsg,
+ {
+ 	struct compat_cmsghdr __user *cm = (struct compat_cmsghdr __user *) kmsg->msg_control;
+ 	struct compat_cmsghdr cmhdr;
++	struct compat_timeval ctv;
++	struct compat_timespec cts[3];
+ 	int cmlen;
+ 
+ 	if (cm == NULL || kmsg->msg_controllen < sizeof(*cm)) {
+@@ -229,8 +231,6 @@ int put_cmsg_compat(struct msghdr *kmsg,
+ 	}
+ 
+ 	if (!COMPAT_USE_64BIT_TIME) {
+-		struct compat_timeval ctv;
+-		struct compat_timespec cts[3];
+ 		if (level == SOL_SOCKET && type == SCM_TIMESTAMP) {
+ 			struct timeval *tv = (struct timeval *)data;
+ 			ctv.tv_sec = tv->tv_sec;
+
+

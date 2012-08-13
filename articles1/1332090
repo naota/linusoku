@@ -1,0 +1,114 @@
+Path: news.gmane.org!not-for-mail
+From: Cyril Chemparathy <cyril@ti.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: [RFC 06/23] ARM: LPAE: use phys_addr_t for initrd location and size
+Date: Mon, 23 Jul 2012 21:09:08 -0400
+Lines: 54
+Approved: news@gmane.org
+Message-ID: <1343092165-9470-7-git-send-email-cyril@ti.com>
+References: <1343092165-9470-1-git-send-email-cyril@ti.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1343092586 7908 80.91.229.3 (24 Jul 2012 01:16:26 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 01:16:26 +0000 (UTC)
+Cc: <linux-kernel@vger.kernel.org>, <nico@linaro.org>,
+	<will.deacon@arm.com>, <catalin.marinas@arm.com>,
+	Vitaly Andrianov <vitalya@ti.com>,
+	Cyril Chemparathy <cyril@ti.com>
+To: <linux-arm-kernel@lists.infradead.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 03:16:25 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StTjc-0001TX-PI
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 03:16:25 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755504Ab2GXBPz (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 21:15:55 -0400
+Original-Received: from devils.ext.ti.com ([198.47.26.153]:37339 "EHLO
+	devils.ext.ti.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755416Ab2GXBJu (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 21:09:50 -0400
+Original-Received: from dlelxv30.itg.ti.com ([172.17.2.17])
+	by devils.ext.ti.com (8.13.7/8.13.7) with ESMTP id q6O19ct1027105;
+	Mon, 23 Jul 2012 20:09:38 -0500
+Original-Received: from DFLE73.ent.ti.com (dfle73.ent.ti.com [128.247.5.110])
+	by dlelxv30.itg.ti.com (8.13.8/8.13.8) with ESMTP id q6O19cUh010235;
+	Mon, 23 Jul 2012 20:09:38 -0500
+Original-Received: from dlelxv22.itg.ti.com (172.17.1.197) by dfle73.ent.ti.com
+ (128.247.5.110) with Microsoft SMTP Server id 14.1.323.3; Mon, 23 Jul 2012
+ 20:09:38 -0500
+Original-Received: from ares-ubuntu.am.dhcp.ti.com (ares-ubuntu.am.dhcp.ti.com
+ [158.218.103.17])	by dlelxv22.itg.ti.com (8.13.8/8.13.8) with ESMTP id
+ q6O19c3v024567;	Mon, 23 Jul 2012 20:09:38 -0500
+Original-Received: from a0875269 by ares-ubuntu.am.dhcp.ti.com with local (Exim 4.76)
+	(envelope-from <cyril@ti.com>)	id 1StTd4-0002U8-BX; Mon, 23 Jul 2012 21:09:38
+ -0400
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1343092165-9470-1-git-send-email-cyril@ti.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332090 gmane.linux.ports.arm.kernel:178520
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332090>
+
+From: Vitaly Andrianov <vitalya@ti.com>
+
+This patch fixes the initrd setup code to use phys_addr_t instead of assuming
+32-bit addressing.  Without this we cannot boot on systems where initrd is
+located above the 4G physical address limit.
+
+Signed-off-by: Vitaly Andrianov <vitalya@ti.com>
+Signed-off-by: Cyril Chemparathy <cyril@ti.com>
+---
+ arch/arm/mm/init.c |   14 +++++++-------
+ 1 file changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/arch/arm/mm/init.c b/arch/arm/mm/init.c
+index 8252c31..51f3e92 100644
+--- a/arch/arm/mm/init.c
++++ b/arch/arm/mm/init.c
+@@ -36,12 +36,12 @@
+ 
+ #include "mm.h"
+ 
+-static unsigned long phys_initrd_start __initdata = 0;
+-static unsigned long phys_initrd_size __initdata = 0;
++static phys_addr_t phys_initrd_start __initdata = 0;
++static phys_addr_t phys_initrd_size __initdata = 0;
+ 
+ static int __init early_initrd(char *p)
+ {
+-	unsigned long start, size;
++	phys_addr_t start, size;
+ 	char *endp;
+ 
+ 	start = memparse(p, &endp);
+@@ -347,14 +347,14 @@ void __init arm_memblock_init(struct meminfo *mi, struct machine_desc *mdesc)
+ #ifdef CONFIG_BLK_DEV_INITRD
+ 	if (phys_initrd_size &&
+ 	    !memblock_is_region_memory(phys_initrd_start, phys_initrd_size)) {
+-		pr_err("INITRD: 0x%08lx+0x%08lx is not a memory region - disabling initrd\n",
+-		       phys_initrd_start, phys_initrd_size);
++		pr_err("INITRD: 0x%08llx+0x%08llx is not a memory region - disabling initrd\n",
++		       (u64)phys_initrd_start, (u64)phys_initrd_size);
+ 		phys_initrd_start = phys_initrd_size = 0;
+ 	}
+ 	if (phys_initrd_size &&
+ 	    memblock_is_region_reserved(phys_initrd_start, phys_initrd_size)) {
+-		pr_err("INITRD: 0x%08lx+0x%08lx overlaps in-use memory region - disabling initrd\n",
+-		       phys_initrd_start, phys_initrd_size);
++		pr_err("INITRD: 0x%08llx+0x%08llx overlaps in-use memory region - disabling initrd\n",
++		       (u64)phys_initrd_start, (u64)phys_initrd_size);
+ 		phys_initrd_start = phys_initrd_size = 0;
+ 	}
+ 	if (phys_initrd_size) {
+-- 
+1.7.9.5
+

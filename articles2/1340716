@@ -1,0 +1,83 @@
+Path: news.gmane.org!not-for-mail
+From: Marina Makienko <makienko@ispras.ru>
+Newsgroups: gmane.linux.ide,gmane.linux.kernel
+Subject: [PATCH 03/13] ide: Potential null pointer dereference in ide_queue_pc_tail()
+Date: Thu,  9 Aug 2012 17:55:20 +0400
+Lines: 42
+Approved: news@gmane.org
+Message-ID: <1344520529-19164-1-git-send-email-makienko@ispras.ru>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344520758 30348 80.91.229.3 (9 Aug 2012 13:59:18 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 13:59:18 +0000 (UTC)
+Cc: Marina Makienko <makienko@ispras.ru>, linux-ide@vger.kernel.org,
+	linux-kernel@vger.kernel.org, ldv-project@ispras.ru
+To: "David S. Miller" <davem@davemloft.net>
+Original-X-From: linux-ide-owner@vger.kernel.org Thu Aug 09 15:59:17 2012
+Return-path: <linux-ide-owner@vger.kernel.org>
+Envelope-to: lnx-linux-ide@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-ide-owner@vger.kernel.org>)
+	id 1SzTGd-0003p1-1a
+	for lnx-linux-ide@plane.gmane.org; Thu, 09 Aug 2012 15:59:15 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932467Ab2HIN7N (ORCPT <rfc822;lnx-linux-ide@m.gmane.org>);
+	Thu, 9 Aug 2012 09:59:13 -0400
+Original-Received: from smtp.ispras.ru ([83.149.198.202]:52411 "EHLO smtp.ispras.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S932262Ab2HIN7M (ORCPT <rfc822;linux-ide@vger.kernel.org>);
+	Thu, 9 Aug 2012 09:59:12 -0400
+Original-Received: from torvalds.intra.ispras.ru (unknown [83.149.198.253])
+	by smtp.ispras.ru (Postfix) with ESMTP id ABA555D403C;
+	Thu,  9 Aug 2012 17:23:44 +0400 (MSD)
+X-Mailer: git-send-email 1.7.7
+Original-Sender: linux-ide-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-ide.vger.kernel.org>
+X-Mailing-List: linux-ide@vger.kernel.org
+Xref: news.gmane.org gmane.linux.ide:52548 gmane.linux.kernel:1340716
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340716>
+
+The function blk_get_request() can return NULL in some cases. There are
+checks on it if function is called with argumetns one of which is
+GFP_ATOMIC/GFP_NOIO/etc. If system couldn't find request
+blk_get_request() return NULL.
+
+But if there is function call with argument __GFP_WAIT
+the system will wait until get request or the queue becomes
+dead. If something kills the queue, blk_get_request()
+return NULL and next operations will lead to errors.
+
+Found by Linux Driver Verification project (linuxtesting.org).
+
+Signed-off-by: Marina Makienko <makienko@ispras.ru>
+---
+ drivers/ide/ide-atapi.c |    6 ++++++
+ 1 files changed, 6 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/ide/ide-atapi.c b/drivers/ide/ide-atapi.c
+index fac3d9d..8bf4109 100644
+--- a/drivers/ide/ide-atapi.c
++++ b/drivers/ide/ide-atapi.c
+@@ -93,6 +93,12 @@ int ide_queue_pc_tail(ide_drive_t *drive, struct gendisk *disk,
+ 	int error;
+ 
+ 	rq = blk_get_request(drive->queue, READ, __GFP_WAIT);
++
++	if (!rq) {
++		printk(KERN_ERR PFX"ide_queue_pc_tail: blk_get_request() failed. \n");
++		return 1;
++	}
++
+ 	rq->cmd_type = REQ_TYPE_SPECIAL;
+ 	rq->special = (char *)pc;
+ 
+-- 
+1.7.7
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-ide" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

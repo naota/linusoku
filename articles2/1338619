@@ -1,0 +1,125 @@
+Path: news.gmane.org!not-for-mail
+From: "Rafael J. Wysocki" <rjw@sisk.pl>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.sh.devel
+Subject: [PATCH 8/12] PM / shmobile: Do not access sh7372 A4S domain internals directly
+Date: Tue, 7 Aug 2012 01:11:51 +0200
+Lines: 68
+Approved: news@gmane.org
+Message-ID: <201208070111.51313.rjw@sisk.pl>
+References: <201208070105.23262.rjw@sisk.pl>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain;
+  charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344294745 9236 80.91.229.3 (6 Aug 2012 23:12:25 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 23:12:25 +0000 (UTC)
+Cc: LKML <linux-kernel@vger.kernel.org>,
+	Linux PM list <linux-pm@vger.kernel.org>,
+	Magnus Damm <magnus.damm@gmail.com>
+To: "Linux-sh list" <linux-sh@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 01:12:25 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyWTI-0006yz-KH
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 01:12:24 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932344Ab2HFXL5 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 19:11:57 -0400
+Original-Received: from ogre.sisk.pl ([193.178.161.156]:44971 "EHLO ogre.sisk.pl"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S932225Ab2HFXLv (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 19:11:51 -0400
+Original-Received: from localhost (localhost.localdomain [127.0.0.1])
+	by ogre.sisk.pl (Postfix) with ESMTP id 866891DB9C9;
+	Tue,  7 Aug 2012 01:01:54 +0200 (CEST)
+Original-Received: from ogre.sisk.pl ([127.0.0.1])
+ by localhost (ogre.sisk.pl [127.0.0.1]) (amavisd-new, port 10024) with ESMTP
+ id 03935-08; Tue,  7 Aug 2012 01:01:14 +0200 (CEST)
+Original-Received: from ferrari.rjw.lan (62-121-64-87.home.aster.pl [62.121.64.87])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by ogre.sisk.pl (Postfix) with ESMTP id CD7B81DB96F;
+	Tue,  7 Aug 2012 01:00:55 +0200 (CEST)
+User-Agent: KMail/1.13.6 (Linux/3.5.0+; KDE/4.6.0; x86_64; ; )
+In-Reply-To: <201208070105.23262.rjw@sisk.pl>
+X-Virus-Scanned: amavisd-new at ogre.sisk.pl using MkS_Vir for Linux
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338619 gmane.linux.ports.sh.devel:16155
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338619>
+
+
+The sh7372_enter_suspend() routine checks the status field of the
+generic PM domain object corresponding to the A4S domain in order to
+check if it can turn that domain off when entering system sleep.
+However, it shouldn't rely on the specific values of the generic
+data structures this way, so make it use its own mechanism to
+recognize when it is safe to turn that domain off.
+
+For this purpos, introduce a boolean variable a4s_suspend_ready
+that will be set by the A4S' suspend routine and unset by its
+resume routine executed by rmobile_pd_power_down() and
+__rmobile_pd_power_up(), respectively.
+
+Signed-off-by: Rafael J. Wysocki <rjw@sisk.pl>
+---
+ arch/arm/mach-shmobile/pm-sh7372.c |   17 ++++++++++++++---
+ 1 file changed, 14 insertions(+), 3 deletions(-)
+
+Index: linux/arch/arm/mach-shmobile/pm-sh7372.c
+===================================================================
+--- linux.orig/arch/arm/mach-shmobile/pm-sh7372.c
++++ linux/arch/arm/mach-shmobile/pm-sh7372.c
+@@ -110,21 +110,33 @@ struct rmobile_pm_domain sh7372_pd_a3ri
+ 	.bit_shift = 8,
+ };
+ 
++static bool a4s_suspend_ready;
++
+ static int sh7372_pd_a4s_suspend(void)
+ {
+ 	/*
+ 	 * The A4S domain contains the CPU core and therefore it should
+-	 * only be turned off if the CPU is in use.
++	 * only be turned off if the CPU is not in use.  This may happen
++	 * during system suspend, when SYSC is going to be used for generating
++	 * resume signals and a4s_suspend_ready is set to let
++	 * sh7372_enter_suspend() know that it can turn A4S off.
+ 	 */
++	a4s_suspend_ready = true;
+ 	return -EBUSY;
+ }
+ 
++static void sh7372_pd_a4s_resume(void)
++{
++	a4s_suspend_ready = false;
++}
++
+ struct rmobile_pm_domain sh7372_pd_a4s = {
+ 	.genpd.name = "A4S",
+ 	.bit_shift = 10,
+ 	.gov = &pm_domain_always_on_gov,
+ 	.no_debug = true,
+ 	.suspend = sh7372_pd_a4s_suspend,
++	.resume = sh7372_pd_a4s_resume,
+ };
+ 
+ static int sh7372_a3sp_pd_suspend(void)
+@@ -390,8 +402,7 @@ static int sh7372_enter_suspend(suspend_
+ 
+ 	/* check active clocks to determine potential wakeup sources */
+ 	if (sh7372_sysc_valid(&msk, &msk2)) {
+-		if (!console_suspend_enabled &&
+-		    sh7372_pd_a4s.genpd.status == GPD_STATE_POWER_OFF) {
++		if (!console_suspend_enabled && a4s_suspend_ready) {
+ 			/* convert INTC mask/sense to SYSC mask/sense */
+ 			sh7372_setup_sysc(msk, msk2);
+ 
+

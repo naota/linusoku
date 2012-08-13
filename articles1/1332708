@@ -1,0 +1,103 @@
+Path: news.gmane.org!not-for-mail
+From: Len Brown <lenb@kernel.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.acpi.devel,gmane.linux.power-management.general,gmane.linux.kernel.stable
+Subject: [PATCH 49/52] ACPI/AC: prevent OOPS on some boxes due to missing check power_supply_register() return value check
+Date: Tue, 24 Jul 2012 23:41:45 -0400
+Organization: Intel Open Source Technology Center
+Lines: 39
+Approved: news@gmane.org
+Message-ID: <f197ac13f6eeb351b31250b9ab7d0da17434ea36.1343187618.git.len.brown@intel.com>
+References: <1343187708-19532-1-git-send-email-lenb@kernel.org>
+Reply-To: Len Brown <lenb@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343187920 29415 80.91.229.3 (25 Jul 2012 03:45:20 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 03:45:20 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, Lan Tianyu <tianyu.lan@intel.com>,
+	stable@vger.kernel.org, Len Brown <len.brown@intel.com>
+To: linux-acpi@vger.kernel.org, linux-pm@lists.linux-foundation.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 05:45:16 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StsXD-0002oO-5z
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 05:45:15 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S933108Ab2GYDnv (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 23:43:51 -0400
+Original-Received: from mail-qa0-f46.google.com ([209.85.216.46]:62253 "EHLO
+	mail-qa0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S933019Ab2GYDnh (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 23:43:37 -0400
+Original-Received: by mail-qa0-f46.google.com with SMTP id b17so2268265qad.19
+        for <multiple recipients>; Tue, 24 Jul 2012 20:43:36 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:in-reply-to:references:reply-to:organization;
+        bh=2uTKBNxoZ6GQs8BtHGOGKBwX2a+JcEXq4lP3EUArqJM=;
+        b=vlRXCj4r+D3N/XGrjawusU6heF6us7MYNHNR1Woc3l9RsFdy/bWagPlrkV8fZo6n0l
+         J2Xg4wG4aMP/wiVR2MUHT7c4mYr+2Z7CT9NeuYdXvMpOtY+KJafSpEt3zuLKAeizMWUQ
+         r8x2oGmg4sWQuWwxvXXg2yEV3oMWZWqJ+2lcp0LYFMehX6zSwA/jZhx6a+1t1aCj/sR1
+         9KmpiujD0yFqtvF7oXqVIyxY3XDjXannT78yJ7591ZNQ0w+grtjG47WtwCxVWP5S0P1m
+         27kSHrxVGEy8Zo3WBhIvg2JrlBeV2Wzh9gaHqMJo3FH9qGjOfAIYaKCXjMCCHaMrUsMn
+         segw==
+Original-Received: by 10.229.69.30 with SMTP id x30mr10505163qci.13.1343187816490;
+        Tue, 24 Jul 2012 20:43:36 -0700 (PDT)
+Original-Received: from x980.localdomain6 (h184-61-125-197.altnnh.dsl.dynamic.tds.net. [184.61.125.197])
+        by mx.google.com with ESMTPS id et6sm15489186qab.8.2012.07.24.20.43.34
+        (version=SSLv3 cipher=OTHER);
+        Tue, 24 Jul 2012 20:43:35 -0700 (PDT)
+X-Mailer: git-send-email 1.7.12.rc0
+In-Reply-To: <1343187708-19532-1-git-send-email-lenb@kernel.org>
+In-Reply-To: <6af1c4fc5227af65092ebc848989693562bfa3e8.1343187617.git.len.brown@intel.com>
+Original-References: <6af1c4fc5227af65092ebc848989693562bfa3e8.1343187617.git.len.brown@intel.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332708 gmane.linux.acpi.devel:54495 gmane.linux.power-management.general:27909 gmane.linux.kernel.stable:28790
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332708>
+
+From: Lan Tianyu <tianyu.lan@intel.com>
+
+In the ac.c, power_supply_register()'s return value is not checked.
+
+As a result, the driver's add() ops may return success
+even though the device failed to initialize.
+
+For example, some BIOS may describe two ACADs in the same DSDT.
+The second ACAD device will fail to register,
+but ACPI driver's add() ops returns sucessfully.
+The ACPI device will receive ACPI notification and cause OOPS.
+
+https://bugzilla.redhat.com/show_bug.cgi?id=772730
+
+Signed-off-by: Lan Tianyu <tianyu.lan@intel.com>
+Cc: stable@vger.kernel.org
+Signed-off-by: Len Brown <len.brown@intel.com>
+---
+ drivers/acpi/ac.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/acpi/ac.c b/drivers/acpi/ac.c
+index 6512b20..d1fcbc0 100644
+--- a/drivers/acpi/ac.c
++++ b/drivers/acpi/ac.c
+@@ -292,7 +292,9 @@ static int acpi_ac_add(struct acpi_device *device)
+ 	ac->charger.properties = ac_props;
+ 	ac->charger.num_properties = ARRAY_SIZE(ac_props);
+ 	ac->charger.get_property = get_ac_property;
+-	power_supply_register(&ac->device->dev, &ac->charger);
++	result = power_supply_register(&ac->device->dev, &ac->charger);
++	if (result)
++		goto end;
+ 
+ 	printk(KERN_INFO PREFIX "%s [%s] (%s)\n",
+ 	       acpi_device_name(device), acpi_device_bid(device),
+-- 
+1.7.12.rc0
+

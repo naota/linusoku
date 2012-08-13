@@ -1,0 +1,101 @@
+Path: news.gmane.org!not-for-mail
+From: Cyril Chemparathy <cyril@ti.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: [RFC 17/23] ARM: add machine desc hook for early memory/paging initialization
+Date: Mon, 23 Jul 2012 21:09:19 -0400
+Lines: 42
+Approved: news@gmane.org
+Message-ID: <1343092165-9470-18-git-send-email-cyril@ti.com>
+References: <1343092165-9470-1-git-send-email-cyril@ti.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1343092392 6798 80.91.229.3 (24 Jul 2012 01:13:12 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 01:13:12 +0000 (UTC)
+Cc: <linux-kernel@vger.kernel.org>, <nico@linaro.org>,
+	<will.deacon@arm.com>, <catalin.marinas@arm.com>,
+	Cyril Chemparathy <cyril@ti.com>,
+	Vitaly Andrianov <vitalya@ti.com>
+To: <linux-arm-kernel@lists.infradead.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 03:13:11 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StTgU-0007ZJ-L3
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 03:13:10 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755735Ab2GXBNB (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 21:13:01 -0400
+Original-Received: from arroyo.ext.ti.com ([192.94.94.40]:49232 "EHLO arroyo.ext.ti.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755559Ab2GXBKR (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 21:10:17 -0400
+Original-Received: from dlelxv30.itg.ti.com ([172.17.2.17])
+	by arroyo.ext.ti.com (8.13.7/8.13.7) with ESMTP id q6O19eX9011172;
+	Mon, 23 Jul 2012 20:09:40 -0500
+Original-Received: from DLEE74.ent.ti.com (dlee74.ent.ti.com [157.170.170.8])
+	by dlelxv30.itg.ti.com (8.13.8/8.13.8) with ESMTP id q6O19ehI010269;
+	Mon, 23 Jul 2012 20:09:40 -0500
+Original-Received: from dlelxv22.itg.ti.com (172.17.1.197) by DLEE74.ent.ti.com
+ (157.170.170.8) with Microsoft SMTP Server id 14.1.323.3; Mon, 23 Jul 2012
+ 20:09:39 -0500
+Original-Received: from ares-ubuntu.am.dhcp.ti.com (ares-ubuntu.am.dhcp.ti.com
+ [158.218.103.17])	by dlelxv22.itg.ti.com (8.13.8/8.13.8) with ESMTP id
+ q6O19dH3024605;	Mon, 23 Jul 2012 20:09:39 -0500
+Original-Received: from a0875269 by ares-ubuntu.am.dhcp.ti.com with local (Exim 4.76)
+	(envelope-from <cyril@ti.com>)	id 1StTd5-0002Uf-IV; Mon, 23 Jul 2012 21:09:39
+ -0400
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1343092165-9470-1-git-send-email-cyril@ti.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332079 gmane.linux.ports.arm.kernel:178509
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332079>
+
+This patch adds a machine descriptor hook that gives control to machine
+specific code prior to memory and paging initialization.
+
+On Keystone platforms, this hook is used to switch the PHYS_OFFSET over
+to the "real" non-32-bit-addressable address range.
+
+Signed-off-by: Cyril Chemparathy <cyril@ti.com>
+Signed-off-by: Vitaly Andrianov <vitalya@ti.com>
+---
+ arch/arm/include/asm/mach/arch.h |    1 +
+ arch/arm/kernel/setup.c          |    3 +++
+ 2 files changed, 4 insertions(+)
+
+diff --git a/arch/arm/include/asm/mach/arch.h b/arch/arm/include/asm/mach/arch.h
+index 0b1c94b..49e9c2a 100644
+--- a/arch/arm/include/asm/mach/arch.h
++++ b/arch/arm/include/asm/mach/arch.h
+@@ -39,6 +39,7 @@ struct machine_desc {
+ 					 struct meminfo *);
+ 	void			(*reserve)(void);/* reserve mem blocks	*/
+ 	void			(*map_io)(void);/* IO mapping function	*/
++	void			(*init_meminfo)(void);
+ 	void			(*init_early)(void);
+ 	void			(*init_irq)(void);
+ 	struct sys_timer	*timer;		/* system tick timer	*/
+diff --git a/arch/arm/kernel/setup.c b/arch/arm/kernel/setup.c
+index e15d83b..7cbe292 100644
+--- a/arch/arm/kernel/setup.c
++++ b/arch/arm/kernel/setup.c
+@@ -964,6 +964,9 @@ void __init setup_arch(char **cmdline_p)
+ 
+ 	parse_early_param();
+ 
++	if (mdesc->init_meminfo)
++		mdesc->init_meminfo();
++
+ 	sort(&meminfo.bank, meminfo.nr_banks, sizeof(meminfo.bank[0]), meminfo_cmp, NULL);
+ 	sanity_check_meminfo();
+ 	arm_memblock_init(&meminfo, mdesc);
+-- 
+1.7.9.5
+

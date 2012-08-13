@@ -1,0 +1,156 @@
+Path: news.gmane.org!not-for-mail
+From: Jean Delvare <khali@linux-fr.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH/RFC] platform: Add support for automatic device IDs
+Date: Fri, 27 Jul 2012 13:46:25 +0200
+Lines: 110
+Approved: news@gmane.org
+Message-ID: <20120727134625.71e29d2d@endymion.delvare>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=US-ASCII
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343389608 26339 80.91.229.3 (27 Jul 2012 11:46:48 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 11:46:48 +0000 (UTC)
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+To: LKML <linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 13:46:48 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Suj0D-0008An-Dm
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 13:46:41 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752454Ab2G0Lqi (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 07:46:38 -0400
+Original-Received: from zoneX.GCU-Squad.org ([194.213.125.0]:11690 "EHLO
+	services.gcu-squad.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752217Ab2G0Lqg (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 07:46:36 -0400
+Original-Received: from jdelvare.pck.nerim.net ([62.212.121.182] helo=endymion.delvare)
+	by services.gcu-squad.org (GCU Mailer Daemon) with esmtpsa id 1Suj02-0005XB-Gc
+	(TLSv1:AES128-SHA:128)
+	(envelope-from <khali@linux-fr.org>)
+	; Fri, 27 Jul 2012 13:46:30 +0200
+X-Mailer: Claws Mail 3.7.10 (GTK+ 2.24.7; x86_64-suse-linux-gnu)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334247
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334247>
+
+Right now we have support for explicit platform device IDs, as well as
+ID-less platform devices when a given device type can only have one
+instance. However there are cases where multiple instances of a device
+type can exist, and their IDs aren't (and can't be) known in advance
+and do not matter. In that case we need automatic device IDs to avoid
+device name collisions.
+
+I am using magic ID value -4 for this (I left -2 and -3 free in case
+we ever need a couple of other magic values.) The automatically
+allocated device IDs are global (to avoid an additional per-driver
+cost) and are stored internally as negative numbers, starting with -4.
+This is required so that the IDs can be freed later. Externally the
+positive value is used.
+
+Signed-off-by: Jean Delvare <khali@linux-fr.org>
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+If anyone has a problem with the -4 or using negative device IDs
+internally, it would be possible to avoid that by adding a boolean
+attribute to every platform device to record whether the ID needs to
+be freed. This would cost some memory.
+
+ drivers/base/platform.c         |   33 +++++++++++++++++++++++++++++++--
+ include/linux/platform_device.h |    3 +++
+ 2 files changed, 34 insertions(+), 2 deletions(-)
+
+--- linux-3.5.orig/drivers/base/platform.c	2012-07-26 08:36:58.817173740 +0200
++++ linux-3.5/drivers/base/platform.c	2012-07-27 12:43:19.167592926 +0200
+@@ -20,9 +20,13 @@
+ #include <linux/err.h>
+ #include <linux/slab.h>
+ #include <linux/pm_runtime.h>
++#include <linux/idr.h>
+ 
+ #include "base.h"
+ 
++/* For automatically allocated device IDs */
++static DEFINE_IDA(platform_devid_ida);
++
+ #define to_platform_driver(drv)	(container_of((drv), struct platform_driver, \
+ 				 driver))
+ 
+@@ -273,10 +277,29 @@ int platform_device_add(struct platform_
+ 
+ 	pdev->dev.bus = &platform_bus_type;
+ 
+-	if (pdev->id != -1)
++	switch (pdev->id) {
++	default:
+ 		dev_set_name(&pdev->dev, "%s.%d", pdev->name,  pdev->id);
+-	else
++		break;
++	case PLATFORM_DEVID_NONE:
+ 		dev_set_name(&pdev->dev, "%s", pdev->name);
++		break;
++	case PLATFORM_DEVID_AUTO:
++		/*
++		 * Automatically allocated device ID. Stored as a negative
++		 * number so that we remember it must be freed. We use the
++		 * opposite in the device name so that the user still sees a
++		 * positive device ID. And we append a suffix to avoid
++		 * namespace collision with explicit IDs.
++		 */
++		i = ida_simple_get(&platform_devid_ida, -PLATFORM_DEVID_AUTO, 0,
++				   GFP_KERNEL);
++		if (i < 0)
++			return i;
++		pdev->id = -i;
++		dev_set_name(&pdev->dev, "%s.%d.auto", pdev->name, -pdev->id);
++		break;
++	}
+ 
+ 	for (i = 0; i < pdev->num_resources; i++) {
+ 		struct resource *p, *r = &pdev->resource[i];
+@@ -309,6 +332,9 @@ int platform_device_add(struct platform_
+ 		return ret;
+ 
+  failed:
++	if (pdev->id <= PLATFORM_DEVID_AUTO)
++		ida_simple_remove(&platform_devid_ida, -pdev->id);
++
+ 	while (--i >= 0) {
+ 		struct resource *r = &pdev->resource[i];
+ 		unsigned long type = resource_type(r);
+@@ -336,6 +362,9 @@ void platform_device_del(struct platform
+ 	if (pdev) {
+ 		device_del(&pdev->dev);
+ 
++		if (pdev->id <= PLATFORM_DEVID_AUTO)
++			ida_simple_remove(&platform_devid_ida, -pdev->id);
++
+ 		for (i = 0; i < pdev->num_resources; i++) {
+ 			struct resource *r = &pdev->resource[i];
+ 			unsigned long type = resource_type(r);
+--- linux-3.5.orig/include/linux/platform_device.h	2012-07-21 22:58:29.000000000 +0200
++++ linux-3.5/include/linux/platform_device.h	2012-07-27 10:57:20.378726053 +0200
+@@ -14,6 +14,9 @@
+ #include <linux/device.h>
+ #include <linux/mod_devicetable.h>
+ 
++#define PLATFORM_DEVID_NONE	(-1)
++#define PLATFORM_DEVID_AUTO	(-4)
++
+ struct mfd_cell;
+ 
+ struct platform_device {
+
+
+-- 
+Jean Delvare

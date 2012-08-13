@@ -1,0 +1,88 @@
+Path: news.gmane.org!not-for-mail
+From: Jiri Kosina <jkosina@suse.cz>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.ppc64.devel
+Subject: [PATCH] powerpc: fix personality handling in ppc64_personality()
+Date: Wed, 1 Aug 2012 22:03:42 +0200 (CEST)
+Lines: 43
+Approved: news@gmane.org
+Message-ID: <alpine.LNX.2.00.1208012201520.14910@pobox.suse.cz>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: TEXT/PLAIN; charset=US-ASCII
+X-Trace: dough.gmane.org 1343851446 14713 80.91.229.3 (1 Aug 2012 20:04:06 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 1 Aug 2012 20:04:06 +0000 (UTC)
+Cc: linuxppc-dev@lists.ozlabs.org, linux-kernel@vger.kernel.org
+To: Benjamin Herrenschmidt <benh@kernel.crashing.org>,
+	Paul Mackerras <paulus@samba.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 01 22:04:05 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Swf9E-0005Hs-4o
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 01 Aug 2012 22:04:00 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755885Ab2HAUDx (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 1 Aug 2012 16:03:53 -0400
+Original-Received: from cantor2.suse.de ([195.135.220.15]:45893 "EHLO mx2.suse.de"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754140Ab2HAUDv (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 1 Aug 2012 16:03:51 -0400
+Original-Received: from relay1.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id DD5FDA3421;
+	Wed,  1 Aug 2012 22:03:48 +0200 (CEST)
+User-Agent: Alpine 2.00 (LNX 1167 2008-08-23)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336528 gmane.linux.ports.ppc64.devel:84177
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336528>
+
+Directly comparing current->personality against PER_LINUX32 doesn't work 
+in cases when any of the personality flags stored in the top three bytes 
+are used.
+
+Directly forcefully setting personality to PER_LINUX32 or PER_LINUX
+discards any flags stored in the top three bytes
+
+Use personality() macro to compare only PER_MASK bytes and make sure that
+we are setting only the bits that should be set, instead of
+overwriting the whole value.
+
+Signed-off-by: Jiri Kosina <jkosina@suse.cz>
+---
+
+Found accidentally. Untested, I don't have the hardware.
+
+ arch/powerpc/kernel/syscalls.c |    8 ++++----
+ 1 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/arch/powerpc/kernel/syscalls.c b/arch/powerpc/kernel/syscalls.c
+index f2496f2..4dcc7c6 100644
+--- a/arch/powerpc/kernel/syscalls.c
++++ b/arch/powerpc/kernel/syscalls.c
+@@ -107,11 +107,11 @@ long ppc64_personality(unsigned long personality)
+ 	long ret;
+ 
+ 	if (personality(current->personality) == PER_LINUX32
+-	    && personality == PER_LINUX)
+-		personality = PER_LINUX32;
++	    && personality(personality) == PER_LINUX)
++		personality &= ~PER_LINUX | PER_LINUX32;
+ 	ret = sys_personality(personality);
+-	if (ret == PER_LINUX32)
+-		ret = PER_LINUX;
++	if (personality(ret) == PER_LINUX32)
++		ret &= ~PER_LINUX32 | PER_LINUX;
+ 	return ret;
+ }
+ #endif
+
+-- 
+Jiri Kosina
+SUSE Labs

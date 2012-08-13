@@ -1,0 +1,140 @@
+Path: news.gmane.org!not-for-mail
+From: Stanislav Kinsbursky <skinsbursky@parallels.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.nfs,gmane.linux.openvz.devel
+Subject: [PATCH v2 01/15] LockD: mark host per network namespace on garbage
+	collect
+Date: Wed, 25 Jul 2012 16:55:54 +0400
+Lines: 93
+Approved: news@gmane.org
+Message-ID: <20120725125554.24376.79319.stgit@localhost.localdomain>
+References: <20120725125258.24376.82525.stgit@localhost.localdomain>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343221072 20801 80.91.229.3 (25 Jul 2012 12:57:52 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 12:57:52 +0000 (UTC)
+Cc: linux-nfs@vger.kernel.org, Trond.Myklebust@netapp.com,
+	linux-kernel@vger.kernel.org, devel@openvz.org
+To: bfields@fieldses.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 14:57:52 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su19x-000385-RM
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 14:57:50 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756722Ab2GYM5W (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 08:57:22 -0400
+Original-Received: from mailhub.sw.ru ([195.214.232.25]:36937 "EHLO relay.sw.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1756659Ab2GYM5U (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 08:57:20 -0400
+Original-Received: from localhost.localdomain ([10.30.21.131])
+	by relay.sw.ru (8.13.4/8.13.4) with ESMTP id q6PCv7rH026939;
+	Wed, 25 Jul 2012 16:57:08 +0400 (MSK)
+In-Reply-To: <20120725125258.24376.82525.stgit@localhost.localdomain>
+User-Agent: StGit/0.16
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332955 gmane.linux.nfs:51102 gmane.linux.openvz.devel:1886
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332955>
+
+This is required for per-network NLM shutdown and cleanup.
+This patch passes init_net for a while.
+
+Signed-off-by: Stanislav Kinsbursky <skinsbursky@parallels.com>
+---
+ fs/lockd/host.c             |    3 ++-
+ fs/lockd/svcsubs.c          |   19 +++++++++++++------
+ include/linux/lockd/lockd.h |    2 +-
+ 3 files changed, 16 insertions(+), 8 deletions(-)
+
+diff --git a/fs/lockd/host.c b/fs/lockd/host.c
+index eb75ca7..2c5f41b 100644
+--- a/fs/lockd/host.c
++++ b/fs/lockd/host.c
+@@ -628,13 +628,14 @@ nlm_gc_hosts(void)
+ 	struct hlist_head *chain;
+ 	struct hlist_node *pos, *next;
+ 	struct nlm_host	*host;
++	struct net *net = &init_net;
+ 
+ 	dprintk("lockd: host garbage collection\n");
+ 	for_each_host(host, pos, chain, nlm_server_hosts)
+ 		host->h_inuse = 0;
+ 
+ 	/* Mark all hosts that hold locks, blocks or shares */
+-	nlmsvc_mark_resources();
++	nlmsvc_mark_resources(net);
+ 
+ 	for_each_host_safe(host, pos, next, chain, nlm_server_hosts) {
+ 		if (atomic_read(&host->h_count) || host->h_inuse
+diff --git a/fs/lockd/svcsubs.c b/fs/lockd/svcsubs.c
+index 2240d38..0deb5f6 100644
+--- a/fs/lockd/svcsubs.c
++++ b/fs/lockd/svcsubs.c
+@@ -309,7 +309,8 @@ nlm_release_file(struct nlm_file *file)
+  * Helpers function for resource traversal
+  *
+  * nlmsvc_mark_host:
+- *	used by the garbage collector; simply sets h_inuse.
++ *	used by the garbage collector; simply sets h_inuse only for those
++ *	hosts, which passed network check.
+  *	Always returns 0.
+  *
+  * nlmsvc_same_host:
+@@ -320,12 +321,15 @@ nlm_release_file(struct nlm_file *file)
+  *	returns 1 iff the host is a client.
+  *	Used by nlmsvc_invalidate_all
+  */
++
+ static int
+-nlmsvc_mark_host(void *data, struct nlm_host *dummy)
++nlmsvc_mark_host(void *data, struct nlm_host *hint)
+ {
+ 	struct nlm_host *host = data;
+ 
+-	host->h_inuse = 1;
++	if ((hint->net == NULL) ||
++	    (host->net == hint->net))
++		host->h_inuse = 1;
+ 	return 0;
+ }
+ 
+@@ -358,10 +362,13 @@ nlmsvc_is_client(void *data, struct nlm_host *dummy)
+  * Mark all hosts that still hold resources
+  */
+ void
+-nlmsvc_mark_resources(void)
++nlmsvc_mark_resources(struct net *net)
+ {
+-	dprintk("lockd: nlmsvc_mark_resources\n");
+-	nlm_traverse_files(NULL, nlmsvc_mark_host, NULL);
++	struct nlm_host hint;
++
++	dprintk("lockd: nlmsvc_mark_resources for net %p\n", net);
++	hint.net = net;
++	nlm_traverse_files(&hint, nlmsvc_mark_host, NULL);
+ }
+ 
+ /*
+diff --git a/include/linux/lockd/lockd.h b/include/linux/lockd/lockd.h
+index f04ce6a..50e31a2 100644
+--- a/include/linux/lockd/lockd.h
++++ b/include/linux/lockd/lockd.h
+@@ -279,7 +279,7 @@ void		  nlmsvc_release_call(struct nlm_rqst *);
+ __be32		  nlm_lookup_file(struct svc_rqst *, struct nlm_file **,
+ 					struct nfs_fh *);
+ void		  nlm_release_file(struct nlm_file *);
+-void		  nlmsvc_mark_resources(void);
++void		  nlmsvc_mark_resources(struct net *);
+ void		  nlmsvc_free_host_resources(struct nlm_host *);
+ void		  nlmsvc_invalidate_all(void);
+ 
+

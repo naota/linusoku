@@ -1,0 +1,94 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.redhat.security.audit,gmane.linux.file-systems
+Subject: [PATCH v5 2/9] audit: pass in dentry to audit_copy_inode wherever possible
+Date: Thu, 26 Jul 2012 07:21:06 -0400
+Lines: 33
+Approved: news@gmane.org
+Message-ID: <1343301673-10642-3-git-send-email-jlayton@redhat.com>
+References: <1343301673-10642-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343301704 8868 80.91.229.3 (26 Jul 2012 11:21:44 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 11:21:44 +0000 (UTC)
+Cc: linux-audit@redhat.com, linux-fsdevel@vger.kernel.org,
+	linux-kernel@vger.kernel.org
+To: eparis@redhat.com, viro@zeniv.linux.org.uk
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 13:21:43 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuM8T-0000l5-2u
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 13:21:41 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752542Ab2GZLVZ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 07:21:25 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:56132 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752133Ab2GZLVX (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 07:21:23 -0400
+Original-Received: by ghrr11 with SMTP id r11so1816650ghr.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 04:21:22 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:x-gm-message-state;
+        bh=GTaboLTq7MMdwZ/D1U56g9dJwBdPXVKaH4pMaGn93ho=;
+        b=lgPif+qHho6JfrAfg0rJyhvyUdhZFiuSYv1NkTqXvdWwQboVU4G7wOGaraYYy8XYAz
+         gjt2LAbeJlsG/QsiPEMavK0hAdMxC7/+cXX1Ucdn+dSFFtPHbBIxHmzBTd1cNXbWlZDU
+         J9PR61zwFkwo4tyd61rCi4VPm4IjnrPZux/4RVYD+hUwTmbGJs7iJ3eOvDYHz31B8irr
+         72rK1z2O62sKYp4JsBMlkqnN9/Y62wpxkqOaJzsmiHwEW43RnnO/uQeNHCJacv7oJgG4
+         xFaMcEBbXetKUVrBnTuJO3FAH9VkEUpX0oPvc5fkt6Ulen95uMaQ2h4QtBVg/ioB89GW
+         rIUQ==
+Original-Received: by 10.236.138.138 with SMTP id a10mr13795471yhj.39.1343301682820;
+        Thu, 26 Jul 2012 04:21:22 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-076-182-054-194.nc.res.rr.com. [76.182.54.194])
+        by mx.google.com with ESMTPS id e24sm41620099yhh.4.2012.07.26.04.21.21
+        (version=SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 04:21:22 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1343301673-10642-1-git-send-email-jlayton@redhat.com>
+X-Gm-Message-State: ALoCoQnQVWbyOUcT+6WKXdcTxS4onO6K9yYQKvO+43k0zKyBCmotQPhvxMZzK+JoyPRcsC89VH+0
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333557 gmane.linux.redhat.security.audit:4334 gmane.linux.file-systems:66231
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333557>
+
+In some cases, we were passing in NULL even when we have a dentry.
+
+Reported-by: Eric Paris <eparis@redhat.com>
+Signed-off-by: Jeff Layton <jlayton@redhat.com>
+---
+ kernel/auditsc.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/auditsc.c b/kernel/auditsc.c
+index 4b96415..5c45b9b 100644
+--- a/kernel/auditsc.c
++++ b/kernel/auditsc.c
+@@ -2226,7 +2226,7 @@ void __audit_inode_child(const struct dentry *dentry,
+ 		if (!strcmp(dname, n->name) ||
+ 		     !audit_compare_dname_path(dname, n->name, &dirlen)) {
+ 			if (inode)
+-				audit_copy_inode(n, NULL, inode);
++				audit_copy_inode(n, dentry, inode);
+ 			else
+ 				n->ino = (unsigned long)-1;
+ 			found_child = n->name;
+@@ -2258,7 +2258,7 @@ add_names:
+ 		}
+ 
+ 		if (inode)
+-			audit_copy_inode(n, NULL, inode);
++			audit_copy_inode(n, dentry, inode);
+ 	}
+ }
+ EXPORT_SYMBOL_GPL(__audit_inode_child);
+-- 
+1.7.11.2
+

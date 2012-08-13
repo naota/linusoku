@@ -1,0 +1,132 @@
+Path: news.gmane.org!not-for-mail
+From: Xufeng Zhang <xufengzhang.main@gmail.com>
+Newsgroups: gmane.linux.network,gmane.linux.kernel
+Subject: Re: [PATCH] sctp: Make "Invalid Stream Identifier" ERROR follows SACK
+ when bundling
+Date: Tue, 24 Jul 2012 09:53:02 +0800
+Lines: 70
+Approved: news@gmane.org
+Message-ID: <CA+=dFziWBDQWyLDNDzgdz2deVpPMnBs6jnvA6iX_LLbckxdu9g@mail.gmail.com>
+References: <1342677450-21810-1-git-send-email-xufengzhang.main@gmail.com>
+	<20120723004932.GB8040@neilslaptop.think-freely.org>
+	<500CB74A.4040300@windriver.com>
+	<20120723121411.GC16518@hmsreliant.think-freely.org>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1343094846 21399 80.91.229.3 (24 Jul 2012 01:54:06 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 01:54:06 +0000 (UTC)
+Cc: xufeng zhang <xufeng.zhang@windriver.com>, vyasevich@gmail.com,
+	sri@us.ibm.com, davem@davemloft.net, linux-sctp@vger.kernel.org,
+	netdev@vger.kernel.org, linux-kernel@vger.kernel.org
+To: Neil Horman <nhorman@tuxdriver.com>
+Original-X-From: netdev-owner@vger.kernel.org Tue Jul 24 03:54:05 2012
+Return-path: <netdev-owner@vger.kernel.org>
+Envelope-to: linux-netdev-2@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <netdev-owner@vger.kernel.org>)
+	id 1StUK3-0003km-Vl
+	for linux-netdev-2@plane.gmane.org; Tue, 24 Jul 2012 03:54:04 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755196Ab2GXBxG (ORCPT <rfc822;linux-netdev-2@m.gmane.org>);
+	Mon, 23 Jul 2012 21:53:06 -0400
+Original-Received: from mail-vc0-f174.google.com ([209.85.220.174]:47068 "EHLO
+	mail-vc0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755091Ab2GXBxE (ORCPT
+	<rfc822;netdev@vger.kernel.org>); Mon, 23 Jul 2012 21:53:04 -0400
+Original-Received: by vcbfk26 with SMTP id fk26so5408765vcb.19
+        for <multiple recipients>; Mon, 23 Jul 2012 18:53:03 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=mime-version:in-reply-to:references:date:message-id:subject:from:to
+         :cc:content-type;
+        bh=sQDzPDmgjHKiZjqOmK4XtikgEucIFbUarv+WkJnjvhw=;
+        b=rXGmTAKh/R0S2xKAy6p+kzqyp1eXWLGmR0dr22jEh8pSzWNzcPzuHmzsHL9dg6iHgM
+         GNLh09TNScqNWAP13exoyP4EJXu3H7sA/JIzo2hpnenPd77z/QFYhjze2wtt9cEBqJqq
+         ZJ5P+KE6QMFU4Ex90GwBc1ZyyQCoEqxkBDXkFHOAmOVRVoBHgOP4vKv5jsKg6M1jdd7D
+         y57FJG+8mkYDYnE57DUMsChAE10KkaM8W5HyE1B+Oc+NKA6Z8GXVXm4nujOnl13m71A7
+         9ezYZwHRFXZYhv8HyRRkCRoDahqqix9t6akUGpdfz3nwfVXsCmlVknwfOZ5E0f6dYVfM
+         OuoQ==
+Original-Received: by 10.52.93.194 with SMTP id cw2mr13025292vdb.9.1343094782962; Mon,
+ 23 Jul 2012 18:53:02 -0700 (PDT)
+Original-Received: by 10.58.161.81 with HTTP; Mon, 23 Jul 2012 18:53:02 -0700 (PDT)
+In-Reply-To: <20120723121411.GC16518@hmsreliant.think-freely.org>
+Original-Sender: netdev-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <netdev.vger.kernel.org>
+X-Mailing-List: netdev@vger.kernel.org
+Xref: news.gmane.org gmane.linux.network:238236 gmane.linux.kernel:1332102
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332102>
+
+On 7/23/12, Neil Horman <nhorman@tuxdriver.com> wrote:
+> On Mon, Jul 23, 2012 at 10:30:34AM +0800, xufeng zhang wrote:
+>> On 07/23/2012 08:49 AM, Neil Horman wrote:
+>> >
+>> >Not sure I understand how you came into this error.  If we get an
+>> > invalid
+>> >stream, we issue an SCTP_REPORT_TSN side effect, followed by an
+>> > SCTP_CMD_REPLY
+>> >which sends the error chunk.  The reply goes through
+>> >sctp_outq_tail->sctp_outq_chunk->sctp_outq_transmit_chunk->sctp_outq_append_chunk.
+>> >That last function checks to see if a sack is already part of the packet,
+>> > and if
+>> >there isn't one, appends one, using the updated tsn map.
+>> Yes, you are right, but consider the invalid stream identifier's
+>> DATA chunk is the first
+>> DATA chunk in the association which will need SACK immediately.
+>> Here is what I thought of the scenario:
+>>     sctp_sf_eat_data_6_2()
+>>         -->sctp_eat_data()
+>>             -->sctp_make_op_error()
+>>             -->sctp_add_cmd_sf(commands, SCTP_CMD_REPLY, SCTP_CHUNK(err))
+>>             -->sctp_outq_tail()          /* First enqueue ERROR chunk */
+>>         -->sctp_add_cmd_sf(commands, SCTP_CMD_GEN_SACK, SCTP_FORCE())
+>>             -->sctp_gen_sack()
+>>                 -->sctp_make_sack()
+>>                 -->sctp_add_cmd_sf(commands, SCTP_CMD_REPLY,
+>> SCTP_CHUNK(sack))
+>>                 -->sctp_outq_tail()          /* Then enqueue SACK chunk
+>> */
+>>
+>> So SACK chunk is enqueued after ERROR chunk.
+> Ah, I see.  Since the ERROR and SACK chunks are both control chunks, and
+> since
+> we explicitly add the SACK to the control queue instead of going through
+> the
+> bundle path in sctp_packet_append_chunk the ordering gets wrong.
+>
+> Ok, so the problem makes sense.  I think the soultion could be alot easier
+> though.  IIRC SACK chunks always live at the head of a packet, so why not
+> just
+> special case it in sctp_outq_tail?  I.e. instead of doing a list_add_tail,
+> in
+> the else clause of sctp_outq_tail check the chunk_hdr->type to see if its
+> SCTP_CID_SACK.  If it is, use list_add_head rather than list_add_tail.  I
+> think
+> that will fix up both the COOKIE_ECHO and ESTABLISHED cases, won't it?  And
+> then
+> you won't have keep track of extra state in the packet configuration.
+
+(Please ignore the duplicate messages if you received, sorry for this!)
+
+Yes, it's a good idea, but I think the premise is not correct:
+RFC 4960 page 57:
+"D) Upon reception of the COOKIE ECHO chunk, endpoint "Z" will reply
+   with a COOKIE ACK chunk after building a TCB and moving to the
+   ESTABLISHED state. A COOKIE ACK chunk may be bundled with any
+   pending DATA chunks (and/or SACK chunks), but the COOKIE ACK chunk
+   MUST be the first chunk in the packet."
+
+So we can't put SACK chunk always at the head of the packet.
+
+
+Thanks,
+Xufeng Zhang
+
+>
+> Regards
+> Neil
+>
+>

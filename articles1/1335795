@@ -1,0 +1,108 @@
+Path: news.gmane.org!not-for-mail
+From: Stefano Stabellini <stefano.stabellini@eu.citrix.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.xen.devel
+Subject: Re: [PATCH 2/5] xen/swiotlb: With more than 4GB on 64-bit, disable
+ the native SWIOTLB.
+Date: Tue, 31 Jul 2012 15:46:04 +0100
+Lines: 53
+Approved: news@gmane.org
+Message-ID: <alpine.DEB.2.02.1207311542520.4645@kaball.uk.xensource.com>
+References: <1343743223-30092-1-git-send-email-konrad.wilk@oracle.com> <1343743223-30092-3-git-send-email-konrad.wilk@oracle.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="US-ASCII"
+X-Trace: dough.gmane.org 1343746004 7757 80.91.229.3 (31 Jul 2012 14:46:44 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 14:46:44 +0000 (UTC)
+Cc: "fujita.tomonori@lab.ntt.co.jp" <fujita.tomonori@lab.ntt.co.jp>,
+	"xen-devel@lists.xensource.com" <xen-devel@lists.xensource.com>,
+	"linux-kernel@vger.kernel.org" <linux-kernel@vger.kernel.org>,
+	Stefano Stabellini <Stefano.Stabellini@eu.citrix.com>,
+	"JBeulich@suse.com" <JBeulich@suse.com>
+To: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 16:46:43 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwDic-0002S7-QC
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 16:46:43 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754767Ab2GaOq3 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 10:46:29 -0400
+Original-Received: from smtp.ctxuk.citrix.com ([62.200.22.115]:13489 "EHLO
+	SMTP.EU.CITRIX.COM" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754649Ab2GaOqZ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 10:46:25 -0400
+X-IronPort-AV: E=Sophos;i="4.77,686,1336348800"; 
+   d="scan'208";a="13783751"
+Original-Received: from lonpmailmx01.citrite.net ([10.30.203.162])
+  by LONPIPO01.EU.CITRIX.COM with ESMTP/TLS/RC4-MD5; 31 Jul 2012 14:46:21 +0000
+Original-Received: from kaball.uk.xensource.com (10.80.2.59) by
+ LONPMAILMX01.citrite.net (10.30.203.162) with Microsoft SMTP Server id
+ 8.3.213.0; Tue, 31 Jul 2012 15:46:21 +0100
+X-X-Sender: sstabellini@kaball.uk.xensource.com
+In-Reply-To: <1343743223-30092-3-git-send-email-konrad.wilk@oracle.com>
+User-Agent: Alpine 2.02 (DEB 1266 2009-07-14)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335795 gmane.comp.emulators.xen.devel:135980
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335795>
+
+On Tue, 31 Jul 2012, Konrad Rzeszutek Wilk wrote:
+> If a PV guest is booted the native SWIOTLB should not be
+> turned on. It does not help us (we don't have any PCI devices)
+> and it eats 64MB of good memory. In the case of PV guests
+> with PCI devices we need the Xen-SWIOTLB one.
+> 
+> Signed-off-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+> ---
+>  arch/x86/xen/pci-swiotlb-xen.c |   12 ++++++++++++
+>  1 files changed, 12 insertions(+), 0 deletions(-)
+> 
+> diff --git a/arch/x86/xen/pci-swiotlb-xen.c b/arch/x86/xen/pci-swiotlb-xen.c
+> index b6a5340..0d5a214 100644
+> --- a/arch/x86/xen/pci-swiotlb-xen.c
+> +++ b/arch/x86/xen/pci-swiotlb-xen.c
+> @@ -8,6 +8,11 @@
+>  #include <xen/xen.h>
+>  #include <asm/iommu_table.h>
+>  
+> +#ifdef CONFIG_X86_64
+> +#include <asm/iommu.h>
+> +#include <asm/dma.h>
+> +#endif
+> +
+>  int xen_swiotlb __read_mostly;
+>  
+>  static struct dma_map_ops xen_swiotlb_dma_ops = {
+> @@ -49,6 +54,13 @@ int __init pci_xen_swiotlb_detect(void)
+>  	 * the 'swiotlb' flag is the only one turning it on. */
+>  	swiotlb = 0;
+>  
+> +#ifdef CONFIG_X86_64
+> +	/* pci_swiotlb_detect_4gb turns native SWIOTLB if no_iommu == 0
+> +	 * (so no iommu=X command line over-writes). So disable the native
+> +	 * SWIOTLB. */
+
+Maybe rewording it would be a good idea:
+
+/* pci_swiotlb_detect_4gb turns on native SWIOTLB if no_iommu == 0
+ * (so no iommu=X command line over-writes).
+ * Considering that PV guests don't normally have PCI devices it is not
+ * useful to us so we set no_iommu to 1 here */
+
+
+> +	if (max_pfn > MAX_DMA32_PFN)
+> +		no_iommu = 1;
+> +#endif
+>  	return xen_swiotlb;
+>  }
+>  
+> -- 
+> 1.7.7.6
+> 

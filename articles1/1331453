@@ -1,0 +1,162 @@
+Path: news.gmane.org!not-for-mail
+From: Minchan Kim <minchan@kernel.org>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [RESEND RFC 1/3] mm: use get_page_migratetype instead of page_private
+Date: Mon, 23 Jul 2012 09:48:00 +0900
+Lines: 97
+Approved: news@gmane.org
+Message-ID: <1343004482-6916-2-git-send-email-minchan@kernel.org>
+References: <1343004482-6916-1-git-send-email-minchan@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343004478 26372 80.91.229.3 (23 Jul 2012 00:47:58 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 00:47:58 +0000 (UTC)
+Cc: linux-mm@kvack.org,
+	linux-kernel@vger.kernel.org,
+	Andrew Morton <akpm@linux-foundation.org>,
+	KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>,
+	Hugh Dickins <hughd@google.com>,
+	lliubbo@gmail.com,
+	Minchan Kim <minchan@kernel.org>
+To: Kamezawa Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>,
+	Mel Gorman <mgorman@suse.de>
+Original-X-From: owner-linux-mm@kvack.org Mon Jul 23 02:47:53 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1St6oS-0007eT-Rr
+	for glkm-linux-mm-2@m.gmane.org; Mon, 23 Jul 2012 02:47:53 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 6D9F56B005D; Sun, 22 Jul 2012 20:47:51 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 3A8756B0068; Sun, 22 Jul 2012 20:47:51 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id E6FAF6B0069; Sun, 22 Jul 2012 20:47:50 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx191.postini.com [74.125.245.191])
+	by kanga.kvack.org (Postfix) with SMTP id DE7196B0068
+	for <linux-mm@kvack.org>; Sun, 22 Jul 2012 20:47:49 -0400 (EDT)
+Original-Received: from LGEMRELSE7Q.lge.com ([156.147.1.151]) by na3sys010amx191.postini.com ([74.125.244.10]) with SMTP;
+	Mon, 23 Jul 2012 00:47:50 GMT
+X-AuditID: 9c930197-b7b66ae000006a2c-27-500c9f32b788
+Original-Received: from localhost.localdomain ( [10.177.220.67])
+	by LGEMRELSE7Q.lge.com (Symantec Brightmail Gateway) with SMTP id 95.45.27180.23F9C005; Mon, 23 Jul 2012 09:47:46 +0900 (KST)
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1343004482-6916-1-git-send-email-minchan@kernel.org>
+X-Brightmail-Tracker: AAAAAA==
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:74.20271/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <minchan@kernel.org> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82825 gmane.linux.kernel:1331453
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331453>
+
+page allocator uses set_page_private and page_private for handling
+migratetype when it frees page. Let's replace them with [set|get]
+_page_migratetype to make it more clear.
+
+Signed-off-by: Minchan Kim <minchan@kernel.org>
+---
+ include/linux/mm.h  |   10 ++++++++++
+ mm/page_alloc.c     |   11 +++++++----
+ mm/page_isolation.c |    2 +-
+ 3 files changed, 18 insertions(+), 5 deletions(-)
+
+diff --git a/include/linux/mm.h b/include/linux/mm.h
+index 5c76634..86d61d6 100644
+--- a/include/linux/mm.h
++++ b/include/linux/mm.h
+@@ -249,6 +249,16 @@ struct inode;
+ #define page_private(page)		((page)->private)
+ #define set_page_private(page, v)	((page)->private = (v))
+ 
++static inline void set_page_migratetype(struct page *page, int migratetype)
++{
++	set_page_private(page, migratetype);
++}
++
++static inline int get_page_migratetype(struct page *page)
++{
++	return page_private(page);
++}
++
+ /*
+  * FIXME: take this include out, include page-flags.h in
+  * files which need it (119 of them)
+diff --git a/mm/page_alloc.c b/mm/page_alloc.c
+index 710d91c..103ba66 100644
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -671,8 +671,10 @@ static void free_pcppages_bulk(struct zone *zone, int count,
+ 			/* must delete as __free_one_page list manipulates */
+ 			list_del(&page->lru);
+ 			/* MIGRATE_MOVABLE list may include MIGRATE_RESERVEs */
+-			__free_one_page(page, zone, 0, page_private(page));
+-			trace_mm_page_pcpu_drain(page, 0, page_private(page));
++			__free_one_page(page, zone, 0,
++				get_page_migratetype(page));
++			trace_mm_page_pcpu_drain(page, 0,
++				get_page_migratetype(page));
+ 		} while (--to_free && --batch_free && !list_empty(list));
+ 	}
+ 	__mod_zone_page_state(zone, NR_FREE_PAGES, count);
+@@ -731,6 +733,7 @@ static void __free_pages_ok(struct page *page, unsigned int order)
+ 	__count_vm_events(PGFREE, 1 << order);
+ 	free_one_page(page_zone(page), page, order,
+ 					get_pageblock_migratetype(page));
++
+ 	local_irq_restore(flags);
+ }
+ 
+@@ -1134,7 +1137,7 @@ static int rmqueue_bulk(struct zone *zone, unsigned int order,
+ 			if (!is_migrate_cma(mt) && mt != MIGRATE_ISOLATE)
+ 				mt = migratetype;
+ 		}
+-		set_page_private(page, mt);
++		set_page_migratetype(page, mt);
+ 		list = &page->lru;
+ 	}
+ 	__mod_zone_page_state(zone, NR_FREE_PAGES, -(i << order));
+@@ -1301,7 +1304,7 @@ void free_hot_cold_page(struct page *page, int cold)
+ 		return;
+ 
+ 	migratetype = get_pageblock_migratetype(page);
+-	set_page_private(page, migratetype);
++	set_page_migratetype(page, migratetype);
+ 	local_irq_save(flags);
+ 	if (unlikely(wasMlocked))
+ 		free_page_mlock(page);
+diff --git a/mm/page_isolation.c b/mm/page_isolation.c
+index 64abb33..acf65a7 100644
+--- a/mm/page_isolation.c
++++ b/mm/page_isolation.c
+@@ -199,7 +199,7 @@ __test_page_isolated_in_pageblock(unsigned long pfn, unsigned long end_pfn)
+ 		if (PageBuddy(page))
+ 			pfn += 1 << page_order(page);
+ 		else if (page_count(page) == 0 &&
+-				page_private(page) == MIGRATE_ISOLATE)
++				get_page_migratetype(page) == MIGRATE_ISOLATE)
+ 			pfn += 1;
+ 		else
+ 			break;
+-- 
+1.7.9.5
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

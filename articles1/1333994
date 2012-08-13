@@ -1,0 +1,110 @@
+Path: news.gmane.org!not-for-mail
+From: Matthew Garrett <mjg@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.pci
+Subject: [PATCH 3/4] PCI: Add support for non-BAR ROMs
+Date: Thu, 26 Jul 2012 18:02:48 -0400
+Lines: 52
+Approved: news@gmane.org
+Message-ID: <1343340169-7772-4-git-send-email-mjg@redhat.com>
+References: <1343340169-7772-1-git-send-email-mjg@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343340294 30246 80.91.229.3 (26 Jul 2012 22:04:54 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 22:04:54 +0000 (UTC)
+Cc: linux-efi@vger.kernel.org, linux-kernel@vger.kernel.org,
+	x86@kernel.org, linux-pci@vger.kernel.org, bhelgaas@google.com,
+	Matthew Garrett <mjg@redhat.com>
+To: matt.fleming@intel.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 00:04:52 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuWAo-0005uR-K0
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 00:04:47 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753989Ab2GZWEQ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 18:04:16 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:13093 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753962Ab2GZWDJ (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 18:03:09 -0400
+Original-Received: from int-mx10.intmail.prod.int.phx2.redhat.com (int-mx10.intmail.prod.int.phx2.redhat.com [10.5.11.23])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6QM37M5001641
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Thu, 26 Jul 2012 18:03:07 -0400
+Original-Received: from cavan.codon.org.uk (ovpn-113-108.phx2.redhat.com [10.3.113.108])
+	by int-mx10.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6QM359w005074
+	(version=TLSv1/SSLv3 cipher=AES256-SHA bits=256 verify=NO);
+	Thu, 26 Jul 2012 18:03:06 -0400
+Original-Received: from 209-6-41-104.c3-0.smr-ubr1.sbo-smr.ma.cable.rcn.com ([209.6.41.104] helo=localhost.localdomain)
+	by cavan.codon.org.uk with esmtpsa (TLS1.0:DHE_RSA_AES_256_CBC_SHA1:32)
+	(Exim 4.72)
+	(envelope-from <mjg@redhat.com>)
+	id 1SuW9A-0007Tc-4i; Thu, 26 Jul 2012 23:03:04 +0100
+In-Reply-To: <1343340169-7772-1-git-send-email-mjg@redhat.com>
+X-SA-Do-Not-Run: Yes
+X-SA-Exim-Connect-IP: 209.6.41.104
+X-SA-Exim-Mail-From: mjg@redhat.com
+X-SA-Exim-Scanned: No (on cavan.codon.org.uk); SAEximRunCond expanded to false
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.23
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333994 gmane.linux.kernel.pci:16659
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333994>
+
+Platforms may provide their own mechanisms for obtaining ROMs. Add support
+for using data provided by the platform in that case.
+
+Signed-off-by: Matthew Garrett <mjg@redhat.com>
+---
+ drivers/pci/rom.c   |    9 ++++++++-
+ include/linux/pci.h |    2 ++
+ 2 files changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/pci/rom.c b/drivers/pci/rom.c
+index 48ebdb2..7ebaab6 100644
+--- a/drivers/pci/rom.c
++++ b/drivers/pci/rom.c
+@@ -126,6 +126,12 @@ void __iomem *pci_map_rom(struct pci_dev *pdev, size_t *size)
+ 		/* primary video rom always starts here */
+ 		start = (loff_t)0xC0000;
+ 		*size = 0x20000; /* cover C000:0 through E000:0 */
++	/*
++	 * Some devices may provide ROMs via a source other than the BAR
++	 */
++	} else if (pdev->rom && pdev->romlen) {
++		*size = pdev->romlen;
++		return phys_to_virt(pdev->rom);
+ 	} else {
+ 		if (res->flags &
+ 			(IORESOURCE_ROM_COPY | IORESOURCE_ROM_BIOS_COPY)) {
+@@ -219,7 +225,8 @@ void pci_unmap_rom(struct pci_dev *pdev, void __iomem *rom)
+ 	if (res->flags & (IORESOURCE_ROM_COPY | IORESOURCE_ROM_BIOS_COPY))
+ 		return;
+ 
+-	iounmap(rom);
++	if (!pdev->rom || !pdev->romlen)
++		iounmap(rom);
+ 
+ 	/* Disable again before continuing, leave enabled if pci=rom */
+ 	if (!(res->flags & (IORESOURCE_ROM_ENABLE | IORESOURCE_ROM_SHADOW)))
+diff --git a/include/linux/pci.h b/include/linux/pci.h
+index 6a2625c..2668bb9 100644
+--- a/include/linux/pci.h
++++ b/include/linux/pci.h
+@@ -355,6 +355,8 @@ struct pci_dev {
+ 	};
+ 	struct pci_ats	*ats;	/* Address Translation Service */
+ #endif
++	void *rom; /* Physical pointer to ROM if it's not from the BAR */
++	size_t romlen; /* Length of ROM if it's not from the BAR */
+ };
+ 
+ static inline struct pci_dev *pci_physfn(struct pci_dev *dev)
+-- 
+1.7.10.4
+

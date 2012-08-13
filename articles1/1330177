@@ -1,0 +1,139 @@
+Path: news.gmane.org!not-for-mail
+From: <xufengzhang.main@gmail.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.network
+Subject: [PATCH] sctp: Make "Invalid Stream Identifier" ERROR follows SACK when bundling
+Date: Thu, 19 Jul 2012 13:57:30 +0800
+Lines: 91
+Approved: news@gmane.org
+Message-ID: <1342677450-21810-1-git-send-email-xufengzhang.main@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1342677110 16246 80.91.229.3 (19 Jul 2012 05:51:50 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 05:51:50 +0000 (UTC)
+Cc: <linux-sctp@vger.kernel.org>, <netdev@vger.kernel.org>,
+	<linux-kernel@vger.kernel.org>
+To: <vyasevich@gmail.com>, <sri@us.ibm.com>, <davem@davemloft.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 07:51:48 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SrjeN-00051m-Gx
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 07:51:47 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753164Ab2GSFu4 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 01:50:56 -0400
+Original-Received: from mail.windriver.com ([147.11.1.11]:63234 "EHLO
+	mail.windriver.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751855Ab2GSFuy (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 01:50:54 -0400
+Original-Received: from ALA-HCA.corp.ad.wrs.com (ala-hca [147.11.189.40])
+	by mail.windriver.com (8.14.5/8.14.3) with ESMTP id q6J5olIG013960
+	(version=TLSv1/SSLv3 cipher=AES128-SHA bits=128 verify=FAIL);
+	Wed, 18 Jul 2012 22:50:47 -0700 (PDT)
+Original-Received: from localhost.localdomain (128.224.163.210) by
+ ALA-HCA.corp.ad.wrs.com (147.11.189.50) with Microsoft SMTP Server id
+ 14.1.255.0; Wed, 18 Jul 2012 22:50:47 -0700
+X-Mailer: git-send-email 1.7.0.2
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330177 gmane.linux.network:237665
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330177>
+
+When "Invalid Stream Identifier" ERROR happens after process the
+received DATA chunks, this ERROR chunk is enqueued into outqueue
+before SACK chunk, so when bundling ERROR chunk with SACK chunk,
+the ERROR chunk is always placed first in the packet because of
+the chunk's position in the outqueue.
+This violates sctp specification:
+    RFC 4960 6.5. Stream Identifier and Stream Sequence Number
+    ...The endpoint may bundle the ERROR chunk in the same
+    packet as the SACK as long as the ERROR follows the SACK.
+So we must place SACK first when bundling "Invalid Stream Identifier"
+ERROR and SACK in one packet.
+Although we can do that by enqueue SACK chunk into outqueue before
+ERROR chunk, it will violate the side-effect interpreter processing.
+It's easy to do this job when dequeue chunks from the outqueue,
+by this way, we introduce a flag 'has_isi_err' which indicate
+whether or not the "Invalid Stream Identifier" ERROR happens.
+
+Signed-off-by: Xufeng Zhang <xufeng.zhang@windriver.com>
+---
+ include/net/sctp/structs.h |    2 ++
+ net/sctp/output.c          |   26 ++++++++++++++++++++++++++
+ 2 files changed, 28 insertions(+), 0 deletions(-)
+
+diff --git a/include/net/sctp/structs.h b/include/net/sctp/structs.h
+index 88949a9..5adf4de 100644
+--- a/include/net/sctp/structs.h
++++ b/include/net/sctp/structs.h
+@@ -842,6 +842,8 @@ struct sctp_packet {
+ 	    has_sack:1,		/* This packet contains a SACK chunk. */
+ 	    has_auth:1,		/* This packet contains an AUTH chunk */
+ 	    has_data:1,		/* This packet contains at least 1 DATA chunk */
++	    has_isi_err:1,	/* This packet contains a "Invalid Stream
++				 * Identifier" ERROR chunk */
+ 	    ipfragok:1,		/* So let ip fragment this packet */
+ 	    malloced:1;		/* Is it malloced? */
+ };
+diff --git a/net/sctp/output.c b/net/sctp/output.c
+index 817174e..77fb1ae 100644
+--- a/net/sctp/output.c
++++ b/net/sctp/output.c
+@@ -79,6 +79,7 @@ static void sctp_packet_reset(struct sctp_packet *packet)
+ 	packet->has_sack = 0;
+ 	packet->has_data = 0;
+ 	packet->has_auth = 0;
++	packet->has_isi_err = 0;
+ 	packet->ipfragok = 0;
+ 	packet->auth = NULL;
+ }
+@@ -267,6 +268,7 @@ static sctp_xmit_t sctp_packet_bundle_sack(struct sctp_packet *pkt,
+ sctp_xmit_t sctp_packet_append_chunk(struct sctp_packet *packet,
+ 				     struct sctp_chunk *chunk)
+ {
++	struct sctp_chunk *lchunk;
+ 	sctp_xmit_t retval = SCTP_XMIT_OK;
+ 	__u16 chunk_len = WORD_ROUND(ntohs(chunk->chunk_hdr->length));
+ 
+@@ -316,7 +318,31 @@ sctp_xmit_t sctp_packet_append_chunk(struct sctp_packet *packet,
+ 		packet->has_cookie_echo = 1;
+ 		break;
+ 
++	    case SCTP_CID_ERROR:
++		if (chunk->subh.err_hdr->cause & SCTP_ERROR_INV_STRM)
++			packet->has_isi_err = 1;
++		break;
++
+ 	    case SCTP_CID_SACK:
++		/* RFC 4960
++		 * 6.5 Stream Identifier and Stream Sequence Number
++		 * The endpoint may bundle the ERROR chunk in the same
++		 * packet as the SACK as long as the ERROR follows the SACK.
++		 */
++		if (packet->has_isi_err) {
++			if (list_is_singular(&packet->chunk_list))
++				list_add(&chunk->list, &packet->chunk_list);
++			else {
++				lchunk = list_first_entry(&packet->chunk_list,
++						struct sctp_chunk, list);
++				list_add(&chunk->list, &lchunk->list);
++			}
++			packet->size += chunk_len;
++			chunk->transport = packet->transport;
++			packet->has_sack = 1;
++			goto finish;
++		}
++
+ 		packet->has_sack = 1;
+ 		break;
+ 
+-- 
+1.7.0.2
+

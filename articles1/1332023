@@ -1,0 +1,106 @@
+Path: news.gmane.org!not-for-mail
+From: Alex Williamson <alex.williamson@redhat.com>
+Newsgroups: gmane.comp.emulators.kvm.devel,gmane.linux.kernel
+Subject: Re: [PATCH v6 0/2] kvm: level irqfd and new eoifd
+Date: Mon, 23 Jul 2012 16:50:57 -0600
+Lines: 56
+Approved: news@gmane.org
+Message-ID: <1343083857.2229.323.camel@bling.home>
+References: <20120720161841.15119.29653.stgit@bling.home>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343083920 15580 80.91.229.3 (23 Jul 2012 22:52:00 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 22:52:00 +0000 (UTC)
+Cc: mst@redhat.com, gleb@redhat.com, kvm@vger.kernel.org,
+	linux-kernel@vger.kernel.org, jan.kiszka@siemens.com
+To: avi@redhat.com
+Original-X-From: kvm-owner@vger.kernel.org Tue Jul 24 00:51:58 2012
+Return-path: <kvm-owner@vger.kernel.org>
+Envelope-to: gcekd-kvm-devel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <kvm-owner@vger.kernel.org>)
+	id 1StRTq-0003sR-AK
+	for gcekd-kvm-devel@plane.gmane.org; Tue, 24 Jul 2012 00:51:58 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754020Ab2GWWvB (ORCPT <rfc822;gcekd-kvm-devel@m.gmane.org>);
+	Mon, 23 Jul 2012 18:51:01 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:59458 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752055Ab2GWWvB (ORCPT <rfc822;kvm@vger.kernel.org>);
+	Mon, 23 Jul 2012 18:51:01 -0400
+Original-Received: from int-mx10.intmail.prod.int.phx2.redhat.com (int-mx10.intmail.prod.int.phx2.redhat.com [10.5.11.23])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6NMowTI017889
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Mon, 23 Jul 2012 18:50:59 -0400
+Original-Received: from [10.3.113.63] (ovpn-113-63.phx2.redhat.com [10.3.113.63])
+	by int-mx10.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6NMov1R003559;
+	Mon, 23 Jul 2012 18:50:58 -0400
+In-Reply-To: <20120720161841.15119.29653.stgit@bling.home>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.23
+Original-Sender: kvm-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <kvm.vger.kernel.org>
+X-Mailing-List: kvm@vger.kernel.org
+Xref: news.gmane.org gmane.comp.emulators.kvm.devel:94930 gmane.linux.kernel:1332023
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332023>
+
+On Fri, 2012-07-20 at 10:33 -0600, Alex Williamson wrote:
+> v6:
+> 
+> So we're back to just the first two patches, unfortunately the
+> diffstat got bigger though.  The reason for that is that I discovered
+> we don't do anything on release of an eoifd.  We cleanup if the kvm
+> vm is released, but we're dealing with a constrained resource of irq
+> source IDs, so I think it's best that we cleanup to make sure those
+> are returned.  To do that we need nearly the same infrastructure as
+> irqfd, we just only watch for POLLHUP.  So while there's more code
+> here, the structure and function names line up identically to irqfd.
+> 
+> The other big change here is that KVM_IRQFD returns a token when
+> setting up a level irqfd.  We use this token to associate the eoifd
+> with the right source.  This means we have to put the struct
+> _source_ids on a list so we can find them.  This removes the weird
+> interaction we were headed to where the eoifd is associated with
+> the eventfd of the irqfd.  There's potentially more flexibility for
+> the future here too as we might come up with other interfaces that
+> can return a source ID "key".  Perhaps some future KVM_IRQFD will
+> allow specifying a key for re-attaching.  Anyway, the sequence
+> Michael pointed out where an irqfd is de-assigned then re-assigned
+> now results in a new key instead of leaving the user wondering if
+> it re-associates back to the eoifd.
+> 
+> Also added workqueue flushes on assign since releasing either
+> object now results in a lazy release via workqueue.  This ensures
+> we re-claim any source IDs we can.  Thanks,
+
+FYI, I seem to have found a new locking issue in this version.  I'll
+send an update when I find it.  Thanks,
+
+Alex
+
+> ---
+> 
+> Alex Williamson (2):
+>       kvm: KVM_EOIFD, an eventfd for EOIs
+>       kvm: Extend irqfd to support level interrupts
+> 
+> 
+>  Documentation/virtual/kvm/api.txt |   32 ++-
+>  arch/x86/kvm/x86.c                |    3 
+>  include/linux/kvm.h               |   18 +
+>  include/linux/kvm_host.h          |   17 +
+>  virt/kvm/eventfd.c                |  463 ++++++++++++++++++++++++++++++++++++-
+>  virt/kvm/kvm_main.c               |   11 +
+>  6 files changed, 536 insertions(+), 8 deletions(-)
+
+
+
+--
+To unsubscribe from this list: send the line "unsubscribe kvm" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

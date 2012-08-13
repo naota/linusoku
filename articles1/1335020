@@ -1,0 +1,160 @@
+Path: news.gmane.org!not-for-mail
+From: Anton Vorontsov <anton.vorontsov@linaro.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel,gmane.linux.kernel.debugging.kgdb.bugs
+Subject: [PATCH 10/11] ARM: versatile: Make able to use UART ports for KGDB FIQ debugger
+Date: Mon, 30 Jul 2012 04:58:19 -0700
+Lines: 92
+Approved: news@gmane.org
+Message-ID: <1343649500-18491-10-git-send-email-anton.vorontsov@linaro.org>
+References: <20120730115719.GA5742@lizard>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343649775 5096 80.91.229.3 (30 Jul 2012 12:02:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 12:02:55 +0000 (UTC)
+Cc: =?UTF-8?q?Arve=20Hj=C3=B8nnev=C3=A5g?= <arve@android.com>,
+	Colin Cross <ccross@android.com>,
+	John Stultz <john.stultz@linaro.org>,
+	linux-kernel@vger.kernel.org, linux-arm-kernel@lists.infradead.org,
+	linaro-kernel@lists.linaro.org, patches@linaro.org,
+	kernel-team@android.com, kgdb-bugreport@lists.sourceforge.net
+To: Russell King <linux@arm.linux.org.uk>,
+	Jason Wessel <jason.wessel@windriver.com>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	Alan Cox <alan@linux.intel.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 14:02:52 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvogU-0005he-Gw
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 14:02:50 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753979Ab2G3MCe (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 08:02:34 -0400
+Original-Received: from mail-yx0-f174.google.com ([209.85.213.174]:45168 "EHLO
+	mail-yx0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752958Ab2G3MCC (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 08:02:02 -0400
+Original-Received: by mail-yx0-f174.google.com with SMTP id l2so4670840yen.19
+        for <linux-kernel@vger.kernel.org>; Mon, 30 Jul 2012 05:02:01 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :x-gm-message-state;
+        bh=gutamc/9C2YbfIWdRKmjb5P7APPQ/IPXGsnP6RLdlYc=;
+        b=VGe8w6Ehby/wg9AFjd6PctsYjbJJAzmHj7Bl0W1G8uHFso9h1+lq3TXEKegofcsYou
+         9TO2tMxI3SHKkDeGc17gl0FGEzv2TClveEaejYWQkNf3jvvbTb7GI8S05qDzf+YEfl9Y
+         MYkWKG1N/W1M+8qHwQzGNIa+ItSPaIwUyaZOR79R6/WLCjM7NMZ6XDmQSrP/KpzMouqC
+         9fpePKn1I6I4ZsbUaoXhhhfohNOI8AIRGn7xqmy+K+Tk+yJJrm7798aiHojb3z9vADio
+         tT7ccuIOSWmg8OjCjS5gAoBtfiCLP6R89ebV9TdEppPMQA5Zcd3SHeHim0hKbE6xObz2
+         NrDg==
+Original-Received: by 10.68.242.228 with SMTP id wt4mr12515366pbc.89.1343649721272;
+        Mon, 30 Jul 2012 05:02:01 -0700 (PDT)
+Original-Received: from localhost (c-71-204-165-222.hsd1.ca.comcast.net. [71.204.165.222])
+        by mx.google.com with ESMTPS id hx9sm7807940pbc.68.2012.07.30.05.01.59
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 30 Jul 2012 05:02:00 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <20120730115719.GA5742@lizard>
+X-Gm-Message-State: ALoCoQnH7guL1lBgIZ4Ub7hsrKsxPncGXS5twHuRfQbi5KUn0xdwsM3n3mbV6nJogq5/NQEX4Q0z
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335020 gmane.linux.ports.arm.kernel:179354 gmane.linux.kernel.debugging.kgdb.bugs:5720
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335020>
+
+If enabled, kernel will able to enter KGDB upon serial line activity on
+UART ports.
+
+Note that even with this patch and CONFIG_KGDB_FIQ is enabled, you still
+need to pass kgdb_fiq.enable=1 kernel command line option, otherwise UART
+will behave in a normal way.
+
+By default UART0 is used, but this can be changed via kgdb_fiq.uart_num
+kernel command line option.
+
+Signed-off-by: Anton Vorontsov <anton.vorontsov@linaro.org>
+---
+ arch/arm/Kconfig                            |    1 +
+ arch/arm/mach-versatile/Makefile            |    1 +
+ arch/arm/mach-versatile/include/mach/irqs.h |    1 +
+ arch/arm/mach-versatile/kgdb_fiq.c          |   31 +++++++++++++++++++++++++++
+ 4 files changed, 34 insertions(+)
+ create mode 100644 arch/arm/mach-versatile/kgdb_fiq.c
+
+diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
+index ae6ddf1..c0df1ba 100644
+--- a/arch/arm/Kconfig
++++ b/arch/arm/Kconfig
+@@ -311,6 +311,7 @@ config ARCH_VERSATILE
+ 	select ICST
+ 	select GENERIC_CLOCKEVENTS
+ 	select ARCH_WANT_OPTIONAL_GPIOLIB
++	select ARCH_MIGHT_HAVE_FIQ
+ 	select NEED_MACH_IO_H if PCI
+ 	select PLAT_VERSATILE
+ 	select PLAT_VERSATILE_CLCD
+diff --git a/arch/arm/mach-versatile/Makefile b/arch/arm/mach-versatile/Makefile
+index 81fa3fe..bfd761f 100644
+--- a/arch/arm/mach-versatile/Makefile
++++ b/arch/arm/mach-versatile/Makefile
+@@ -7,3 +7,4 @@ obj-$(CONFIG_ARCH_VERSATILE_PB)		+= versatile_pb.o
+ obj-$(CONFIG_MACH_VERSATILE_AB)		+= versatile_ab.o
+ obj-$(CONFIG_MACH_VERSATILE_DT)		+= versatile_dt.o
+ obj-$(CONFIG_PCI)			+= pci.o
++obj-$(CONFIG_KGDB_FIQ)			+= kgdb_fiq.o
+diff --git a/arch/arm/mach-versatile/include/mach/irqs.h b/arch/arm/mach-versatile/include/mach/irqs.h
+index bf44c61..fcd2a95 100644
+--- a/arch/arm/mach-versatile/include/mach/irqs.h
++++ b/arch/arm/mach-versatile/include/mach/irqs.h
+@@ -26,6 +26,7 @@
+  *  held within platform.h
+  */
+ #define IRQ_VIC_START		0
++#define FIQ_START		IRQ_VIC_START
+ #define IRQ_WDOGINT		(IRQ_VIC_START + INT_WDOGINT)
+ #define IRQ_SOFTINT		(IRQ_VIC_START + INT_SOFTINT)
+ #define IRQ_COMMRx		(IRQ_VIC_START + INT_COMMRx)
+diff --git a/arch/arm/mach-versatile/kgdb_fiq.c b/arch/arm/mach-versatile/kgdb_fiq.c
+new file mode 100644
+index 0000000..3cdf71d
+--- /dev/null
++++ b/arch/arm/mach-versatile/kgdb_fiq.c
+@@ -0,0 +1,31 @@
++/*
++ * KGDB FIQ board support
++ *
++ * Copyright 2012 Linaro Ltd.
++ *		  Anton Vorontsov <anton.vorontsov@linaro.org>
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 as published
++ * by the Free Software Foundation.
++ */
++
++#include <linux/module.h>
++#include <linux/init.h>
++#include <linux/kgdb.h>
++#include <mach/hardware.h>
++#include <mach/platform.h>
++#include <asm/hardware/vic.h>
++
++static int kgdb_fiq;
++module_param_named(uart_num, kgdb_fiq, int, 0600);
++MODULE_PARM_DESC(uart_num, "UART<number> port to use for KGDB FIQ");
++
++static int __init kgdb_fiq_init(void)
++{
++	WARN_ON(kgdb_fiq > INT_UARTINT2 - INT_UARTINT0);
++
++	return kgdb_register_fiq(INT_UARTINT0 + kgdb_fiq,
++				 vic_fiq_select,
++				 vic_is_fiq_rised);
++}
++console_initcall(kgdb_fiq_init);
+-- 
+1.7.10.4
+

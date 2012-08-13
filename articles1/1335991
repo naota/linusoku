@@ -1,0 +1,90 @@
+Path: news.gmane.org!not-for-mail
+From: Russell King - ARM Linux <linux@arm.linux.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: Re: About dma_sync_single_for_{cpu,device}
+Date: Tue, 31 Jul 2012 21:08:55 +0100
+Lines: 36
+Approved: news@gmane.org
+Message-ID: <20120731200855.GC10335@n2100.arm.linux.org.uk>
+References: <20120730202401.GA4947@gobelin> <20120731064557.GA4676@gobelin> <20120731090931.GP6802@n2100.arm.linux.org.uk> <CACYmx9MnEn_XOosBn2-YJ=ny9FiLPADMNa6okwG08xrSpCUSpA@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343765425 14933 80.91.229.3 (31 Jul 2012 20:10:25 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 20:10:25 +0000 (UTC)
+Cc: linux-arm-kernel@lists.infradead.org, linux-kernel@vger.kernel.org
+To: Karl Beldan <karl.beldan@gmail.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 22:10:25 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwIlo-0000h9-5Y
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 22:10:20 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756263Ab2GaUKM (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 16:10:12 -0400
+Original-Received: from caramon.arm.linux.org.uk ([78.32.30.218]:52605 "EHLO
+	caramon.arm.linux.org.uk" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752310Ab2GaUKH (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 16:10:07 -0400
+DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; c=relaxed/relaxed; d=arm.linux.org.uk; s=caramon;
+	h=Sender:In-Reply-To:Content-Type:MIME-Version:References:Message-ID:Subject:Cc:To:From:Date; bh=GPY65w5HxvA+k1pQTh/s1nXsBWDMAt8blmgE6cakLO4=;
+	b=TCRrmlWqZt/2mheIj3Pe2nKsnadQTURG5gwL/P+SL3ClAVuj05ndnid95VzNBNxu4BDYhwcT8AripKKupL2GQ2BxuR0vBwlvdkzjImL6AauY1LnAokb9vBye6jk3s9hiTYkbjXMrgdnRUacf1KIjLmbm/mwUal0nj9cTUUJ2KJU=;
+Original-Received: from n2100.arm.linux.org.uk ([2002:4e20:1eda:1:214:fdff:fe10:4f86]:50235)
+	by caramon.arm.linux.org.uk with esmtpsa (TLSv1:AES256-SHA:256)
+	(Exim 4.76)
+	(envelope-from <linux@arm.linux.org.uk>)
+	id 1SwIkT-0006xP-7e; Tue, 31 Jul 2012 21:08:57 +0100
+Original-Received: from linux by n2100.arm.linux.org.uk with local (Exim 4.76)
+	(envelope-from <linux@n2100.arm.linux.org.uk>)
+	id 1SwIkS-0003Aa-4r; Tue, 31 Jul 2012 21:08:56 +0100
+Content-Disposition: inline
+In-Reply-To: <CACYmx9MnEn_XOosBn2-YJ=ny9FiLPADMNa6okwG08xrSpCUSpA@mail.gmail.com>
+User-Agent: Mutt/1.5.19 (2009-01-05)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335991 gmane.linux.ports.arm.kernel:179678
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335991>
+
+On Tue, Jul 31, 2012 at 09:31:13PM +0200, Karl Beldan wrote:
+> On 7/31/12, Russell King - ARM Linux <linux@arm.linux.org.uk> wrote:
+> > On Tue, Jul 31, 2012 at 08:45:57AM +0200, Karl Beldan wrote:
+> >> I was expecting the following to work:
+> >> 	addr = dma_map_single(dev, buffer, size, DMA_TO_DEVICE);
+> >> 	dma_sync_single_for_device(dev, buffer, pattern_size, DMA_FROM_DEVICE);
+> >> 	dev_send(buffer);
+> >> 	// wait for irq (don't peek in the buffer) ... got irq
+> >> 	dma_sync_single_for_cpu(dev, buffer, pattern_size, DMA_FROM_DEVICE);
+> >> 	if (!xfer_done(buffer)) // not RAM value
+> >> 		dma_sync_single_for_device(dev, buffer, pattern_size, DMA_FROM_DEVICE);
+> >> 	[...]
+> >
+> 
+> Hi Russell,
+> 
+> 
+> > First point is that you clearly do not understand the DMA API at all.  The
+> > DMA API has the idea of buffer ownership.  Only the owner may access the
+> > buffer:
+> >
+> Are you saying that this scenario does not work ?
+> We are taking some liberties with the DMA API, we're more using some
+> of its funcs rather than _using_ it ;).
+> The question was not whether this was a proper usage of the API, but
+> why that scenario would not lead to the expected results .. and now
+> I've found the culprit peek I am happy.
+
+If you abuse the API don't expect your stuff to work in future kernel
+versions.
+
+It seems that the overall tone of your reply is "what we have now works,
+we don't care if it's correct, sod you."
+
+Fine, I won't spend any more time on this.  Just don't ever think about
+merging it into mainline, thanks.

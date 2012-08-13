@@ -1,0 +1,213 @@
+Path: news.gmane.org!not-for-mail
+From: "Kim, Milo" <Milo.Kim@ti.com>
+Newsgroups: gmane.linux.kernel
+Subject: RE: [PATCH 1/2] regmap-irq: use mask and val rather than using
+ mask_buf_def
+Date: Fri, 20 Jul 2012 07:08:15 +0000
+Lines: 152
+Approved: news@gmane.org
+Message-ID: <A874F61F95741C4A9BA573A70FE3998FDA8C@DQHE02.ent.ti.com>
+References: <A874F61F95741C4A9BA573A70FE3998FD99F@DQHE02.ent.ti.com>
+ <20120719091011.GI4495@opensource.wolfsonmicro.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 8BIT
+X-Trace: dough.gmane.org 1342768117 19076 80.91.229.3 (20 Jul 2012 07:08:37 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 07:08:37 +0000 (UTC)
+Cc: "linux-kernel@vger.kernel.org" <linux-kernel@vger.kernel.org>
+To: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 09:08:36 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Ss7KF-0007Ho-4s
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 09:08:35 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752858Ab2GTHIY (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 03:08:24 -0400
+Original-Received: from devils.ext.ti.com ([198.47.26.153]:59077 "EHLO
+	devils.ext.ti.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751449Ab2GTHIW convert rfc822-to-8bit (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 03:08:22 -0400
+Original-Received: from dbdp20.itg.ti.com ([172.24.170.38])
+	by devils.ext.ti.com (8.13.7/8.13.7) with ESMTP id q6K78IL5001602;
+	Fri, 20 Jul 2012 02:08:19 -0500
+Original-Received: from DQHE71.ent.ti.com (localhost [127.0.0.1])
+	by dbdp20.itg.ti.com (8.13.8/8.13.8) with ESMTP id q6K78GWa003441;
+	Fri, 20 Jul 2012 12:38:17 +0530 (IST)
+Original-Received: from DQHE02.ent.ti.com ([fe80::19f9:3779:aee:e323]) by
+ DQHE71.ent.ti.com ([fe80::5c0e:523c:8fe3:f56b%21]) with mapi id
+ 14.01.0323.003; Fri, 20 Jul 2012 15:08:16 +0800
+Thread-Topic: [PATCH 1/2] regmap-irq: use mask and val rather than using
+ mask_buf_def
+Thread-Index: Ac1ljYQFicWxq94xTEeL04V0LuZRav//e3YA//5pgNA=
+In-Reply-To: <20120719091011.GI4495@opensource.wolfsonmicro.com>
+Accept-Language: en-US
+Content-Language: en-US
+X-MS-Has-Attach: 
+X-MS-TNEF-Correlator: 
+x-originating-ip: [172.16.34.32]
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330707
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330707>
+
+> On Thu, Jul 19, 2012 at 09:04:39AM +0000, Kim, Milo wrote:
+> > Default mask value is used when updating irq registers.
+> > Rather than using mask_buf_def[], use mask and value explicitly.
+> 
+> Why?  What is the problem you are seeing and what is the intended
+> effect
+> of this change?
+
+There are two reasons for this patch.
+One is for better understanding about masking and updated bits.
+The other is related with supporting interrupt-unmasked device.
+
+(a) 'mask_buf & val_buf' VS 'mask_buf_def & mask_buf'
+In my opinion, the mask_buf_def[] is 'masking bit' and the mask_buf[] is the 'value' to be updated when the IRQ is enabled/disabled.
+The mask_buf_def[] means which bit is updated - that is exactly *mask bit*.
+The value of mask_buf_def[] is copied from mask_buf[] when regmap_add_irq_chip() is called.
+And then mask_buf_def[] is fixed value.
+On the other hand, the mask_buf[] is variable. The value is updated whenever the IRQ is enabled/disabled.
+Which is better understandable terminology ? 'mask and value' or 'default mask and updated mask'
+I think 'mask & value' is more clear.
+
+(b) supporting interrupt-unmasked device
+There is different interrupt concept from interrupt-masked device.
+To enable the IRQ, the register bit should be 1.
+To update this value, the bit of IRQ value should be separated from the mask bit.
+
+< Example >
+Let me assume that enabling the IRQ0 and IRQ1 ... (8 bits register based)
+
+(Interrupt mask device)
+IRQ7 | IRQ6 | IRQ5 | IRQ4 | IRQ3 | IRQ2 | IRQ1 | IRQ0
+ 1      1      1      1      1      1      0      0
+Mask  = 0xFC
+Value = 0xFC (same as mask bit)
+
+(Interrupt unmask device)
+IRQ7 | IRQ6 | IRQ5 | IRQ4 | IRQ3 | IRQ2 | IRQ1 | IRQ0
+ 0      0      0      0      0      0      1      1
+Mask  = 0xFC
+Value = 0x03 (different from mask bit)
+
+Let's move to regmap_irq data structure with two types.
+
+(Interrupt mask device)
+static struct regmap_irq foo_irqs[] = {
+	[FOO_IRQ0] = {
+		.reg_offset =  0;
+		.mask = BIT(0), /* 0x01 */
+	},
+	[FOO_IRQ1] = {
+		.reg_offset =  0;
+		.mask = BIT(1), /* 0x02 */
+	},
+};
+
+                   Initial time      irq_enable()  irq_enable()
+ Value        (regmap_add_irq_chip)   with IRQ0     with IRQ1
+_______________________________________________________________
+mask_buf_def       0x03                0x03          0x03
+mask_buf           0x03                0xFE          0xFD
+updated bits    0000 0011           xxxx xxx0      xxxx xx0x
+            (IRQ0,1 disabled)     (IRQ0 enabled)  (IRQ1 enabled)
+
+Result: Works well.
+        Only one bit is cleared when the IRQ is enabled.
+
+(Interrupt unmask device)
+Case 1)
+static struct regmap_irq foo_irqs[] = {
+	[FOO_IRQ0] = {
+		.reg_offset =  0;
+		.mask = BIT(0), /* 0x01 */
+	},
+	[FOO_IRQ1] = {
+		.reg_offset =  0;
+		.mask = BIT(1), /* 0x02 */
+	},
+};
+
+                   Initial time      irq_enable()  irq_enable()
+ Value        (regmap_add_irq_chip)   with IRQ0     with IRQ1
+_______________________________________________________________
+mask_buf_def       0x03                0x03          0x03
+mask_buf           0x03                0xFE          0xFD
+updated bits    0000 0011           xxxx xxx0      xxxx xx0x
+            (IRQ0,1 enabled)     (IRQ0 disabled) (IRQ1 disabled)
+
+Result: Not working.
+        Each IRQ is disabled. Other bits can be enabled not intentionally.
+
+Case 2) What if changing the 'mask' to inverted bit as following.
+static struct regmap_irq foo_irqs[] = {
+	[FOO_IRQ0] = {
+		.reg_offset =  0;
+		.mask = ~BIT(0), /* 0xFE */
+	},
+	[FOO_IRQ1] = {
+		.reg_offset =  0;
+		.mask = ~BIT(1), /* 0xFD */
+	},
+};
+
+                   Initial time      irq_enable()  irq_enable()
+ Value        (regmap_add_irq_chip)   with IRQ0     with IRQ1
+_______________________________________________________________
+mask_buf_def       0xFF                0xFF          0xFF
+mask_buf           0xFF                0x01          0x02
+updated bits    1111 1111           0000 0001      0000 0010
+         (All IRQs are enabled)  (IRQ0 enabled,  (IRQ1 enabled,
+                                  others are      but others are disabled)
+                                  disabled)
+
+Result: Not working.
+        Other bits are cleared except flagged IRQ.
+        Only one IRQ exists. Others are ignored. 
+
+In both cases, it doesn't work with interrupt-unmasked-register scheme.
+To fix this issue, two patches were sent.
+The mask and value should be separated -- (1) and different bit operation is required -- (2).
+(1) [PATCH 1/2] regmap-irq: use mask and val rather than using mask_buf_def
+(2) [PATCH 2/2] regmap-irq: support different type of irq register
+
+And then the result will be as following.
+
+(Interrupt mask device)
+
+                   Initial time      irq_enable()  irq_enable()
+ Value        (regmap_add_irq_chip)   with IRQ0     with IRQ1
+_______________________________________________________________
+mask_buf           0x03                0x03          0x03
+val_buf             -                  0xFE          0xFD
+updated bits     0000 0011           xxxx xxx0     xxxx xx0x
+             (IRQ0,1 disabled)    (IRQ0 enabled)  (IRQ1 enabled)
+
+(Interrupt unmask device)
+
+                   Initial time      irq_enable()  irq_enable()
+ Value        (regmap_add_irq_chip)   with IRQ0     with IRQ1
+_______________________________________________________________
+mask_buf           0x03                0x03          0x03
+val_buf             -                  0x01          0x02
+updated bits     1111 1100           xxxx xxx1     xxxx xx1x
+             (IRQ0,1 disabled)    (IRQ0 enabled)  (IRQ1 enabled)
+
+
+I'm not sure there is another device which supports the interrupt-unmasked register.
+As far as I know, LP8788 is the only device :-(
+
+Thanks !
+
+Best Regards,
+Milo

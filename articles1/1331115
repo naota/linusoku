@@ -1,0 +1,291 @@
+Path: news.gmane.org!not-for-mail
+From: Anton Vorontsov <anton.vorontsov@linaro.org>
+Newsgroups: gmane.linux.kernel.debugging.kgdb.bugs,gmane.linux.kernel
+Subject: [PATCH 3/4] printk: Implement some unlocked
+	kmsg_dump functions
+Date: Fri, 20 Jul 2012 17:28:07 -0700
+Lines: 199
+Approved: news@gmane.org
+Message-ID: <20120721002807.GC2213@lizard>
+References: <20120721002529.GA20567@lizard>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342830620 24477 80.91.229.3 (21 Jul 2012 00:30:20 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 21 Jul 2012 00:30:20 +0000 (UTC)
+Cc: kgdb-bugreport@lists.sourceforge.net,
+	Jason Wessel <jason.wessel@windriver.com>,
+	Kay Sievers <kay@vrfy.org>, linux-kernel@vger.kernel.org,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	Andrew Morton <akpm@linux-foundation.org>
+To: Linus Torvalds <torvalds@linux-foundation.org>
+Original-X-From: kgdb-bugreport-bounces@lists.sourceforge.net Sat Jul 21 02:30:19 2012
+Return-path: <kgdb-bugreport-bounces@lists.sourceforge.net>
+Envelope-to: gcksn-kgdb-bugreport@m.gmane.org
+Original-Received: from lists.sourceforge.net ([216.34.181.88])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <kgdb-bugreport-bounces@lists.sourceforge.net>)
+	id 1SsNaH-00007x-G8
+	for gcksn-kgdb-bugreport@m.gmane.org; Sat, 21 Jul 2012 02:30:13 +0200
+Original-Received: from localhost ([127.0.0.1] helo=sfs-ml-1.v29.ch3.sourceforge.com)
+	by sfs-ml-1.v29.ch3.sourceforge.com with esmtp (Exim 4.76)
+	(envelope-from <kgdb-bugreport-bounces@lists.sourceforge.net>)
+	id 1SsNaG-0006Yd-OI; Sat, 21 Jul 2012 00:30:12 +0000
+Original-Received: from sog-mx-2.v43.ch3.sourceforge.com ([172.29.43.192]
+	helo=mx.sourceforge.net)
+	by sfs-ml-1.v29.ch3.sourceforge.com with esmtp (Exim 4.76)
+	(envelope-from <anton.vorontsov@linaro.org>) id 1SsNaF-0006YW-Jc
+	for kgdb-bugreport@lists.sourceforge.net;
+	Sat, 21 Jul 2012 00:30:11 +0000
+Original-Received: from mail-pb0-f47.google.com ([209.85.160.47])
+	by sog-mx-2.v43.ch3.sourceforge.com with esmtps (TLSv1:RC4-SHA:128)
+	(Exim 4.76) id 1SsNaE-00031A-OX
+	for kgdb-bugreport@lists.sourceforge.net;
+	Sat, 21 Jul 2012 00:30:11 +0000
+Original-Received: by mail-pb0-f47.google.com with SMTP id rq2so6651513pbb.34
+	for <kgdb-bugreport@lists.sourceforge.net>;
+	Fri, 20 Jul 2012 17:30:10 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+	d=google.com; s=20120113;
+	h=date:from:to:cc:subject:message-id:references:mime-version
+	:content-type:content-disposition:in-reply-to:user-agent
+	:x-gm-message-state;
+	bh=G2ugoV+d49I1/h8rl7ce5pQ7Y9v5F0tm9/QFtUTmQKY=;
+	b=KKB6IdmRNEJEheGZZEVi85mE09V6Di1EqmSUtwkUrZIP3PjzTs2r67STDLpvcIl6DD
+	91/g08FhCkrFurBdeI/qpZ7Ec0G6C8PZmvpB8R1SataP2WdnzlWL6m/VkpSNmtXzuhuF
+	5NHBhvFgX3Ta+Bcyodkp5cneIonvZehRhArrFTN6VE2erv2g9HHCsEfg8Jy/9LzRlwL8
+	lsljHIcWE/laRuBfhF/YEYdj8t848IBGH5ms7RD0u9Cuw8jf7k+Qh/xJ2rc6WpV2ffNA
+	tfnXpi0ccdIuwZvpbCdCCXHPYWlZo0l6E8BR6uxhrqwP5mnJnN+aHfBi65J9LBtgDZ/4
+	4y2A==
+Original-Received: by 10.68.242.168 with SMTP id wr8mr17730663pbc.44.1342830610465;
+	Fri, 20 Jul 2012 17:30:10 -0700 (PDT)
+Original-Received: from localhost (c-71-204-165-222.hsd1.ca.comcast.net.
+	[71.204.165.222])
+	by mx.google.com with ESMTPS id pe2sm4912795pbc.59.2012.07.20.17.30.09
+	(version=TLSv1/SSLv3 cipher=OTHER);
+	Fri, 20 Jul 2012 17:30:10 -0700 (PDT)
+Content-Disposition: inline
+In-Reply-To: <20120721002529.GA20567@lizard>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Gm-Message-State: ALoCoQm78Z7Iy12/pPotMiJipJNOP2cfTs9VapE0qS8Kz7pf1nxsZpcB+A7+fxlW6sPrCElffBcb
+X-Spam-Score: -0.0 (/)
+X-Spam-Report: Spam Filtering performed by mx.sourceforge.net.
+	See http://spamassassin.org/tag/ for more details.
+	-0.0 AWL AWL: From: address is in the auto white-list
+X-Headers-End: 1SsNaE-00031A-OX
+X-BeenThere: kgdb-bugreport@lists.sourceforge.net
+X-Mailman-Version: 2.1.9
+Precedence: list
+List-Id: kgdb bugs suggestions <kgdb-bugreport.lists.sourceforge.net>
+List-Unsubscribe: <https://lists.sourceforge.net/lists/listinfo/kgdb-bugreport>, 
+	<mailto:kgdb-bugreport-request@lists.sourceforge.net?subject=unsubscribe>
+List-Archive: <http://sourceforge.net/mailarchive/forum.php?forum_name=kgdb-bugreport>
+List-Post: <mailto:kgdb-bugreport@lists.sourceforge.net>
+List-Help: <mailto:kgdb-bugreport-request@lists.sourceforge.net?subject=help>
+List-Subscribe: <https://lists.sourceforge.net/lists/listinfo/kgdb-bugreport>, 
+	<mailto:kgdb-bugreport-request@lists.sourceforge.net?subject=subscribe>
+Errors-To: kgdb-bugreport-bounces@lists.sourceforge.net
+Xref: news.gmane.org gmane.linux.kernel.debugging.kgdb.bugs:5693 gmane.linux.kernel:1331115
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331115>
+
+If used from KDB, the locked variants are prone to deadlocks (suppose we
+got to the debugger w/ the logbuf lock held).
+
+So, we have to implement a few routines that grab no logbuf lock.
+
+Yet we don't need these functions in modules, so we don't export them.
+
+Signed-off-by: Anton Vorontsov <anton.vorontsov@linaro.org>
+---
+ include/linux/kmsg_dump.h |   16 +++++++++++
+ kernel/printk.c           |   68 ++++++++++++++++++++++++++++++++++++---------
+ 2 files changed, 71 insertions(+), 13 deletions(-)
+
+diff --git a/include/linux/kmsg_dump.h b/include/linux/kmsg_dump.h
+index d6bd501..2e7a1e0 100644
+--- a/include/linux/kmsg_dump.h
++++ b/include/linux/kmsg_dump.h
+@@ -55,12 +55,17 @@ struct kmsg_dumper {
+ #ifdef CONFIG_PRINTK
+ void kmsg_dump(enum kmsg_dump_reason reason);
+ 
++bool kmsg_dump_get_line_nolock(struct kmsg_dumper *dumper, bool syslog,
++			       char *line, size_t size, size_t *len);
++
+ bool kmsg_dump_get_line(struct kmsg_dumper *dumper, bool syslog,
+ 			char *line, size_t size, size_t *len);
+ 
+ bool kmsg_dump_get_buffer(struct kmsg_dumper *dumper, bool syslog,
+ 			  char *buf, size_t size, size_t *len);
+ 
++void kmsg_dump_rewind_nolock(struct kmsg_dumper *dumper);
++
+ void kmsg_dump_rewind(struct kmsg_dumper *dumper);
+ 
+ int kmsg_dump_register(struct kmsg_dumper *dumper);
+@@ -71,6 +76,13 @@ static inline void kmsg_dump(enum kmsg_dump_reason reason)
+ {
+ }
+ 
++static inline bool kmsg_dump_get_line_nolock(struct kmsg_dumper *dumper,
++					     bool syslog, const char *line,
++					     size_t size, size_t *len)
++{
++	return false;
++}
++
+ static inline bool kmsg_dump_get_line(struct kmsg_dumper *dumper, bool syslog,
+ 				const char *line, size_t size, size_t *len)
+ {
+@@ -83,6 +95,10 @@ static inline bool kmsg_dump_get_buffer(struct kmsg_dumper *dumper, bool syslog,
+ 	return false;
+ }
+ 
++static inline void kmsg_dump_rewind_nolock(struct kmsg_dumper *dumper)
++{
++}
++
+ static inline void kmsg_dump_rewind(struct kmsg_dumper *dumper)
+ {
+ }
+diff --git a/kernel/printk.c b/kernel/printk.c
+index c812967..ac4bc9e 100644
+--- a/kernel/printk.c
++++ b/kernel/printk.c
+@@ -2510,7 +2510,7 @@ void kmsg_dump(enum kmsg_dump_reason reason)
+ }
+ 
+ /**
+- * kmsg_dump_get_line - retrieve one kmsg log line
++ * kmsg_dump_get_line_nolock - retrieve one kmsg log line (unlocked version)
+  * @dumper: registered kmsg dumper
+  * @syslog: include the "<4>" prefixes
+  * @line: buffer to copy the line to
+@@ -2525,11 +2525,12 @@ void kmsg_dump(enum kmsg_dump_reason reason)
+  *
+  * A return value of FALSE indicates that there are no more records to
+  * read.
++ *
++ * The function is similar to kmsg_dump_get_line(), but grabs no locks.
+  */
+-bool kmsg_dump_get_line(struct kmsg_dumper *dumper, bool syslog,
+-			char *line, size_t size, size_t *len)
++bool kmsg_dump_get_line_nolock(struct kmsg_dumper *dumper, bool syslog,
++			       char *line, size_t size, size_t *len)
+ {
+-	unsigned long flags;
+ 	struct log *msg;
+ 	size_t l = 0;
+ 	bool ret = false;
+@@ -2537,7 +2538,6 @@ bool kmsg_dump_get_line(struct kmsg_dumper *dumper, bool syslog,
+ 	if (!dumper->active)
+ 		goto out;
+ 
+-	raw_spin_lock_irqsave(&logbuf_lock, flags);
+ 	if (dumper->cur_seq < log_first_seq) {
+ 		/* messages are gone, move to first available one */
+ 		dumper->cur_seq = log_first_seq;
+@@ -2545,10 +2545,8 @@ bool kmsg_dump_get_line(struct kmsg_dumper *dumper, bool syslog,
+ 	}
+ 
+ 	/* last entry */
+-	if (dumper->cur_seq >= log_next_seq) {
+-		raw_spin_unlock_irqrestore(&logbuf_lock, flags);
++	if (dumper->cur_seq >= log_next_seq)
+ 		goto out;
+-	}
+ 
+ 	msg = log_from_idx(dumper->cur_idx);
+ 	l = msg_print_text(msg, 0, syslog, line, size);
+@@ -2556,12 +2554,41 @@ bool kmsg_dump_get_line(struct kmsg_dumper *dumper, bool syslog,
+ 	dumper->cur_idx = log_next(dumper->cur_idx);
+ 	dumper->cur_seq++;
+ 	ret = true;
+-	raw_spin_unlock_irqrestore(&logbuf_lock, flags);
+ out:
+ 	if (len)
+ 		*len = l;
+ 	return ret;
+ }
++
++/**
++ * kmsg_dump_get_line - retrieve one kmsg log line
++ * @dumper: registered kmsg dumper
++ * @syslog: include the "<4>" prefixes
++ * @line: buffer to copy the line to
++ * @size: maximum size of the buffer
++ * @len: length of line placed into buffer
++ *
++ * Start at the beginning of the kmsg buffer, with the oldest kmsg
++ * record, and copy one record into the provided buffer.
++ *
++ * Consecutive calls will return the next available record moving
++ * towards the end of the buffer with the youngest messages.
++ *
++ * A return value of FALSE indicates that there are no more records to
++ * read.
++ */
++bool kmsg_dump_get_line(struct kmsg_dumper *dumper, bool syslog,
++			char *line, size_t size, size_t *len)
++{
++	unsigned long flags;
++	bool ret;
++
++	raw_spin_lock_irqsave(&logbuf_lock, flags);
++	ret = kmsg_dump_get_line_nolock(dumper, syslog, line, size, len);
++	raw_spin_unlock_irqrestore(&logbuf_lock, flags);
++
++	return ret;
++}
+ EXPORT_SYMBOL_GPL(kmsg_dump_get_line);
+ 
+ /**
+@@ -2664,6 +2691,24 @@ out:
+ EXPORT_SYMBOL_GPL(kmsg_dump_get_buffer);
+ 
+ /**
++ * kmsg_dump_rewind_nolock - reset the interator (unlocked version)
++ * @dumper: registered kmsg dumper
++ *
++ * Reset the dumper's iterator so that kmsg_dump_get_line() and
++ * kmsg_dump_get_buffer() can be called again and used multiple
++ * times within the same dumper.dump() callback.
++ *
++ * The function is similar to kmsg_dump_rewind(), but grabs no locks.
++ */
++void kmsg_dump_rewind_nolock(struct kmsg_dumper *dumper)
++{
++	dumper->cur_seq = clear_seq;
++	dumper->cur_idx = clear_idx;
++	dumper->next_seq = log_next_seq;
++	dumper->next_idx = log_next_idx;
++}
++
++/**
+  * kmsg_dump_rewind - reset the interator
+  * @dumper: registered kmsg dumper
+  *
+@@ -2676,10 +2721,7 @@ void kmsg_dump_rewind(struct kmsg_dumper *dumper)
+ 	unsigned long flags;
+ 
+ 	raw_spin_lock_irqsave(&logbuf_lock, flags);
+-	dumper->cur_seq = clear_seq;
+-	dumper->cur_idx = clear_idx;
+-	dumper->next_seq = log_next_seq;
+-	dumper->next_idx = log_next_idx;
++	kmsg_dump_rewind_nolock(dumper);
+ 	raw_spin_unlock_irqrestore(&logbuf_lock, flags);
+ }
+ EXPORT_SYMBOL_GPL(kmsg_dump_rewind);
+-- 
+1.7.10.4
+
+
+------------------------------------------------------------------------------
+Live Security Virtual Conference
+Exclusive live event will cover all the ways today's security and 
+threat landscape has changed and how IT managers can respond. Discussions 
+will include endpoint security, mobile security and the latest in malware 
+threats. http://www.accelacomm.com/jaw/sfrnl04242012/114/50122263/

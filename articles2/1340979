@@ -1,0 +1,351 @@
+Path: news.gmane.org!not-for-mail
+From: "Rafael J. Wysocki" <rjw@sisk.pl>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH][Alternative][RFC] PM / Runtime: Introduce driver runtime PM work routine
+Date: Thu, 9 Aug 2012 22:42:32 +0200
+Lines: 293
+Approved: news@gmane.org
+Message-ID: <201208092242.32602.rjw@sisk.pl>
+References: <201208072308.57950.rjw@sisk.pl> <201208091236.00816.rjw@sisk.pl>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain;
+  charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344544612 8253 80.91.229.3 (9 Aug 2012 20:36:52 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 20:36:52 +0000 (UTC)
+Cc: Alan Stern <stern@rowland.harvard.edu>,
+	Ming Lei <tom.leiming@gmail.com>,
+	LKML <linux-kernel@vger.kernel.org>,
+	"Greg Kroah-Hartman" <gregkh@linuxfoundation.org>
+To: Linux PM list <linux-pm@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 09 22:36:51 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzZTP-0004ux-3h
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 09 Aug 2012 22:36:51 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1759694Ab2HIUgo (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 16:36:44 -0400
+Original-Received: from ogre.sisk.pl ([193.178.161.156]:51503 "EHLO ogre.sisk.pl"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1759625Ab2HIUgm (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 16:36:42 -0400
+Original-Received: from localhost (localhost.localdomain [127.0.0.1])
+	by ogre.sisk.pl (Postfix) with ESMTP id 7C96B1DBC15;
+	Thu,  9 Aug 2012 22:25:47 +0200 (CEST)
+Original-Received: from ogre.sisk.pl ([127.0.0.1])
+ by localhost (ogre.sisk.pl [127.0.0.1]) (amavisd-new, port 10024) with ESMTP
+ id 23580-05; Thu,  9 Aug 2012 22:25:36 +0200 (CEST)
+Original-Received: from ferrari.rjw.lan (62-121-64-87.home.aster.pl [62.121.64.87])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by ogre.sisk.pl (Postfix) with ESMTP id 03C3D1DBC0E;
+	Thu,  9 Aug 2012 22:25:36 +0200 (CEST)
+User-Agent: KMail/1.13.6 (Linux/3.5.0+; KDE/4.6.0; x86_64; ; )
+In-Reply-To: <201208091236.00816.rjw@sisk.pl>
+X-Virus-Scanned: amavisd-new at ogre.sisk.pl using MkS_Vir for Linux
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340979
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340979>
+
+Hi all,
+
+On Thursday, August 09, 2012, Rafael J. Wysocki wrote:
+> 
+> Unfortunately, pm_runtime_get() is not a very useful interface,
+> because if the device is not in the "active" state already, it
+> only queues up a work item supposed to resume the device.  Then,
+> the caller doesn't really know when the device is going to be
+> resumed which makes it difficult to synchronize future device
+> accesses with the resume completion.
+> 
+> In that case, if the caller is the device's driver, the most
+> straightforward way for it to cope with the situation is to use its
+> .runtime_resume() callback for data processing unrelated to the
+> resume itself, but the correctness of this is questionable.  Namely,
+> the driver's .runtime_resume() callback need not be executed directly
+> by the core and it may be run from within a subsystem or PM domain
+> callback.  Then, the data processing carried out by the driver's
+> callback may disturb the subsystem's or PM domain's functionality
+> (for example, the subsystem may still be unready for the device to
+> process I/O when the driver's callback is about to return).  Besides,
+> the .runtime_resume() callback is not supposed to do anything beyond
+> what is needed to resume the device.
+> 
+> For this reason, it appears to be necessary to introduce a mechanism
+> by which device drivers may schedule the execution of certain code
+> (say a procedure) to occur when the device in question is known to be
+> in the "active" state (preferably, as soon as it has been resumed).
+> Thus introduce a new runtime PM helper function,
+> __pm_runtime_get_and_call(), and its simplified variant
+> pm_runtime_get_and_call(), allowing the caller to increment the
+> device's runtime PM usage counter and execute a function provided
+> as the second argument, either synchronously, if the device is
+> in the "active" state, or from the runtime PM workqueue, after
+> resuming the device (in that case the execution of the function is
+> queued up along with a request to resume the device).
+> 
+> The simplified helper, pm_runtime_get_and_call(), will only execute
+> the function if the runtime PM status of the device is "active".  The
+> more complicated one, __pm_runtime_get_and_call(), has one more
+> argument allowing the caller to specify whether or not the function
+> should be executed even if runtime PM is disabled for the device or
+> there has been a runtime PM error.  In those cases, the function will
+> always be executed synchronously.
+> 
+> This version of the patch doesn't include any documentation updates.
+> 
+> No sign-off yet.
+
+There are some known concerns about this approach.
+
+First of all, the patch at
+
+https://patchwork.kernel.org/patch/1299781/
+
+increases the size of struct device by the size of a pointer, which may seem to
+be a bit excessive to somebody, although I personally don't think it's a big
+problem.  We don't use _that_ many struct device objects for it to matter much.
+
+Second, which is more important to me, it seems that for a given device func()
+will always be the same pointer and it will be used by the device's driver
+only.  In that case, most likely, it will be possible to determine the
+address of func() at the time of driver initialization, so the setting and
+clearing of power.func and passing the address of func() as an argument every
+time __pm_runtime_get_and_call() is run may turn out to be an unnecessary
+overhead.  Thus it may be more efficient to use a function pointer in struct
+device_driver (it can't be located in struct dev_pm_ops, because some drivers
+don't use it at all, like USB drivers, and it wouldn't be useful for subsystems
+and PM domains) to store the address of func() permanently.
+
+For the above reasons, the appended patch implements an alternative approach,
+which is to modify the way pm_runtime_get() works so that, when the device is
+not active, it will queue a resume request for the device _along_ _with_ the
+execution of a driver routine provided through a new function pointer
+.pm_runtime_work().  There also is pm_runtime_get_nowork() that won't do that
+and works in the same way as the "old" pm_runtime_get().
+
+Of course, the disadvantage of the new patch is that it makes the change
+in struct device_driver, but perhaps it's not a big deal.
+
+I wonder what you think.
+
+Thanks,
+Rafael
+
+
+---
+ drivers/base/power/runtime.c |   71 +++++++++++++++++++++++++++++++++----------
+ include/linux/device.h       |    2 +
+ include/linux/pm.h           |    2 +
+ include/linux/pm_runtime.h   |    6 +++
+ 4 files changed, 66 insertions(+), 15 deletions(-)
+
+Index: linux/include/linux/device.h
+===================================================================
+--- linux.orig/include/linux/device.h
++++ linux/include/linux/device.h
+@@ -203,6 +203,7 @@ extern struct klist *bus_get_device_klis
+  *		automatically.
+  * @pm:		Power management operations of the device which matched
+  *		this driver.
++ * @pm_runtime_work: Called after asynchronous runtime resume of the device.
+  * @p:		Driver core's private data, no one other than the driver
+  *		core can touch this.
+  *
+@@ -232,6 +233,7 @@ struct device_driver {
+ 	const struct attribute_group **groups;
+ 
+ 	const struct dev_pm_ops *pm;
++	void (*pm_runtime_work)(struct device *dev);
+ 
+ 	struct driver_private *p;
+ };
+Index: linux/include/linux/pm.h
+===================================================================
+--- linux.orig/include/linux/pm.h
++++ linux/include/linux/pm.h
+@@ -538,6 +538,8 @@ struct dev_pm_info {
+ 	unsigned int		irq_safe:1;
+ 	unsigned int		use_autosuspend:1;
+ 	unsigned int		timer_autosuspends:1;
++	bool			run_driver_work:1;
++	bool			work_in_progress:1;
+ 	enum rpm_request	request;
+ 	enum rpm_status		runtime_status;
+ 	int			runtime_error;
+Index: linux/include/linux/pm_runtime.h
+===================================================================
+--- linux.orig/include/linux/pm_runtime.h
++++ linux/include/linux/pm_runtime.h
+@@ -22,6 +22,7 @@
+ #define RPM_GET_PUT		0x04	/* Increment/decrement the
+ 					    usage_count */
+ #define RPM_AUTO		0x08	/* Use autosuspend_delay */
++#define RPM_RUN_WORK		0x10	/* Run asynchronous work routine */
+ 
+ #ifdef CONFIG_PM_RUNTIME
+ 
+@@ -189,6 +190,11 @@ static inline int pm_request_autosuspend
+ 
+ static inline int pm_runtime_get(struct device *dev)
+ {
++	return __pm_runtime_resume(dev, RPM_GET_PUT | RPM_ASYNC | RPM_RUN_WORK);
++}
++
++static inline int pm_runtime_get_nowork(struct device *dev)
++{
+ 	return __pm_runtime_resume(dev, RPM_GET_PUT | RPM_ASYNC);
+ }
+ 
+Index: linux/drivers/base/power/runtime.c
+===================================================================
+--- linux.orig/drivers/base/power/runtime.c
++++ linux/drivers/base/power/runtime.c
+@@ -484,6 +484,15 @@ static int rpm_suspend(struct device *de
+ 	goto out;
+ }
+ 
++void rpm_queue_up_resume(struct device *dev)
++{
++	dev->power.request = RPM_REQ_RESUME;
++	if (!dev->power.request_pending) {
++		dev->power.request_pending = true;
++		queue_work(pm_wq, &dev->power.work);
++	}
++}
++
+ /**
+  * rpm_resume - Carry out runtime resume of given device.
+  * @dev: Device to resume.
+@@ -495,8 +504,10 @@ static int rpm_suspend(struct device *de
+  * RPM_NOWAIT and RPM_ASYNC flags.  Similarly, if there's a suspend running in
+  * parallel with this function, either tell the other process to resume after
+  * suspending (deferred_resume) or wait for it to finish.  If the RPM_ASYNC
+- * flag is set then queue a resume request; otherwise run the
+- * ->runtime_resume() callback directly.  Queue an idle notification for the
++ * flag is set, then queue a resume request and if the RPM_RUN_WORK flag is set
++ * too, schedule the executction of the device driver's .pm_runtime_work()
++ * callback after the resume request has been completed.  Otherwise run the
++ * .runtime_resume() callback directly and queue an idle notification for the
+  * device if the resume succeeded.
+  *
+  * This function must be called under dev->power.lock with interrupts disabled.
+@@ -519,12 +530,18 @@ static int rpm_resume(struct device *dev
+ 		goto out;
+ 
+ 	/*
+-	 * Other scheduled or pending requests need to be canceled.  Small
+-	 * optimization: If an autosuspend timer is running, leave it running
+-	 * rather than cancelling it now only to restart it again in the near
+-	 * future.
++	 * Other scheduled or pending requests need to be canceled.  If the
++	 * execution of driver work is queued up along with a resume request,
++	 * do not cancel it.
++	 */
++	if (dev->power.request != RPM_REQ_RESUME || !dev->power.run_driver_work)
++		dev->power.request = RPM_REQ_NONE;
++
++	/*
++	 * Small optimization: If an autosuspend timer is running, leave it
++	 * running rather than cancelling it now only to restart it again in the
++	 * near future.
+ 	 */
+-	dev->power.request = RPM_REQ_NONE;
+ 	if (!dev->power.timer_autosuspends)
+ 		pm_runtime_deactivate_timer(dev);
+ 
+@@ -533,6 +550,13 @@ static int rpm_resume(struct device *dev
+ 		goto out;
+ 	}
+ 
++	if ((rpmflags & RPM_ASYNC) && (rpmflags & RPM_RUN_WORK)) {
++		dev->power.run_driver_work = true;
++		rpm_queue_up_resume(dev);
++		retval = 0;
++		goto out;
++	}
++
+ 	if (dev->power.runtime_status == RPM_RESUMING
+ 	    || dev->power.runtime_status == RPM_SUSPENDING) {
+ 		DEFINE_WAIT(wait);
+@@ -591,11 +615,7 @@ static int rpm_resume(struct device *dev
+ 
+ 	/* Carry out an asynchronous or a synchronous resume. */
+ 	if (rpmflags & RPM_ASYNC) {
+-		dev->power.request = RPM_REQ_RESUME;
+-		if (!dev->power.request_pending) {
+-			dev->power.request_pending = true;
+-			queue_work(pm_wq, &dev->power.work);
+-		}
++		rpm_queue_up_resume(dev);
+ 		retval = 0;
+ 		goto out;
+ 	}
+@@ -691,6 +711,7 @@ static int rpm_resume(struct device *dev
+ static void pm_runtime_work(struct work_struct *work)
+ {
+ 	struct device *dev = container_of(work, struct device, power.work);
++	void (*driver_work)(struct device *) = NULL;
+ 	enum rpm_request req;
+ 
+ 	spin_lock_irq(&dev->power.lock);
+@@ -715,11 +736,29 @@ static void pm_runtime_work(struct work_
+ 		rpm_suspend(dev, RPM_NOWAIT | RPM_AUTO);
+ 		break;
+ 	case RPM_REQ_RESUME:
+-		rpm_resume(dev, RPM_NOWAIT);
++		if (dev->power.run_driver_work && dev->driver->pm_runtime_work)
++			driver_work = dev->driver->pm_runtime_work;
++
++		dev->power.run_driver_work = false;
++		rpm_resume(dev, driver_work ? 0 : RPM_NOWAIT);
+ 		break;
+ 	}
+ 
+  out:
++	if (driver_work) {
++		pm_runtime_get_noresume(dev);
++		dev->power.work_in_progress = true;
++		spin_unlock_irq(&dev->power.lock);
++
++		driver_work(dev);
++
++		spin_lock_irq(&dev->power.lock);
++		dev->power.work_in_progress = false;
++		wake_up_all(&dev->power.wait_queue);
++		pm_runtime_put_noidle(dev);
++		rpm_idle(dev, RPM_NOWAIT);
++	}
++
+ 	spin_unlock_irq(&dev->power.lock);
+ }
+ 
+@@ -982,7 +1021,8 @@ static void __pm_runtime_barrier(struct
+ 
+ 	if (dev->power.runtime_status == RPM_SUSPENDING
+ 	    || dev->power.runtime_status == RPM_RESUMING
+-	    || dev->power.idle_notification) {
++	    || dev->power.idle_notification
++	    || dev->power.work_in_progress) {
+ 		DEFINE_WAIT(wait);
+ 
+ 		/* Suspend, wake-up or idle notification in progress. */
+@@ -991,7 +1031,8 @@ static void __pm_runtime_barrier(struct
+ 					TASK_UNINTERRUPTIBLE);
+ 			if (dev->power.runtime_status != RPM_SUSPENDING
+ 			    && dev->power.runtime_status != RPM_RESUMING
+-			    && !dev->power.idle_notification)
++			    && !dev->power.idle_notification
++			    && !dev->power.work_in_progress)
+ 				break;
+ 			spin_unlock_irq(&dev->power.lock);
+ 

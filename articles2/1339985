@@ -1,0 +1,113 @@
+Path: news.gmane.org!not-for-mail
+From: Axel Lin <axel.lin@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 6/7] regulator: lp872x: set_current_limit should select the
+ maximum current in specific range
+Date: Wed, 08 Aug 2012 20:22:35 +0800
+Lines: 49
+Approved: news@gmane.org
+Message-ID: <1344428555.3199.6.camel@phoenix>
+References: <1344428238.3199.1.camel@phoenix>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344428575 32089 80.91.229.3 (8 Aug 2012 12:22:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 12:22:55 +0000 (UTC)
+Cc: "Milo(Woogyom) Kim" <milo.kim@ti.com>, Liam Girdwood <lrg@ti.com>,
+	linux-kernel@vger.kernel.org
+To: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 14:22:54 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sz5Hj-0006Ls-NI
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 14:22:48 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1758048Ab2HHMWm (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 08:22:42 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:59067 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752664Ab2HHMWl (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 08:22:41 -0400
+Original-Received: by pbbrr13 with SMTP id rr13so1394393pbb.19
+        for <linux-kernel@vger.kernel.org>; Wed, 08 Aug 2012 05:22:40 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=message-id:subject:from:to:cc:date:in-reply-to:references
+         :content-type:x-mailer:content-transfer-encoding:mime-version;
+        bh=UWyJX+/IMzZIe2/msncb+ATrFkoaZ7Dp8WOSN9qCvyg=;
+        b=ZDod3dgt8YNtdNWPRTJVHvSL10bmITlnWMZ7V7cZbg1o78A7ck9asBuPhpdWz+O0ir
+         Rl29hx2YwZf037sFIk+26DsvVS2C9KkgAKsHzSkO3VQQaTmyU1gX6lKLFEX4Hu2nZCZO
+         hkLGH43UH7Q2dhrYRGrJDeX7sZCAXbg6UD//y+vT5yJAju84z3Gjalzc9mD7yhyhVWS2
+         rYYav0DQhOSrdcIl9N+nvbj3Y1eP5g6z9b1aRw4+LFrukCjI7/lt++SzljHIR95OjD9m
+         6Mn9tBURq+EiqNzsmFKPM7ghyg9LL7eoddDwkpcVPEaOd1UBjXxY+fzvmK09uLgz3h7H
+         9ung==
+Original-Received: by 10.68.213.5 with SMTP id no5mr36506746pbc.24.1344428560625;
+        Wed, 08 Aug 2012 05:22:40 -0700 (PDT)
+Original-Received: from [114.39.107.47] (114-39-107-47.dynamic.hinet.net. [114.39.107.47])
+        by mx.google.com with ESMTPS id pn4sm1987163pbb.50.2012.08.08.05.22.38
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Wed, 08 Aug 2012 05:22:40 -0700 (PDT)
+In-Reply-To: <1344428238.3199.1.camel@phoenix>
+X-Mailer: Evolution 3.2.3-0ubuntu6 
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339985
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339985>
+
+Signed-off-by: Axel Lin <axel.lin@gmail.com>
+---
+ drivers/regulator/lp872x.c |   18 ++++++++----------
+ 1 file changed, 8 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/regulator/lp872x.c b/drivers/regulator/lp872x.c
+index 212c38e..6199d0f 100644
+--- a/drivers/regulator/lp872x.c
++++ b/drivers/regulator/lp872x.c
+@@ -374,8 +374,8 @@ static int lp8725_buck_set_current_limit(struct regulator_dev *rdev,
+ {
+ 	struct lp872x *lp = rdev_get_drvdata(rdev);
+ 	enum lp872x_regulator_id buck = rdev_get_id(rdev);
+-	int i, max = ARRAY_SIZE(lp8725_buck_uA);
+-	u8 addr, val;
++	int i;
++	u8 addr;
+ 
+ 	switch (buck) {
+ 	case LP8725_ID_BUCK1:
+@@ -388,17 +388,15 @@ static int lp8725_buck_set_current_limit(struct regulator_dev *rdev,
+ 		return -EINVAL;
+ 	}
+ 
+-	for (i = 0 ; i < max ; i++)
++	for (i = ARRAY_SIZE(lp8725_buck_uA) - 1 ; i >= 0; i--) {
+ 		if (lp8725_buck_uA[i] >= min_uA &&
+ 			lp8725_buck_uA[i] <= max_uA)
+-			break;
+-
+-	if (i == max)
+-		return -EINVAL;
+-
+-	val = i << LP8725_BUCK_CL_S;
++			return lp872x_update_bits(lp, addr,
++						  LP8725_BUCK_CL_M,
++						  i << LP8725_BUCK_CL_S);
++	}
+ 
+-	return lp872x_update_bits(lp, addr, LP8725_BUCK_CL_M, val);
++	return -EINVAL;
+ }
+ 
+ static int lp8725_buck_get_current_limit(struct regulator_dev *rdev)
+-- 
+1.7.9.5
+
+
+

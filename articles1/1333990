@@ -1,0 +1,121 @@
+Path: news.gmane.org!not-for-mail
+From: Matthew Garrett <mjg@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.pci
+Subject: [PATCH 4/4] X86: Use PCI setup data
+Date: Thu, 26 Jul 2012 18:02:49 -0400
+Lines: 63
+Approved: news@gmane.org
+Message-ID: <1343340169-7772-5-git-send-email-mjg@redhat.com>
+References: <1343340169-7772-1-git-send-email-mjg@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343340225 29381 80.91.229.3 (26 Jul 2012 22:03:45 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 22:03:45 +0000 (UTC)
+Cc: linux-efi@vger.kernel.org, linux-kernel@vger.kernel.org,
+	x86@kernel.org, linux-pci@vger.kernel.org, bhelgaas@google.com,
+	Matthew Garrett <mjg@redhat.com>
+To: matt.fleming@intel.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 00:03:42 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuW9Y-0004mn-N6
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 00:03:29 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754037Ab2GZWDQ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 18:03:16 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:34115 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754016Ab2GZWDL (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 18:03:11 -0400
+Original-Received: from int-mx10.intmail.prod.int.phx2.redhat.com (int-mx10.intmail.prod.int.phx2.redhat.com [10.5.11.23])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6QM39ft023251
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Thu, 26 Jul 2012 18:03:09 -0400
+Original-Received: from cavan.codon.org.uk (ovpn-113-108.phx2.redhat.com [10.3.113.108])
+	by int-mx10.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6QM360c005076
+	(version=TLSv1/SSLv3 cipher=AES256-SHA bits=256 verify=NO);
+	Thu, 26 Jul 2012 18:03:09 -0400
+Original-Received: from 209-6-41-104.c3-0.smr-ubr1.sbo-smr.ma.cable.rcn.com ([209.6.41.104] helo=localhost.localdomain)
+	by cavan.codon.org.uk with esmtpsa (TLS1.0:DHE_RSA_AES_256_CBC_SHA1:32)
+	(Exim 4.72)
+	(envelope-from <mjg@redhat.com>)
+	id 1SuW9B-0007Tc-9S; Thu, 26 Jul 2012 23:03:05 +0100
+In-Reply-To: <1343340169-7772-1-git-send-email-mjg@redhat.com>
+X-SA-Do-Not-Run: Yes
+X-SA-Exim-Connect-IP: 209.6.41.104
+X-SA-Exim-Mail-From: mjg@redhat.com
+X-SA-Exim-Scanned: No (on cavan.codon.org.uk); SAEximRunCond expanded to false
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.23
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333990 gmane.linux.kernel.pci:16655
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333990>
+
+EFI can provide PCI ROMs out of band via boot services, which may not be
+available after boot. Add support for using the data handed off to us by
+the boot stub or bootloader.
+
+Signed-off-by: Matthew Garrett <mjg@redhat.com>
+---
+ arch/x86/pci/common.c |   33 +++++++++++++++++++++++++++++++++
+ 1 file changed, 33 insertions(+)
+
+diff --git a/arch/x86/pci/common.c b/arch/x86/pci/common.c
+index 720e973f..3d2752f 100644
+--- a/arch/x86/pci/common.c
++++ b/arch/x86/pci/common.c
+@@ -17,6 +17,7 @@
+ #include <asm/io.h>
+ #include <asm/smp.h>
+ #include <asm/pci_x86.h>
++#include <asm/setup.h>
+ 
+ unsigned int pci_probe = PCI_PROBE_BIOS | PCI_PROBE_CONF1 | PCI_PROBE_CONF2 |
+ 				PCI_PROBE_MMCONF;
+@@ -608,6 +609,38 @@ unsigned int pcibios_assign_all_busses(void)
+ 	return (pci_probe & PCI_ASSIGN_ALL_BUSSES) ? 1 : 0;
+ }
+ 
++int pcibios_add_device(struct pci_dev *dev)
++{
++	struct setup_data *data;
++	struct pci_setup_rom *rom;
++	u64 pa_data;
++
++	if (boot_params.hdr.version < 0x0209)
++		return 0;
++
++	pa_data = boot_params.hdr.setup_data;
++	while (pa_data) {
++		data = phys_to_virt(pa_data);
++
++		if (data->type == SETUP_PCI) {
++			rom = (struct pci_setup_rom *)data;
++
++			if ((pci_domain_nr(dev->bus) == rom->segment) &&
++			    (dev->bus->number == rom->bus) &&
++			    (PCI_SLOT(dev->devfn) == rom->device) &&
++			    (PCI_FUNC(dev->devfn) == rom->function) &&
++			    (dev->vendor == rom->vendor) &&
++			    (dev->device == rom->devid)) {
++				dev->rom = (void *)(pa_data +
++				      offsetof(struct pci_setup_rom, romdata));
++				dev->romlen = rom->pcilen;
++			}
++		}
++		pa_data = data->next;
++	}
++	return 0;
++}
++
+ int pcibios_enable_device(struct pci_dev *dev, int mask)
+ {
+ 	int err;
+-- 
+1.7.10.4
+

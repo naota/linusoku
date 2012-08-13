@@ -1,0 +1,157 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 37/41] cpusets: avoid looping when storing to mems_allowed if one node remains set
+Date: Mon, 30 Jul 2012 10:31:36 -0700
+Lines: 90
+Approved: news@gmane.org
+Message-ID: <20120730172904.205652729@linuxfoundation.org>
+References: <20120730172901.306897424@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343669706 25713 80.91.229.3 (30 Jul 2012 17:35:06 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 17:35:06 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, David Rientjes <rientjes@google.com>,
+	Miao Xie <miaox@cn.fujitsu.com>,
+	KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>,
+	Nick Piggin <npiggin@kernel.dk>,
+	Paul Menage <paul@paulmenage.org>, Mel Gorman <mgorman@suse.de>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 19:34:58 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Svtrr-0003bH-TJ
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 19:34:56 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755163Ab2G3Rds (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 13:33:48 -0400
+Original-Received: from mail-gg0-f174.google.com ([209.85.161.174]:49202 "EHLO
+	mail-gg0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755132Ab2G3Rdp (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 13:33:45 -0400
+Original-Received: by mail-gg0-f174.google.com with SMTP id u4so5078471ggl.19
+        for <linux-kernel@vger.kernel.org>; Mon, 30 Jul 2012 10:33:45 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=+7OXg8oZ8o4qX2JvMqTYlVDURga8BEtClFGy6J7r/uM=;
+        b=c7OiZxHmK3oyb/+n2AMB9c/kl3wr8qw44yY/Is65/TnjXWiAzlYL11uUCFoJiYk/4v
+         vubte1lJkMUxy96k7uBKicOoq0K3bUB9sdudcgpE0LWuc33JyWiM1YEocAnJ07Y4qPbd
+         mNmHXul4ZRW98QbA2M8IfacQmnPjgqAt8fDU9cYZoZYU9eWuVDPTpGNoAuSs5NS7L7Io
+         thQBXp1C/PLKKVj5yXa6ISM5wfnVTwPcPwQEJdvbyexA28n40HiAEqrH/S1+9y+fed1E
+         Ph4+Kh0Oei5thZV0QDc07vHOFI7KndIQvuiMdgRRJHFv5wfQrFoaQk1sB1LuIEckPSVD
+         6amw==
+Original-Received: by 10.68.231.40 with SMTP id td8mr37301894pbc.150.1343669625121;
+        Mon, 30 Jul 2012 10:33:45 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id ql3sm8287895pbc.72.2012.07.30.10.33.42
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 30 Jul 2012 10:33:44 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120730172901.306897424@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQl1f1s/7V5PhOIjEN22f5zz5y42BW/FvYkAENOOiU6R0NVJdtduA5eSE+7LjwDATPc9yHfp
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335214 gmane.linux.kernel.stable:28957
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335214>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: David Rientjes <rientjes@google.com>
+
+commit 89e8a244b97e48f1f30e898b6f32acca477f2a13 upstream.
+
+Stable note: Not tracked in Bugzilla. [get|put]_mems_allowed() is
+	extremely expensive and severely impacted page allocator performance.
+	This is part of a series of patches that reduce page allocator
+	overhead.
+
+{get,put}_mems_allowed() exist so that general kernel code may locklessly
+access a task's set of allowable nodes without having the chance that a
+concurrent write will cause the nodemask to be empty on configurations
+where MAX_NUMNODES > BITS_PER_LONG.
+
+This could incur a significant delay, however, especially in low memory
+conditions because the page allocator is blocking and reclaim requires
+get_mems_allowed() itself.  It is not atypical to see writes to
+cpuset.mems take over 2 seconds to complete, for example.  In low memory
+conditions, this is problematic because it's one of the most imporant
+times to change cpuset.mems in the first place!
+
+The only way a task's set of allowable nodes may change is through cpusets
+by writing to cpuset.mems and when attaching a task to a generic code is
+not reading the nodemask with get_mems_allowed() at the same time, and
+then clearing all the old nodes.  This prevents the possibility that a
+reader will see an empty nodemask at the same time the writer is storing a
+new nodemask.
+
+If at least one node remains unchanged, though, it's possible to simply
+set all new nodes and then clear all the old nodes.  Changing a task's
+nodemask is protected by cgroup_mutex so it's guaranteed that two threads
+are not changing the same task's nodemask at the same time, so the
+nodemask is guaranteed to be stored before another thread changes it and
+determines whether a node remains set or not.
+
+Signed-off-by: David Rientjes <rientjes@google.com>
+Cc: Miao Xie <miaox@cn.fujitsu.com>
+Cc: KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>
+Cc: Nick Piggin <npiggin@kernel.dk>
+Cc: Paul Menage <paul@paulmenage.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ kernel/cpuset.c |    9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+--- a/kernel/cpuset.c
++++ b/kernel/cpuset.c
+@@ -949,6 +949,8 @@ static void cpuset_migrate_mm(struct mm_
+ static void cpuset_change_task_nodemask(struct task_struct *tsk,
+ 					nodemask_t *newmems)
+ {
++	bool masks_disjoint = !nodes_intersects(*newmems, tsk->mems_allowed);
++
+ repeat:
+ 	/*
+ 	 * Allow tasks that have access to memory reserves because they have
+@@ -963,7 +965,6 @@ repeat:
+ 	nodes_or(tsk->mems_allowed, tsk->mems_allowed, *newmems);
+ 	mpol_rebind_task(tsk, newmems, MPOL_REBIND_STEP1);
+ 
+-
+ 	/*
+ 	 * ensure checking ->mems_allowed_change_disable after setting all new
+ 	 * allowed nodes.
+@@ -980,9 +981,11 @@ repeat:
+ 
+ 	/*
+ 	 * Allocation of memory is very fast, we needn't sleep when waiting
+-	 * for the read-side.
++	 * for the read-side.  No wait is necessary, however, if at least one
++	 * node remains unchanged.
+ 	 */
+-	while (ACCESS_ONCE(tsk->mems_allowed_change_disable)) {
++	while (masks_disjoint &&
++			ACCESS_ONCE(tsk->mems_allowed_change_disable)) {
+ 		task_unlock(tsk);
+ 		if (!task_curr(tsk))
+ 			yield();
+
+

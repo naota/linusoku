@@ -1,0 +1,151 @@
+Path: news.gmane.org!not-for-mail
+From: Vladimir Davydov <vdavydov@parallels.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.network
+Subject: [PATCH] net: batch nf_conntrack_net_exit
+Date: Mon, 30 Jul 2012 19:16:15 +0400
+Lines: 102
+Approved: news@gmane.org
+Message-ID: <1343661375-23442-1-git-send-email-vdavydov@parallels.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1343661430 12039 80.91.229.3 (30 Jul 2012 15:17:10 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 15:17:10 +0000 (UTC)
+Cc: Vladimir Davydov <vdavydov@parallels.com>,
+	<netdev@vger.kernel.org>, <linux-kernel@vger.kernel.org>
+To: "David S. Miller" <davem@davemloft.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 17:17:10 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvriO-0003aL-Db
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 17:17:04 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754629Ab2G3PQg (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 11:16:36 -0400
+Original-Received: from relay.parallels.com ([195.214.232.42]:32954 "EHLO
+	relay.parallels.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753532Ab2G3PQe (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 11:16:34 -0400
+Original-Received: from msk-exch1.sw.swsoft.com ([10.30.1.231] helo=mail.sw.ru)
+	by relay.parallels.com with esmtps (TLSv1:RC4-MD5:128)
+	(Exim 4.77)
+	(envelope-from <VDavydov@parallels.com>)
+	id 1Svrhx-0003ya-NI; Mon, 30 Jul 2012 19:16:33 +0400
+Original-Received: from localhost.localdomain (10.30.22.158) by msk-exch1 (10.30.1.231)
+ with Microsoft SMTP Server (TLS) id 8.3.213.0; Mon, 30 Jul 2012 19:16:29
+ +0400
+X-Mailer: git-send-email 1.7.1
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335132 gmane.linux.network:238720
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335132>
+
+The patch introduces nf_conntrack_cleanup_list(), which cleanups
+nf_conntracks for a list of netns and calls synchronize_net() only
+once for them all.
+---
+ include/net/netfilter/nf_conntrack_core.h |   10 +++++++++-
+ net/netfilter/nf_conntrack_core.c         |   21 +++++++++++++--------
+ net/netfilter/nf_conntrack_standalone.c   |   14 +++++++++-----
+ 3 files changed, 31 insertions(+), 14 deletions(-)
+
+diff --git a/include/net/netfilter/nf_conntrack_core.h b/include/net/netfilter/nf_conntrack_core.h
+index d8f5b9f..f53b855 100644
+--- a/include/net/netfilter/nf_conntrack_core.h
++++ b/include/net/netfilter/nf_conntrack_core.h
+@@ -26,7 +26,15 @@ extern unsigned int nf_conntrack_in(struct net *net,
+ 				    struct sk_buff *skb);
+ 
+ extern int nf_conntrack_init(struct net *net);
+-extern void nf_conntrack_cleanup(struct net *net);
++extern void nf_conntrack_cleanup_list(struct list_head *net_exit_list);
++
++static inline void nf_conntrack_cleanup(struct net *net)
++{
++	LIST_HEAD(single);
++
++	list_add(&net->exit_list, &single);
++	nf_conntrack_cleanup_list(&single);
++}
+ 
+ extern int nf_conntrack_proto_init(struct net *net);
+ extern void nf_conntrack_proto_fini(struct net *net);
+diff --git a/net/netfilter/nf_conntrack_core.c b/net/netfilter/nf_conntrack_core.c
+index cf48755..afa62f7 100644
+--- a/net/netfilter/nf_conntrack_core.c
++++ b/net/netfilter/nf_conntrack_core.c
+@@ -1363,21 +1363,26 @@ static void nf_conntrack_cleanup_net(struct net *net)
+ 
+ /* Mishearing the voices in his head, our hero wonders how he's
+    supposed to kill the mall. */
+-void nf_conntrack_cleanup(struct net *net)
++void nf_conntrack_cleanup_list(struct list_head *net_exit_list)
+ {
+-	if (net_eq(net, &init_net))
+-		RCU_INIT_POINTER(ip_ct_attach, NULL);
++	struct net *net;
++
++	list_for_each_entry(net, net_exit_list, exit_list)
++		if (net_eq(net, &init_net))
++			RCU_INIT_POINTER(ip_ct_attach, NULL);
+ 
+ 	/* This makes sure all current packets have passed through
+ 	   netfilter framework.  Roll on, two-stage module
+ 	   delete... */
+ 	synchronize_net();
+-	nf_conntrack_proto_fini(net);
+-	nf_conntrack_cleanup_net(net);
+ 
+-	if (net_eq(net, &init_net)) {
+-		RCU_INIT_POINTER(nf_ct_destroy, NULL);
+-		nf_conntrack_cleanup_init_net();
++	list_for_each_entry(net, net_exit_list, exit_list) {
++		nf_conntrack_proto_fini(net);
++		nf_conntrack_cleanup_net(net);
++		if (net_eq(net, &init_net)) {
++			RCU_INIT_POINTER(nf_ct_destroy, NULL);
++			nf_conntrack_cleanup_init_net();
++		}
+ 	}
+ }
+ 
+diff --git a/net/netfilter/nf_conntrack_standalone.c b/net/netfilter/nf_conntrack_standalone.c
+index 9b39432..8f60708 100644
+--- a/net/netfilter/nf_conntrack_standalone.c
++++ b/net/netfilter/nf_conntrack_standalone.c
+@@ -551,16 +551,20 @@ out_init:
+ 	return ret;
+ }
+ 
+-static void nf_conntrack_net_exit(struct net *net)
++static void nf_conntrack_net_exit(struct list_head *net_exit_list)
+ {
+-	nf_conntrack_standalone_fini_sysctl(net);
+-	nf_conntrack_standalone_fini_proc(net);
+-	nf_conntrack_cleanup(net);
++	struct net *net;
++
++	list_for_each_entry(net, net_exit_list, exit_list) {
++		nf_conntrack_standalone_fini_sysctl(net);
++		nf_conntrack_standalone_fini_proc(net);
++	}
++	nf_conntrack_cleanup_list(net_exit_list);
+ }
+ 
+ static struct pernet_operations nf_conntrack_net_ops = {
+ 	.init = nf_conntrack_net_init,
+-	.exit = nf_conntrack_net_exit,
++	.exit_batch = nf_conntrack_net_exit,
+ };
+ 
+ static int __init nf_conntrack_standalone_init(void)
+-- 
+1.7.1
+

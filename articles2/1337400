@@ -1,0 +1,111 @@
+Path: news.gmane.org!not-for-mail
+From: Oleg Nesterov <oleg@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 2/2] ptrace: fix set_task_blockstep()->update_debugctlmsr()
+	logic
+Date: Fri, 3 Aug 2012 18:29:54 +0200
+Lines: 51
+Approved: news@gmane.org
+Message-ID: <20120803162954.GA19806@redhat.com>
+References: <20120803162912.GA19767@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344011624 17394 80.91.229.3 (3 Aug 2012 16:33:44 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 16:33:44 +0000 (UTC)
+Cc: Ananth N Mavinakayanahalli <ananth@in.ibm.com>,
+	Anton Arapov <anton@redhat.com>,
+	"H. Peter Anvin" <hpa@zytor.com>,
+	Peter Zijlstra <peterz@infradead.org>,
+	Roland McGrath <roland@hack.frob.com>,
+	Sebastian Andrzej Siewior <bigeasy@linutronix.de>,
+	Srikar Dronamraju <srikar@linux.vnet.ibm.com>,
+	linux-kernel@vger.kernel.org
+To: Ingo Molnar <mingo@elte.hu>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 18:33:37 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxKof-00005T-8a
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 18:33:33 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753607Ab2HCQdU (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 12:33:20 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:64899 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753475Ab2HCQdR (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 12:33:17 -0400
+Original-Received: from int-mx02.intmail.prod.int.phx2.redhat.com (int-mx02.intmail.prod.int.phx2.redhat.com [10.5.11.12])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q73GWupo022634
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Fri, 3 Aug 2012 12:32:56 -0400
+Original-Received: from tranklukator.englab.brq.redhat.com (dhcp-1-232.brq.redhat.com [10.34.1.232])
+	by int-mx02.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with SMTP id q73GWrJO005978;
+	Fri, 3 Aug 2012 12:32:54 -0400
+Original-Received: by tranklukator.englab.brq.redhat.com (nbSMTP-1.00) for uid 500
+	oleg@redhat.com; Fri,  3 Aug 2012 18:29:57 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <20120803162912.GA19767@redhat.com>
+User-Agent: Mutt/1.5.18 (2008-05-17)
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.12
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337400
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337400>
+
+Afaics the usage of update_debugctlmsr() in step.c was always
+very wrong.
+
+1. update_debugctlmsr() was simply unneeded. The child sleeps
+   TASK_TRACED, __switch_to_xtra(next_p => child) should notice
+   TIF_BLOCKSTEP and set/clear DEBUGCTLMSR_BTF after resume if
+   needed.
+
+2. It is wrong. The state of DEBUGCTLMSR_BTF bit in CPU register
+   should always match the state of current's TIF_BLOCKSTEP bit.
+
+3. Even get_debugctlmsr() + update_debugctlmsr() itself does not
+   look right. Irq can change other bits in MSR_IA32_DEBUGCTLMSR
+   register or the caller can be preempted in between.
+
+However, now that uprobes uses user_enable_single_step(current)
+we can't simply remove update_debugctlmsr(). So this patch adds
+the additional "task == current" check and disables irqs to avoid
+the race with interrupts/preemption.
+
+Signed-off-by: Oleg Nesterov <oleg@redhat.com>
+---
+ arch/x86/kernel/step.c |    6 ++++++
+ 1 files changed, 6 insertions(+), 0 deletions(-)
+
+diff --git a/arch/x86/kernel/step.c b/arch/x86/kernel/step.c
+index afa60db..636402e 100644
+--- a/arch/x86/kernel/step.c
++++ b/arch/x86/kernel/step.c
+@@ -166,12 +166,18 @@ static void set_task_blockstep(struct task_struct *task, bool on)
+ 	else
+ 		clear_tsk_thread_flag(task, TIF_BLOCKSTEP);
+ 
++	if (task != current)
++		return;
++
++	/* ensure irq/preemption can't change debugctl in between */
++	local_irq_disable();
+ 	debugctl = get_debugctlmsr();
+ 	if (on)
+ 		debugctl |= DEBUGCTLMSR_BTF;
+ 	else
+ 		debugctl &= ~DEBUGCTLMSR_BTF;
+ 	update_debugctlmsr(debugctl);
++	local_irq_enable();
+ }
+ 
+ /*
+-- 
+1.5.5.1
+

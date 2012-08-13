@@ -1,0 +1,168 @@
+Path: news.gmane.org!not-for-mail
+From: Minchan Kim <minchan@kernel.org>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [PATCH 2/6] mm: vmscan: Scale number of pages reclaimed by
+ reclaim/compaction based on failures
+Date: Fri, 10 Aug 2012 17:48:29 +0900
+Lines: 95
+Approved: news@gmane.org
+Message-ID: <20120810084829.GF21033@bbox>
+References: <20120808014824.GB4247@bbox>
+ <20120808075526.GI29814@suse.de>
+ <20120808082738.GF4247@bbox>
+ <20120808085112.GJ29814@suse.de>
+ <20120808235127.GA17835@bbox>
+ <20120809074949.GA12690@suse.de>
+ <20120809082715.GA19802@bbox>
+ <20120809092035.GD12690@suse.de>
+ <20120809232733.GD21033@bbox>
+ <20120810083438.GM12690@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344588413 13614 80.91.229.3 (10 Aug 2012 08:46:53 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 08:46:53 +0000 (UTC)
+Cc: Linux-MM <linux-mm@kvack.org>, Rik van Riel <riel@redhat.com>,
+	Jim Schutt <jaschut@sandia.gov>,
+	LKML <linux-kernel@vger.kernel.org>
+To: Mel Gorman <mgorman@suse.de>
+Original-X-From: owner-linux-mm@kvack.org Fri Aug 10 10:46:53 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Szkrr-00048N-FM
+	for glkm-linux-mm-2@m.gmane.org; Fri, 10 Aug 2012 10:46:51 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id D59676B0044; Fri, 10 Aug 2012 04:46:49 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id ABCCC6B0062; Fri, 10 Aug 2012 04:46:49 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 590056B0068; Fri, 10 Aug 2012 04:46:49 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx147.postini.com [74.125.245.147])
+	by kanga.kvack.org (Postfix) with SMTP id 21E076B0044
+	for <linux-mm@kvack.org>; Fri, 10 Aug 2012 04:46:48 -0400 (EDT)
+Original-Received: from LGEMRELSE1Q.lge.com ([156.147.1.111]) by na3sys010amx147.postini.com ([74.125.244.10]) with SMTP;
+	Fri, 10 Aug 2012 08:46:48 GMT
+X-AuditID: 9c93016f-b7c98ae0000013b4-6e-5024ca766bb5
+Original-Received: from localhost ( [10.177.220.67])
+	by LGEMRELSE1Q.lge.com (Symantec Brightmail Gateway) with SMTP id 36.1B.05044.67AC4205; Fri, 10 Aug 2012 17:46:46 +0900 (KST)
+Content-Disposition: inline
+In-Reply-To: <20120810083438.GM12690@suse.de>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Brightmail-Tracker: AAAAAA==
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <minchan@kernel.org> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83985 gmane.linux.kernel:1341192
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341192>
+
+Hi Mel,
+
+On Fri, Aug 10, 2012 at 09:34:38AM +0100, Mel Gorman wrote:
+> On Fri, Aug 10, 2012 at 08:27:33AM +0900, Minchan Kim wrote:
+> > > <SNIP>
+> > >
+> > > The intention is that an allocation can fail but each subsequent attempt will
+> > > try harder until there is success. Each allocation request does a portion
+> > > of the necessary work to spread the cost between multiple requests. Take
+> > > THP for example where there is a constant request for THP allocations
+> > > for whatever reason (heavy fork workload, large buffer allocation being
+> > > populated etc.). Some of those allocations fail but if they do, future
+> > > THP requests will reclaim more pages. When compaction resumes again, it
+> > > will be more likely to succeed and compact_defer_shift gets reset. In the
+> > > specific case of THP there will be allocations that fail but khugepaged
+> > > will promote them later if the process is long-lived.
+> > 
+> > You assume high-order allocation are *constant* and I guess your test enviroment
+> > is optimal for it.
+> 
+> Ok, my example stated they were constant because it was the easiest to
+> illustrate but it does not necessarily have to be the case. The high-order
+> allocation requests can be separated by any length of time with a read or
+> write stream running in the background applying a small amount of memory
+> pressure and the same scenario applies.
+> 
+> > I agree your patch if we can make sure such high-order
+> > allocation are always constant. But, is it true? Otherwise, your patch could reclaim
+> > too many pages unnecessary and it could reduce system performance by eviction
+> 
+> The "too many pages unnecessarily" is unlikely. For compact_defer_shift to be
+> elevated there has to have been recent failures by try_to_compact_pages(). If
+> compact_defer_shift is elevated and a large process exited then
+> try_to_compact_pages() may succeed and reset compact_defer_shift without
+> calling direct reclaim and entering this path at all.
+> 
+> > of page cache and swap out of workingset part. That's a concern to me.
+> > In summary, I think your patch is rather agressive so how about this?
+> > 
+> > diff --git a/mm/vmscan.c b/mm/vmscan.c
+> > index 66e4310..0cb2593 100644
+> > --- a/mm/vmscan.c
+> > +++ b/mm/vmscan.c
+> > @@ -1708,6 +1708,7 @@ static inline bool should_continue_reclaim(struct lruvec *lruvec,
+> >  {
+> >         unsigned long pages_for_compaction;
+> >         unsigned long inactive_lru_pages;
+> > +       struct zone *zone;
+> > 
+> >         /* If not in reclaim/compaction mode, stop */
+> >         if (!in_reclaim_compaction(sc))
+> > @@ -1741,6 +1742,15 @@ static inline bool should_continue_reclaim(struct lruvec *lruvec,
+> >          * inactive lists are large enough, continue reclaiming
+> >          */
+> >         pages_for_compaction = (2UL << sc->order);
+> > +
+> > +       /*
+> > +        * If compaction is deferred for this order then scale the number of
+> > +        * pages reclaimed based on the number of consecutive allocation
+> > +        * failures
+> > +        */
+> > +       zone = lruvec_zone(lruvec);
+> > +       if (zone->compact_order_failed <= sc->order) {
+> > +               if (zone->compact_defer_shift)
+> > +                       /*
+> > +                        * We can't make sure deferred requests will come again
+> > +                        * The probability is 50:50.
+> > +                        */
+> > +                       pages_for_compaction <<= (zone->compact_defer_shift - 1);
+> 
+> This patch is not doing anything radically different to my own patch.
+> compact_defer_shift == 0 if allocations succeeded recently using
+> reclaim/compaction at its normal level. Functionally the only difference
+> is that you delay when more pages get reclaim by one failure.
+> 
+> Was that what you intended? If so, it's not clear why you think this patch
+> is better or how you concluded that the probability of another failure was
+> "50:50".
+
+Please ignore my comment about this patch.
+I got confused between compat_considered and compact_defer_shift.
+compact_defer_shift is indication of constant high order page
+allocationfailing so I have no objection any more.
+Sorry for the noise. :(
+
+-- 
+Kind regards,
+Minchan Kim
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

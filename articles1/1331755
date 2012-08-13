@@ -1,0 +1,130 @@
+Path: news.gmane.org!not-for-mail
+From: Mel Gorman <mgorman@suse.de>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable,gmane.linux.kernel.mm
+Subject: [PATCH 31/34] cpusets: avoid looping when storing to mems_allowed if one node remains set
+Date: Mon, 23 Jul 2012 14:38:44 +0100
+Lines: 85
+Approved: news@gmane.org
+Message-ID: <1343050727-3045-32-git-send-email-mgorman@suse.de>
+References: <1343050727-3045-1-git-send-email-mgorman@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343050785 20733 80.91.229.3 (23 Jul 2012 13:39:45 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 13:39:45 +0000 (UTC)
+Cc: Linux-MM <linux-mm@kvack.org>, LKML <linux-kernel@vger.kernel.org>,
+	Mel Gorman <mgorman@suse.de>
+To: Stable <stable@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 15:39:44 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StIrK-0006OT-CG
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 15:39:38 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753828Ab2GWNjK (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 09:39:10 -0400
+Original-Received: from cantor2.suse.de ([195.135.220.15]:58789 "EHLO mx2.suse.de"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753746Ab2GWNjI (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 09:39:08 -0400
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 230D7A3E8F;
+	Mon, 23 Jul 2012 15:39:07 +0200 (CEST)
+X-Mailer: git-send-email 1.7.9.2
+In-Reply-To: <1343050727-3045-1-git-send-email-mgorman@suse.de>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331755 gmane.linux.kernel.stable:28741 gmane.linux.kernel.mm:82865
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331755>
+
+From: David Rientjes <rientjes@google.com>
+
+commit 89e8a244b97e48f1f30e898b6f32acca477f2a13 upstream.
+
+Stable note: Not tracked in Bugzilla. [get|put]_mems_allowed() is
+	extremely expensive and severely impacted page allocator performance.
+	This is part of a series of patches that reduce page allocator
+	overhead.
+
+{get,put}_mems_allowed() exist so that general kernel code may locklessly
+access a task's set of allowable nodes without having the chance that a
+concurrent write will cause the nodemask to be empty on configurations
+where MAX_NUMNODES > BITS_PER_LONG.
+
+This could incur a significant delay, however, especially in low memory
+conditions because the page allocator is blocking and reclaim requires
+get_mems_allowed() itself.  It is not atypical to see writes to
+cpuset.mems take over 2 seconds to complete, for example.  In low memory
+conditions, this is problematic because it's one of the most imporant
+times to change cpuset.mems in the first place!
+
+The only way a task's set of allowable nodes may change is through cpusets
+by writing to cpuset.mems and when attaching a task to a generic code is
+not reading the nodemask with get_mems_allowed() at the same time, and
+then clearing all the old nodes.  This prevents the possibility that a
+reader will see an empty nodemask at the same time the writer is storing a
+new nodemask.
+
+If at least one node remains unchanged, though, it's possible to simply
+set all new nodes and then clear all the old nodes.  Changing a task's
+nodemask is protected by cgroup_mutex so it's guaranteed that two threads
+are not changing the same task's nodemask at the same time, so the
+nodemask is guaranteed to be stored before another thread changes it and
+determines whether a node remains set or not.
+
+Signed-off-by: David Rientjes <rientjes@google.com>
+Cc: Miao Xie <miaox@cn.fujitsu.com>
+Cc: KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>
+Cc: Nick Piggin <npiggin@kernel.dk>
+Cc: Paul Menage <paul@paulmenage.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+---
+ kernel/cpuset.c |    9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/kernel/cpuset.c b/kernel/cpuset.c
+index 9c9b754..a995893 100644
+--- a/kernel/cpuset.c
++++ b/kernel/cpuset.c
+@@ -949,6 +949,8 @@ static void cpuset_migrate_mm(struct mm_struct *mm, const nodemask_t *from,
+ static void cpuset_change_task_nodemask(struct task_struct *tsk,
+ 					nodemask_t *newmems)
+ {
++	bool masks_disjoint = !nodes_intersects(*newmems, tsk->mems_allowed);
++
+ repeat:
+ 	/*
+ 	 * Allow tasks that have access to memory reserves because they have
+@@ -963,7 +965,6 @@ repeat:
+ 	nodes_or(tsk->mems_allowed, tsk->mems_allowed, *newmems);
+ 	mpol_rebind_task(tsk, newmems, MPOL_REBIND_STEP1);
+ 
+-
+ 	/*
+ 	 * ensure checking ->mems_allowed_change_disable after setting all new
+ 	 * allowed nodes.
+@@ -980,9 +981,11 @@ repeat:
+ 
+ 	/*
+ 	 * Allocation of memory is very fast, we needn't sleep when waiting
+-	 * for the read-side.
++	 * for the read-side.  No wait is necessary, however, if at least one
++	 * node remains unchanged.
+ 	 */
+-	while (ACCESS_ONCE(tsk->mems_allowed_change_disable)) {
++	while (masks_disjoint &&
++			ACCESS_ONCE(tsk->mems_allowed_change_disable)) {
+ 		task_unlock(tsk);
+ 		if (!task_curr(tsk))
+ 			yield();
+-- 
+1.7.9.2
+

@@ -1,0 +1,111 @@
+Path: news.gmane.org!not-for-mail
+From: David Cullen <David.Cullen@koe-americas.com>
+Newsgroups: gmane.linux.kernel
+Subject: [RFC PATCHv2] QEMU Fix /usr/bin/xargs: etags: Argument list too long
+Date: Wed, 8 Aug 2012 17:23:49 +0000
+Lines: 57
+Approved: news@gmane.org
+Message-ID: <5022A0A5.6090809@koe-americas.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=US-ASCII
+Content-Transfer-Encoding: 7BIT
+X-Trace: dough.gmane.org 1344446640 30304 80.91.229.3 (8 Aug 2012 17:24:00 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 17:24:00 +0000 (UTC)
+Cc: "linux-kernel@vger.kernel.org" <linux-kernel@vger.kernel.org>
+To: Michal Marek <mmarek@suse.cz>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 19:24:00 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sz9zD-00048Y-FS
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 19:23:59 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1758983Ab2HHRXw (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 13:23:52 -0400
+Original-Received: from 209.248.170.90.nw.nuvox.net ([209.248.170.90]:57524 "EHLO
+	GVL-MAIL.koe-americas.local" rhost-flags-OK-OK-OK-FAIL)
+	by vger.kernel.org with ESMTP id S1030440Ab2HHRXv convert rfc822-to-8bit
+	(ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 13:23:51 -0400
+Original-Received: from GVL-MAIL.koe-americas.local ([fe80::98eb:5180:766f:a9fe]) by
+ GVL-MAIL.koe-americas.local ([fe80::98eb:5180:766f:a9fe%10]) with mapi id
+ 14.02.0283.003; Wed, 8 Aug 2012 13:23:50 -0400
+Thread-Topic: [RFC PATCHv2] QEMU Fix /usr/bin/xargs: etags: Argument list
+ too long
+Thread-Index: AQHNdYqTlWZJi87DW0SCm1n02aLGOQ==
+Accept-Language: en-US
+Content-Language: en-US
+X-MS-Has-Attach: 
+X-MS-TNEF-Correlator: 
+user-agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:14.0) Gecko/20120713
+ Thunderbird/14.0
+x-originating-ip: [10.1.5.28]
+Content-ID: <84DB408EA9C41A4BA6698EF01D232B22@koe-americas.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340200
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340200>
+
+Patch applies to
+
+    commit 42a579a0f960081cd16fc945036e4780c3ad3202
+
+When running "make ARCH=arm TAGS" in a cross chroot using
+qemu-arm-static, the following message is emitted:
+
+    [user@host:/home/work/linux]: make ARCH=arm TAGS
+      GEN     TAGS
+    /usr/bin/xargs: etags: Argument list too long
+
+This can be fixed by by passing "-s $((120 * 1024))" to xargs in
+scripts/tags.sh when QEMU matches .*qemu-.*-static$.
+
+This limits the xargs command line to 120KiB characters to provide
+headroom for people running inside a cross chroot using
+qemu-.*-static.
+
+Signed-off-by: David Cullen <david.cullen@koe-americas.com>
+---
+ scripts/tags.sh |   11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/scripts/tags.sh b/scripts/tags.sh
+index cff8faa..02947c5 100755
+--- a/scripts/tags.sh
++++ b/scripts/tags.sh
+@@ -5,12 +5,19 @@
+ # mode may be any of: tags, TAGS, cscope
+ #
+ # Uses the following environment variables:
+-# ARCH, SUBARCH, SRCARCH, srctree, src, obj
++# ARCH, SUBARCH, SRCARCH, srctree, src, obj, QEMU
+
+ if [ "$KBUILD_VERBOSE" = "1" ]; then
+        set -x
+ fi
+
++# If the user is running in a cross chroot using qemu-.*-static,
++# limit xargs to 120KiB of characters per command line.
++XARGS_MAX_CHARS=
++if [ -n "$QEMU" ] && [[ "$QEMU" =~ .*qemu-.*-static$ ]] ; then
++       XARGS_MAX_CHARS="-s $(( 120 * 1024 ))"
++fi
++
+ # This is a duplicate of RCS_FIND_IGNORE without escaped '()'
+ ignore="( -name SCCS -o -name BitKeeper -o -name .svn -o \
+           -name CVS  -o -name .pc       -o -name .hg  -o \
+@@ -121,7 +128,7 @@ dogtags()
+
+ exuberant()
+ {
+-       all_sources | xargs $1 -a                               \
++       all_sources | xargs $XARGS_MAX_CHARS $1 -a              \
+        -I __initdata,__exitdata,__acquires,__releases          \
+        -I __read_mostly,____cacheline_aligned                  \
+        -I ____cacheline_aligned_in_smp                         \

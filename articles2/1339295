@@ -1,0 +1,175 @@
+Path: news.gmane.org!not-for-mail
+From: "Luis R. Rodriguez" <mcgrof@frijolero.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.ubuntu.devel.kernel.general,gmane.linux.kernel.wireless.general
+Subject: Using vanilla kernels headers to do backport testing -- issues with memcpy()
+Date: Tue, 7 Aug 2012 12:28:37 -0700
+Lines: 115
+Approved: news@gmane.org
+Message-ID: <CAB=NE6WZWEO=b5Usx4RKDLC--TvLWnOom0P+HmXsxh7QZQQXQA@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+X-Trace: dough.gmane.org 1344367754 10846 80.91.229.3 (7 Aug 2012 19:29:14 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 19:29:14 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org,
+	linux-wireless <linux-wireless@vger.kernel.org>,
+	=?UTF-8?B?T3phbiDDh2HEn2xheWFu?= <ozancag@gmail.com>,
+	Hauke Mehrtens <hauke@hauke-m.de>,
+	"H. Peter Anvin" <hpa@zytor.com>
+To: Ubuntu Kernel Team <kernel-team@lists.ubuntu.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 21:29:14 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SypSo-0007b2-Vd
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 21:29:11 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932080Ab2HGT3A (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 15:29:00 -0400
+Original-Received: from mail-ob0-f174.google.com ([209.85.214.174]:65245 "EHLO
+	mail-ob0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752717Ab2HGT26 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 15:28:58 -0400
+Original-Received: by obbuo13 with SMTP id uo13so7915466obb.19
+        for <multiple recipients>; Tue, 07 Aug 2012 12:28:58 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=mime-version:sender:from:date:x-google-sender-auth:message-id
+         :subject:to:cc:content-type;
+        bh=XwRWAzX7JzGGK/taN4h6BJg4hyQGWITzKH3FhxYsOSc=;
+        b=mimQsy3ar3/bfH4M+z0zxu0VTWjgrHnyK1jDtSp183Tq/zVpajWsML73SK9LR+yQX5
+         CLycV62xjAnbI4rIsEwQ8/bRxRpPziDNZU9FmvzuqziFge21UdmRlDKM0mnQkYeprHG9
+         tR4AxuMwMersx/lhfdu4lSRMPJIlOt8wdBUmSlmfm3uKbHe7BBACcM5LkxPJVG4T4m0o
+         Myxu/DtuZaeb+32d8u7o3/uj62vtZOiIy82aSeZPVKNSjPQaZNGErE08zIFgQXZ/Lo/0
+         XSF7qzA9L58bA5gUjdF10nR3aS6zs3N7yiBeTKEpdXa56kPFgI0Fk8zRAjHYYNkvQxMU
+         Lb1g==
+Original-Received: by 10.182.98.108 with SMTP id eh12mr26361188obb.6.1344367738005;
+ Tue, 07 Aug 2012 12:28:58 -0700 (PDT)
+Original-Received: by 10.182.114.10 with HTTP; Tue, 7 Aug 2012 12:28:37 -0700 (PDT)
+X-Google-Sender-Auth: qm-Uzfge-MZBYzJBdZoOGOrk-9c
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339295 gmane.linux.ubuntu.devel.kernel.general:20278 gmane.linux.kernel.wireless.general:95920
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339295>
+
+A while ago we reviewed the idea of whether or not to use a set of
+distribution vanilla kernels to allow us to do compilation testing of
+modules on the compat backport project [0] with the benefit being that
+at least one Linux distribution was doing this work already and given
+that this work was using plain vanilla kernels directly from
+kernel.org, with no modifications. The other option that existed was
+that each distro could provide their own set of kernel packages along
+with their own kernel headers but it didn't seem like other Linux
+distributions were doing this and the information was not easy to
+gather. So we went with the Ubuntu vanilla kernels and Ozan later
+figured out a way to extract deb packages in a distribution agnostic
+manner [1] and later added an option to enable a way to install and
+use this for ckmake which test compiles against 21 kernels without
+requiring root [2].
+
+This works swell as it allows anyone on any Linux distribution to test
+compile against a series of older kernels, today 21 older kernels and
+all vanilla kernels which means we get to focus and prioritize
+upstream.
+
+This has started working well except for the fact that as of the >=
+v3.4 vanilla kernel releases, there are a few files which are binary
+in the kernel headers which use dynamic libraries. Of interest to us
+here are the ones required to build external modules. An example:
+
+/lib/modules/3.4.4-030404-generic/build/scripts/genksyms/genksyms
+
+It just so happens to be that the folks building these packages are
+using a glibc >= 2.14 and although the *only* symbol I see being
+required from glibc >= 2.14 being memcpy():
+
+mcgrof@garbanzo ~/compat (git::master)$ objdump -T
+/home/mcgrof/compat-ksrc/lib/modules/3.4.4-030404-generic/build/scripts/genksyms/genksyms
+
+/home/mcgrof/compat-ksrc/lib/modules/3.4.4-030404-generic/build/scripts/genksyms/genksyms:
+    file format elf64-x86-64
+
+DYNAMIC SYMBOL TABLE:
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.3.4 __snprintf_chk
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 free
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.3.4 __vfprintf_chk
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 __errno_location
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 ferror
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 isatty
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 fread
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 fclose
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 strlen
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.4   __stack_chk_fail
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 getopt_long
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 strchr
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 _IO_putc
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 fputs
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 fgetc
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 fputc
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 __strdup
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 __libc_start_main
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 strcmp
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 feof
+0000000000000000  w   D  *UND*  0000000000000000              __gmon_start__
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 strtol
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 clearerr
+
+
+Bleh:
+
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.14  memcpy
+
+
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 fileno
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 malloc
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 _IO_getc
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 ungetc
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 realloc
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.3.4 __printf_chk
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 fopen
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 perror
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 exit
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.2.5 fwrite
+0000000000000000      DF *UND*  0000000000000000  GLIBC_2.3.4 __fprintf_chk
+000000000060b160 g    DO .bss   0000000000000008  GLIBC_2.2.5 stdout
+000000000060b168 g    DO .bss   0000000000000008  GLIBC_2.2.5 stdin
+000000000060b178 g    DO .bss   0000000000000008  GLIBC_2.2.5 stderr
+000000000060b170 g    DO .bss   0000000000000008  GLIBC_2.2.5 optarg
+
+It would be reasonable to simply require the users of ckmake to update
+their libc version but even Debian sid does not yet seem to have libc
+>= 2.14, not sure of others. The gains for requiring a glibc >= 2.14
+only for memcpy() would seem rather small for this particular case so
+I wanted to review the options to fix this.
+
+---------------
+1) Get the kernel headers to statically link against the required libraries
+
+This options would enable any Linux distribution to use the packages provided
+
+2) Add a LD_PRELOAD hack for mempcy() for running ckmake and friends
+on the compat package
+
+This doesn't seem so.. clean, but its the only thing I can currently control.
+
+3) Simply require libc > 2.14 for folks who really want to help do
+backport testing for kernels >= 3.4
+
+I suppose this is the easiest but we likely could run into other
+similar issues later.
+
+---------------
+
+Are there other options?
+
+[0] https://lkml.org/lkml/2012/2/6/558
+[1] https://github.com/mcgrof/compat/commit/fdbea5a6ce2cba6d6c8fb3eb998cffa5a9e3bf78
+[2] https://github.com/mcgrof/compat/commit/e7d88d67040bbaa79720fa1b2dfc4fc24e4d004f
+
+  Luis

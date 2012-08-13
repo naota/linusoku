@@ -1,0 +1,141 @@
+Path: news.gmane.org!not-for-mail
+From: "Rafael J. Wysocki" <rjw@sisk.pl>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH v2] PM / Sleep: Print name of wakeup source that aborts suspend
+Date: Sun, 5 Aug 2012 23:49:42 +0200
+Lines: 85
+Approved: news@gmane.org
+Message-ID: <201208052349.42606.rjw@sisk.pl>
+References: <1342746658-17388-1-git-send-email-toddpoynor@google.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain;
+  charset="iso-8859-2"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344203040 14133 80.91.229.3 (5 Aug 2012 21:44:00 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 5 Aug 2012 21:44:00 +0000 (UTC)
+Cc: linux-pm@vger.kernel.org, linux-kernel@vger.kernel.org,
+	arve@android.com
+To: Todd Poynor <toddpoynor@google.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Aug 05 23:43:59 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sy8cA-0005Hw-0k
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 05 Aug 2012 23:43:58 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755186Ab2HEVnu (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 5 Aug 2012 17:43:50 -0400
+Original-Received: from ogre.sisk.pl ([193.178.161.156]:42852 "EHLO ogre.sisk.pl"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755057Ab2HEVnt (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 5 Aug 2012 17:43:49 -0400
+Original-Received: from localhost (localhost.localdomain [127.0.0.1])
+	by ogre.sisk.pl (Postfix) with ESMTP id 8BE831DB7E1;
+	Sun,  5 Aug 2012 23:34:12 +0200 (CEST)
+Original-Received: from ogre.sisk.pl ([127.0.0.1])
+ by localhost (ogre.sisk.pl [127.0.0.1]) (amavisd-new, port 10024) with ESMTP
+ id 29776-10; Sun,  5 Aug 2012 23:34:03 +0200 (CEST)
+Original-Received: from ferrari.rjw.lan (62-121-64-87.home.aster.pl [62.121.64.87])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by ogre.sisk.pl (Postfix) with ESMTP id 89FDC1D66EF;
+	Sun,  5 Aug 2012 23:34:03 +0200 (CEST)
+User-Agent: KMail/1.13.6 (Linux/3.5.0+; KDE/4.6.0; x86_64; ; )
+In-Reply-To: <1342746658-17388-1-git-send-email-toddpoynor@google.com>
+X-Virus-Scanned: amavisd-new at ogre.sisk.pl using MkS_Vir for Linux
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337919
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337919>
+
+On Friday, July 20, 2012, Todd Poynor wrote:
+> Signed-off-by: Todd Poynor <toddpoynor@google.com>
+
+Applied to the linux-next branch of the linux-pm.git tree, as v3.7 material.
+
+Thanks,
+Rafael
+
+
+> ---
+>  drivers/base/power/wakeup.c |   29 +++++++++++++++++++++++++++++
+>  1 files changed, 29 insertions(+), 0 deletions(-)
+> 
+> A driver or app may repeatedly request a wakeup source while the system
+> is attempting to enter suspend, which may indicate a bug or at least
+> point out a highly active system component that is responsible for
+> decreased battery life on a mobile device.  Even when the incidence
+> of suspend abort is not severe, identifying wakeup sources that
+> frequently abort suspend can be a useful clue for power management
+> analysis.
+> 
+> In some cases the existing stats can point out the offender where there is
+> an unexpectedly high activation count that stands out from the others, but
+> in other cases the wakeup source frequently taken just after the rest of
+> the system thinks its time to suspend might not stand out in the overall
+> stats.
+> 
+> It is also often useful to have information about what's been happening
+> recently, rather than totals of all activity for the system boot.
+> 
+> It's suggested to dump a line about which wakeup source
+> aborted suspend to aid analysis of these situations.
+>  
+> v2
+> use ktime_to_ns() instead of comparisons on .tv64 field
+> 
+> diff --git a/drivers/base/power/wakeup.c b/drivers/base/power/wakeup.c
+> index cbb463b..8a0a9ca 100644
+> --- a/drivers/base/power/wakeup.c
+> +++ b/drivers/base/power/wakeup.c
+> @@ -649,6 +649,31 @@ void pm_wakeup_event(struct device *dev, unsigned int msec)
+>  }
+>  EXPORT_SYMBOL_GPL(pm_wakeup_event);
+>  
+> +static void print_active_wakeup_sources(void)
+> +{
+> +	struct wakeup_source *ws;
+> +	int active = 0;
+> +	struct wakeup_source *last_activity_ws = NULL;
+> +
+> +	rcu_read_lock();
+> +	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
+> +		if (ws->active) {
+> +			pr_info("active wakeup source: %s\n", ws->name);
+> +			active = 1;
+> +		} else if (!active &&
+> +			   (!last_activity_ws ||
+> +			    ktime_to_ns(ws->last_time) >
+> +			    ktime_to_ns(last_activity_ws->last_time))) {
+> +			last_activity_ws = ws;
+> +		}
+> +	}
+> +
+> +	if (!active && last_activity_ws)
+> +		pr_info("last active wakeup source: %s\n",
+> +			last_activity_ws->name);
+> +	rcu_read_unlock();
+> +}
+> +
+>  /**
+>   * pm_wakeup_pending - Check if power transition in progress should be aborted.
+>   *
+> @@ -671,6 +696,10 @@ bool pm_wakeup_pending(void)
+>  		events_check_enabled = !ret;
+>  	}
+>  	spin_unlock_irqrestore(&events_lock, flags);
+> +
+> +	if (ret)
+> +		print_active_wakeup_sources();
+> +
+>  	return ret;
+>  }
+>  
+> 
+

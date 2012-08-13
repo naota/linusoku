@@ -1,0 +1,109 @@
+Path: news.gmane.org!not-for-mail
+From: =?ISO-8859-15?Q?Luk=E1=A8_Czerner?= <lczerner@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH v2] xfs: check for possible overflow in xfs_ioc_trim
+Date: Wed, 8 Aug 2012 09:22:01 +0200 (CEST)
+Lines: 55
+Approved: news@gmane.org
+Message-ID: <alpine.LFD.2.00.1208080909330.19417@localhost>
+References: <1343828737-5324-1-git-send-email-tracek@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: TEXT/PLAIN; charset=US-ASCII
+X-Trace: dough.gmane.org 1344410544 21652 80.91.229.3 (8 Aug 2012 07:22:24 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 07:22:24 +0000 (UTC)
+Cc: linux-xfs@vger.kernel.org, lczerner@redhat.com,
+	Ben Myers <bpm@sgi.com>, Alex Elder <elder@kernel.org>,
+	"supporter:XFS FILESYSTEM" <xfs@oss.sgi.com>,
+	open list <linux-kernel@vger.kernel.org>
+To: Tomas Racek <tracek@redhat.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 09:22:23 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sz0az-0005FM-NO
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 09:22:22 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757830Ab2HHHWN (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 03:22:13 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:12873 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1757548Ab2HHHWK (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 03:22:10 -0400
+Original-Received: from int-mx11.intmail.prod.int.phx2.redhat.com (int-mx11.intmail.prod.int.phx2.redhat.com [10.5.11.24])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q787M77s025802
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Wed, 8 Aug 2012 03:22:07 -0400
+Original-Received: from vpn-11-24.rdu.redhat.com (vpn-11-24.rdu.redhat.com [10.11.11.24])
+	by int-mx11.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q787M2oC032228
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Wed, 8 Aug 2012 03:22:05 -0400
+X-X-Sender: lukas@localhost
+In-Reply-To: <1343828737-5324-1-git-send-email-tracek@redhat.com>
+User-Agent: Alpine 2.00 (LFD 1167 2008-08-23)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.24
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339869
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339869>
+
+On Wed, 1 Aug 2012, Tomas Racek wrote:
+
+> Date: Wed,  1 Aug 2012 15:45:37 +0200
+> From: Tomas Racek <tracek@redhat.com>
+> To: linux-xfs@vger.kernel.org
+> Cc: lczerner@redhat.com, Tomas Racek <tracek@redhat.com>,
+>     Ben Myers <bpm@sgi.com>, Alex Elder <elder@kernel.org>,
+>     "supporter:XFS FILESYSTEM" <xfs@oss.sgi.com>,
+>     open list <linux-kernel@vger.kernel.org>
+> Subject: [PATCH v2] xfs: check for possible overflow in xfs_ioc_trim
+> 
+> If range.start points behind the filesystem, return invalid value error.
+> This fixes possible overflow in
+> 
+> start = BTOBB(range.start)
+> 
+> when range.start is nearly ULLONG_MAX.
+> 
+> Signed-off-by: Tomas Racek <tracek@redhat.com>
+
+The fix looks good to me, but I have one comment bellow.
+
+> ---
+>  fs/xfs/xfs_discard.c |    5 +++--
+>  1 files changed, 3 insertions(+), 2 deletions(-)
+> 
+> diff --git a/fs/xfs/xfs_discard.c b/fs/xfs/xfs_discard.c
+> index f9c3fe3..33d367f 100644
+> --- a/fs/xfs/xfs_discard.c
+> +++ b/fs/xfs/xfs_discard.c
+> @@ -179,12 +179,13 @@ xfs_ioc_trim(
+>  	 * used by the fstrim application.  In the end it really doesn't
+>  	 * matter as trimming blocks is an advisory interface.
+>  	 */
+> +	if (range.start >= XFS_FSB_TO_B(mp, mp->m_sb.sb_dblocks))
+> +		return -XFS_ERROR(EINVAL);
+> +
+>  	start = BTOBB(range.start);
+>  	end = start + BTOBBT(range.len) - 1;
+>  	minlen = BTOBB(max_t(u64, granularity, range.minlen));
+
+It seems that we have the same problem here with range.minlen. It
+is highly unlikely and stupid from the user space to send minlen of
+such size, but it is possible.
+
+Thanks!
+-Lukas
+
+>  
+> -	if (XFS_BB_TO_FSB(mp, start) >= mp->m_sb.sb_dblocks)
+> -		return -XFS_ERROR(EINVAL);
+>  	if (end > XFS_FSB_TO_BB(mp, mp->m_sb.sb_dblocks) - 1)
+>  		end = XFS_FSB_TO_BB(mp, mp->m_sb.sb_dblocks)- 1;
+>  
+> 

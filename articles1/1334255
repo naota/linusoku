@@ -1,0 +1,693 @@
+Path: news.gmane.org!not-for-mail
+From: Alexandre Courbot <acourbot@nvidia.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.tegra,gmane.linux.drivers.devicetree
+Subject: [RFC][PATCH v3 1/3] runtime interpreted power sequences
+Date: Fri, 27 Jul 2012 21:05:48 +0900
+Lines: 630
+Approved: news@gmane.org
+Message-ID: <1343390750-3642-2-git-send-email-acourbot@nvidia.com>
+References: <1343390750-3642-1-git-send-email-acourbot@nvidia.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1343390793 3475 80.91.229.3 (27 Jul 2012 12:06:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 12:06:33 +0000 (UTC)
+Cc: <linux-tegra@vger.kernel.org>, <linux-kernel@vger.kernel.org>,
+	<linux-fbdev@vger.kernel.org>,
+	<devicetree-discuss@lists.ozlabs.org>,
+	Alexandre Courbot <acourbot@nvidia.com>
+To: Stephen Warren <swarren@nvidia.com>,
+	Thierry Reding <thierry.reding@avionic-design.de>,
+	Simon Glass <sjg@chromium.org>,
+	Grant Likely <grant.likely@secretlab.ca>,
+	Rob Herring <rob.herring@calxeda.com>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	Mark Brown <broonie@opensource.wolfsonmicro.com>,
+	Arnd Bergmann <arnd@arndb.de>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 14:06:31 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SujJN-0006JD-6l
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 14:06:29 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752514Ab2G0MGV (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 08:06:21 -0400
+Original-Received: from hqemgate03.nvidia.com ([216.228.121.140]:9324 "EHLO
+	hqemgate03.nvidia.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752146Ab2G0MGS (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 08:06:18 -0400
+Original-Received: from hqnvupgp08.nvidia.com (Not Verified[216.228.121.13]) by hqemgate03.nvidia.com
+	id <B5012845e0000>; Fri, 27 Jul 2012 05:06:54 -0700
+Original-Received: from hqemhub03.nvidia.com ([172.17.108.22])
+  by hqnvupgp08.nvidia.com (PGP Universal service);
+  Fri, 27 Jul 2012 05:06:10 -0700
+X-PGP-Universal: processed;
+	by hqnvupgp08.nvidia.com on Fri, 27 Jul 2012 05:06:10 -0700
+Original-Received: from percival.nvidia.com (172.20.144.16) by hqemhub03.nvidia.com
+ (172.20.150.15) with Microsoft SMTP Server (TLS) id 8.3.264.0; Fri, 27 Jul
+ 2012 05:06:09 -0700
+X-Mailer: git-send-email 1.7.11.3
+In-Reply-To: <1343390750-3642-1-git-send-email-acourbot@nvidia.com>
+X-NVConfidentiality: public
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334255 gmane.linux.ports.tegra:5656 gmane.linux.drivers.devicetree:18703
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334255>
+
+Some device drivers (panel backlights especially) need to follow precise
+sequences for powering on and off, involving gpios, regulators, PWMs
+with a precise powering order and delays to respect between each steps.
+These sequences are board-specific, and do not belong to a particular
+driver - therefore they have been performed by board-specific hook
+functions to far.
+
+With the advent of the device tree and of ARM kernels that are not
+board-tied, we cannot rely on these board-specific hooks anymore but
+need a way to implement these sequences in a portable manner. This patch
+introduces a simple interpreter that can execute such power sequences
+encoded either as platform data or within the device tree.
+
+Signed-off-by: Alexandre Courbot <acourbot@nvidia.com>
+---
+ Documentation/power/power_seq.txt | 120 +++++++++++++++
+ drivers/base/Kconfig              |   4 +
+ drivers/base/Makefile             |   1 +
+ drivers/base/power_seq.c          | 300 ++++++++++++++++++++++++++++++++++++++
+ include/linux/power_seq.h         | 139 ++++++++++++++++++
+ 5 files changed, 564 insertions(+)
+ create mode 100644 Documentation/power/power_seq.txt
+ create mode 100644 drivers/base/power_seq.c
+ create mode 100644 include/linux/power_seq.h
+
+diff --git a/Documentation/power/power_seq.txt b/Documentation/power/power_seq.txt
+new file mode 100644
+index 0000000..aa2ceb5
+--- /dev/null
++++ b/Documentation/power/power_seq.txt
+@@ -0,0 +1,120 @@
++Runtime Interpreted Power Sequences
++-----------------------------------
++
++Problem
++-------
++One very common board-dependent code is the out-of-driver code that is used to
++turn a device on or off. For instance, SoC boards very commonly use a GPIO
++(abstracted to a regulator or not) to control the power supply of a backlight,
++disabling it when the backlight is not used in order to save power. The GPIO
++that should be used, however, as well as the exact power sequence that may
++involve different resources, is board-dependent and thus unknown of the driver.
++
++This has been addressed so far by using hooks in the device's platform data that
++are called whenever the state of the device might reflect a power change. This
++approach, however, introduces board-dependant code into the kernel and is not
++compatible with the device tree.
++
++The Runtime Interpreted Power Sequences (or power sequences for short) aim at
++turning this code into platform data or device tree nodes. Power sequences are
++described using a simple format and run by a simple interpreter whenever needed.
++This allows to remove the callback mechanism and makes the kernel less
++board-dependant.
++
++Sequences Format
++----------------
++Power sequences are a series of sequential steps during which an action is
++performed on a resource. The supported resources so far are:
++- GPIOs
++- Regulators
++- PWMs
++
++Each step designates a resource and the following parameters:
++- Whether the step should enable or disable the resource,
++- Delay to wait before performing the action,
++- Delay to wait after performing the action.
++
++Both new resources and parameters can be introduced, but the goal is of course
++to keep things as simple and compact as possible.
++
++The platform data is a simple array of platform_power_seq_step instances, each
++instance describing a step. The type as well as one of id or gpio members
++(depending on the type) must be specified. The last step must be of type
++POWER_SEQ_STOP. Regulator and PWM resources are identified by name. GPIO are
++identified by number. For example, the following sequence will turn on the
++"power" regulator of the device, wait 10ms, and set GPIO number 110 to 1:
++
++struct platform_power_seq_step power_on_seq[] = {
++	{
++		.type = POWER_SEQ_REGULATOR,
++		.id = "power",
++		.params = {
++			.enable = 1,
++			.post_delay = 10,
++		},
++	},
++	{
++		.type = POWER_SEQ_GPIO,
++		.gpio = 110,
++		.params = {
++			.enable = 1,
++		},
++	},
++	{
++		.type = POWER_SEQ_STOP,
++	},
++};
++
++Usage by Drivers and Resources Management
++-----------------------------------------
++Power sequences make use of resources that must be properly allocated and
++managed. The power_seq_build() function takes care of resolving the resources as
++they are met in the sequence and to allocate them if needed:
++
++power_seq *power_seq_build(struct device *dev, power_seq_resources *ress,
++			   platform_power_seq *pseq);
++
++You will need an instance of power_seq_resources to keep track of the resources
++that are already allocated. On success, the function returns a devm allocated
++resolved sequence that is ready to be passed to power_seq_run(). In case of
++failure, and error code is returned.
++
++A resolved power sequence returned by power_seq_build can be run by
++power_run_run():
++
++int power_seq_run(struct device *dev, power_seq *seq);
++
++It returns 0 if the sequence has successfully been run, or an error code if a
++problem occured.
++
++Finally, some resources that cannot be allocated through devm need to be freed
++manually. Therefore, be sure to call power_seq_free_resources() in your device
++remove function:
++
++void power_seq_free_resources(power_seq_resources *ress);
++
++Device tree
++-----------
++All the same, power sequences can be encoded as device tree nodes. The following
++properties and nodes are equivalent to the platform data defined previously:
++
++		power-supply = <&mydevice_reg>;
++		enable-gpio = <&gpio 6 0>;
++
++		power-on-sequence {
++			regulator@0 {
++				id = "power";
++				enable;
++				post-delay = <10>;
++			};
++			gpio@1 {
++				id = "enable-gpio";
++				enable;
++			};
++		};
++
++Note that first, the phandles of the regulator and gpio used in the sequences
++are defined as properties. Then the sequence references them through the id
++property of every step. The name of sub-properties defines the type of the step.
++Valid names are "regulator", "gpio" and "pwm". Steps must be numbered
++sequentially.
+diff --git a/drivers/base/Kconfig b/drivers/base/Kconfig
+index 08b4c52..65bebfe 100644
+--- a/drivers/base/Kconfig
++++ b/drivers/base/Kconfig
+@@ -282,4 +282,8 @@ config CMA_AREAS
+ 
+ endif
+ 
++config POWER_SEQ
++	bool
++	default n
++
+ endmenu
+diff --git a/drivers/base/Makefile b/drivers/base/Makefile
+index 5aa2d70..4c498c1 100644
+--- a/drivers/base/Makefile
++++ b/drivers/base/Makefile
+@@ -18,6 +18,7 @@ obj-$(CONFIG_MEMORY_HOTPLUG_SPARSE) += memory.o
+ ifeq ($(CONFIG_SYSFS),y)
+ obj-$(CONFIG_MODULES)	+= module.o
+ endif
++obj-$(CONFIG_POWER_SEQ)	+= power_seq.o
+ obj-$(CONFIG_SYS_HYPERVISOR) += hypervisor.o
+ obj-$(CONFIG_REGMAP)	+= regmap/
+ obj-$(CONFIG_SOC_BUS) += soc.o
+diff --git a/drivers/base/power_seq.c b/drivers/base/power_seq.c
+new file mode 100644
+index 0000000..6ccefa1
+--- /dev/null
++++ b/drivers/base/power_seq.c
+@@ -0,0 +1,300 @@
++/*
++ * power_seq.c - A simple power sequence interpreter for platform devices
++ *               and device tree.
++ *
++ * Author: Alexandre Courbot <acourbot@nvidia.com>
++ *
++ * Copyright (c) 2012 NVIDIA Corporation.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; version 2 of the License.
++ *
++ * This program is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
++ * more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
++ *
++ */
++
++#include <linux/power_seq.h>
++#include <linux/module.h>
++#include <linux/err.h>
++#include <linux/device.h>
++#include <linux/slab.h>
++#include <linux/delay.h>
++#include <linux/pwm.h>
++#include <linux/regulator/consumer.h>
++#include <linux/gpio.h>
++
++#ifdef CONFIG_OF
++#include <linux/of.h>
++#include <linux/of_gpio.h>
++#endif
++
++static int power_seq_step_run(struct power_seq_step *step)
++{
++	int err = 0;
++
++	if (step->params.pre_delay)
++		mdelay(step->params.pre_delay);
++
++	switch (step->resource->type) {
++#ifdef CONFIG_REGULATOR
++	case POWER_SEQ_REGULATOR:
++		if (step->params.enable)
++			err = regulator_enable(step->resource->regulator);
++		else
++			err = regulator_disable(step->resource->regulator);
++		break;
++#endif
++#ifdef CONFIG_PWM
++	case POWER_SEQ_PWM:
++		if (step->params.enable)
++			err = pwm_enable(step->resource->pwm);
++		else
++			pwm_disable(step->resource->pwm);
++		break;
++#endif
++#ifdef CONFIG_GPIOLIB
++	case POWER_SEQ_GPIO:
++		gpio_set_value_cansleep(step->resource->gpio,
++					step->params.enable);
++		break;
++#endif
++	/*
++	 * should never happen unless the sequence includes a step which
++	 * type does not have support compiled in
++	 */
++	default:
++		return -EINVAL;
++	}
++
++	if (err < 0)
++		return err;
++
++	if (step->params.post_delay)
++		mdelay(step->params.post_delay);
++
++	return 0;
++}
++
++int power_seq_run(struct device *dev, power_seq *seq)
++{
++	int err;
++
++	if (!seq) return 0;
++
++	while (seq->resource) {
++		if ((err = power_seq_step_run(seq++))) {
++			dev_err(dev, "error %d while running power sequence!\n",
++				err);
++			return err;
++		}
++	}
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(power_seq_run);
++
++#ifdef CONFIG_OF
++static int of_parse_power_seq_step(struct device *dev, struct device_node *node,
++				   struct platform_power_seq_step *step)
++{
++	if (of_property_read_string(node, "id", &step->id)) {
++		dev_err(dev, "missing id property!\n");
++		return -EINVAL;
++	}
++
++	if (!strcmp(node->name, "regulator")) {
++		step->type = POWER_SEQ_REGULATOR;
++#ifdef CONFIG_OF_GPIO
++	} else if (!strcmp(node->name, "gpio")) {
++		int gpio;
++
++		step->type = POWER_SEQ_GPIO;
++		gpio = of_get_named_gpio(dev->of_node, step->id, 0);
++		if (gpio < 0) {
++			dev_err(dev, "cannot resolve gpio \"%s\"\n", step->id);
++			return gpio;
++		}
++		step->gpio = gpio;
++#endif /* CONFIG_OF_GPIO */
++	} else if (!strcmp(node->name, "pwm")) {
++		step->type = POWER_SEQ_PWM;
++	} else {
++		dev_err(dev, "invalid power seq step type!\n");
++		return -EINVAL;
++	}
++
++	if (of_find_property(node, "enable", NULL)) {
++		step->params.enable = 1;
++	} else if (!of_find_property(node, "disable", NULL)) {
++		dev_err(dev, "missing enable or disable property!\n");
++		return -EINVAL;
++	}
++
++	of_property_read_u32(node, "pre-delay", &step->params.pre_delay);
++	of_property_read_u32(node, "post-delay", &step->params.post_delay);
++
++	return 0;
++}
++
++platform_power_seq *of_parse_power_seq(struct device *dev,
++				       struct device_node *node)
++{
++	struct device_node *child = NULL;
++	platform_power_seq *ret;
++	int cpt = 0;
++	int err;
++
++	if (!node) return NULL;
++
++	while ((child = of_get_next_child(node, child)))
++		cpt++;
++
++	/* allocate one more step to signal end of sequence */
++	ret = devm_kzalloc(dev, sizeof(*ret) * (cpt + 1), GFP_KERNEL);
++	if (!ret)
++		return ERR_PTR(-ENOMEM);
++
++	cpt = 0;
++	while ((child = of_get_next_child(node, child))) {
++		if ((err = of_parse_power_seq_step(dev, child, &ret[cpt++])))
++			return ERR_PTR(err);
++	}
++
++	return ret;
++}
++EXPORT_SYMBOL_GPL(of_parse_power_seq);
++#endif /* CONFIG_OF */
++
++static
++struct power_seq_resource * power_seq_find_resource(power_seq_resources *ress,
++					struct platform_power_seq_step *res)
++{
++	struct power_seq_resource *step;
++
++	list_for_each_entry(step, ress, list) {
++		if (step->type != res->type) continue;
++		switch (res->type) {
++		case POWER_SEQ_GPIO:
++			if (step->gpio == res->gpio)
++				return step;
++			break;
++		default:
++			if (!strcmp(step->id, res->id))
++				return step;
++			break;
++		}
++	}
++
++	return NULL;
++}
++
++static int power_seq_allocate_resource(struct device *dev,
++				       struct power_seq_resource *res)
++{
++	int err;
++
++	switch (res->type) {
++#ifdef CONFIG_REGULATOR
++	case POWER_SEQ_REGULATOR:
++		res->regulator = devm_regulator_get(dev, res->id);
++		if (IS_ERR(res->regulator)) {
++			dev_err(dev, "cannot get regulator \"%s\"\n", res->id);
++			return PTR_ERR(res->regulator);
++		}
++		break;
++#endif
++#ifdef CONFIG_PWM
++	case POWER_SEQ_PWM:
++		res->pwm = pwm_get(dev, res->id);
++		if (IS_ERR(res->pwm)) {
++			dev_err(dev, "cannot get pwm \"%s\"\n", res->id);
++			return PTR_ERR(res->pwm);
++		}
++		break;
++#endif
++#ifdef CONFIG_GPIOLIB
++	case POWER_SEQ_GPIO:
++		err = devm_gpio_request_one(dev, res->gpio, GPIOF_OUT_INIT_HIGH,
++					    "backlight_gpio");
++		if (err) {
++			dev_err(dev, "cannot get gpio %d\n", res->gpio);
++			return err;
++		}
++		break;
++#endif
++	default:
++		dev_err(dev, "invalid resource type %d\n", res->type);
++		return -EINVAL;
++		break;
++	}
++
++	return 0;
++}
++
++power_seq *power_seq_build(struct device *dev, power_seq_resources *ress,
++			   platform_power_seq *pseq)
++{
++	struct power_seq_step *seq = NULL, *ret;
++	struct power_seq_resource *res;
++	int cpt, err;
++
++	/* first pass to count the number of steps to allocate */
++	for (cpt = 0; pseq[cpt].type != POWER_SEQ_STOP; cpt++);
++
++	if (!cpt)
++		return seq;
++
++	/* 1 more for the STOP step */
++	ret = seq = devm_kzalloc(dev, sizeof(*seq) * (cpt + 1), GFP_KERNEL);
++	if (!seq)
++		return ERR_PTR(-ENOMEM);
++
++	for (; pseq->type != POWER_SEQ_STOP; pseq++, seq++) {
++		/* create resource node if not referenced already */
++		if (!(res = power_seq_find_resource(ress, pseq))) {
++			res = devm_kzalloc(dev, sizeof(*res), GFP_KERNEL);
++			if (!res)
++				return ERR_PTR(-ENOMEM);
++			res->type = pseq->type;
++
++			if (res->type == POWER_SEQ_GPIO)
++				res->gpio = pseq->gpio;
++			else
++				res->id = pseq->id;
++
++			if ((err = power_seq_allocate_resource(dev, res)) < 0)
++				return ERR_PTR(err);
++
++			list_add(&res->list, ress);
++		}
++		seq->resource = res;
++		memcpy(&seq->params, &pseq->params, sizeof(seq->params));
++	}
++
++	return ret;
++}
++EXPORT_SYMBOL_GPL(power_seq_build);
++
++void power_seq_free_resources(power_seq_resources *ress) {
++	struct power_seq_resource *res;
++
++#ifdef CONFIG_PWM
++	list_for_each_entry(res, ress, list) {
++		if (res->type == POWER_SEQ_PWM)
++			pwm_put(res->pwm);
++	}
++#endif
++}
++EXPORT_SYMBOL_GPL(power_seq_free_resources);
++
++MODULE_AUTHOR("Alexandre Courbot <acourbot@nvidia.com>");
++MODULE_DESCRIPTION("Runtime Interpreted Power Sequences");
++MODULE_LICENSE("GPL");
+diff --git a/include/linux/power_seq.h b/include/linux/power_seq.h
+new file mode 100644
+index 0000000..da0593a
+--- /dev/null
++++ b/include/linux/power_seq.h
+@@ -0,0 +1,139 @@
++/*
++ * power_seq.h
++ *
++ * Simple interpreter for defining power sequences as platform data or device
++ * tree properties. Initially designed for use with backlight drivers.
++ *
++ * Power sequences are designed to replace the callbacks typically used in
++ * board-specific files that implement board-specific power sequences of devices
++ * such as backlights. A power sequence is an array of resources (which can a
++ * regulator, a GPIO, a PWM, ...) with an action to perform on it (enable or
++ * disable) and optional pre and post step delays. By having them interpreted
++ * instead of arbitrarily executed, it is possible to describe these in the
++ * device tree and thus remove board-specific code from the kernel.
++ *
++ * Author: Alexandre Courbot <acourbot@nvidia.com>
++ *
++ * Copyright (c) 2012 NVIDIA Corporation.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; version 2 of the License.
++ *
++ * This program is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
++ * more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
++ *
++ */
++
++#ifndef __LINUX_POWER_SEQ_H
++#define __LINUX_POWER_SEQ_H
++
++#include <linux/types.h>
++
++struct device;
++struct regulator;
++struct pwm_device;
++struct device_node;
++
++/**
++ * The different kinds of resources that can be controlled during the sequences.
++ */
++typedef enum {
++	POWER_SEQ_STOP = 0,
++	POWER_SEQ_REGULATOR,
++	POWER_SEQ_PWM,
++	POWER_SEQ_GPIO,
++	POWER_SEQ_MAX,
++} power_res_type;
++
++struct power_seq_resource {
++	power_res_type type;
++	/* name to resolve for resources with a name (regulator, pwm) */
++	const char *id;
++	/* resolved resource */
++	union {
++		struct regulator *regulator;
++		struct pwm_device *pwm;
++		int gpio;
++	};
++	/* used to maintain the list of resources used by the driver */
++	struct list_head list;
++};
++typedef struct list_head power_seq_resources;
++
++struct power_step_params {
++	/* enable the resource if 1, disable if 0 */
++	bool enable;
++	/* delay (in ms) to wait before executing the step */
++	int  pre_delay;
++	/* delay (in ms) to wait after executing the step */
++	int post_delay;
++};
++
++/**
++ * Platform definition of power sequences. A sequence is an array of these,
++ * terminated by a STOP instance.
++ */
++struct platform_power_seq_step {
++	power_res_type type;
++	union {
++		/* Used by REGULATOR and PWM types to name the resource */
++		const char *id;
++		/* Used by GPIO */
++		int gpio;
++	};
++	struct power_step_params params;
++};
++typedef struct platform_power_seq_step platform_power_seq;
++
++/**
++ * Power sequence steps resolved against their resource. Built by
++ * power_seq_build and used to run the sequence.
++ */
++struct power_seq_step {
++	struct power_seq_resource *resource;
++	struct power_step_params params;
++};
++typedef struct power_seq_step power_seq;
++
++#ifdef CONFIG_OF
++/**
++ * Build a platform data sequence from a device tree node. Memory for the
++ * sequence is allocated using devm_kzalloc on dev.
++ */
++platform_power_seq *of_parse_power_seq(struct device *dev,
++				       struct device_node *node);
++#else
++platform_power_seq *of_parse_power_seq(struct device *dev,
++				       struct device_node *node)
++{
++	return NULL;
++}
++#endif
++
++/**
++ * Build a runnable power sequence from platform data, and add the resources
++ * it uses into ress. Memory for the sequence is allocated using devm_kzalloc
++ * on dev.
++ */
++power_seq *power_seq_build(struct device *dev, power_seq_resources *ress,
++			   platform_power_seq *pseq);
++
++/**
++ * Free all the resources previously allocated by power_seq_allocate_resources.
++ */
++void power_seq_free_resources(power_seq_resources *ress);
++
++/**
++ * Run the given power sequence. Returns 0 on success, error code in case of
++ * failure.
++ */
++int power_seq_run(struct device *dev, power_seq *seq);
++
++#endif
+-- 
+1.7.11.3
+

@@ -1,0 +1,172 @@
+Path: news.gmane.org!not-for-mail
+From: "Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel,gmane.linux.ports.ppc64.devel,gmane.linux.ports.mips.general,gmane.linux.ports.sh.devel,gmane.linux.ports.sparc
+Subject: [PATCH v2 5/6] mm: make clear_huge_page cache clear only around the fault address
+Date: Thu,  9 Aug 2012 18:03:02 +0300
+Lines: 89
+Approved: news@gmane.org
+Message-ID: <1344524583-1096-6-git-send-email-kirill.shutemov@linux.intel.com>
+References: <1344524583-1096-1-git-send-email-kirill.shutemov@linux.intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344524622 32137 80.91.229.3 (9 Aug 2012 15:03:42 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 15:03:42 +0000 (UTC)
+Cc: Thomas Gleixner <tglx@linutronix.de>,
+	Ingo Molnar <mingo@redhat.com>,
+	"H. Peter Anvin" <hpa@zytor.com>,
+	x86@kernel.org,
+	Andi Kleen <ak@linux.intel.com>,
+	"Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>,
+	Tim Chen <tim.c.chen@linux.intel.com>,
+	Alex Shi <alex.shu@intel.com>,
+	Jan Beulich <jbeulich@novell.com>,
+	Robert Richter <robert.richter@amd.com>,
+	Andy Lutomirski <luto@amacapital.net>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Andrea Arcangeli <aarcange@redhat.com>,
+	Johannes Weiner <hannes@cmpxchg.org>,
+	Hugh Dickins <hughd@google.com>,
+	KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>,
+	Mel Gorman <mgorman@suse.de>,
+	linux-kernel@vger.kernel.org,
+	linuxppc-dev@lists.ozlabs.org,
+	linux-mips@linux-mips.org,
+	linux-sh@vger.kernel.org,
+	sparclinux@vger.kernel.org
+To: linux-mm@kvack.org
+Original-X-From: owner-linux-mm@kvack.org Thu Aug 09 17:03:35 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SzUGl-0002pI-U0
+	for glkm-linux-mm-2@m.gmane.org; Thu, 09 Aug 2012 17:03:28 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 847F36B005A; Thu,  9 Aug 2012 11:03:26 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 719276B005D; Thu,  9 Aug 2012 11:03:26 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 2C2746B0068; Thu,  9 Aug 2012 11:03:25 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx119.postini.com [74.125.245.119])
+	by kanga.kvack.org (Postfix) with SMTP id 91FBC6B005A
+	for <linux-mm@kvack.org>; Thu,  9 Aug 2012 11:03:24 -0400 (EDT)
+Original-Received: from mga03.intel.com ([143.182.124.21]) by na3sys010amx119.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 09 Aug 2012 15:03:24 GMT
+Original-Received: from azsmga002.ch.intel.com ([10.2.17.35])
+  by azsmga101.ch.intel.com with ESMTP; 09 Aug 2012 08:03:23 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.77,740,1336374000"; 
+   d="scan'208";a="131994079"
+Original-Received: from blue.fi.intel.com ([10.237.72.50])
+  by AZSMGA002.ch.intel.com with ESMTP; 09 Aug 2012 08:03:17 -0700
+Original-Received: by blue.fi.intel.com (Postfix, from userid 1000)
+	id C7101E0088; Thu,  9 Aug 2012 18:03:14 +0300 (EEST)
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1344524583-1096-1-git-send-email-kirill.shutemov@linux.intel.com>
+X-pstn-levels: (S:20.85749/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <kirill.shutemov@linux.intel.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83947 gmane.linux.kernel:1340771 gmane.linux.ports.ppc64.devel:84392 gmane.linux.ports.mips.general:35183 gmane.linux.ports.sh.devel:16185 gmane.linux.ports.sparc:16620
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340771>
+
+From: Andi Kleen <ak@linux.intel.com>
+
+Clearing a 2MB huge page will typically blow away several levels
+of CPU caches. To avoid this only cache clear the 4K area
+around the fault address and use a cache avoiding clears
+for the rest of the 2MB area.
+
+Signed-off-by: Andi Kleen <ak@linux.intel.com>
+Signed-off-by: Kirill A. Shutemov <kirill.shutemov@linux.intel.com>
+---
+ mm/memory.c |   30 +++++++++++++++++++++++++++---
+ 1 files changed, 27 insertions(+), 3 deletions(-)
+
+diff --git a/mm/memory.c b/mm/memory.c
+index b47199a..e9a75c2 100644
+--- a/mm/memory.c
++++ b/mm/memory.c
+@@ -3969,18 +3969,35 @@ EXPORT_SYMBOL(might_fault);
+ #endif
+ 
+ #if defined(CONFIG_TRANSPARENT_HUGEPAGE) || defined(CONFIG_HUGETLBFS)
++
++#ifndef ARCH_HAS_USER_NOCACHE
++#define ARCH_HAS_USER_NOCACHE 0
++#endif
++
++#if ARCH_HAS_USER_NOCACHE == 0
++#define clear_user_highpage_nocache clear_user_highpage
++#endif
++
+ static void clear_gigantic_page(struct page *page,
+ 				unsigned long addr,
+ 				unsigned int pages_per_huge_page)
+ {
+ 	int i;
+ 	struct page *p = page;
++	unsigned long vaddr;
++	unsigned long haddr = addr & HPAGE_PMD_MASK;
++	int target = (addr - haddr) >> PAGE_SHIFT;
+ 
+ 	might_sleep();
++	vaddr = haddr;
+ 	for (i = 0; i < pages_per_huge_page;
+ 	     i++, p = mem_map_next(p, page, i)) {
+ 		cond_resched();
+-		clear_user_highpage(p, addr + i * PAGE_SIZE);
++		vaddr = haddr + i*PAGE_SIZE;
++		if (!ARCH_HAS_USER_NOCACHE  || i == target)
++			clear_user_highpage(p, vaddr);
++		else
++			clear_user_highpage_nocache(p, vaddr);
+ 	}
+ }
+ void clear_huge_page(struct page *page,
+@@ -3988,16 +4005,23 @@ void clear_huge_page(struct page *page,
+ {
+ 	int i;
+ 	unsigned long haddr = addr & HPAGE_PMD_MASK;
++	unsigned long vaddr;
++	int target = (addr - haddr) >> PAGE_SHIFT;
+ 
+ 	if (unlikely(pages_per_huge_page > MAX_ORDER_NR_PAGES)) {
+-		clear_gigantic_page(page, haddr, pages_per_huge_page);
++		clear_gigantic_page(page, addr, pages_per_huge_page);
+ 		return;
+ 	}
+ 
+ 	might_sleep();
++	vaddr = haddr;
+ 	for (i = 0; i < pages_per_huge_page; i++) {
+ 		cond_resched();
+-		clear_user_highpage(page + i, haddr + i * PAGE_SIZE);
++		vaddr = haddr + i*PAGE_SIZE;
++		if (!ARCH_HAS_USER_NOCACHE || i == target)
++			clear_user_highpage(page + i, vaddr);
++		else
++			clear_user_highpage_nocache(page + i, vaddr);
+ 	}
+ }
+ 
+-- 
+1.7.7.6
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

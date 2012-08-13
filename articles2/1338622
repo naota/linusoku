@@ -1,0 +1,167 @@
+Path: news.gmane.org!not-for-mail
+From: "Rafael J. Wysocki" <rjw@sisk.pl>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.sh.devel
+Subject: [PATCH 10/12] ARM: shmobile: Move r8a7740's PM domain objects to a table
+Date: Tue, 7 Aug 2012 01:13:37 +0200
+Lines: 110
+Approved: news@gmane.org
+Message-ID: <201208070113.37549.rjw@sisk.pl>
+References: <201208070105.23262.rjw@sisk.pl>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain;
+  charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344294780 9432 80.91.229.3 (6 Aug 2012 23:13:00 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 23:13:00 +0000 (UTC)
+Cc: LKML <linux-kernel@vger.kernel.org>,
+	Linux PM list <linux-pm@vger.kernel.org>,
+	Magnus Damm <magnus.damm@gmail.com>
+To: "Linux-sh list" <linux-sh@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 01:13:00 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyWTq-0007OZ-CF
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 01:12:58 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757027Ab2HFXMl (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 19:12:41 -0400
+Original-Received: from ogre.sisk.pl ([193.178.161.156]:44984 "EHLO ogre.sisk.pl"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S932262Ab2HFXLy (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 19:11:54 -0400
+Original-Received: from localhost (localhost.localdomain [127.0.0.1])
+	by ogre.sisk.pl (Postfix) with ESMTP id 71BA41DB9D3;
+	Tue,  7 Aug 2012 01:01:57 +0200 (CEST)
+Original-Received: from ogre.sisk.pl ([127.0.0.1])
+ by localhost (ogre.sisk.pl [127.0.0.1]) (amavisd-new, port 10024) with ESMTP
+ id 04362-04; Tue,  7 Aug 2012 01:01:16 +0200 (CEST)
+Original-Received: from ferrari.rjw.lan (62-121-64-87.home.aster.pl [62.121.64.87])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by ogre.sisk.pl (Postfix) with ESMTP id 596B41DB9C6;
+	Tue,  7 Aug 2012 01:00:56 +0200 (CEST)
+User-Agent: KMail/1.13.6 (Linux/3.5.0+; KDE/4.6.0; x86_64; ; )
+In-Reply-To: <201208070105.23262.rjw@sisk.pl>
+X-Virus-Scanned: amavisd-new at ogre.sisk.pl using MkS_Vir for Linux
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338622 gmane.linux.ports.sh.devel:16158
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338622>
+
+
+Instead of giving a name to every r8a7740's PM domain object, put
+them all into a table and use rmobile_init_domains(), introduced by a
+previous patch, for initializing them all altogether.  Also, use
+pm_genpd_add_subdomain_names() for adding A3SP as a subdomain of A4S.
+
+Signed-off-by: Rafael J. Wysocki <rjw@sisk.pl>
+---
+ arch/arm/mach-shmobile/include/mach/r8a7740.h |    6 +--
+ arch/arm/mach-shmobile/pm-r8a7740.c           |   42 ++++++++++++++------------
+ arch/arm/mach-shmobile/setup-r8a7740.c        |    7 ----
+ 3 files changed, 28 insertions(+), 27 deletions(-)
+
+Index: linux/arch/arm/mach-shmobile/pm-r8a7740.c
+===================================================================
+--- linux.orig/arch/arm/mach-shmobile/pm-r8a7740.c
++++ linux/arch/arm/mach-shmobile/pm-r8a7740.c
+@@ -21,14 +21,6 @@ static int r8a7740_pd_a4s_suspend(void)
+ 	return -EBUSY;
+ }
+ 
+-struct rmobile_pm_domain r8a7740_pd_a4s = {
+-	.genpd.name	= "A4S",
+-	.bit_shift	= 10,
+-	.gov		= &pm_domain_always_on_gov,
+-	.no_debug	= true,
+-	.suspend	= r8a7740_pd_a4s_suspend,
+-};
+-
+ static int r8a7740_pd_a3sp_suspend(void)
+ {
+ 	/*
+@@ -38,17 +30,31 @@ static int r8a7740_pd_a3sp_suspend(void)
+ 	return console_suspend_enabled ? 0 : -EBUSY;
+ }
+ 
+-struct rmobile_pm_domain r8a7740_pd_a3sp = {
+-	.genpd.name	= "A3SP",
+-	.bit_shift	= 11,
+-	.gov		= &pm_domain_always_on_gov,
+-	.no_debug	= true,
+-	.suspend	= r8a7740_pd_a3sp_suspend,
++static struct rmobile_pm_domain r8a7740_pm_domains[] = {
++	{
++		.genpd.name	= "A4S",
++		.bit_shift	= 10,
++		.gov		= &pm_domain_always_on_gov,
++		.no_debug	= true,
++		.suspend	= r8a7740_pd_a4s_suspend,
++	},
++	{
++		.genpd.name	= "A3SP",
++		.bit_shift	= 11,
++		.gov		= &pm_domain_always_on_gov,
++		.no_debug	= true,
++		.suspend	= r8a7740_pd_a3sp_suspend,
++	},
++	{
++		.genpd.name	= "A4LC",
++		.bit_shift	= 1,
++	},
+ };
+ 
+-struct rmobile_pm_domain r8a7740_pd_a4lc = {
+-	.genpd.name	= "A4LC",
+-	.bit_shift	= 1,
+-};
++void __init r8a7740_init_pm_domains(void)
++{
++	rmobile_init_domains(r8a7740_pm_domains, ARRAY_SIZE(r8a7740_pm_domains));
++	pm_genpd_add_subdomain_names("A4S", "A3SP");
++}
+ 
+ #endif /* CONFIG_PM */
+Index: linux/arch/arm/mach-shmobile/setup-r8a7740.c
+===================================================================
+--- linux.orig/arch/arm/mach-shmobile/setup-r8a7740.c
++++ linux/arch/arm/mach-shmobile/setup-r8a7740.c
+@@ -673,12 +673,7 @@ void __init r8a7740_add_standard_devices
+ 	r8a7740_i2c_workaround(&i2c0_device);
+ 	r8a7740_i2c_workaround(&i2c1_device);
+ 
+-	/* PM domain */
+-	rmobile_init_pm_domain(&r8a7740_pd_a4s);
+-	rmobile_init_pm_domain(&r8a7740_pd_a3sp);
+-	rmobile_init_pm_domain(&r8a7740_pd_a4lc);
+-
+-	pm_genpd_add_subdomain_names("A4S", "A3SP");
++	r8a7740_init_pm_domains();
+ 
+ 	/* add devices */
+ 	platform_add_devices(r8a7740_early_devices,
+Index: linux/arch/arm/mach-shmobile/include/mach/r8a7740.h
+===================================================================
+--- linux.orig/arch/arm/mach-shmobile/include/mach/r8a7740.h
++++ linux/arch/arm/mach-shmobile/include/mach/r8a7740.h
+@@ -607,9 +607,9 @@ enum {
+ };
+ 
+ #ifdef CONFIG_PM
+-extern struct rmobile_pm_domain r8a7740_pd_a4s;
+-extern struct rmobile_pm_domain r8a7740_pd_a3sp;
+-extern struct rmobile_pm_domain r8a7740_pd_a4lc;
++extern void __init r8a7740_init_pm_domains(void);
++#else
++static inline void r8a7740_init_pm_domains(void) {}
+ #endif /* CONFIG_PM */
+ 
+ #endif /* __ASM_R8A7740_H__ */
+

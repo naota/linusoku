@@ -1,0 +1,115 @@
+Path: news.gmane.org!not-for-mail
+From: Michal Hocko <mhocko@suse.cz>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [PATCH] mm: hugetlbfs: Close race during teardown of hugetlbfs
+ shared page tables V2 (resend)
+Date: Fri, 20 Jul 2012 16:40:42 +0200
+Lines: 46
+Approved: news@gmane.org
+Message-ID: <20120720144041.GG12434@tiehlicka.suse.cz>
+References: <20120720134937.GG9222@suse.de>
+ <20120720141108.GH9222@suse.de>
+ <20120720142920.GD12434@tiehlicka.suse.cz>
+ <20120720143753.GI9222@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1342795250 13213 80.91.229.3 (20 Jul 2012 14:40:50 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 14:40:50 +0000 (UTC)
+Cc: Linux-MM <linux-mm@kvack.org>, Hugh Dickins <hughd@google.com>,
+	David Gibson <david@gibson.dropbear.id.au>,
+	Ken Chen <kenchen@google.com>, Cong Wang <xiyou.wangcong@gmail.com>,
+	LKML <linux-kernel@vger.kernel.org>
+To: Mel Gorman <mgorman@suse.de>
+Original-X-From: owner-linux-mm@kvack.org Fri Jul 20 16:40:48 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SsENs-0004OY-Ie
+	for glkm-linux-mm-2@m.gmane.org; Fri, 20 Jul 2012 16:40:48 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id E94A06B004D; Fri, 20 Jul 2012 10:40:46 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id DA9FB6B005D; Fri, 20 Jul 2012 10:40:46 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id ACA386B0068; Fri, 20 Jul 2012 10:40:46 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx199.postini.com [74.125.245.199])
+	by kanga.kvack.org (Postfix) with SMTP id E59146B004D
+	for <linux-mm@kvack.org>; Fri, 20 Jul 2012 10:40:45 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx199.postini.com ([74.125.244.10]) with SMTP;
+	Fri, 20 Jul 2012 14:40:46 GMT
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id ED8029A78E;
+	Fri, 20 Jul 2012 16:40:43 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <20120720143753.GI9222@suse.de>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mhocko@suse.cz> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82787 gmane.linux.kernel:1330894
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330894>
+
+On Fri 20-07-12 15:37:53, Mel Gorman wrote:
+> On Fri, Jul 20, 2012 at 04:29:20PM +0200, Michal Hocko wrote:
+> > > <SNIP>
+> > > 
+> > > Signed-off-by: Mel Gorman <mgorman@suse.de>
+> > 
+> > Yes this looks correct. mmap_sem will make sure that unmap_vmas and
+> > free_pgtables are executed atomicaly wrt. huge_pmd_share so it doesn't
+> > see non-NULL spte on the way out.
+> 
+> Yes.
+> 
+> > I am just wondering whether we need
+> > the page_table_lock as well. It is not harmful but I guess we can drop
+> > it because both exit_mmap and shmdt are not taking it and mmap_sem is
+> > sufficient for them.
+> 
+> While it is true that we don't *really* need page_table_lock here, we are
+> still updating page tables and it's in line with the the ordinary locking
+> rules.  There are other cases in hugetlb.c where we do pte_same() checks even
+> though we are protected from the related races by the instantiation_mutex.
+> 
+> page_table_lock is actually a bit useless for shared page tables. If shared
+> page tables were every to be a general thing then I think we'd have to
+> revisit how PTE update locking is done but I doubt anyone wants to dive
+> down that rat-hole.
+> 
+> For now, I'm going to keep taking it even if strictly speaking it's not
+> necessary.
+
+Fair enough
+
+-- 
+Michal Hocko
+SUSE Labs
+SUSE LINUX s.r.o.
+Lihovarska 1060/12
+190 00 Praha 9    
+Czech Republic
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

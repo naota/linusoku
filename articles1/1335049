@@ -1,0 +1,417 @@
+Path: news.gmane.org!not-for-mail
+From: Jouko Haapaluoma <jouhaapa@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: Child process might hang inside kernel with 2.6.33.15-rt31
+Date: Mon, 30 Jul 2012 16:11:31 +0300
+Lines: 356
+Approved: news@gmane.org
+Message-ID: <50168803.70300@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: multipart/mixed;
+ boundary="------------020605050504050509020001"
+X-Trace: dough.gmane.org 1343653918 8293 80.91.229.3 (30 Jul 2012 13:11:58 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 13:11:58 +0000 (UTC)
+Cc: jamie@shareable.org
+To: linux-arm-kernel@lists.arm.linux.org.uk,
+	linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 15:11:58 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvplN-00059a-0n
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 15:11:57 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754152Ab2G3NLt (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 09:11:49 -0400
+Original-Received: from mail-lpp01m010-f46.google.com ([209.85.215.46]:38487 "EHLO
+	mail-lpp01m010-f46.google.com" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1753765Ab2G3NLq (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 09:11:46 -0400
+Original-Received: by lahd3 with SMTP id d3so3383497lah.19
+        for <linux-kernel@vger.kernel.org>; Mon, 30 Jul 2012 06:11:44 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=message-id:date:from:user-agent:mime-version:to:cc:subject
+         :content-type;
+        bh=OwVSCMjf3fkiC63AmETIJYyI9rGwolj7elk9NLfyyN0=;
+        b=Y9HuduMplj1n9F8XVHQ4wuL9ed/4ZV3jZpnjCfdnuwbBGRZFsjubYjs9HDdzx9WVWg
+         eaHkKR0f/IGtNBLJmM2KG52XRsLg9FNss7FQsDQeSkGN2sFeflHGsyqGE1jlLYt+GNk3
+         k2crzi28gqamKDoE3QO0BOr62OL+SaanzNhPRZ79f3t94tlSWA1DtWG7K4fA0ZADCfZw
+         pO11yD49S0fXjGTdxiNeHdITZ2Bt+QlqM2Q1BualE5qftTYpjhEOcPr0Y18/KTOZ3zpa
+         U5l/uQHMx4fFjS9LCzlaDVnucTlONT/0LsoDo4cowJ3miJlnhx8Oo0fTljktnNarTBJv
+         N5Kg==
+Original-Received: by 10.112.83.229 with SMTP id t5mr5283418lby.8.1343653904556;
+        Mon, 30 Jul 2012 06:11:44 -0700 (PDT)
+Original-Received: from [10.0.0.59] (wapice.fi. [81.209.51.2])
+        by mx.google.com with ESMTPS id lv13sm10571744lab.8.2012.07.30.06.11.43
+        (version=SSLv3 cipher=OTHER);
+        Mon, 30 Jul 2012 06:11:43 -0700 (PDT)
+User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:14.0) Gecko/20120713 Thunderbird/14.0
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335049
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335049>
+
+This is a multi-part message in MIME format.
+--------------020605050504050509020001
+Content-Type: text/plain; charset=ISO-8859-1; format=flowed
+Content-Transfer-Encoding: 7bit
+
+Hello everyone
+
+I know that the kernel 2.6.33 is very old, but since RT_PREEMPT was 
+unavailable to newer versions when we were choosing the kernel, we had 
+to choose this one and currently it is not possible to start converting 
+our board to a newer kernel.
+
+We have run into a problem where a pthreaded application executes shell 
+commands with the system() function which runs fork/clone+execve and 
+sometimes the thread that is calling the system() might hang forever. I 
+attached a simple test program that reproduces the problem within 
+minutes. I also tried to implement the system() function by doing a 
+manual syscall(SYS_fork) call but the same problem remains.
+
+Our boards are using the AT91SAM9260 or AT91SAM9263 ARM SoCs, glibc v2.9 
+and gcc v4.3.3. We also tried with eglibc v2.12 and gcc v4.5.4. Kernel 
+configuration is attached.
+
+At first the test programs were also crashing (plus the other thread 
+locking) and we encountered the problems also with the vanilla 2.6.33 
+kernel with CONFIG_PREEMPT. However, I was reading the linux-arm-kernel 
+archives and found the thread "cache aliasing in dup_mmap" (2009-03-07) 
+where was indicated that this problem is caused by VIVT cache aliasing. 
+Russell King posted a patch in that thread that fixed all the crashing 
+and hanging problems on a vanilla 2.6.33 kernel. I found out that the 
+patch was applied to the 2.6.34 release 
+(http://git.kernel.org/?p=linux/kernel/git/torvalds/linux-2.6.git;a=commit;h=2725898fc9bb2121ac0fb1b5e4faf4fc09014729). 
+
+
+The patch fixed the crashing also with the RT_PREEMPT but we still 
+encounter those weird hangs. I made some tracing with sysrq-t and I 
+pasted the backtrace of the locked task (the child process) in this mail 
+[1]. It always seems to hang to the same place 
+"get_page_from_freelist+0x31c" when running sys_execve(). It looks like 
+the parent hangs because it sits on waitpid() which is called for the 
+child process and the child process hangs forever inside the kernel at 
+"get_page_from_freelist+0x31c". I noticed that the hung task might 
+actually continue running normally for a bit after some time but that is 
+very rare.
+
+I also found that running "ps" when the task is hung might lock the 
+whole system for a while. Kernel printed the hung task backtrace which 
+is also pasted to this mail [2]. This could be related to the same 
+problem. I have not gotten any more info about the hang with 
+DETECT_SOFTLOCKUP, DEBUG_LOCKDEP and DEBUG_SPINLOCK_SLEEP options.
+
+Could this problem still be related to VIVT cache aliasing since similar 
+hanging was present with vanilla 2.6.33 without the patch or is it a 
+general RT_PREEMPT problem? Jamie Lokier had some doubts if there were 
+some holes left: 
+http://article.gmane.org/gmane.linux.ports.arm.kernel/69927/
+
+Has anyone else encountered this on any platform?
+
+BR,
+Jouko Haapaluoma
+
+
+********[1] sysrq-t backtrace ***********
+[ 1666.230000] system_hang_e R running 0 10745 743 0x00000000
+[ 1666.250000] [<c0251c64>] (__schedule+0x304/0x380) from [<c0251dbc>] 
+(preempt_schedule+0x64/0x90)
+[ 1666.270000] [<c0251dbc>] (preempt_schedule+0x64/0x90) from 
+[<c006ce98>] (get_page_from_freelist+0x31c/0x478)
+[ 1666.290000] [<c006ce98>] (get_page_from_freelist+0x31c/0x478) from 
+[<c006d238>] (__alloc_pages_nodemask+0x100/0x568)
+[ 1666.310000] [<c006d238>] (__alloc_pages_nodemask+0x100/0x568) from 
+[<c006d6b4>] (__get_free_pages+0x14/0x44)
+[ 1666.330000] [<c006d6b4>] (__get_free_pages+0x14/0x44) from 
+[<c002c95c>] (get_pgd_slow+0x18/0xe8)
+[ 1666.350000] [<c002c95c>] (get_pgd_slow+0x18/0xe8) from [<c00363c0>] 
+(mm_init+0xac/0xfc)
+[ 1666.370000] [<c00363c0>] (mm_init+0xac/0xfc) from [<c0091584>] 
+(bprm_mm_init+0x10/0x174)
+[ 1666.370000] [<c0091584>] (bprm_mm_init+0x10/0x174) from [<c0091b58>] 
+(do_execve+0xa0/0x26c)
+[ 1666.390000] [<c0091b58>] (do_execve+0xa0/0x26c) from [<c00281dc>] 
+(sys_execve+0x38/0x5c)
+[ 1666.410000] [<c00281dc>] (sys_execve+0x38/0x5c) from [<c0024f40>] 
+(ret_fast_syscall+0x0/0x28)
+
+(gdb) list *(get_page_from_freelist+0x31c)
+0xc006ce98 is in get_page_from_freelist (mm/page_alloc.c:193).
+188 }
+189
+190 static inline void unlock_cpu_pcp(unsigned long flags, int this_cpu)
+191 {
+192 #ifdef CONFIG_PREEMPT_RT
+193 put_cpu_var_locked(pcp_locks, this_cpu);
+194 #else
+195 local_irq_restore(flags);
+196 #endif
+197 }
+(gdb)
+
+
+********[2] ps hangs ***********
+root@at91sam9263ek:/# ps
+PID USER VSZ STAT COMMAND
+1 root 1572 S init [5]
+2 root 0 SW [kthreadd]
+3 root 0 SW [sirq-high/0]
+4 root 0 SW [sirq-timer/0]
+5 root 0 SW [sirq-net-tx/0]
+6 root 0 SW [sirq-net-rx/0]
+7 root 0 SW [sirq-block/0]
+8 root 0 SW [sirq-block-iopo]
+9 root 0 SW [sirq-tasklet/0]
+10 root 0 SW [sirq-sched/0]
+11 root 0 SW [sirq-hrtimer/0]
+12 root 0 SW [sirq-rcu/0]
+13 root 0 SW [posixcputmr/0]
+14 root 0 SW [watchdog/0]
+15 root 0 SW< [desched/0]
+16 root 0 SW< [events/0]
+17 root 0 SW [khelper]
+20 root 0 SW [async/mgr]
+95 root 0 SW [sync_supers]
+97 root 0 SW [bdi-default]
+99 root 0 SW [kblockd/0]
+108 root 0 SW [khubd]
+111 root 0 SW [kseriod]
+119 root 0 SW [cfg80211]
+136 root 0 SW [khungtaskd]
+137 root 0 SW [kswapd0]
+138 root 0 SW [aio/0]
+223 root 0 SW [mtdblockd]
+256 root 0 SW [ubi_bgt0d]
+259 root 0 SW [ubi_bgt1d]
+260 root 0 SW [irq/14-atmel_sp]
+267 root 0 SW [irq/15-atmel_sp]
+274 root 0 SW [irq/29-ohci_hcd]
+285 root 0 SW [irq/1-rtc0]
+323 root 0 SW [usbhid_resumer]
+330 root 0 SW [ubifs_bgt0_1]
+354 root 1932 S < /sbin/udevd -d
+459 root 1928 S < /sbin/udevd -d
+460 root 1928 S < /sbin/udevd -d
+614 root 0 SW [ubifs_bgt1_1]
+727 root 2900 S /sbin/syslogd -n -C64 -m 20
+729 root 2836 S /sbin/klogd -n
+740 root 3016 S -sh
+742 root 18060 R ./system_hang_echo
+4170 root 3016 R ps
+4175 root 0 []
+[ 1560.600000] INFO: task ps:4170 blocked for more than 120 seconds.
+[ 1560.600000] "echo 0 > /proc/sys/kernel/hung_task_timeout_secs" 
+disables this message.
+[ 1560.630000] ps D c0251c64 0 4170 740 0x00000000
+[ 1560.660000] [<c0251c64>] (__schedule+0x304/0x380) from [<c0251e10>] 
+(schedule+0x28/0x44)
+[ 1560.660000] [<c0251e10>] (schedule+0x28/0x44) from [<c0252ca4>] 
+(__rt_mutex_slowlock+0xa0/0xc8)
+[ 1560.690000] [<c0252ca4>] (__rt_mutex_slowlock+0xa0/0xc8) from 
+[<c02532d0>] (rt_mutex_slowlock+0x1dc/0x2b0)
+[ 1560.720000] [<c02532d0>] (rt_mutex_slowlock+0x1dc/0x2b0) from 
+[<c005c870>] (rt_down_read+0x28/0x38)
+[ 1560.760000] [<c005c870>] (rt_down_read+0x28/0x38) from [<c007b7ec>] 
+(access_process_vm+0x34/0x180)
+[ 1560.790000] [<c007b7ec>] (access_process_vm+0x34/0x180) from 
+[<c00c8320>] (proc_pid_cmdline+0x58/0xd4)
+[ 1560.820000] [<c00c8320>] (proc_pid_cmdline+0x58/0xd4) from 
+[<c00c986c>] (proc_info_read+0x5c/0xd8)
+[ 1560.850000] [<c00c986c>] (proc_info_read+0x5c/0xd8) from [<c008c3d0>] 
+(vfs_read+0xac/0x158)
+[ 1560.880000] [<c008c3d0>] (vfs_read+0xac/0x158) from [<c008c534>] 
+(sys_read+0x40/0x6c)
+[ 1560.910000] [<c008c534>] (sys_read+0x40/0x6c) from [<c0024f40>] 
+(ret_fast_syscall+0x0/0x28)
+17759 root 2836 R sh -c echo HANG! > /dev/null
+root@at91sam9263ek:/#
+
+--------------020605050504050509020001
+Content-Type: application/xml;
+ name="at91sam9263ek.config"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment;
+ filename="at91sam9263ek.config"
+
+Q09ORklHX0FSTT15CkNPTkZJR19TWVNfU1VQUE9SVFNfQVBNX0VNVUxBVElPTj15CkNPTkZJ
+R19HRU5FUklDX0dQSU89eQpDT05GSUdfR0VORVJJQ19USU1FPXkKQ09ORklHX0dFTkVSSUNf
+Q0xPQ0tFVkVOVFM9eQpDT05GSUdfR0VORVJJQ19IQVJESVJRUz15CkNPTkZJR19TVEFDS1RS
+QUNFX1NVUFBPUlQ9eQpDT05GSUdfSEFWRV9MQVRFTkNZVE9QX1NVUFBPUlQ9eQpDT05GSUdf
+TE9DS0RFUF9TVVBQT1JUPXkKQ09ORklHX1RSQUNFX0lSUUZMQUdTX1NVUFBPUlQ9eQpDT05G
+SUdfSEFSRElSUVNfU1dfUkVTRU5EPXkKQ09ORklHX0dFTkVSSUNfSVJRX1BST0JFPXkKQ09O
+RklHX1JXU0VNX0dFTkVSSUNfU1BJTkxPQ0s9eQpDT05GSUdfR0VORVJJQ19IV0VJR0hUPXkK
+Q09ORklHX0dFTkVSSUNfQ0FMSUJSQVRFX0RFTEFZPXkKQ09ORklHX0dFTkVSSUNfSEFSRElS
+UVNfTk9fX0RPX0lSUT15CkNPTkZJR19DT05TVFJVQ1RPUlM9eQpDT05GSUdfRVhQRVJJTUVO
+VEFMPXkKQ09ORklHX0JST0tFTl9PTl9TTVA9eQpDT05GSUdfTE9DS19LRVJORUw9eQpDT05G
+SUdfSEFWRV9LRVJORUxfR1pJUD15CkNPTkZJR19IQVZFX0tFUk5FTF9MWk89eQpDT05GSUdf
+S0VSTkVMX0daSVA9eQpDT05GSUdfU1lTVklQQz15CkNPTkZJR19TWVNWSVBDX1NZU0NUTD15
+CkNPTkZJR19UUkVFX1BSRUVNUFRfUkNVPXkKQ09ORklHX05BTUVTUEFDRVM9eQpDT05GSUdf
+QkxLX0RFVl9JTklUUkQ9eQpDT05GSUdfUkRfR1pJUD15CkNPTkZJR19SRF9CWklQMj15CkNP
+TkZJR19SRF9MWk1BPXkKQ09ORklHX1JEX0xaTz15CkNPTkZJR19DQ19PUFRJTUlaRV9GT1Jf
+U0laRT15CkNPTkZJR19TWVNDVEw9eQpDT05GSUdfQU5PTl9JTk9ERVM9eQpDT05GSUdfVUlE
+MTY9eQpDT05GSUdfU1lTQ1RMX1NZU0NBTEw9eQpDT05GSUdfS0FMTFNZTVM9eQpDT05GSUdf
+SE9UUExVRz15CkNPTkZJR19QUklOVEs9eQpDT05GSUdfQlVHPXkKQ09ORklHX0VMRl9DT1JF
+PXkKQ09ORklHX0JBU0VfRlVMTD15CkNPTkZJR19GVVRFWD15CkNPTkZJR19FUE9MTD15CkNP
+TkZJR19TSUdOQUxGRD15CkNPTkZJR19USU1FUkZEPXkKQ09ORklHX0VWRU5URkQ9eQpDT05G
+SUdfU0hNRU09eQpDT05GSUdfQUlPPXkKQ09ORklHX1ZNX0VWRU5UX0NPVU5URVJTPXkKQ09O
+RklHX0NPTVBBVF9CUks9eQpDT05GSUdfU0xBQj15CkNPTkZJR19IQVZFX09QUk9GSUxFPXkK
+Q09ORklHX0hBVkVfS1BST0JFUz15CkNPTkZJR19IQVZFX0tSRVRQUk9CRVM9eQpDT05GSUdf
+SEFWRV9DTEs9eQpDT05GSUdfSEFWRV9HRU5FUklDX0RNQV9DT0hFUkVOVD15CkNPTkZJR19T
+TEFCSU5GTz15CkNPTkZJR19SVF9NVVRFWEVTPXkKQ09ORklHX01PRFVMRVM9eQpDT05GSUdf
+TU9EVUxFX1VOTE9BRD15CkNPTkZJR19CTE9DSz15CkNPTkZJR19JT1NDSEVEX05PT1A9eQpD
+T05GSUdfREVGQVVMVF9OT09QPXkKQ09ORklHX01NVT15CkNPTkZJR19BUkNIX0FUOTE9eQpD
+T05GSUdfSEFWRV9BVDkxX0RBVEFGTEFTSF9DQVJEPXkKQ09ORklHX0hBVkVfTkFORF9BVE1F
+TF9CVVNXSURUSF8xNj15CkNPTkZJR19BUkNIX0FUOTFTQU05MjYzPXkKQ09ORklHX0FUOTFf
+UE1DX1VOSVQ9eQpDT05GSUdfTUFDSF9BVDkxU0FNOTI2M0VLPXkKQ09ORklHX01URF9BVDkx
+X0RBVEFGTEFTSF9DQVJEPXkKQ09ORklHX0FUOTFfUFJPR1JBTU1BQkxFX0NMT0NLUz15CkNP
+TkZJR19BVDkxX0VBUkxZX0RCR1U9eQpDT05GSUdfQ1BVX0FSTTkyNlQ9eQpDT05GSUdfQ1BV
+XzMydjU9eQpDT05GSUdfQ1BVX0FCUlRfRVY1VEo9eQpDT05GSUdfQ1BVX1BBQlJUX0xFR0FD
+WT15CkNPTkZJR19DUFVfQ0FDSEVfVklWVD15CkNPTkZJR19DUFVfQ09QWV9WNFdCPXkKQ09O
+RklHX0NQVV9UTEJfVjRXQkk9eQpDT05GSUdfQ1BVX0NQMTU9eQpDT05GSUdfQ1BVX0NQMTVf
+TU1VPXkKQ09ORklHX0FSTV9USFVNQj15CkNPTkZJR19HRU5FUklDX0NMT0NLRVZFTlRTX0JV
+SUxEPXkKQ09ORklHX1ZNU1BMSVRfM0c9eQpDT05GSUdfUFJFRU1QVF9SVD15CkNPTkZJR19Q
+UkVFTVBUPXkKQ09ORklHX1BSRUVNUFRfU09GVElSUVM9eQpDT05GSUdfUFJFRU1QVF9IQVJE
+SVJRUz15CkNPTkZJR19BRUFCST15CkNPTkZJR19PQUJJX0NPTVBBVD15CkNPTkZJR19TRUxF
+Q1RfTUVNT1JZX01PREVMPXkKQ09ORklHX0ZMQVRNRU1fTUFOVUFMPXkKQ09ORklHX0ZMQVRN
+RU09eQpDT05GSUdfRkxBVF9OT0RFX01FTV9NQVA9eQpDT05GSUdfUEFHRUZMQUdTX0VYVEVO
+REVEPXkKQ09ORklHX1ZJUlRfVE9fQlVTPXkKQ09ORklHX0FMSUdOTUVOVF9UUkFQPXkKQ09O
+RklHX0JJTkZNVF9FTEY9eQpDT05GSUdfSEFWRV9BT1VUPXkKQ09ORklHX0FSQ0hfU1VTUEVO
+RF9QT1NTSUJMRT15CkNPTkZJR19ORVQ9eQpDT05GSUdfUEFDS0VUPXkKQ09ORklHX1VOSVg9
+eQpDT05GSUdfWEZSTT15CkNPTkZJR19JTkVUPXkKQ09ORklHX0lQX0ZJQl9IQVNIPXkKQ09O
+RklHX0lQX1BOUD15CkNPTkZJR19JUF9QTlBfREhDUD15CkNPTkZJR19JUF9QTlBfQk9PVFA9
+eQpDT05GSUdfSU5FVF9YRlJNX01PREVfVFJBTlNQT1JUPXkKQ09ORklHX0lORVRfWEZSTV9N
+T0RFX1RVTk5FTD15CkNPTkZJR19JTkVUX1hGUk1fTU9ERV9CRUVUPXkKQ09ORklHX0lORVRf
+TFJPPXkKQ09ORklHX0lORVRfRElBRz15CkNPTkZJR19JTkVUX1RDUF9ESUFHPXkKQ09ORklH
+X1RDUF9DT05HX0NVQklDPXkKQ09ORklHX1dJUkVMRVNTPXkKQ09ORklHX1dFWFRfQ09SRT15
+CkNPTkZJR19XRVhUX1BST0M9eQpDT05GSUdfQ0ZHODAyMTE9eQpDT05GSUdfQ0ZHODAyMTFf
+REVGQVVMVF9QUz15CkNPTkZJR19DRkc4MDIxMV9XRVhUPXkKQ09ORklHX1dJUkVMRVNTX0VY
+VF9TWVNGUz15CkNPTkZJR19TVEFOREFMT05FPXkKQ09ORklHX1BSRVZFTlRfRklSTVdBUkVf
+QlVJTEQ9eQpDT05GSUdfRldfTE9BREVSPXkKQ09ORklHX0ZJUk1XQVJFX0lOX0tFUk5FTD15
+CkNPTkZJR19DT05ORUNUT1I9eQpDT05GSUdfUFJPQ19FVkVOVFM9eQpDT05GSUdfTVREPXkK
+Q09ORklHX01URF9QQVJUSVRJT05TPXkKQ09ORklHX01URF9DTURMSU5FX1BBUlRTPXkKQ09O
+RklHX01URF9DSEFSPXkKQ09ORklHX01URF9CTEtERVZTPXkKQ09ORklHX01URF9CTE9DSz15
+CkNPTkZJR19NVERfTUFQX0JBTktfV0lEVEhfMT15CkNPTkZJR19NVERfTUFQX0JBTktfV0lE
+VEhfMj15CkNPTkZJR19NVERfTUFQX0JBTktfV0lEVEhfND15CkNPTkZJR19NVERfQ0ZJX0kx
+PXkKQ09ORklHX01URF9DRklfSTI9eQpDT05GSUdfTVREX0RBVEFGTEFTSD15CkNPTkZJR19N
+VERfTkFORD15CkNPTkZJR19NVERfTkFORF9JRFM9eQpDT05GSUdfTVREX05BTkRfQVRNRUw9
+eQpDT05GSUdfTVREX05BTkRfQVRNRUxfRUNDX1NPRlQ9eQpDT05GSUdfTVREX09ORU5BTkQ9
+eQpDT05GSUdfTVREX09ORU5BTkRfVkVSSUZZX1dSSVRFPXkKQ09ORklHX01URF9PTkVOQU5E
+X0dFTkVSSUM9eQpDT05GSUdfTVREX1VCST15CkNPTkZJR19IQVZFX0lERT15CkNPTkZJR19T
+Q1NJPXkKQ09ORklHX1NDU0lfRE1BPXkKQ09ORklHX1NDU0lfUFJPQ19GUz15CkNPTkZJR19C
+TEtfREVWX1NEPXkKQ09ORklHX1NDU0lfV0FJVF9TQ0FOPW0KQ09ORklHX05FVERFVklDRVM9
+eQpDT05GSUdfV0xBTj15CkNPTkZJR19QUFA9eQpDT05GSUdfUFBQX0FTWU5DPXkKQ09ORklH
+X1NMSEM9eQpDT05GSUdfSU5QVVQ9eQpDT05GSUdfSU5QVVRfTU9VU0VERVY9eQpDT05GSUdf
+U0VSSU89eQpDT05GSUdfU0VSSU9fU0VSUE9SVD15CkNPTkZJR19WVD15CkNPTkZJR19DT05T
+T0xFX1RSQU5TTEFUSU9OUz15CkNPTkZJR19WVF9DT05TT0xFPXkKQ09ORklHX0hXX0NPTlNP
+TEU9eQpDT05GSUdfREVWS01FTT15CkNPTkZJR19TRVJJQUxfQVRNRUw9eQpDT05GSUdfU0VS
+SUFMX0FUTUVMX0NPTlNPTEU9eQpDT05GSUdfU0VSSUFMX0FUTUVMX1BEQz15CkNPTkZJR19T
+RVJJQUxfQ09SRT15CkNPTkZJR19TRVJJQUxfQ09SRV9DT05TT0xFPXkKQ09ORklHX1VOSVg5
+OF9QVFlTPXkKQ09ORklHX0hXX1JBTkRPTT15CkNPTkZJR19JMkM9eQpDT05GSUdfSTJDX0JP
+QVJESU5GTz15CkNPTkZJR19JMkNfQ09NUEFUPXkKQ09ORklHX0kyQ19DSEFSREVWPXkKQ09O
+RklHX0kyQ19IRUxQRVJfQVVUTz15CkNPTkZJR19JMkNfQUxHT0JJVD15CkNPTkZJR19JMkNf
+R1BJTz15CkNPTkZJR19TUEk9eQpDT05GSUdfU1BJX01BU1RFUj15CkNPTkZJR19TUElfQVRN
+RUw9eQpDT05GSUdfQVJDSF9SRVFVSVJFX0dQSU9MSUI9eQpDT05GSUdfR1BJT0xJQj15CkNP
+TkZJR19XMT15CkNPTkZJR19XMV9DT049eQpDT05GSUdfVzFfTUFTVEVSX0RTMjQ4Mj1tCkNP
+TkZJR19XMV9TTEFWRV9USEVSTT1tCkNPTkZJR19XMV9TTEFWRV9TTUVNPW0KQ09ORklHX1dB
+VENIRE9HPXkKQ09ORklHX0FUOTFTQU05WF9XQVRDSERPRz15CkNPTkZJR19TU0JfUE9TU0lC
+TEU9eQpDT05GSUdfSEFWRV9GQl9BVE1FTD15CkNPTkZJR19EVU1NWV9DT05TT0xFPXkKQ09O
+RklHX0hJRF9TVVBQT1JUPXkKQ09ORklHX0hJRD15CkNPTkZJR19VU0JfSElEPXkKQ09ORklH
+X0hJRF9BNFRFQ0g9eQpDT05GSUdfSElEX0FQUExFPXkKQ09ORklHX0hJRF9CRUxLSU49eQpD
+T05GSUdfSElEX0NIRVJSWT15CkNPTkZJR19ISURfQ0hJQ09OWT15CkNPTkZJR19ISURfQ1lQ
+UkVTUz15CkNPTkZJR19ISURfRFJBR09OUklTRT15CkNPTkZJR19ISURfRVpLRVk9eQpDT05G
+SUdfSElEX0tZRT15CkNPTkZJR19ISURfR1lSQVRJT049eQpDT05GSUdfSElEX1RXSU5IQU49
+eQpDT05GSUdfSElEX0tFTlNJTkdUT049eQpDT05GSUdfSElEX0xPR0lURUNIPXkKQ09ORklH
+X0hJRF9NSUNST1NPRlQ9eQpDT05GSUdfSElEX01PTlRFUkVZPXkKQ09ORklHX0hJRF9OVFJJ
+Rz15CkNPTkZJR19ISURfUEFOVEhFUkxPUkQ9eQpDT05GSUdfSElEX1BFVEFMWU5YPXkKQ09O
+RklHX0hJRF9TQU1TVU5HPXkKQ09ORklHX0hJRF9TT05ZPXkKQ09ORklHX0hJRF9TVU5QTFVT
+PXkKQ09ORklHX0hJRF9HUkVFTkFTSUE9eQpDT05GSUdfSElEX1NNQVJUSk9ZUExVUz15CkNP
+TkZJR19ISURfVE9QU0VFRD15CkNPTkZJR19ISURfVEhSVVNUTUFTVEVSPXkKQ09ORklHX0hJ
+RF9aRVJPUExVUz15CkNPTkZJR19VU0JfU1VQUE9SVD15CkNPTkZJR19VU0JfQVJDSF9IQVNf
+SENEPXkKQ09ORklHX1VTQl9BUkNIX0hBU19PSENJPXkKQ09ORklHX1VTQj15CkNPTkZJR19V
+U0JfREVWSUNFRlM9eQpDT05GSUdfVVNCX0RFVklDRV9DTEFTUz15CkNPTkZJR19VU0JfTU9O
+PXkKQ09ORklHX1VTQl9PSENJX0hDRD15CkNPTkZJR19VU0JfT0hDSV9MSVRUTEVfRU5ESUFO
+PXkKQ09ORklHX1VTQl9TVE9SQUdFPXkKQ09ORklHX1VTQl9HQURHRVQ9eQpDT05GSUdfVVNC
+X0dBREdFVF9TRUxFQ1RFRD15CkNPTkZJR19VU0JfR0FER0VUX0FUOTE9eQpDT05GSUdfVVNC
+X0FUOTE9eQpDT05GSUdfUlRDX0xJQj15CkNPTkZJR19SVENfQ0xBU1M9eQpDT05GSUdfUlRD
+X0hDVE9TWVM9eQpDT05GSUdfUlRDX0lOVEZfU1lTRlM9eQpDT05GSUdfUlRDX0lOVEZfUFJP
+Qz15CkNPTkZJR19SVENfSU5URl9ERVY9eQpDT05GSUdfUlRDX0RSVl9BVDkxU0FNOT15CkNP
+TkZJR19FWFQyX0ZTPXkKQ09ORklHX0ZJTEVfTE9DS0lORz15CkNPTkZJR19GU05PVElGWT15
+CkNPTkZJR19ETk9USUZZPXkKQ09ORklHX0lOT1RJRlk9eQpDT05GSUdfSU5PVElGWV9VU0VS
+PXkKQ09ORklHX0ZBVF9GUz15CkNPTkZJR19WRkFUX0ZTPXkKQ09ORklHX1BST0NfRlM9eQpD
+T05GSUdfUFJPQ19TWVNDVEw9eQpDT05GSUdfUFJPQ19QQUdFX01PTklUT1I9eQpDT05GSUdf
+U1lTRlM9eQpDT05GSUdfVE1QRlM9eQpDT05GSUdfTUlTQ19GSUxFU1lTVEVNUz15CkNPTkZJ
+R19KRkZTMl9GUz15CkNPTkZJR19KRkZTMl9GU19XUklURUJVRkZFUj15CkNPTkZJR19KRkZT
+Ml9aTElCPXkKQ09ORklHX0pGRlMyX1JUSU1FPXkKQ09ORklHX1VCSUZTX0ZTPXkKQ09ORklH
+X1VCSUZTX0ZTX0xaTz15CkNPTkZJR19VQklGU19GU19aTElCPXkKQ09ORklHX0NSQU1GUz15
+CkNPTkZJR19ORVRXT1JLX0ZJTEVTWVNURU1TPXkKQ09ORklHX05GU19GUz1tCkNPTkZJR19O
+RlNfVjM9eQpDT05GSUdfTkZTRD1tCkNPTkZJR19ORlNEX1YzPXkKQ09ORklHX0xPQ0tEPW0K
+Q09ORklHX0xPQ0tEX1Y0PXkKQ09ORklHX0VYUE9SVEZTPW0KQ09ORklHX05GU19DT01NT049
+eQpDT05GSUdfU1VOUlBDPW0KQ09ORklHX1BBUlRJVElPTl9BRFZBTkNFRD15CkNPTkZJR19N
+U0RPU19QQVJUSVRJT049eQpDT05GSUdfTkxTPXkKQ09ORklHX05MU19DT0RFUEFHRV80Mzc9
+eQpDT05GSUdfTkxTX0NPREVQQUdFXzg1MD15CkNPTkZJR19OTFNfSVNPODg1OV8xPXkKQ09O
+RklHX05MU19JU084ODU5XzE1PXkKQ09ORklHX1BSSU5US19USU1FPXkKQ09ORklHX0VOQUJM
+RV9XQVJOX0RFUFJFQ0FURUQ9eQpDT05GSUdfRU5BQkxFX01VU1RfQ0hFQ0s9eQpDT05GSUdf
+TUFHSUNfU1lTUlE9eQpDT05GSUdfREVCVUdfS0VSTkVMPXkKQ09ORklHX0RFVEVDVF9TT0ZU
+TE9DS1VQPXkKQ09ORklHX0RFVEVDVF9IVU5HX1RBU0s9eQpDT05GSUdfU0NIRURfREVCVUc9
+eQpDT05GSUdfREVCVUdfUFJFRU1QVD15CkNPTkZJR19ERUJVR19CVUdWRVJCT1NFPXkKQ09O
+RklHX0RFQlVHX0lORk89eQpDT05GSUdfREVCVUdfTUVNT1JZX0lOSVQ9eQpDT05GSUdfUkNV
+X0NQVV9TVEFMTF9ERVRFQ1RPUj15CkNPTkZJR19IQVZFX0ZVTkNUSU9OX1RSQUNFUj15CkNP
+TkZJR19UUkFDSU5HX1NVUFBPUlQ9eQpDT05GSUdfSEFWRV9BUkNIX0tHREI9eQpDT05GSUdf
+QVJNX1VOV0lORD15CkNPTkZJR19TRUNVUklUWT15CkNPTkZJR19ERUZBVUxUX1NFQ1VSSVRZ
+X0RBQz15CkNPTkZJR19DUllQVE89eQpDT05GSUdfQ1JZUFRPX0FMR0FQST15CkNPTkZJR19D
+UllQVE9fQUxHQVBJMj15CkNPTkZJR19DUllQVE9fSEFTSD1tCkNPTkZJR19DUllQVE9fSEFT
+SDI9bQpDT05GSUdfQ1JZUFRPX0NSQzMyQz1tCkNPTkZJR19DUllQVE9fREVGTEFURT15CkNP
+TkZJR19DUllQVE9fTFpPPXkKQ09ORklHX0JJVFJFVkVSU0U9eQpDT05GSUdfR0VORVJJQ19G
+SU5EX0xBU1RfQklUPXkKQ09ORklHX0NSQ19DQ0lUVD15CkNPTkZJR19DUkMxNj15CkNPTkZJ
+R19DUkMzMj15CkNPTkZJR19MSUJDUkMzMkM9bQpDT05GSUdfWkxJQl9JTkZMQVRFPXkKQ09O
+RklHX1pMSUJfREVGTEFURT15CkNPTkZJR19MWk9fQ09NUFJFU1M9eQpDT05GSUdfTFpPX0RF
+Q09NUFJFU1M9eQpDT05GSUdfREVDT01QUkVTU19HWklQPXkKQ09ORklHX0RFQ09NUFJFU1Nf
+QlpJUDI9eQpDT05GSUdfREVDT01QUkVTU19MWk1BPXkKQ09ORklHX0RFQ09NUFJFU1NfTFpP
+PXkKQ09ORklHX0hBU19JT01FTT15CkNPTkZJR19IQVNfSU9QT1JUPXkKQ09ORklHX0hBU19E
+TUE9eQpDT05GSUdfTkxBVFRSPXkK
+--------------020605050504050509020001
+Content-Type: text/plain; charset=windows-1252;
+ name="hang_test.c"
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment;
+ filename="hang_test.c"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+
+void *print_message_function( void *ptr )
+{
+    pthread_t num = pthread_self();
+    while(1)
+    {
+        printf("Thread %d doing a system() call\n", num);
+        system("echo HANG! > /dev/null");
+        printf("Thread %d call finished\n", num);
+    }
+}
+
+int main(int argc, char *argv[])
+{
+    pthread_t thread1;
+    pthread_t thread2;
+
+    pthread_create( &thread1, NULL, print_message_function, NULL);
+    pthread_create( &thread2, NULL, print_message_function, NULL);
+
+    while(1)
+    {
+    }
+}
+
+--------------020605050504050509020001--

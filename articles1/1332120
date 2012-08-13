@@ -1,0 +1,133 @@
+Path: news.gmane.org!not-for-mail
+From: "Yan, Zheng" <zheng.z.yan@intel.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH V2] perf/x86: Fix format definition of SNB-EP uncore QPI box
+Date: Tue, 24 Jul 2012 10:44:10 +0800
+Lines: 88
+Approved: news@gmane.org
+Message-ID: <1343097850-4348-1-git-send-email-zheng.z.yan@intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343097867 7878 80.91.229.3 (24 Jul 2012 02:44:27 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 02:44:27 +0000 (UTC)
+Cc: "Yan, Zheng" <zheng.z.yan@intel.com>
+To: a.p.zijlstra@chello.nl, eranian@google.com, mingo@elte.hu,
+	andi@firstfloor.org, linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 04:44:26 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StV6j-0006jh-62
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 04:44:21 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753459Ab2GXCoO (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 22:44:14 -0400
+Original-Received: from mga09.intel.com ([134.134.136.24]:22217 "EHLO mga09.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753009Ab2GXCoN (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 22:44:13 -0400
+Original-Received: from orsmga002.jf.intel.com ([10.7.209.21])
+  by orsmga102.jf.intel.com with ESMTP; 23 Jul 2012 19:44:12 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.67,351,1309762800"; 
+   d="scan'208";a="176355601"
+Original-Received: from zyan5-mobl.sh.intel.com ([10.239.36.10])
+  by orsmga002.jf.intel.com with ESMTP; 23 Jul 2012 19:44:11 -0700
+X-Mailer: git-send-email 1.7.10.4
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332120
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332120>
+
+From: "Yan, Zheng" <zheng.z.yan@intel.com>
+
+The event control register of SNB-EP uncore QPI box has a one bit
+extension at bit position 21.
+
+Reported-by: Stephane Eranian <eranian@google.com>
+Signed-off-by: Yan, Zheng <zheng.z.yan@intel.com>
+---
+Changes since V1:
+ - Define the extentsion bit together with event select field
+
+ arch/x86/kernel/cpu/perf_event_intel_uncore.c |   22 +++++++++++++++++++++-
+ arch/x86/kernel/cpu/perf_event_intel_uncore.h |    4 ++++
+ 2 files changed, 25 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/kernel/cpu/perf_event_intel_uncore.c b/arch/x86/kernel/cpu/perf_event_intel_uncore.c
+index a5de59f..2139fb0 100644
+--- a/arch/x86/kernel/cpu/perf_event_intel_uncore.c
++++ b/arch/x86/kernel/cpu/perf_event_intel_uncore.c
+@@ -18,6 +18,7 @@ static struct event_constraint constraint_empty =
+ 	EVENT_CONSTRAINT(0, 0, 0);
+ 
+ DEFINE_UNCORE_FORMAT_ATTR(event, event, "config:0-7");
++DEFINE_UNCORE_FORMAT_ATTR(event_ext, event, "config:0-7,21");
+ DEFINE_UNCORE_FORMAT_ATTR(umask, umask, "config:8-15");
+ DEFINE_UNCORE_FORMAT_ATTR(edge, edge, "config:18");
+ DEFINE_UNCORE_FORMAT_ATTR(tid_en, tid_en, "config:19");
+@@ -279,6 +280,15 @@ static struct attribute *snbep_uncore_pcu_formats_attr[] = {
+ 	NULL,
+ };
+ 
++static struct attribute *snbep_uncore_qpi_formats_attr[] = {
++	&format_attr_event_ext.attr,
++	&format_attr_umask.attr,
++	&format_attr_edge.attr,
++	&format_attr_inv.attr,
++	&format_attr_thresh8.attr,
++	NULL,
++};
++
+ static struct uncore_event_desc snbep_uncore_imc_events[] = {
+ 	INTEL_UNCORE_EVENT_DESC(clockticks,      "event=0xff,umask=0x00"),
+ 	INTEL_UNCORE_EVENT_DESC(cas_count_read,  "event=0x04,umask=0x03"),
+@@ -314,6 +324,11 @@ static struct attribute_group snbep_uncore_pcu_format_group = {
+ 	.attrs = snbep_uncore_pcu_formats_attr,
+ };
+ 
++static struct attribute_group snbep_uncore_qpi_format_group = {
++	.name = "format",
++	.attrs = snbep_uncore_qpi_formats_attr,
++};
++
+ static struct intel_uncore_ops snbep_uncore_msr_ops = {
+ 	.init_box	= snbep_uncore_msr_init_box,
+ 	.disable_box	= snbep_uncore_msr_disable_box,
+@@ -485,8 +500,13 @@ static struct intel_uncore_type snbep_uncore_qpi = {
+ 	.num_counters   = 4,
+ 	.num_boxes	= 2,
+ 	.perf_ctr_bits	= 48,
++	.perf_ctr	= SNBEP_PCI_PMON_CTR0,
++	.event_ctl	= SNBEP_PCI_PMON_CTL0,
++	.event_mask	= SNBEP_QPI_PCI_PMON_RAW_EVENT_MASK,
++	.box_ctl	= SNBEP_PCI_PMON_BOX_CTL,
++	.ops		= &snbep_uncore_pci_ops,
+ 	.event_descs	= snbep_uncore_qpi_events,
+-	SNBEP_UNCORE_PCI_COMMON_INIT(),
++	.format_group	= &snbep_uncore_qpi_format_group,
+ };
+ 
+ 
+diff --git a/arch/x86/kernel/cpu/perf_event_intel_uncore.h b/arch/x86/kernel/cpu/perf_event_intel_uncore.h
+index b13e9ea..0f8a8ca 100644
+--- a/arch/x86/kernel/cpu/perf_event_intel_uncore.h
++++ b/arch/x86/kernel/cpu/perf_event_intel_uncore.h
+@@ -115,6 +115,10 @@
+ 				 SNBEP_PCU_MSR_PMON_CTL_OCC_INVERT | \
+ 				 SNBEP_PCU_MSR_PMON_CTL_OCC_EDGE_DET)
+ 
++#define SNBEP_QPI_PCI_PMON_RAW_EVENT_MASK	\
++				(SNBEP_PMON_RAW_EVENT_MASK | \
++				 SNBEP_PMON_CTL_EV_SEL_EXT)
++
+ /* SNB-EP pci control register */
+ #define SNBEP_PCI_PMON_BOX_CTL			0xf4
+ #define SNBEP_PCI_PMON_CTL0			0xd8
+-- 
+1.7.10.4
+

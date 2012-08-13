@@ -1,0 +1,175 @@
+Path: news.gmane.org!not-for-mail
+From: Sasha Levin <levinsasha928@gmail.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [RFC 3/4] mm,ksm: use new hashtable implementation
+Date: Tue, 31 Jul 2012 20:05:19 +0200
+Lines: 98
+Approved: news@gmane.org
+Message-ID: <1343757920-19713-4-git-send-email-levinsasha928@gmail.com>
+References: <1343757920-19713-1-git-send-email-levinsasha928@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343757921 14588 80.91.229.3 (31 Jul 2012 18:05:21 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 18:05:21 +0000 (UTC)
+Cc: tj@kernel.org,
+	akpm@linux-foundation.org,
+	linux-kernel@vger.kernel.org,
+	linux-mm@kvack.org,
+	paul.gortmaker@windriver.com,
+	Sasha Levin <levinsasha928@gmail.com>
+To: torvalds@linux-foundation.org
+Original-X-From: owner-linux-mm@kvack.org Tue Jul 31 20:05:20 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SwGop-0000WD-LQ
+	for glkm-linux-mm-2@m.gmane.org; Tue, 31 Jul 2012 20:05:19 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 9D8536B00AD; Tue, 31 Jul 2012 14:05:13 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 6780E6B00AA; Tue, 31 Jul 2012 14:05:11 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id E0C0F6B00AA; Tue, 31 Jul 2012 14:05:10 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx147.postini.com [74.125.245.147])
+	by kanga.kvack.org (Postfix) with SMTP id C726A6B00AE
+	for <linux-mm@kvack.org>; Tue, 31 Jul 2012 14:05:07 -0400 (EDT)
+Original-Received: from mail-bk0-f41.google.com ([209.85.214.41]) (using TLSv1) by na3sys010amx147.postini.com ([74.125.244.10]) with SMTP;
+	Tue, 31 Jul 2012 18:05:07 GMT
+Original-Received: by mail-bk0-f41.google.com with SMTP id jc3so4023084bkc.14
+        for <linux-mm@kvack.org>; Tue, 31 Jul 2012 11:05:07 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=IT4WNLrYdAkT6uQN5OGarD+sr3SzDc4m0NxN1l+racw=;
+        b=H6y9UgLoINbzVDuUbwOyOKi5Ottr9J8hhAdBYgNn99WCZ59nh9C2LfXWMXgfoUWbBv
+         3xcz7puE3/Ta9m0upqmEI1XI0VUyDZEkv/PZ9tFA+TsZ1Zo4y59PHo8zl15KVK9GY62W
+         eImW2yuNCTjwCELg+ogKrj6VjpEP1AWYvVmodEAayzc0eD8goILNzgEfqIKRJn0PC3/y
+         FyMnm/Myyb7c8XN8PgwIEuLWHv29/VGQSWJeFyMDhj73hfmN0QhhLSrwb/nFSbzYW7Ci
+         SpxItc4usT1nQJ4O7fGijG0EkeXncZsta5g5tP1Y0TdGkS1UPpmLLj7QcbzusamfY8DI
+         IKkQ==
+Original-Received: by 10.204.156.87 with SMTP id v23mr5877288bkw.0.1343757906876;
+        Tue, 31 Jul 2012 11:05:06 -0700 (PDT)
+Original-Received: from localhost.localdomain (95-89-78-76-dynip.superkabel.de. [95.89.78.76])
+        by mx.google.com with ESMTPS id m9sm517467bkm.10.2012.07.31.11.05.05
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 31 Jul 2012 11:05:06 -0700 (PDT)
+X-Mailer: git-send-email 1.7.8.6
+In-Reply-To: <1343757920-19713-1-git-send-email-levinsasha928@gmail.com>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:37.28749/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 1 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0100) s cv GT3 gt2 gt1 r p m c 
+X-pstn-addresses: from <levinsasha928@gmail.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83278 gmane.linux.kernel:1335929
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335929>
+
+Switch ksm to use the new hashtable implementation. This reduces the amount of
+generic unrelated code in the ksm module.
+
+Signed-off-by: Sasha Levin <levinsasha928@gmail.com>
+---
+ mm/ksm.c |   29 +++++++++--------------------
+ 1 files changed, 9 insertions(+), 20 deletions(-)
+
+diff --git a/mm/ksm.c b/mm/ksm.c
+index 47c8853..2f57def 100644
+--- a/mm/ksm.c
++++ b/mm/ksm.c
+@@ -33,7 +33,7 @@
+ #include <linux/mmu_notifier.h>
+ #include <linux/swap.h>
+ #include <linux/ksm.h>
+-#include <linux/hash.h>
++#include <linux/hashtable.h>
+ #include <linux/freezer.h>
+ #include <linux/oom.h>
+ 
+@@ -157,8 +157,8 @@ static struct rb_root root_stable_tree = RB_ROOT;
+ static struct rb_root root_unstable_tree = RB_ROOT;
+ 
+ #define MM_SLOTS_HASH_SHIFT 10
+-#define MM_SLOTS_HASH_HEADS (1 << MM_SLOTS_HASH_SHIFT)
+-static struct hlist_head mm_slots_hash[MM_SLOTS_HASH_HEADS];
++#define mm_hash_cmp(slot, key) ((slot)->mm == (key))
++static DEFINE_HASHTABLE(mm_slots_hash, MM_SLOTS_HASH_SHIFT);
+ 
+ static struct mm_slot ksm_mm_head = {
+ 	.mm_list = LIST_HEAD_INIT(ksm_mm_head.mm_list),
+@@ -275,26 +275,15 @@ static inline void free_mm_slot(struct mm_slot *mm_slot)
+ 
+ static struct mm_slot *get_mm_slot(struct mm_struct *mm)
+ {
+-	struct mm_slot *mm_slot;
+-	struct hlist_head *bucket;
+-	struct hlist_node *node;
+-
+-	bucket = &mm_slots_hash[hash_ptr(mm, MM_SLOTS_HASH_SHIFT)];
+-	hlist_for_each_entry(mm_slot, node, bucket, link) {
+-		if (mm == mm_slot->mm)
+-			return mm_slot;
+-	}
+-	return NULL;
++	return HASH_GET(mm_slots_hash, mm, struct mm_slot,
++				link, mm_hash_cmp);
+ }
+ 
+ static void insert_to_mm_slots_hash(struct mm_struct *mm,
+ 				    struct mm_slot *mm_slot)
+ {
+-	struct hlist_head *bucket;
+-
+-	bucket = &mm_slots_hash[hash_ptr(mm, MM_SLOTS_HASH_SHIFT)];
+ 	mm_slot->mm = mm;
+-	hlist_add_head(&mm_slot->link, bucket);
++	HASH_ADD(mm_slots_hash, &mm_slot->link, mm);
+ }
+ 
+ static inline int in_stable_tree(struct rmap_item *rmap_item)
+@@ -647,7 +636,7 @@ static int unmerge_and_remove_all_rmap_items(void)
+ 		ksm_scan.mm_slot = list_entry(mm_slot->mm_list.next,
+ 						struct mm_slot, mm_list);
+ 		if (ksm_test_exit(mm)) {
+-			hlist_del(&mm_slot->link);
++			HASH_DEL(mm_slot, link);
+ 			list_del(&mm_slot->mm_list);
+ 			spin_unlock(&ksm_mmlist_lock);
+ 
+@@ -1385,7 +1374,7 @@ next_mm:
+ 		 * or when all VM_MERGEABLE areas have been unmapped (and
+ 		 * mmap_sem then protects against race with MADV_MERGEABLE).
+ 		 */
+-		hlist_del(&slot->link);
++		HASH_DEL(slot, link);
+ 		list_del(&slot->mm_list);
+ 		spin_unlock(&ksm_mmlist_lock);
+ 
+@@ -1548,7 +1537,7 @@ void __ksm_exit(struct mm_struct *mm)
+ 	mm_slot = get_mm_slot(mm);
+ 	if (mm_slot && ksm_scan.mm_slot != mm_slot) {
+ 		if (!mm_slot->rmap_list) {
+-			hlist_del(&mm_slot->link);
++			HASH_DEL(mm_slot, link);
+ 			list_del(&mm_slot->mm_list);
+ 			easy_to_free = 1;
+ 		} else {
+-- 
+1.7.8.6
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

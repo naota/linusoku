@@ -1,0 +1,118 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org>
+Newsgroups: gmane.linux.nfs,gmane.linux.file-systems,gmane.linux.kernel
+Subject: [PATCH v5 04/19] vfs: fix readlinkat to retry on ESTALE
+Date: Wed,  8 Aug 2012 09:21:27 -0400
+Lines: 57
+Approved: news@gmane.org
+Message-ID: <1344432102-22312-5-git-send-email-jlayton@redhat.com>
+References: <1344432102-22312-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344432144 30833 80.91.229.3 (8 Aug 2012 13:22:24 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 13:22:24 +0000 (UTC)
+Cc: linux-fsdevel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org,
+	linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, michael.brantley-Iq/kdjr4a97QT0dZR+AlfA@public.gmane.org,
+	hch-wEGCiKHe2LqWVfeAwA7xHQ@public.gmane.org, miklos-sUDqSbJrdHQHWmgEVkV9KA@public.gmane.org, pstaubach-83r9SdEf25FBDgjK7y7TUQ@public.gmane.org
+To: viro-3bDd1+5oDREiFSDQTTA3OLVCufUGDwFn@public.gmane.org
+Original-X-From: linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org Wed Aug 08 15:22:23 2012
+Return-path: <linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Envelope-to: glN-linux-nfs-wOFGN7rlS/M9smdsby/KFg@public.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>)
+	id 1Sz6DM-0005YY-RM
+	for glN-linux-nfs-wOFGN7rlS/M9smdsby/KFg@public.gmane.org; Wed, 08 Aug 2012 15:22:21 +0200
+Original-Received: (majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org) by vger.kernel.org via listexpand
+	id S1758440Ab2HHNV4 (ORCPT <rfc822;glN-linux-nfs@m.gmane.org>);
+	Wed, 8 Aug 2012 09:21:56 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:63871 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1758418Ab2HHNVx (ORCPT
+	<rfc822;linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>); Wed, 8 Aug 2012 09:21:53 -0400
+Original-Received: by mail-gh0-f174.google.com with SMTP id r11so730361ghr.19
+        for <linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>; Wed, 08 Aug 2012 06:21:53 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:x-gm-message-state;
+        bh=OEzgfhKr75Q8DXD+6sdNT3n7eplkRZBtcwyuuQ9J+VI=;
+        b=A/sWMlOh+Q0XK5FjlZWIEpBPXBAXTHgatIwvxAhxJ00EK9NJGXkicQfpm1n3PlDSgM
+         kYkhD7vDpCsF2VkWrEo/Wlm86zgQlOB8dqbLZpoDYOI2hxzC1daHg4alxz0ZXg12cjpf
+         JNuuTxhG9BJg5qCFWMTwUdVFydeJAEi6vD6ocyWiiEtxSh0y22Ygxs0ibQYrRfe4AqcS
+         hsftXtAo1VT5SEntZDe23fZ/1HAFQkuRekh768Ly9vM1VdoHc0ZDxLMqAoXceSi0q6Xu
+         bnYbNGZMH8GSF0nz1rSywlPEHdLXjUZveWNuJdLU1BVNkG404v5dURduRLNz/xzxAno7
+         hCMA==
+Original-Received: by 10.236.177.42 with SMTP id c30mr16581145yhm.37.1344432113141;
+        Wed, 08 Aug 2012 06:21:53 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-069-134-145-027.nc.res.rr.com. [69.134.145.27])
+        by mx.google.com with ESMTPS id l1sm24418002yhm.19.2012.08.08.06.21.51
+        (version=SSLv3 cipher=OTHER);
+        Wed, 08 Aug 2012 06:21:52 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1344432102-22312-1-git-send-email-jlayton-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org>
+X-Gm-Message-State: ALoCoQl6+UzRl09GYNLVE0tRO3wYqroqW2/z1rou+sakxym+1aWa79diKZYRb8T67EZWpJKczTU9
+Original-Sender: linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Precedence: bulk
+List-ID: <linux-nfs.vger.kernel.org>
+X-Mailing-List: linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Xref: news.gmane.org gmane.linux.nfs:51361 gmane.linux.file-systems:66457 gmane.linux.kernel:1340036
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340036>
+
+Signed-off-by: Jeff Layton <jlayton-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org>
+---
+ fs/stat.c | 21 +++++++++++++++++----
+ 1 file changed, 17 insertions(+), 4 deletions(-)
+
+diff --git a/fs/stat.c b/fs/stat.c
+index 5afeb37..c9d88f7 100644
+--- a/fs/stat.c
++++ b/fs/stat.c
+@@ -307,14 +307,25 @@ SYSCALL_DEFINE4(readlinkat, int, dfd, const char __user *, pathname,
+ 	struct path path;
+ 	int error;
+ 	int empty = 0;
++	char *name;
++	unsigned int try = 0;
++	unsigned int lookup_flags = LOOKUP_EMPTY;
+ 
+ 	if (bufsiz <= 0)
+ 		return -EINVAL;
+ 
+-	error = user_path_at_empty(dfd, pathname, LOOKUP_EMPTY, &path, &empty);
+-	if (!error) {
+-		struct inode *inode = path.dentry->d_inode;
++	name = getname_flags(pathname, lookup_flags, &empty);
++	if (IS_ERR(name))
++		return PTR_ERR(name);
++
++	do {
++		struct inode *inode;
++
++		error = kern_path_at(dfd, name, lookup_flags, &path);
++		if (error)
++			break;
+ 
++		inode = path.dentry->d_inode;
+ 		error = empty ? -ENOENT : -EINVAL;
+ 		if (inode->i_op->readlink) {
+ 			error = security_inode_readlink(path.dentry);
+@@ -325,7 +336,9 @@ SYSCALL_DEFINE4(readlinkat, int, dfd, const char __user *, pathname,
+ 			}
+ 		}
+ 		path_put(&path);
+-	}
++		lookup_flags |= LOOKUP_REVAL;
++	} while (retry_estale(error, try++));
++	putname(name);
+ 	return error;
+ }
+ 
+-- 
+1.7.11.2
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-nfs" in
+the body of a message to majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

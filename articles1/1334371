@@ -1,0 +1,108 @@
+Path: news.gmane.org!not-for-mail
+From: Cong Wang <amwang@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.network
+Subject: [PATCH 5/7] netpoll: take rcu_read_lock_bh() in netpoll_rx()
+Date: Fri, 27 Jul 2012 23:38:02 +0800
+Lines: 55
+Approved: news@gmane.org
+Message-ID: <1343403484-29347-6-git-send-email-amwang@redhat.com>
+References: <1343403484-29347-1-git-send-email-amwang@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343403620 19331 80.91.229.3 (27 Jul 2012 15:40:20 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 15:40:20 +0000 (UTC)
+Cc: Cong Wang <amwang@redhat.com>,
+	"David S. Miller" <davem@davemloft.net>,
+	Jiri Pirko <jiri@resnulli.us>,
+	Eric Dumazet <edumazet@google.com>,
+	Cong Wang <xiyou.wangcong@gmail.com>,
+	Joe Perches <joe@perches.com>,
+	Neil Horman <nhorman@tuxdriver.com>,
+	linux-kernel@vger.kernel.org
+To: netdev@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 17:40:18 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SumeC-0006fs-KS
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 17:40:13 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752772Ab2G0Pj3 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 11:39:29 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:63237 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752627Ab2G0PjY (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 11:39:24 -0400
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6RFdHRm002096
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Fri, 27 Jul 2012 11:39:17 -0400
+Original-Received: from cr0.redhat.com (vpn-244-37.nrt.redhat.com [10.64.244.37])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6RFcJQm024275;
+	Fri, 27 Jul 2012 11:39:13 -0400
+In-Reply-To: <1343403484-29347-1-git-send-email-amwang@redhat.com>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334371 gmane.linux.network:238565
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334371>
+
+In __netpoll_rx(), it dereferences ->npinfo without rcu_dereference_bh(),
+this patch fixes it by using the 'npinfo' passed from netpoll_rx()
+where it is already dereferenced with rcu_dereference_bh().
+
+Cc: "David S. Miller" <davem@davemloft.net>
+Signed-off-by: Cong Wang <amwang@redhat.com>
+---
+ include/linux/netpoll.h |    4 ++--
+ net/core/netpoll.c      |    3 +--
+ 2 files changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/include/linux/netpoll.h b/include/linux/netpoll.h
+index 5011d74..36f938c 100644
+--- a/include/linux/netpoll.h
++++ b/include/linux/netpoll.h
+@@ -52,7 +52,7 @@ void netpoll_set_trap(int trap);
+ void __netpoll_cleanup(struct netpoll *np);
+ void __netpoll_free_rcu(struct netpoll *np);
+ void netpoll_cleanup(struct netpoll *np);
+-int __netpoll_rx(struct sk_buff *skb);
++int __netpoll_rx(struct sk_buff *skb, struct netpoll_info *npinfo);
+ void netpoll_send_skb_on_dev(struct netpoll *np, struct sk_buff *skb,
+ 			     struct net_device *dev);
+ static inline void netpoll_send_skb(struct netpoll *np, struct sk_buff *skb)
+@@ -77,7 +77,7 @@ static inline bool netpoll_rx(struct sk_buff *skb)
+ 
+ 	spin_lock(&npinfo->rx_lock);
+ 	/* check rx_flags again with the lock held */
+-	if (npinfo->rx_flags && __netpoll_rx(skb))
++	if (npinfo->rx_flags && __netpoll_rx(skb, npinfo))
+ 		ret = true;
+ 	spin_unlock(&npinfo->rx_lock);
+ 
+diff --git a/net/core/netpoll.c b/net/core/netpoll.c
+index 19dddef..3965fdb 100644
+--- a/net/core/netpoll.c
++++ b/net/core/netpoll.c
+@@ -543,13 +543,12 @@ static void arp_reply(struct sk_buff *skb)
+ 	spin_unlock_irqrestore(&npinfo->rx_lock, flags);
+ }
+ 
+-int __netpoll_rx(struct sk_buff *skb)
++int __netpoll_rx(struct sk_buff *skb, struct netpoll_info *npinfo)
+ {
+ 	int proto, len, ulen;
+ 	int hits = 0;
+ 	const struct iphdr *iph;
+ 	struct udphdr *uh;
+-	struct netpoll_info *npinfo = skb->dev->npinfo;
+ 	struct netpoll *np, *tmp;
+ 
+ 	if (list_empty(&npinfo->rx_np))
+-- 
+1.7.7.6
+

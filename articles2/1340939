@@ -1,0 +1,106 @@
+Path: news.gmane.org!not-for-mail
+From: aris@ruivo.org
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.cgroups
+Subject: [PATCH RESEND 2/4] device_cgroup: introduce dev_whitelist_clean()
+Date: Thu, 09 Aug 2012 15:04:16 -0400
+Lines: 52
+Approved: news@gmane.org
+Message-ID: <20120809190415.269834380@muttley.lan.cathedral>
+References: <20120809190414.773462171@muttley.lan.cathedral>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344539866 976 80.91.229.3 (9 Aug 2012 19:17:46 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 19:17:46 +0000 (UTC)
+Cc: Tejun Heo <tj@kernel.org>, Li Zefan <lizefan@huawei.com>
+To: linux-kernel@vger.kernel.org, cgroups@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 09 21:17:46 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzYEo-0003mf-7M
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 09 Aug 2012 21:17:42 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1759374Ab2HITRM (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 15:17:12 -0400
+Original-Received: from lobo.ruivo.org ([173.14.175.98]:51866 "EHLO lobo.ruivo.org"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1759300Ab2HITRJ (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 15:17:09 -0400
+Original-Received: by lobo.ruivo.org (Postfix, from userid 1011)
+	id 9F591525B2; Thu,  9 Aug 2012 15:17:06 -0400 (EDT)
+X-Spam-Checker-Version: SpamAssassin 3.3.2 (2011-06-06) on tate.lan.cathedral
+X-Spam-Level: 
+X-Spam-Status: No, score=-2.9 required=5.0 tests=ALL_TRUSTED,BAYES_00
+	autolearn=ham version=3.3.2
+Original-Received: from jake.ruivo.org (unknown [192.168.72.18])
+	by lobo.ruivo.org (Postfix) with ESMTPSA id 3094D525B3;
+	Thu,  9 Aug 2012 15:16:43 -0400 (EDT)
+Original-Received: from muttley.lan.ruivo (muttley.lan.ruivo [192.168.66.11])
+	by jake.ruivo.org (Postfix) with ESMTP id 69C833E618B;
+	Thu,  9 Aug 2012 15:16:44 -0400 (EDT)
+Original-Received: from aris by muttley.lan.cathedral with local (Exim 4.80)
+	(envelope-from <aris@muttley.lan.cathedral>)
+	id 1SzY1n-0007UI-B4; Thu, 09 Aug 2012 15:04:15 -0400
+User-Agent: quilt/0.60-1
+Content-Disposition: inline; filename=introduce_whitelist_clean.patch
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340939 gmane.linux.kernel.cgroups:3564
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340939>
+
+This function cleans all the items in a whitelist and will be used by the next
+patches.
+
+Signed-off-by: Aristeu Rozanski <aris@redhat.com>
+
+---
+ security/device_cgroup.c |   22 +++++++++++++++++-----
+ 1 file changed, 17 insertions(+), 5 deletions(-)
+
+Index: github/security/device_cgroup.c
+===================================================================
+--- github.orig/security/device_cgroup.c	2012-07-24 17:16:00.085156162 -0400
++++ github/security/device_cgroup.c	2012-07-24 17:58:42.984081909 -0400
+@@ -154,6 +154,22 @@
+ 	}
+ }
+ 
++/**
++ * dev_whitelist_clean - frees all entries of the whitelist
++ * @dev_cgroup: dev_cgroup with the whitelist to be cleaned
++ *
++ * called under devcgroup_mutex
++ */
++static void dev_whitelist_clean(struct dev_cgroup *dev_cgroup)
++{
++	struct dev_whitelist_item *wh, *tmp;
++
++	list_for_each_entry_safe(wh, tmp, &dev_cgroup->whitelist, list) {
++		list_del(&wh->list);
++		kfree(wh);
++	}
++}
++
+ /*
+  * called from kernel/cgroup.c with cgroup_lock() held.
+  */
+@@ -200,13 +216,9 @@
+ static void devcgroup_destroy(struct cgroup *cgroup)
+ {
+ 	struct dev_cgroup *dev_cgroup;
+-	struct dev_whitelist_item *wh, *tmp;
+ 
+ 	dev_cgroup = cgroup_to_devcgroup(cgroup);
+-	list_for_each_entry_safe(wh, tmp, &dev_cgroup->whitelist, list) {
+-		list_del(&wh->list);
+-		kfree(wh);
+-	}
++	dev_whitelist_clean(dev_cgroup);
+ 	kfree(dev_cgroup);
+ }
+ 
+

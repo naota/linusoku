@@ -1,0 +1,157 @@
+Path: news.gmane.org!not-for-mail
+From: Mel Gorman <mgorman@suse.de>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable,gmane.linux.kernel.mm
+Subject: [PATCH 07/34] vmscan: shrinker->nr updates race and go wrong
+Date: Mon, 23 Jul 2012 14:38:20 +0100
+Lines: 112
+Approved: news@gmane.org
+Message-ID: <1343050727-3045-8-git-send-email-mgorman@suse.de>
+References: <1343050727-3045-1-git-send-email-mgorman@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343050781 20696 80.91.229.3 (23 Jul 2012 13:39:41 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 13:39:41 +0000 (UTC)
+Cc: Linux-MM <linux-mm@kvack.org>, LKML <linux-kernel@vger.kernel.org>,
+	Mel Gorman <mgorman@suse.de>
+To: Stable <stable@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 15:39:38 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StIrJ-0006OT-Pa
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 15:39:38 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753774Ab2GWNjI (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 09:39:08 -0400
+Original-Received: from cantor2.suse.de ([195.135.220.15]:58625 "EHLO mx2.suse.de"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753341Ab2GWNix (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 09:38:53 -0400
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id C9F3FA3DDD;
+	Mon, 23 Jul 2012 15:38:52 +0200 (CEST)
+X-Mailer: git-send-email 1.7.9.2
+In-Reply-To: <1343050727-3045-1-git-send-email-mgorman@suse.de>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331751 gmane.linux.kernel.stable:28737 gmane.linux.kernel.mm:82861
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331751>
+
+From: Dave Chinner <dchinner@redhat.com>
+
+commit acf92b485cccf028177f46918e045c0c4e80ee10 upstream.
+
+Stable note: Not tracked in Bugzilla. This patch reduces excessive
+	reclaim of slab objects reducing the amount of information
+	that has to be brought back in from disk.
+
+shrink_slab() allows shrinkers to be called in parallel so the
+struct shrinker can be updated concurrently. It does not provide any
+exclusion for such updates, so we can get the shrinker->nr value
+increasing or decreasing incorrectly.
+
+As a result, when a shrinker repeatedly returns a value of -1 (e.g.
+a VFS shrinker called w/ GFP_NOFS), the shrinker->nr goes haywire,
+sometimes updating with the scan count that wasn't used, sometimes
+losing it altogether. Worse is when a shrinker does work and that
+update is lost due to racy updates, which means the shrinker will do
+the work again!
+
+Fix this by making the total_scan calculations independent of
+shrinker->nr, and making the shrinker->nr updates atomic w.r.t. to
+other updates via cmpxchg loops.
+
+Signed-off-by: Dave Chinner <dchinner@redhat.com>
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+---
+ mm/vmscan.c |   45 ++++++++++++++++++++++++++++++++-------------
+ 1 file changed, 32 insertions(+), 13 deletions(-)
+
+diff --git a/mm/vmscan.c b/mm/vmscan.c
+index d875058..31b551e 100644
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -251,17 +251,29 @@ unsigned long shrink_slab(struct shrink_control *shrink,
+ 		unsigned long total_scan;
+ 		unsigned long max_pass;
+ 		int shrink_ret = 0;
++		long nr;
++		long new_nr;
+ 
++		/*
++		 * copy the current shrinker scan count into a local variable
++		 * and zero it so that other concurrent shrinker invocations
++		 * don't also do this scanning work.
++		 */
++		do {
++			nr = shrinker->nr;
++		} while (cmpxchg(&shrinker->nr, nr, 0) != nr);
++
++		total_scan = nr;
+ 		max_pass = do_shrinker_shrink(shrinker, shrink, 0);
+ 		delta = (4 * nr_pages_scanned) / shrinker->seeks;
+ 		delta *= max_pass;
+ 		do_div(delta, lru_pages + 1);
+-		shrinker->nr += delta;
+-		if (shrinker->nr < 0) {
++		total_scan += delta;
++		if (total_scan < 0) {
+ 			printk(KERN_ERR "shrink_slab: %pF negative objects to "
+ 			       "delete nr=%ld\n",
+-			       shrinker->shrink, shrinker->nr);
+-			shrinker->nr = max_pass;
++			       shrinker->shrink, total_scan);
++			total_scan = max_pass;
+ 		}
+ 
+ 		/*
+@@ -269,13 +281,10 @@ unsigned long shrink_slab(struct shrink_control *shrink,
+ 		 * never try to free more than twice the estimate number of
+ 		 * freeable entries.
+ 		 */
+-		if (shrinker->nr > max_pass * 2)
+-			shrinker->nr = max_pass * 2;
+-
+-		total_scan = shrinker->nr;
+-		shrinker->nr = 0;
++		if (total_scan > max_pass * 2)
++			total_scan = max_pass * 2;
+ 
+-		trace_mm_shrink_slab_start(shrinker, shrink, total_scan,
++		trace_mm_shrink_slab_start(shrinker, shrink, nr,
+ 					nr_pages_scanned, lru_pages,
+ 					max_pass, delta, total_scan);
+ 
+@@ -296,9 +305,19 @@ unsigned long shrink_slab(struct shrink_control *shrink,
+ 			cond_resched();
+ 		}
+ 
+-		shrinker->nr += total_scan;
+-		trace_mm_shrink_slab_end(shrinker, shrink_ret, total_scan,
+-					 shrinker->nr);
++		/*
++		 * move the unused scan count back into the shrinker in a
++		 * manner that handles concurrent updates. If we exhausted the
++		 * scan, there is no need to do an update.
++		 */
++		do {
++			nr = shrinker->nr;
++			new_nr = total_scan + nr;
++			if (total_scan <= 0)
++				break;
++		} while (cmpxchg(&shrinker->nr, nr, new_nr) != nr);
++
++		trace_mm_shrink_slab_end(shrinker, shrink_ret, nr, new_nr);
+ 	}
+ 	up_read(&shrinker_rwsem);
+ out:
+-- 
+1.7.9.2
+

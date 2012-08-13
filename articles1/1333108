@@ -1,0 +1,132 @@
+Path: news.gmane.org!not-for-mail
+From: Rik van Riel <riel@redhat.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [PATCH 4/6] rbtree: faster augmented insert
+Date: Wed, 25 Jul 2012 12:10:31 -0400
+Lines: 65
+Approved: news@gmane.org
+Message-ID: <50101A77.3070407@redhat.com>
+References: <1342787467-5493-1-git-send-email-walken@google.com> <1342787467-5493-5-git-send-email-walken@google.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1; format=flowed
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343232731 29021 80.91.229.3 (25 Jul 2012 16:12:11 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 16:12:11 +0000 (UTC)
+Cc: peterz@infradead.org, daniel.santos@pobox.com, aarcange@redhat.com,
+        dwmw2@infradead.org, akpm@linux-foundation.org, linux-mm@kvack.org,
+        linux-kernel@vger.kernel.org
+To: Michel Lespinasse <walken@google.com>
+Original-X-From: owner-linux-mm@kvack.org Wed Jul 25 18:12:09 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Su4C0-0003FN-It
+	for glkm-linux-mm-2@m.gmane.org; Wed, 25 Jul 2012 18:12:08 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 32FA66B004D; Wed, 25 Jul 2012 12:12:07 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 23BBF6B005A; Wed, 25 Jul 2012 12:12:07 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id E70E66B005D; Wed, 25 Jul 2012 12:12:06 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx196.postini.com [74.125.245.196])
+	by kanga.kvack.org (Postfix) with SMTP id 177866B004D
+	for <linux-mm@kvack.org>; Wed, 25 Jul 2012 12:12:06 -0400 (EDT)
+Original-Received: from mx1.redhat.com ([209.132.183.28]) (using TLSv1) by na3sys010amx196.postini.com ([74.125.244.10]) with SMTP;
+	Wed, 25 Jul 2012 16:12:06 GMT
+Original-Received: from int-mx02.intmail.prod.int.phx2.redhat.com (int-mx02.intmail.prod.int.phx2.redhat.com [10.5.11.12])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6PGC0h0032232
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Wed, 25 Jul 2012 12:12:00 -0400
+Original-Received: from cuia.bos.redhat.com (cuia.bos.redhat.com [10.16.184.35])
+	by int-mx02.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with ESMTP id q6PGBxfx027688;
+	Wed, 25 Jul 2012 12:11:59 -0400
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120605 Thunderbird/13.0
+In-Reply-To: <1342787467-5493-5-git-send-email-walken@google.com>
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.12
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <riel@redhat.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82987 gmane.linux.kernel:1333108
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333108>
+
+On 07/20/2012 08:31 AM, Michel Lespinasse wrote:
+
+> +++ b/lib/rbtree.c
+> @@ -88,7 +88,8 @@ __rb_rotate_set_parents(struct rb_node *old, struct rb_node *new,
+>   		root->rb_node = new;
+>   }
+>
+> -void rb_insert_color(struct rb_node *node, struct rb_root *root)
+> +inline void rb_insert_augmented(struct rb_node *node, struct rb_root *root,
+> +				rb_augment_rotate *augment)
+>   {
+>   	struct rb_node *parent = rb_red_parent(node), *gparent, *tmp;
+>
+> @@ -152,6 +153,7 @@ void rb_insert_color(struct rb_node *node, struct rb_root *root)
+>   					rb_set_parent_color(tmp, parent,
+>   							    RB_BLACK);
+>   				rb_set_parent_color(parent, node, RB_RED);
+> +				augment(parent, node);
+
+> +static inline void dummy(struct rb_node *old, struct rb_node *new) {}
+> +
+> +void rb_insert_color(struct rb_node *node, struct rb_root *root) {
+> +	rb_insert_augmented(node, root, dummy);
+> +}
+>   EXPORT_SYMBOL(rb_insert_color);
+
+While the above is what I would have done, the
+question remains "what if the compiler decides
+to not inline the function after all, and does
+not remove the call to the dummy function in
+rb_insert_color as a result?
+
+Do we have some way to force inlining, so the
+compiler is more likely to optimize out the
+dummy call?
+
+>   static void __rb_erase_color(struct rb_node *node, struct rb_node *parent,
+> diff --git a/lib/rbtree_test.c b/lib/rbtree_test.c
+> index 2dfafe4..5ace332 100644
+> --- a/lib/rbtree_test.c
+> +++ b/lib/rbtree_test.c
+> @@ -67,22 +67,37 @@ static void augment_callback(struct rb_node *rb, void *unused)
+>   	node->augmented = augment_recompute(node);
+>   }
+>
+> +static void augment_rotate(struct rb_node *rb_old, struct rb_node *rb_new)
+> +{
+> +	struct test_node *old = rb_entry(rb_old, struct test_node, rb);
+> +	struct test_node *new = rb_entry(rb_new, struct test_node, rb);
+> +
+> +	/* Rotation doesn't change subtree's augmented value */
+> +	new->augmented = old->augmented;
+> +	old->augmented = augment_recompute(old);
+> +}
+
+Is it worth documenting that rb_old is always the
+parent of rb_new (at least, it seems to be in this
+patch) ?
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

@@ -1,0 +1,133 @@
+Path: news.gmane.org!not-for-mail
+From: aris-moeOTchvdi7YtjvyW6yDsg@public.gmane.org
+Newsgroups: gmane.linux.kernel.cgroups,gmane.linux.kernel
+Subject: [PATCH RESEND 0/4] device_cgroup: replace internally whitelist with exception list
+Date: Thu, 09 Aug 2012 15:04:14 -0400
+Lines: 68
+Approved: news@gmane.org
+Message-ID: <20120809190414.773462171@muttley.lan.cathedral>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: TEXT/PLAIN; charset=ISO-8859-1
+Content-Transfer-Encoding: QUOTED-PRINTABLE
+X-Trace: dough.gmane.org 1344539823 610 80.91.229.3 (9 Aug 2012 19:17:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 19:17:03 +0000 (UTC)
+Cc: Tejun Heo <tj-DgEjT+Ai2ygdnm+yROfE0A@public.gmane.org>, Li Zefan <lizefan-hv44wF8Li93QT0dZR+AlfA@public.gmane.org>
+To: linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, cgroups-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Original-X-From: cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org Thu Aug 09 21:17:03 2012
+Return-path: <cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Envelope-to: glkc-cgroups-wOFGN7rlS/M9smdsby/KFg@public.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>)
+	id 1SzYEB-0002if-2H
+	for glkc-cgroups-wOFGN7rlS/M9smdsby/KFg@public.gmane.org; Thu, 09 Aug 2012 21:17:03 +0200
+Original-Received: (majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org) by vger.kernel.org via listexpand
+	id S1759135Ab2HITRB (ORCPT <rfc822;glkc-cgroups@m.gmane.org>);
+	Thu, 9 Aug 2012 15:17:01 -0400
+X-Warning: Original message contained 8-bit characters, however during
+	   the SMTP transport session the receiving system did not announce
+	   capability of receiving 8-bit SMTP (RFC 1651-1653), and as this
+	   message does not have MIME headers (RFC 2045-2049) to enable
+	   encoding change, we had very little choice.
+X-Warning: We ASSUME it is less harmful to add the MIME headers, and
+	   convert the text to Quoted-Printable, than not to do so,
+	   and to strip the message to 7-bits.. (RFC 1428 Appendix A)
+X-Warning: We don't know what character set the user used, thus we had to
+	   write these MIME-headers with our local system default value.
+Original-Received: from lobo.ruivo.org ([173.14.175.98]:51849 "EHLO lobo.ruivo.org"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755071Ab2HITRA (ORCPT <rfc822;cgroups-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>);
+	Thu, 9 Aug 2012 15:17:00 -0400
+Original-Received: by lobo.ruivo.org (Postfix, from userid 1011)
+	id 7D07D525B2; Thu,  9 Aug 2012 15:16:58 -0400 (EDT)
+X-Spam-Checker-Version: SpamAssassin 3.3.2 (2011-06-06) on tate.lan.cathedral
+X-Spam-Level: 
+X-Spam-Status: No, score=-2.9 required=5.0 tests=ALL_TRUSTED,BAYES_00
+	autolearn=ham version=3.3.2
+Original-Received: from jake.ruivo.org (unknown [192.168.72.18])
+	by lobo.ruivo.org (Postfix) with ESMTPSA id 03AB552338;
+	Thu,  9 Aug 2012 15:16:43 -0400 (EDT)
+Original-Received: from muttley.lan.ruivo (muttley.lan.ruivo [192.168.66.11])
+	by jake.ruivo.org (Postfix) with ESMTP id 3C7D93E6189;
+	Thu,  9 Aug 2012 15:16:44 -0400 (EDT)
+Original-Received: from aris by muttley.lan.cathedral with local (Exim 4.80)
+	(envelope-from <aris-+5JutNtNrJPwzbzh4h2Q61C45dnP8DBc@public.gmane.org>)
+	id 1SzY1m-0007T8-Sd; Thu, 09 Aug 2012 15:04:14 -0400
+User-Agent: quilt/0.60-1
+Original-Sender: cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Precedence: bulk
+List-ID: <cgroups.vger.kernel.org>
+X-Mailing-List: cgroups-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Xref: news.gmane.org gmane.linux.kernel.cgroups:3560 gmane.linux.kernel:1340935
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340935>
+
+The original model of device_cgroup is having a whitelist where all the
+allowed devices are listed. The problem with this approach is that is
+impossible to have the case of allowing everything but few devices.
+
+The reason for that lies in the way the whitelist is handled internally=
+:
+since there's only a whitelist, the "all devices" entry would have to b=
+e
+removed and replaced by the entire list of possible devices but the one=
+s
+that are being denied.  Since dev_t is 32 bits long, representing the a=
+llowed
+devices as a bitfield is not memory efficient.
+
+This patch replaces the "whitelist" by a "exceptions" list and the defa=
+ult
+policy is kept as "deny_all" variable in dev_cgroup structure.
+
+The current interface determines that whenever "a" is written to device=
+s.allow
+or devices.deny, the entry masking all devices will be added or removed=
+,
+respectively. This behavior is kept and it's what will determine the de=
+fault
+policy:
+
+	# cat devices.list=20
+	a *:* rwm
+	# echo a >devices.deny
+	# cat devices.list=20
+	# echo a >devices.allow
+	# cat devices.list=20
+	a *:* rwm
+
+The interface is also preserved. For example, if one wants to block onl=
+y access
+to /dev/null:
+	# ls -l /dev/null
+	crw-rw-rw- 1 root root 1, 3 Jul 24 16:17 /dev/null
+	# echo a >devices.allow
+	# echo "c 1:3 rwm" >devices.deny
+	# cat /dev/null
+	cat: /dev/null: Operation not permitted
+	# echo >/dev/null
+	bash: /dev/null: Operation not permitted
+	mknod /tmp/null c 1 3
+	mknod: =E2=80=98/tmp/null=E2=80=99: Operation not permitted
+	# echo "c 1:3 r" >devices.allow
+	# cat /dev/null
+	# echo >/dev/null
+	bash: /dev/null: Operation not permitted
+	mknod /tmp/null c 1 3
+	mknod: =E2=80=98/tmp/null=E2=80=99: Operation not permitted
+	# echo "c 1:3 rw" >devices.allow
+	# echo >/dev/null
+	# cat /dev/null
+	# mknod /tmp/null c 1 3
+	mknod: =E2=80=98/tmp/null=E2=80=99: Operation not permitted
+	# echo "c 1:3 rwm" >devices.allow
+	# echo >/dev/null
+	# cat /dev/null
+	# mknod /tmp/null c 1 3
+	#
+
+ device_cgroup.c |  371 ++++++++++++++++++++++++++++++++---------------=
+---------
+ 1 file changed, 212 insertions(+), 159 deletions(-)
+

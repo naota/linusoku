@@ -1,0 +1,160 @@
+Path: news.gmane.org!not-for-mail
+From: "Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [PATCH] Cgroup: Fix memory accounting scalability in
+ shrink_page_list
+Date: Fri, 20 Jul 2012 14:19:47 +0300
+Lines: 87
+Approved: news@gmane.org
+Message-ID: <20120720111947.GA8035@otc-wbsnb-06>
+References: <1342740866.13492.50.camel@schen9-DESK>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: multipart/signed; micalg=pgp-sha1;
+	protocol="application/pgp-signature"; boundary="17pEHd4RhPHOinZp"
+X-Trace: dough.gmane.org 1342783088 8074 80.91.229.3 (20 Jul 2012 11:18:08 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 11:18:08 +0000 (UTC)
+Cc: Andrew Morton <akpm@linux-foundation.org>, Mel Gorman <mel@csn.ul.ie>,
+	KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>,
+	Minchan Kim <minchan@kernel.org>,
+	Johannes Weiner <hannes@cmpxchg.org>,
+	"andi.kleen" <andi.kleen@intel.com>, linux-mm <linux-mm@kvack.org>,
+	linux-kernel@vger.kernel.org
+To: Tim Chen <tim.c.chen@linux.intel.com>
+Original-X-From: owner-linux-mm@kvack.org Fri Jul 20 13:18:07 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SsBDi-0003nS-Gj
+	for glkm-linux-mm-2@m.gmane.org; Fri, 20 Jul 2012 13:18:06 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id BBCAB6B004D; Fri, 20 Jul 2012 07:18:03 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 8F55C6B005D; Fri, 20 Jul 2012 07:18:03 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 2735D6B0068; Fri, 20 Jul 2012 07:18:02 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx149.postini.com [74.125.245.149])
+	by kanga.kvack.org (Postfix) with SMTP id 5408E6B004D
+	for <linux-mm@kvack.org>; Fri, 20 Jul 2012 07:18:02 -0400 (EDT)
+Original-Received: from mga09.intel.com ([134.134.136.24]) by na3sys010amx149.postini.com ([74.125.244.10]) with SMTP;
+	Fri, 20 Jul 2012 11:18:02 GMT
+Original-Received: from orsmga001.jf.intel.com ([10.7.209.18])
+  by orsmga102.jf.intel.com with ESMTP; 20 Jul 2012 04:18:01 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.67,352,1309762800"; 
+   d="asc'?scan'208";a="168884335"
+Original-Received: from blue.fi.intel.com ([10.237.72.50])
+  by orsmga001.jf.intel.com with ESMTP; 20 Jul 2012 04:17:58 -0700
+Original-Received: by blue.fi.intel.com (Postfix, from userid 1000)
+	id 97221E0073; Fri, 20 Jul 2012 14:19:47 +0300 (EEST)
+Content-Disposition: inline
+In-Reply-To: <1342740866.13492.50.camel@schen9-DESK>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0005) s cv gt3 GT2 gt1 r p m c 
+X-pstn-addresses: from <kirill.shutemov@linux.intel.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82762 gmane.linux.kernel:1330791
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330791>
+
+
+--17pEHd4RhPHOinZp
+Content-Type: text/plain; charset=us-ascii
+Content-Disposition: inline
+Content-Transfer-Encoding: quoted-printable
+
+On Thu, Jul 19, 2012 at 04:34:26PM -0700, Tim Chen wrote:
+> Hi,
+>=20
+> I noticed in a multi-process parallel files reading benchmark I ran on a
+> 8 socket machine,  throughput slowed down by a factor of 8 when I ran
+> the benchmark within a cgroup container.  I traced the problem to the
+> following code path (see below) when we are trying to reclaim memory
+> from file cache.  The res_counter_uncharge function is called on every
+> page that's reclaimed and created heavy lock contention.  The patch
+> below allows the reclaimed pages to be uncharged from the resource
+> counter in batch and recovered the regression.=20
+>=20
+> Tim
+>=20
+>      40.67%           usemem  [kernel.kallsyms]                   [k] _ra=
+w_spin_lock
+>                       |
+>                       --- _raw_spin_lock
+>                          |
+>                          |--92.61%-- res_counter_uncharge
+>                          |          |
+>                          |          |--100.00%-- __mem_cgroup_uncharge_co=
+mmon
+>                          |          |          |
+>                          |          |          |--100.00%-- mem_cgroup_un=
+charge_cache_page
+>                          |          |          |          __remove_mapping
+>                          |          |          |          shrink_page_list
+>                          |          |          |          shrink_inactive=
+_list
+>                          |          |          |          shrink_mem_cgro=
+up_zone
+>                          |          |          |          shrink_zone
+>                          |          |          |          do_try_to_free_=
+pages
+>                          |          |          |          try_to_free_pag=
+es
+>                          |          |          |          __alloc_pages_n=
+odemask
+>                          |          |          |          alloc_pages_cur=
+rent
+>=20
+>=20
+> ---
+> Signed-off-by: Tim Chen <tim.c.chen@linux.intel.com>
+
+Acked-by: Kirill A. Shutemov <kirill.shutemov@linux.intel.com>
+
+--=20
+ Kirill A. Shutemov
+
+--17pEHd4RhPHOinZp
+Content-Type: application/pgp-signature; name="signature.asc"
+Content-Description: Digital signature
+
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.12 (GNU/Linux)
+
+iQIcBAEBAgAGBQJQCT7TAAoJEAd+omnVudOMAScP/AjkMoJgxfipxvTEKFcMdEM4
+Bb1iqr1KcfjeeHI8c1FSGKuE2q9BLBP6GXogodLSXxJtjcMMDrXoPtt7KzA/cuZZ
+IbUbtP+Go4y5LPbPsnByXpize+DtebuOhCnnhLA3YMr6z/wsxZMLvGfHvA3sP0YB
+wmHi3vd3GkHC280+1PBP0odRlMb9UylfPjW7lDawLtRrTxoDJ0N1DTnDR44myXUs
+C1MOz466kvjWe4RKDfJwNex7KD2wufGeY7XRv/RMdh43A5fMOjpKSJC6Oq9DbjT7
+tjXo/xsz4sn9LoTD/x3Sq/AfpQMmj2I3VXZO1ELANKpJkCrOUHPNPA7FupcSe9Pl
+CU4EhZxy4NGNfDr9G8ChPLxWvBpDOVpOHkknVltJtSgl+84M2C8UMf/HKoWkYld+
+FxNZBMSywWMRrCNVNpLVt3VvLTiKunaI54U++uL7GblETzEIlPb1FX4R1Iz9t55A
+VKRi/n3rHp4ZKrOa7gysD3hULfbwMNcv0MBd55LzF1X95M0f8Jd0TRLR5rUigwt3
+b9b2EJ2YjhTC4ncKy2koxamoAtuSpJO0dtfjj/dVk2qgI6IpLabyL6eeCD448F1Q
+pY2H9mZZTnnBKw9Quk7qdX6jb3rl4DIb0WKZFoReqckjuhAkClJbyUyVrP/Gjwzy
+qjbnOxaRJ3LMygyeQchX
+=UrYg
+-----END PGP SIGNATURE-----
+
+--17pEHd4RhPHOinZp--
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

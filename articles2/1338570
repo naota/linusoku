@@ -1,0 +1,266 @@
+Path: news.gmane.org!not-for-mail
+From: Michel Lespinasse <walken@google.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [PATCH v2 6/9] rbtree: low level optimizations in rb_erase()
+Date: Mon, 6 Aug 2012 14:21:51 -0700
+Lines: 168
+Approved: news@gmane.org
+Message-ID: <20120806212151.GA26876@google.com>
+References: <1343946858-8170-1-git-send-email-walken@google.com>
+ <1343946858-8170-7-git-send-email-walken@google.com>
+ <1344262863.27828.56.camel@twins>
+ <CANN689Gcca_Xr8GQSjJads8psz3PZpya+s8aWTt_goVt0+O4YA@mail.gmail.com>
+ <1344286699.27828.115.camel@twins>
+ <CANN689GZDxCkz-01qnZYENWDJhezFf1f-Xgx0NoaxPf64Cz_GQ@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344288120 25760 80.91.229.3 (6 Aug 2012 21:22:00 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 21:22:00 +0000 (UTC)
+Cc: riel@redhat.com, daniel.santos@pobox.com, aarcange@redhat.com,
+	dwmw2@infradead.org, akpm@linux-foundation.org, linux-mm@kvack.org,
+	linux-kernel@vger.kernel.org, torvalds@linux-foundation.org
+To: Peter Zijlstra <peterz@infradead.org>
+Original-X-From: owner-linux-mm@kvack.org Mon Aug 06 23:21:58 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SyUkP-0007kw-ND
+	for glkm-linux-mm-2@m.gmane.org; Mon, 06 Aug 2012 23:21:57 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 9E4EE6B0074; Mon,  6 Aug 2012 17:21:56 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 879906B0075; Mon,  6 Aug 2012 17:21:56 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 4A2636B0078; Mon,  6 Aug 2012 17:21:56 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx172.postini.com [74.125.245.172])
+	by kanga.kvack.org (Postfix) with SMTP id 8DD7B6B0074
+	for <linux-mm@kvack.org>; Mon,  6 Aug 2012 17:21:55 -0400 (EDT)
+Original-Received: from mail-pb0-f41.google.com ([209.85.160.41]) (using TLSv1) by na3sys010amx172.postini.com ([74.125.244.10]) with SMTP;
+	Mon, 06 Aug 2012 21:21:55 GMT
+Original-Received: by pbbjt11 with SMTP id jt11so3116623pbb.14
+        for <linux-mm@kvack.org>; Mon, 06 Aug 2012 14:21:54 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=date:from:to:cc:subject:message-id:references:mime-version
+         :content-type:content-disposition:in-reply-to:user-agent;
+        bh=h0kYMK3voWrhe+M0BSNJjd9FUIlsHBs317oHczOLM2U=;
+        b=GSe7Q7ODPyFJF8ArTuw7aYa4I9YF4LYMXSsyIYE9vgZ/lU3IytdrSUK0yxP4OulEoT
+         pNKNkowi/k0wji+JYNuqNKquwDmEXDapC/NP61hbrKflpLH49MeC6Lebt8sGiyW4xAmD
+         DVf3w5AsiKuoE5wLwNZg2VF/1bVZXPRFoPZhdRt820/Go915fDINvZJza1FvyZSxpXS+
+         U7iBupkmLedHBAYbF4eOX/RNfiCe9YCjeLYWlKsIy/Mo4H0ZYl6OU5MU92lQswYet7LG
+         c8bxT2vD6ZPNl/lwmXxJmtjr1/YwBzlELWKUIt6U+6lPgDZYrYUtjWwqPA5C4KZDnLPe
+         CU/g==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=date:from:to:cc:subject:message-id:references:mime-version
+         :content-type:content-disposition:in-reply-to:user-agent
+         :x-gm-message-state;
+        bh=h0kYMK3voWrhe+M0BSNJjd9FUIlsHBs317oHczOLM2U=;
+        b=oasuLTNoi02cESs5kyh80Mu0avLqw2LDItex7ZtbnTIGvp+FaFILWkTG1xfnhz74XR
+         qI0Y7pqoZkywX4WzMei47c3c01sDKT2Qxsv/rtIDIxCklpZ7JSmWnV8e6jrPLRNqQvEC
+         whqugvySbxS7rkdmorGtBJwEACIS5jHtNkrUyB38Hcx3fqDGRUzaFMYwweFqRcaN8L1z
+         K4z3QpC1Sc/IBmf1eX5m2jJK2pzOPQ8ZChktgMRT1t/vQoVSYpAb4BcO+htOJS3i5dVq
+         t0shxKSq7x7uNiA+4H55fZPMY6bFVKTlLXK8djZzuWp9zvTRjUeiDRApldG4IgIJIDd+
+         715w==
+Original-Received: by 10.68.241.228 with SMTP id wl4mr21981824pbc.51.1344288114827;
+        Mon, 06 Aug 2012 14:21:54 -0700 (PDT)
+Original-Received: by 10.68.241.228 with SMTP id wl4mr21981804pbc.51.1344288114723;
+        Mon, 06 Aug 2012 14:21:54 -0700 (PDT)
+Original-Received: from google.com ([2620:0:1000:2b00:baac:6fff:fe98:d63f])
+        by mx.google.com with ESMTPS id nh8sm9647291pbc.60.2012.08.06.14.21.53
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 06 Aug 2012 14:21:53 -0700 (PDT)
+Content-Disposition: inline
+In-Reply-To: <CANN689GZDxCkz-01qnZYENWDJhezFf1f-Xgx0NoaxPf64Cz_GQ@mail.gmail.com>
+User-Agent: Mutt/1.5.20 (2009-06-14)
+X-Gm-Message-State: ALoCoQnp/A1V6vxE1LlQgywxjq9il91bCoRrjocpBuFty+mJCbafuaaZyXFG/NBH2T71iuVLs+Jv6VBf7cEccBmaA3ELgj3VEpBmLzB303Kw6hX+dS0VAWwWkQqnjzLAIgqJ6Kd5d9OTIoGdNmQ2tZqk8IJUI1w6gw2FvJC1Pd2Z3atxmtDmI5Hy0pDaNeOiu5g7cOChENoW
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 1 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0100) s cv GT3 gt2 gt1 r p m c 
+X-pstn-addresses: from <walken@google.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83724 gmane.linux.kernel:1338570
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338570>
+
+Various minor optimizations in rb_erase():
+- Avoid multiple loading of node->__rb_parent_color when computing parent
+  and color information (possibly not in close sequence, as there might
+  be further branches in the algorithm)
+- In the 1-child subcase of case 1, copy the __rb_parent_color field from
+  the erased node to the child instead of recomputing it from the desired
+  parent and color
+- When searching for the erased node's successor, differentiate between
+  cases 2 and 3 based on whether any left links were followed. This avoids
+  a condition later down.
+- In case 3, keep a pointer to the erased node's right child so we don't
+  have to refetch it later to adjust its parent.
+- In the no-childs subcase of cases 2 and 3, place the rebalance assigment
+  last so that the compiler can remove the following if(rebalance) test.
+
+Also, added some comments to illustrate cases 2 and 3.
+
+Signed-off-by: Michel Lespinasse <walken@google.com>
+---
+ lib/rbtree.c |   98 ++++++++++++++++++++++++++++++++++++++--------------------
+ 1 files changed, 64 insertions(+), 34 deletions(-)
+
+diff --git a/lib/rbtree.c b/lib/rbtree.c
+index 80b0925..938061e 100644
+--- a/lib/rbtree.c
++++ b/lib/rbtree.c
+@@ -47,9 +47,14 @@
+ #define	RB_RED		0
+ #define	RB_BLACK	1
+ 
+-#define rb_color(r)   ((r)->__rb_parent_color & 1)
+-#define rb_is_red(r)   (!rb_color(r))
+-#define rb_is_black(r) rb_color(r)
++#define __rb_parent(pc)    ((struct rb_node *)(pc & ~3))
++
++#define __rb_color(pc)     ((pc) & 1)
++#define __rb_is_black(pc)  __rb_color(pc)
++#define __rb_is_red(pc)    (!__rb_color(pc))
++#define rb_color(rb)       __rb_color((rb)->__rb_parent_color)
++#define rb_is_red(rb)      __rb_is_red((rb)->__rb_parent_color)
++#define rb_is_black(rb)    __rb_is_black((rb)->__rb_parent_color)
+ 
+ static inline void rb_set_black(struct rb_node *rb)
+ {
+@@ -378,6 +383,7 @@ void rb_erase(struct rb_node *node, struct rb_root *root)
+ {
+ 	struct rb_node *child = node->rb_right, *tmp = node->rb_left;
+ 	struct rb_node *parent, *rebalance;
++	unsigned long pc;
+ 
+ 	if (!tmp) {
+ 		/*
+@@ -387,51 +393,75 @@ void rb_erase(struct rb_node *node, struct rb_root *root)
+ 		 * and node must be black due to 4). We adjust colors locally
+ 		 * so as to bypass __rb_erase_color() later on.
+ 		 */
+-
+-		parent = rb_parent(node);
++		pc = node->__rb_parent_color;
++		parent = __rb_parent(pc);
+ 		__rb_change_child(node, child, parent, root);
+ 		if (child) {
+-			rb_set_parent_color(child, parent, RB_BLACK);
++			child->__rb_parent_color = pc;
+ 			rebalance = NULL;
+-		} else {
+-			rebalance = rb_is_black(node) ? parent : NULL;
+-		}
++		} else
++			rebalance = __rb_is_black(pc) ? parent : NULL;
+ 	} else if (!child) {
+ 		/* Still case 1, but this time the child is node->rb_left */
+-		parent = rb_parent(node);
++		tmp->__rb_parent_color = pc = node->__rb_parent_color;
++		parent = __rb_parent(pc);
+ 		__rb_change_child(node, tmp, parent, root);
+-		rb_set_parent_color(tmp, parent, RB_BLACK);
+ 		rebalance = NULL;
+ 	} else {
+-		struct rb_node *old = node, *left;
+-
+-		node = child;
+-		while ((left = node->rb_left) != NULL)
+-			node = left;
+-
+-		__rb_change_child(old, node, rb_parent(old), root);
+-
+-		child = node->rb_right;
+-		parent = rb_parent(node);
+-
+-		if (parent == old) {
+-			parent = node;
++		struct rb_node *successor = child, *child2;
++		tmp = child->rb_left;
++		if (!tmp) {
++			/*
++			 * Case 2: node's successor is its right child
++			 *
++			 *    (n)          (s)
++			 *    / \          / \
++			 *  (x) (s)  ->  (x) (c)
++			 *        \
++			 *        (c)
++			 */
++			parent = child;
++			child2 = child->rb_right;
+ 		} else {
+-			parent->rb_left = child;
+-
+-			node->rb_right = old->rb_right;
+-			rb_set_parent(old->rb_right, node);
++			/*
++			 * Case 3: node's successor is leftmost under
++			 * node's right child subtree
++			 *
++			 *    (n)          (s)
++			 *    / \          / \
++			 *  (x) (y)  ->  (x) (y)
++			 *      /            /
++			 *    (p)          (p)
++			 *    /            /
++			 *  (s)          (c)
++			 *    \
++			 *    (c)
++			 */
++			do {
++				parent = successor;
++				successor = tmp;
++				tmp = tmp->rb_left;
++			} while (tmp);
++			parent->rb_left = child2 = successor->rb_right;
++			successor->rb_right = child;
++			rb_set_parent(child, successor);
+ 		}
+ 
+-		if (child) {
+-			rb_set_parent_color(child, parent, RB_BLACK);
++		successor->rb_left = tmp = node->rb_left;
++		rb_set_parent(tmp, successor);
++
++		pc = node->__rb_parent_color;
++		tmp = __rb_parent(pc);
++		__rb_change_child(node, successor, tmp, root);
++		if (child2) {
++			successor->__rb_parent_color = pc;
++			rb_set_parent_color(child2, parent, RB_BLACK);
+ 			rebalance = NULL;
+ 		} else {
+-			rebalance = rb_is_black(node) ? parent : NULL;
++			unsigned long pc2 = successor->__rb_parent_color;
++			successor->__rb_parent_color = pc;
++			rebalance = __rb_is_black(pc2) ? parent : NULL;
+ 		}
+-		node->__rb_parent_color = old->__rb_parent_color;
+-		node->rb_left = old->rb_left;
+-		rb_set_parent(old->rb_left, node);
+ 	}
+ 
+ 	if (rebalance)
+-- 
+1.7.7.3
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

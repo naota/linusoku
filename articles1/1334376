@@ -1,0 +1,118 @@
+Path: news.gmane.org!not-for-mail
+From: Frederic Weisbecker <fweisbec@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 2/5] cputime: Don't allow virtual and irq finegrained cputime accounting simultaneously
+Date: Fri, 27 Jul 2012 17:40:31 +0200
+Lines: 43
+Approved: news@gmane.org
+Message-ID: <1343403634-31555-3-git-send-email-fweisbec@gmail.com>
+References: <1343403634-31555-1-git-send-email-fweisbec@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343403714 20043 80.91.229.3 (27 Jul 2012 15:41:54 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 15:41:54 +0000 (UTC)
+Cc: Frederic Weisbecker <fweisbec@gmail.com>,
+	Alessio Igor Bogani <abogani@kernel.org>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Avi Kivity <avi@redhat.com>,
+	Chris Metcalf <cmetcalf@tilera.com>,
+	Christoph Lameter <cl@linux.com>,
+	Geoff Levand <geoff@infradead.org>,
+	Gilad Ben Yossef <gilad@benyossef.com>,
+	Hakan Akkan <hakanakkan@gmail.com>,
+	"H. Peter Anvin" <hpa@zytor.com>, Ingo Molnar <mingo@kernel.org>,
+	Kevin Hilman <khilman@ti.com>,
+	Max Krasnyansky <maxk@qualcomm.com>,
+	"Paul E. McKenney" <paulmck@linux.vnet.ibm.com>,
+	Peter Zijlstra <peterz@infradead.org>,
+	Stephen Hemminger <shemminger@vyatta.com>,
+	Steven Rostedt <rostedt@goodmis.org>,
+	Sven-Thorsten Dietrich <thebigcorporation@gmail.com>,
+	Thomas Gleixner <tglx@linutronix.de>
+To: LKML <linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 17:41:48 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sumfi-0007or-9q
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 17:41:46 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752958Ab2G0Pkv (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 11:40:51 -0400
+Original-Received: from mail-ey0-f174.google.com ([209.85.215.174]:37322 "EHLO
+	mail-ey0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752899Ab2G0Pks (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 11:40:48 -0400
+Original-Received: by eaak13 with SMTP id k13so561212eaa.19
+        for <linux-kernel@vger.kernel.org>; Fri, 27 Jul 2012 08:40:46 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=nxEDpM3QoxzUYHJAuMwTAZXRQmxMScmjkoQEPlLvWdA=;
+        b=xct5Vk8bOP+lwwmmA7mj3h0+zjTA2kMMl9ZkmM+cjVxgdxW7QZViNkxJbttAeiXQJB
+         PCq9M1gZSgwCn4qpBF+Ju2MfhBsch065v1ntPJL4IhVpTkt5gaiGe/91iXSohg1reKh8
+         OIJX5eQR1vk3u888/QuNePFAUtstZapYRIVRBE45NZZso2tnLuluDcJhZCjdEcY5Whg7
+         HG6r8aG6my4WzFqIVo4N8mAIo2M1fHslQ07gB3PGDzL1TVJlUcYkbdLbYnKAO4dE2j6x
+         Umq9XRUomuIMSY5fKcP+WQe8n++WZYkikmoen7+9sB82lrhR18hhFxMGer2Cg8f/0eRy
+         NGxg==
+Original-Received: by 10.14.211.132 with SMTP id w4mr3085500eeo.39.1343403646752;
+        Fri, 27 Jul 2012 08:40:46 -0700 (PDT)
+Original-Received: from localhost.localdomain (71.20.196.77.rev.sfr.net. [77.196.20.71])
+        by mx.google.com with ESMTPS id u48sm7197599eep.7.2012.07.27.08.40.44
+        (version=SSLv3 cipher=OTHER);
+        Fri, 27 Jul 2012 08:40:45 -0700 (PDT)
+X-Mailer: git-send-email 1.7.5.4
+In-Reply-To: <1343403634-31555-1-git-send-email-fweisbec@gmail.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334376
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334376>
+
+We may soon be able to run both at the same time. But we need
+to rework a bit the irq finegrained accounting before that.
+Just do a mutual exclusion for now.
+
+Signed-off-by: Frederic Weisbecker <fweisbec@gmail.com>
+Cc: Alessio Igor Bogani <abogani@kernel.org>
+Cc: Andrew Morton <akpm@linux-foundation.org>
+Cc: Avi Kivity <avi@redhat.com>
+Cc: Chris Metcalf <cmetcalf@tilera.com>
+Cc: Christoph Lameter <cl@linux.com>
+Cc: Geoff Levand <geoff@infradead.org>
+Cc: Gilad Ben Yossef <gilad@benyossef.com>
+Cc: Hakan Akkan <hakanakkan@gmail.com>
+Cc: H. Peter Anvin <hpa@zytor.com>
+Cc: Ingo Molnar <mingo@kernel.org>
+Cc: Kevin Hilman <khilman@ti.com>
+Cc: Max Krasnyansky <maxk@qualcomm.com>
+Cc: Paul E. McKenney <paulmck@linux.vnet.ibm.com>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Stephen Hemminger <shemminger@vyatta.com>
+Cc: Steven Rostedt <rostedt@goodmis.org>
+Cc: Sven-Thorsten Dietrich <thebigcorporation@gmail.com>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+---
+ init/Kconfig |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/init/Kconfig b/init/Kconfig
+index 3348b85..21da9b7 100644
+--- a/init/Kconfig
++++ b/init/Kconfig
+@@ -269,7 +269,7 @@ config POSIX_MQUEUE_SYSCTL
+ 
+ config VIRT_CPU_ACCOUNTING
+ 	bool "Deterministic task and CPU time accounting"
+-	depends on HAVE_VIRT_CPU_ACCOUNTING
++	depends on HAVE_VIRT_CPU_ACCOUNTING && !IRQ_TIME_ACCOUNTING
+ 	default y if PPC64
+ 	help
+ 	  Select this option to enable more accurate task and CPU time
+-- 
+1.7.5.4
+

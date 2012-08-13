@@ -1,0 +1,139 @@
+Path: news.gmane.org!not-for-mail
+From: Matt Sealey <matt@genesi-usa.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: [PATCH] ARM: print an early warning if the ATAG_CORE/OF_DT_MAGIC vet did not pass
+Date: Tue,  7 Aug 2012 16:44:23 -0500
+Lines: 78
+Approved: news@gmane.org
+Message-ID: <1344375863-29947-1-git-send-email-matt@genesi-usa.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344375884 21581 80.91.229.3 (7 Aug 2012 21:44:44 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 21:44:44 +0000 (UTC)
+Cc: Steev Klimaszewski <steev@genesi-usa.com>,
+	Linux Kernel Mailing List <linux-kernel@vger.kernel.org>,
+	Matt Sealey <matt@genesi-usa.com>,
+	Shawn Guo <shawn.guo@linaro.org>
+To: Linux ARM Kernel Mailing List 
+	<linux-arm-kernel@lists.infradead.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 23:44:43 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyrZx-00046l-NZ
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 23:44:42 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756854Ab2HGVod (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 17:44:33 -0400
+Original-Received: from mail-ob0-f174.google.com ([209.85.214.174]:40957 "EHLO
+	mail-ob0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755927Ab2HGVoc (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 17:44:32 -0400
+Original-Received: by obbuo13 with SMTP id uo13so116385obb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 14:44:31 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:x-gm-message-state;
+        bh=+DLrYsoSCUbt26PIKYSWa6nTaWA3obaDNtLvUKBLDI8=;
+        b=GM+OpfTL7h2u9aiMZUG13z9CWIWDUrhW8aSsEc+ENIkpyk5Su5B8wINGUdkOSS4WGK
+         ULRqzd2ulWoAo+MVPewpiYJsN0IeSA1jNfCUSs7GVmoQ5046DYR8bKnWZNK3RnERdacu
+         7f31XU8RfxQeZbHsBn56pDc1DBsi6CVMqbmQPkuGCPM8N6/VgvxFNVkkxmixdP5fKmJn
+         1eElezpjif710FZ0i5LSt0uPX3Ht7mTRTodo8v3IS04Y/TwJuMMRbLp9hr5dAjwKd3MM
+         SbK8WtznHqQ8VwwoHXBOra/He8mVfDte0m0gqEFFNBv9VHL48jplGnTETiAWAjSO07Lp
+         jesg==
+Original-Received: by 10.182.110.37 with SMTP id hx5mr26774189obb.48.1344375871811;
+        Tue, 07 Aug 2012 14:44:31 -0700 (PDT)
+Original-Received: from shinji.genesi-usa.com ([199.193.222.22])
+        by mx.google.com with ESMTPS id kf5sm2806626obc.7.2012.08.07.14.44.30
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 14:44:30 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9.5
+X-Gm-Message-State: ALoCoQnd2XG0y59JXogmT2ZF5WQhyMz0L70IxX7Q8qKA3h6isBOm15MhsV8Rn3FtoWwnUU+MnEP0
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339383 gmane.linux.ports.arm.kernel:180766
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339383>
+
+When booting and passing either corrupted or missing device trees or ATAGs,
+the __vet_atags function in kernel/head-common.S will set r2 to 0, thus
+causing what might be seen as strange behavior.
+
+What happens is setup_machine_fdt is passed __atags_pointer which is NULL
+in the above situation, and it will immediately exit with NULL return
+value for the machine_desc. On NULL machine_desc, the implication is that
+it was not a device tree, and it falls back to setup_machine_tags. This
+function will also return NULL, and the list of supported boards will be
+printed out. Only much, much later in the kernel is any message reporting
+lack of ATAG_CORE or any other indicator present since they all rely on
+there being a valid pointer to get to them.
+
+The following situations where this may happen are suggested:
+
+1) Modification of the device tree blob is performed in the bootloader,
+and the tree is being corrupted for some reason.
+2) Something is overwriting the device tree magic (kernel decompression,
+perhaps) which is possibly more common.
+3) Something is overwriting the ATAG_CORE magic (as above)
+4) DTB address passed to bootloader is invalid
+5) Bootloader actually does boot setting r2 to 0 which either means it
+is ridiculously old or horrifically broken.
+
+Several reads of Documentation/arm/Booting lead me to believe that passing
+tags in r2 is OPTIONAL, HIGHLY RECOMMENDED for old bootloaders, and
+MANDATORY for new bootloaders. The kernel can't tell which is in use, so 0
+might actually be valid. However, later it says that a bootloader must
+(lowercase) set r2 to "physical address of tagged list in system RAM, or
+physical address of device tree block (dtb) in system RAM." So it is not
+possible to define a behavior or print a definitive warning, and since we
+cannot fix these problems in the kernel we can at least provide more
+information about their occurrence at runtime rather than getting to the point
+where it seems something even more strange has happened. The pointer is lost
+at this point, though, so all we can do is report the event.
+
+Therefore, print a warning at the earliest opportunity to catch the r2=0
+case and reduce frustration with developers attempting to port to device
+tree or port new bootloaders, hopefully without worrying people with old
+bootloaders complying with the existing documentation.
+
+Of course since this is very early in boot, DEBUG_LL needs to be enabled
+and a valid UART for the booting board needs to be configured for it to
+show any result, but this is true of all the above warnings anyway,
+otherwise all you get is Starting Kernel.... and a blinking terminal prompt.
+
+Signed-off-by: Matt Sealey <matt@genesi-usa.com>
+Tested-by: Steev Klimaszewski <steev@genesi-usa.com>
+---
+ arch/arm/kernel/setup.c |   12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/arch/arm/kernel/setup.c b/arch/arm/kernel/setup.c
+index a81dcec..f788d44 100644
+--- a/arch/arm/kernel/setup.c
++++ b/arch/arm/kernel/setup.c
+@@ -942,6 +942,18 @@ void __init setup_arch(char **cmdline_p)
+ 	struct machine_desc *mdesc;
+ 
+ 	setup_processor();
++
++	if (__atags_pointer == 0L) {
++		early_print(
++			"Warning: ATAG_CORE/OF_DT_MAGIC pass failed or __atags_pointer NULL\n"
++			" Either r2 was NULL or __vet_atags set r2 to NULL on boot. This can be because\n"
++			" the bootloader is broken, the ATAGs or Device Tree have been overwritten by\n"
++			" other data during the boot process, the wrong address was supplied for the\n"
++			" Device Tree blob, or NULL was explicitly passed for some reason. Please check\n"
++			" into the situation as it is not usual to be able to boot a board with no ATAGs\n"
++			" or Device Tree.\n");
++	}
++
+ 	mdesc = setup_machine_fdt(__atags_pointer);
+ 	if (!mdesc)
+ 		mdesc = setup_machine_tags(machine_arch_type);
+-- 
+1.7.9.5
+

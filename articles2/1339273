@@ -1,0 +1,117 @@
+Path: news.gmane.org!not-for-mail
+From: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [PATCH 1/7] mfd: max8925: Move _IO resources out of ioport_ioresource
+Date: Tue,  7 Aug 2012 19:42:43 +0100
+Lines: 67
+Approved: news@gmane.org
+Message-ID: <1344364969-32489-1-git-send-email-broonie@opensource.wolfsonmicro.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344364986 20315 80.91.229.3 (7 Aug 2012 18:43:06 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 18:43:06 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org,
+	Haojian Zhuang <haojian.zhuang@gmail.com>,
+	Benjamin Herrenschmidt <benh@kernel.crashing.org>,
+	Arnd Bergmann <arnd@arndb.de>,
+	Russell King <rmk@arm.linux.org.uk>,
+	Mark Brown <broonie@opensource.wolfsonmicro.com>,
+	stable@vger.kernel.org (v3.4+)
+To: Samuel Ortiz <sameo@linux.intel.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 20:43:05 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyokC-00040S-Uy
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 20:43:05 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756171Ab2HGSmz (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 14:42:55 -0400
+Original-Received: from opensource.wolfsonmicro.com ([80.75.67.52]:54908 "EHLO
+	opensource.wolfsonmicro.com" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1756172Ab2HGSmw (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 14:42:52 -0400
+Original-Received: from finisterre.wolfsonmicro.main (unknown [87.246.78.26])
+	by opensource.wolfsonmicro.com (Postfix) with ESMTPSA id A9830750028;
+	Tue,  7 Aug 2012 19:42:49 +0100 (BST)
+Original-Received: from broonie by finisterre.wolfsonmicro.main with local (Exim 4.80)
+	(envelope-from <broonie@opensource.wolfsonmicro.com>)
+	id 1Syojx-0008Sd-2F; Tue, 07 Aug 2012 19:42:49 +0100
+X-Mailer: git-send-email 1.7.10.4
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339273 gmane.linux.kernel.stable:29239
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339273>
+
+The removal of mach/io.h from most ARM platforms also set the range of
+valid IO ports to be empty for most platforms when previously any 32
+bit integer had been valid. This makes it impossible to add IO resources
+as the added range is smaller than that of the root resource for IO ports.
+
+Since we're not really using IO memory at all fix this by defining our
+own root resource outside the normal tree and make that the parent of
+all IO resources. This also ensures we won't conflict with read IO ports
+if we ever run on a platform which happens to use them.
+
+Signed-off-by: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Cc: stable@vger.kernel.org (v3.4+)
+---
+ drivers/mfd/max8925-core.c |   10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/drivers/mfd/max8925-core.c b/drivers/mfd/max8925-core.c
+index 825a7f0..6aa3a22 100644
+--- a/drivers/mfd/max8925-core.c
++++ b/drivers/mfd/max8925-core.c
+@@ -18,12 +18,19 @@
+ #include <linux/mfd/core.h>
+ #include <linux/mfd/max8925.h>
+ 
++static struct resource io_parent = {
++	.start = 0,
++	.end   = 0xffffffff,
++	.flags = IORESOURCE_IO,
++};
++
+ static struct resource backlight_resources[] = {
+ 	{
+ 		.name	= "max8925-backlight",
+ 		.start	= MAX8925_WLED_MODE_CNTL,
+ 		.end	= MAX8925_WLED_CNTL,
+ 		.flags	= IORESOURCE_IO,
++		.parent = &io_parent,
+ 	},
+ };
+ 
+@@ -42,6 +49,7 @@ static struct resource touch_resources[] = {
+ 		.start	= MAX8925_TSC_IRQ,
+ 		.end	= MAX8925_ADC_RES_END,
+ 		.flags	= IORESOURCE_IO,
++		.parent = &io_parent,
+ 	},
+ };
+ 
+@@ -60,6 +68,7 @@ static struct resource power_supply_resources[] = {
+ 		.start	= MAX8925_CHG_IRQ1,
+ 		.end	= MAX8925_CHG_IRQ1_MASK,
+ 		.flags	= IORESOURCE_IO,
++		.parent = &io_parent,
+ 	},
+ };
+ 
+@@ -118,6 +127,7 @@ static struct mfd_cell onkey_devs[] = {
+ 	.start	= MAX8925_##_start,		\
+ 	.end	= MAX8925_##_end,		\
+ 	.flags	= IORESOURCE_IO,		\
++	.parent = &io_parent,			\
+ }
+ 
+ static struct resource regulator_resources[] = {
+-- 
+1.7.10.4
+

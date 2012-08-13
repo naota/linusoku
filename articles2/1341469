@@ -1,0 +1,164 @@
+Path: news.gmane.org!not-for-mail
+From: Alex Williamson <alex.williamson@redhat.com>
+Newsgroups: gmane.comp.emulators.kvm.devel,gmane.linux.kernel
+Subject: [PATCH v8 6/6] kvm: Add de-assert option to KVM_IRQ_ACKFD
+Date: Fri, 10 Aug 2012 16:37:56 -0600
+Lines: 114
+Approved: news@gmane.org
+Message-ID: <20120810223754.809.60610.stgit@bling.home>
+References: <20120810223633.809.44188.stgit@bling.home>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344638315 28846 80.91.229.3 (10 Aug 2012 22:38:35 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 22:38:35 +0000 (UTC)
+Cc: gleb@redhat.com, kvm@vger.kernel.org, linux-kernel@vger.kernel.org
+To: avi@redhat.com, mst@redhat.com
+Original-X-From: kvm-owner@vger.kernel.org Sat Aug 11 00:38:35 2012
+Return-path: <kvm-owner@vger.kernel.org>
+Envelope-to: gcekd-kvm-devel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <kvm-owner@vger.kernel.org>)
+	id 1Szxqf-0000t6-Ij
+	for gcekd-kvm-devel@plane.gmane.org; Sat, 11 Aug 2012 00:38:29 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932310Ab2HJWiA (ORCPT <rfc822;gcekd-kvm-devel@m.gmane.org>);
+	Fri, 10 Aug 2012 18:38:00 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:13911 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1760355Ab2HJWh5 (ORCPT <rfc822;kvm@vger.kernel.org>);
+	Fri, 10 Aug 2012 18:37:57 -0400
+Original-Received: from int-mx11.intmail.prod.int.phx2.redhat.com (int-mx11.intmail.prod.int.phx2.redhat.com [10.5.11.24])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q7AMbv0C017378
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Fri, 10 Aug 2012 18:37:57 -0400
+Original-Received: from bling.home ([10.3.113.16])
+	by int-mx11.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q7AMbutw023135;
+	Fri, 10 Aug 2012 18:37:56 -0400
+In-Reply-To: <20120810223633.809.44188.stgit@bling.home>
+User-Agent: StGIT/0.14.3
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.24
+Original-Sender: kvm-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <kvm.vger.kernel.org>
+X-Mailing-List: kvm@vger.kernel.org
+Xref: news.gmane.org gmane.comp.emulators.kvm.devel:95998 gmane.linux.kernel:1341469
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341469>
+
+It's likely (vfio) that one of the reasons to watch for an IRQ ACK
+is to de-assert and re-enable an interrupt.  As the IRQ ACK notfier
+is already watching a GSI for an IRQ source ID we can easily couple
+these together.
+
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+---
+
+ Documentation/virtual/kvm/api.txt |    4 ++++
+ arch/x86/kvm/x86.c                |    1 +
+ include/linux/kvm.h               |    3 +++
+ virt/kvm/eventfd.c                |   14 +++++++++++++-
+ 4 files changed, 21 insertions(+), 1 deletion(-)
+
+diff --git a/Documentation/virtual/kvm/api.txt b/Documentation/virtual/kvm/api.txt
+index 77b4837..128d4c3 100644
+--- a/Documentation/virtual/kvm/api.txt
++++ b/Documentation/virtual/kvm/api.txt
+@@ -2029,6 +2029,10 @@ the eventfd is only triggered when the specified IRQ source ID is
+ pending.  On deassign, fd, gsi, and irq_source_id (if provided on assign)
+ must be provided.
+ 
++When KVM_CAP_IRQ_ACKFD_DEASSERT is available the flag
++KVM_IRQ_ACKFD_FLAG_IRQ_DEASSERT may be used on assignment to specify
++that the GSI should be de-asserted prior to eventfd notification.
++This flag requires an IRQ source ID to be provided as described above.
+ 
+ 5. The kvm_run structure
+ ------------------------
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 3d98e59..691b00d 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -2178,6 +2178,7 @@ int kvm_dev_ioctl_check_extension(long ext)
+ 	case KVM_CAP_IRQFD_ASSERT_ONLY:
+ 	case KVM_CAP_IRQ_ACKFD:
+ 	case KVM_CAP_IRQ_ACKFD_IRQ_SOURCE_ID:
++	case KVM_CAP_IRQ_ACKFD_DEASSERT:
+ 		r = 1;
+ 		break;
+ 	case KVM_CAP_COALESCED_MMIO:
+diff --git a/include/linux/kvm.h b/include/linux/kvm.h
+index 0f53bd5..331631e 100644
+--- a/include/linux/kvm.h
++++ b/include/linux/kvm.h
+@@ -623,6 +623,7 @@ struct kvm_ppc_smmu_info {
+ #define KVM_CAP_IRQFD_ASSERT_ONLY 83
+ #define KVM_CAP_IRQ_ACKFD 84
+ #define KVM_CAP_IRQ_ACKFD_IRQ_SOURCE_ID 85
++#define KVM_CAP_IRQ_ACKFD_DEASSERT 86
+ 
+ #ifdef KVM_CAP_IRQ_ROUTING
+ 
+@@ -712,6 +713,8 @@ struct kvm_irq_source_id {
+ #define KVM_IRQ_ACKFD_FLAG_DEASSIGN (1 << 0)
+ /* Available with KVM_CAP_IRQ_ACKFD_IRQ_SOURCE_ID */
+ #define KVM_IRQ_ACKFD_FLAG_IRQ_SOURCE_ID (1 << 1)
++/* Available with KVM_CAP_IRQ_ACKFD_DEASSERT */
++#define KVM_IRQ_ACKFD_FLAG_DEASSERT (1 << 2)
+ 
+ struct kvm_irq_ackfd {
+ 	__u32 flags;
+diff --git a/virt/kvm/eventfd.c b/virt/kvm/eventfd.c
+index ff5c784..ffc6a13 100644
+--- a/virt/kvm/eventfd.c
++++ b/virt/kvm/eventfd.c
+@@ -682,6 +682,7 @@ kvm_ioeventfd(struct kvm *kvm, struct kvm_ioeventfd *args)
+ 
+ struct _irq_ackfd {
+ 	struct kvm *kvm;
++	bool deassert; /* de-assert on ack? */
+ 	struct eventfd_ctx *eventfd; /* signaled on ack */
+ 	struct kvm_irq_ack_notifier notifier;
+ 	/* Setup/shutdown */
+@@ -805,6 +806,10 @@ static void irq_ackfd_acked(struct kvm_irq_ack_notifier *notifier)
+ 
+ 	ackfd = container_of(notifier, struct _irq_ackfd, notifier);
+ 
++	if (ackfd->deassert)
++		kvm_set_irq(ackfd->kvm, ackfd->notifier.irq_source_id,
++			    ackfd->notifier.gsi, 0);
++
+ 	eventfd_signal(ackfd->eventfd, 1);
+ }
+ 
+@@ -845,6 +850,12 @@ static int kvm_assign_irq_ackfd(struct kvm *kvm, struct kvm_irq_ackfd *args)
+ 		ackfd->notifier.irq_source_id = -1;
+ 	ackfd->notifier.irq_acked = irq_ackfd_acked;
+ 
++	ackfd->deassert = args->flags & KVM_IRQ_ACKFD_FLAG_DEASSERT;
++	if (ackfd->deassert && ackfd->notifier.irq_source_id < 0) {
++		ret = -EINVAL;
++		goto fail;
++	}
++
+ 	/*
+ 	 * Install our own custom wake-up handling so we are notified via
+ 	 * a callback whenever someone releases the underlying eventfd
+@@ -945,7 +956,8 @@ fail:
+ int kvm_irq_ackfd(struct kvm *kvm, struct kvm_irq_ackfd *args)
+ {
+ 	if (args->flags & ~(KVM_IRQ_ACKFD_FLAG_DEASSIGN |
+-			    KVM_IRQ_ACKFD_FLAG_IRQ_SOURCE_ID))
++			    KVM_IRQ_ACKFD_FLAG_IRQ_SOURCE_ID |
++			    KVM_IRQ_ACKFD_FLAG_DEASSERT))
+ 		return -EINVAL;
+ 
+ 	if (args->flags & KVM_IRQ_ACKFD_FLAG_DEASSIGN)
+
+--
+To unsubscribe from this list: send the line "unsubscribe kvm" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

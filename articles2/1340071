@@ -1,0 +1,152 @@
+Path: news.gmane.org!not-for-mail
+From: Tarun Kanti DebBarma <tarun.kanti@ti.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.omap,gmane.linux.ports.arm.kernel
+Subject: [PATCH v2] gpio/omap: add *remove* callback in platform_driver
+Date: Wed, 8 Aug 2012 19:28:36 +0530
+Lines: 95
+Approved: news@gmane.org
+Message-ID: <1344434316-21141-1-git-send-email-tarun.kanti@ti.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1344434340 18167 80.91.229.3 (8 Aug 2012 13:59:00 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 13:59:00 +0000 (UTC)
+Cc: <linux-arm-kernel@lists.infradead.org>,
+	<linux-kernel@vger.kernel.org>,
+	Tarun Kanti DebBarma <tarun.kanti@ti.com>,
+	Kevin Hilman <khilman@ti.com>, Rajendra Nayak <rnayak@ti.com>,
+	Santosh Shilimkar <santosh.shilimkar@ti.com>,
+	"Cousson, Benoit" <b-cousson@ti.com>,
+	Paul Walmsley <paul@pwsan.com>
+To: <linux-omap@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 15:58:58 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sz6mm-0005Nv-HP
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 15:58:56 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757611Ab2HHN6v (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 09:58:51 -0400
+Original-Received: from arroyo.ext.ti.com ([192.94.94.40]:39575 "EHLO arroyo.ext.ti.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751931Ab2HHN6t (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 09:58:49 -0400
+Original-Received: from dbdp20.itg.ti.com ([172.24.170.38])
+	by arroyo.ext.ti.com (8.13.7/8.13.7) with ESMTP id q78DwiFu026351;
+	Wed, 8 Aug 2012 08:58:45 -0500
+Original-Received: from DBDE71.ent.ti.com (localhost [127.0.0.1])
+	by dbdp20.itg.ti.com (8.13.8/8.13.8) with ESMTP id q78Dwi8i015969;
+	Wed, 8 Aug 2012 19:28:44 +0530 (IST)
+Original-Received: from dbdp32.itg.ti.com (172.24.170.251) by DBDE71.ent.ti.com
+ (172.24.170.149) with Microsoft SMTP Server id 14.1.323.3; Wed, 8 Aug 2012
+ 19:28:43 +0530
+Original-Received: from localhost.localdomain (smtpvbd.itg.ti.com [172.24.170.250])	by
+ dbdp32.itg.ti.com (8.13.8/8.13.8) with ESMTP id q78Dwe4D011455;	Wed, 8 Aug
+ 2012 19:28:41 +0530
+X-Mailer: git-send-email 1.7.0.4
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340071 gmane.linux.ports.arm.omap:82044 gmane.linux.ports.arm.kernel:180955
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340071>
+
+Add *remove* callback so that necessary cleanup operations are
+performed when device is unregistered. The device is deleted
+from the list and associated clock handle is released by
+calling clk_put() and irq descriptor is released using the
+irq_free_desc() api.
+
+Signed-off-by: Tarun Kanti DebBarma <tarun.kanti@ti.com>
+Reported-by: Paul Walmsley <paul@pwsan.com>
+Reviewed-by: Jon Hunter <jon-hunter@ti.com>
+Cc: Kevin Hilman <khilman@ti.com>
+Cc: Rajendra Nayak <rnayak@ti.com>
+Cc: Santosh Shilimkar <santosh.shilimkar@ti.com>
+Cc: Cousson, Benoit <b-cousson@ti.com>
+Cc: Paul Walmsley <paul@pwsan.com>
+---
+v2:
+Baseline: git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux-2.6.git
+Commit: 0d7614f09c1ebdbaa1599a5aba7593f147bf96ee (Linux 3.6-rc1)
+
+(1) Use irq_free_descs() instead of irq_free_desc().
+    Besides, irq_free_desc() was using wrong parameter,
+    irq_base, instead of bank->irq.
+(2) irq_free_descs() moved outside spin_lock/unlock_*()
+    in order to avoid exception warnings.
+
+(3) pm_runtime_disable() added so that bind can happen successfully
+
+Test Detail:
+Step 1: Unbind gpio.5 device in order to invoke the *remove* callback.
+#echo "omap_gpio.5" > sys/bus/platform/drivers/omap_gpio/unbind
+
+Step 2: Bind gpio.5 device and confirm probe() for the device succeeds.
+#echo "omap_gpio.5" > sys/bus/platform/drivers/omap_gpio/bind
+
+Step 3: Execute read/write GPIO test case.
+
+ drivers/gpio/gpio-omap.c |   35 +++++++++++++++++++++++++++++++++++
+ 1 files changed, 35 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/gpio/gpio-omap.c b/drivers/gpio/gpio-omap.c
+index e6efd77..50de875 100644
+--- a/drivers/gpio/gpio-omap.c
++++ b/drivers/gpio/gpio-omap.c
+@@ -1152,6 +1152,40 @@ static int __devinit omap_gpio_probe(struct platform_device *pdev)
+ 	return ret;
+ }
+ 
++/**
++ * omap_gpio_remove - cleanup a registered gpio device
++ * @pdev:       pointer to current gpio platform device
++ *
++ * Called by driver framework whenever a gpio device is unregistered.
++ * GPIO is deleted from the list and associated clock handle freed.
++ */
++static int __devexit omap_gpio_remove(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct gpio_bank *bank;
++	unsigned long flags;
++	int ret = -EINVAL;
++
++	list_for_each_entry(bank, &omap_gpio_list, node) {
++		spin_lock_irqsave(&bank->lock, flags);
++		if (bank->dev == dev) {
++			clk_put(bank->dbck);
++			list_del(&bank->node);
++			ret = 0;
++			spin_unlock_irqrestore(&bank->lock, flags);
++			break;
++		}
++		spin_unlock_irqrestore(&bank->lock, flags);
++	}
++
++	if (!ret) {
++		pm_runtime_disable(bank->dev);
++		irq_free_descs(bank->irq_base, bank->width);
++	}
++
++	return ret;
++}
++
+ #ifdef CONFIG_ARCH_OMAP2PLUS
+ 
+ #if defined(CONFIG_PM_RUNTIME)
+@@ -1478,6 +1512,7 @@ MODULE_DEVICE_TABLE(of, omap_gpio_match);
+ 
+ static struct platform_driver omap_gpio_driver = {
+ 	.probe		= omap_gpio_probe,
++	.remove = __devexit_p(omap_gpio_remove),
+ 	.driver		= {
+ 		.name	= "omap_gpio",
+ 		.pm	= &gpio_pm_ops,
+-- 
+1.7.0.4
+

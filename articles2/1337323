@@ -1,0 +1,183 @@
+Path: news.gmane.org!not-for-mail
+From: Sasha Levin <levinsasha928@gmail.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel,gmane.linux.network
+Subject: [RFC v2 1/7] hashtable: introduce a small and naive hashtable
+Date: Fri,  3 Aug 2012 16:23:02 +0200
+Lines: 99
+Approved: news@gmane.org
+Message-ID: <1344003788-1417-2-git-send-email-levinsasha928@gmail.com>
+References: <1344003788-1417-1-git-send-email-levinsasha928@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344003801 13305 80.91.229.3 (3 Aug 2012 14:23:21 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 14:23:21 +0000 (UTC)
+Cc: tj@kernel.org,
+	akpm@linux-foundation.org,
+	linux-kernel@vger.kernel.org,
+	linux-mm@kvack.org,
+	paul.gortmaker@windriver.com,
+	davem@davemloft.net,
+	rostedt@goodmis.org,
+	mingo@elte.hu,
+	ebiederm@xmission.com,
+	aarcange@redhat.com,
+	ericvh@gmail.com,
+	netdev@vger.kernel.org,
+	Sasha Levin <levinsasha928@gmail.com>
+To: torvalds@linux-foundation.org
+Original-X-From: owner-linux-mm@kvack.org Fri Aug 03 16:23:18 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SxImb-00012r-Jj
+	for glkm-linux-mm-2@m.gmane.org; Fri, 03 Aug 2012 16:23:17 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 75A6F6B005D; Fri,  3 Aug 2012 10:23:16 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 2996D6B0068; Fri,  3 Aug 2012 10:23:15 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id A57E46B0062; Fri,  3 Aug 2012 10:23:15 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx184.postini.com [74.125.245.184])
+	by kanga.kvack.org (Postfix) with SMTP id 9AEE36B005A
+	for <linux-mm@kvack.org>; Fri,  3 Aug 2012 10:23:14 -0400 (EDT)
+Original-Received: from mail-bk0-f41.google.com ([209.85.214.41]) (using TLSv1) by na3sys010amx184.postini.com ([74.125.244.10]) with SMTP;
+	Fri, 03 Aug 2012 14:23:14 GMT
+Original-Received: by bkcjc3 with SMTP id jc3so397078bkc.14
+        for <linux-mm@kvack.org>; Fri, 03 Aug 2012 07:23:12 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=jClHVH/JeTXFVRFGGoImss+a9dvyE8uPs8R11uWxOaI=;
+        b=nnC42d7mMzc81OJaVur/z0opcVTwHHg/dtQCTshm//rKKXfZp/D7utRJxzoeCZ2UTX
+         Jpk5FPKGCPl4sKmkEERcVAIGiQyXRxv/lin3BEWyIn2Md0jXgddnNZVw7Avp2le6QVTf
+         RRxMt453mlOK0DG/GKEs5hLvocstYV7TScd55w5kO4tJWdMM0IpZnwUJnG5EwjNkkLCb
+         uDOjwCaxnPZAM0HU3TjLLJDz4N19xFFQjZ+Enr0dwDF18XrHPjMwwvAR4lWW7IgCqn5Y
+         PIGXmZ1TEvMOro+3N9Fim9vFetYiagooMyCgXZipKGwpfZAXUs5+bwgDW3DndOh6Dqqp
+         V/vQ==
+Original-Received: by 10.204.148.66 with SMTP id o2mr721548bkv.43.1344003792760;
+        Fri, 03 Aug 2012 07:23:12 -0700 (PDT)
+Original-Received: from localhost.localdomain (95-89-78-76-dynip.superkabel.de. [95.89.78.76])
+        by mx.google.com with ESMTPS id ht18sm4892490bkc.16.2012.08.03.07.23.10
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 03 Aug 2012 07:23:11 -0700 (PDT)
+X-Mailer: git-send-email 1.7.8.6
+In-Reply-To: <1344003788-1417-1-git-send-email-levinsasha928@gmail.com>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:40.56028/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 1 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0100) s cv GT3 gt2 gt1 r p m c 
+X-pstn-addresses: from <levinsasha928@gmail.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83548 gmane.linux.kernel:1337323 gmane.linux.network:239056
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337323>
+
+This hashtable implementation is using hlist buckets to provide a simple
+hashtable to prevent it from getting reimplemented all over the kernel.
+
+Signed-off-by: Sasha Levin <levinsasha928@gmail.com>
+---
+ include/linux/hashtable.h |   75 +++++++++++++++++++++++++++++++++++++++++++++
+ 1 files changed, 75 insertions(+), 0 deletions(-)
+ create mode 100644 include/linux/hashtable.h
+
+diff --git a/include/linux/hashtable.h b/include/linux/hashtable.h
+new file mode 100644
+index 0000000..b004cf7
+--- /dev/null
++++ b/include/linux/hashtable.h
+@@ -0,0 +1,75 @@
++#ifndef _LINUX_HASHTABLE_H
++#define _LINUX_HASHTABLE_H
++
++#include <linux/list.h>
++#include <linux/types.h>
++#include <linux/kernel.h>
++#include <linux/hash.h>
++
++struct hash_table {
++	size_t bits;
++	struct hlist_head buckets[];
++};
++
++#define DEFINE_STATIC_HASHTABLE(n, b)					\
++	static struct hash_table n = { .bits = (b),			\
++		.buckets = { [0 ... ((1 << (b)) - 1)] = HLIST_HEAD_INIT } }
++
++#define DEFINE_HASHTABLE(n, b)						\
++	union {								\
++		struct hash_table n;					\
++		struct {						\
++			size_t bits;					\
++			struct hlist_head buckets[1 << (b)];		\
++		} __##n ;						\
++	};
++
++#define HASH_BITS(name) ((name)->bits)
++#define HASH_SIZE(name) (1 << (HASH_BITS(name)))
++
++__attribute__ ((unused))
++static void hash_init(struct hash_table *ht, size_t bits)
++{
++	size_t i;
++
++	ht->bits = bits;
++	for (i = 0; i < (1 << bits); i++)
++		INIT_HLIST_HEAD(&ht->buckets[i]);
++}
++
++static void hash_add(struct hash_table *ht, struct hlist_node *node, long key)
++{
++	hlist_add_head(node,
++		&ht->buckets[hash_long((unsigned long)key, HASH_BITS(ht))]);
++}
++
++
++#define hash_get(name, key, type, member, cmp_fn)			\
++({									\
++	struct hlist_node *__node;					\
++	typeof(key) __key = key;					\
++	type *__obj = NULL;						\
++	hlist_for_each_entry(__obj, __node, &(name)->buckets[		\
++			hash_long((unsigned long) __key,		\
++			HASH_BITS(name))], member)			\
++		if (cmp_fn(__obj, __key))				\
++			break;						\
++	__obj;								\
++})
++
++__attribute__ ((unused))
++static void hash_del(struct hlist_node *node)
++{
++	hlist_del_init(node);
++}
++
++#define hash_for_each(bkt, node, name, obj, member)			\
++	for (bkt = 0; bkt < HASH_SIZE(name); bkt++)			\
++		hlist_for_each_entry(obj, node, &(name)->buckets[i], member)
++
++#define hash_for_each_possible(name, node, obj, member, key)		\
++	hlist_for_each_entry(obj, node,					\
++		&(name)->buckets[hash_long((unsigned long) key,		\
++			HASH_BITS(name))], member)
++
++#endif
+-- 
+1.7.8.6
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

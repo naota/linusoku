@@ -1,0 +1,100 @@
+Path: news.gmane.org!not-for-mail
+From: Naoya Horiguchi <n-horiguchi@ah.jp.nec.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: Re: [PATCH 2/3] HWPOISON: undo memory error handling for dirty pagecache
+Date: Fri, 10 Aug 2012 20:58:11 -0400
+Lines: 34
+Approved: news@gmane.org
+Message-ID: <1344646691-17662-1-git-send-email-n-horiguchi@ah.jp.nec.com>
+References: <m2a9y2cpj7.fsf@firstfloor.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344646719 17533 80.91.229.3 (11 Aug 2012 00:58:39 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 11 Aug 2012 00:58:39 +0000 (UTC)
+Cc: Naoya Horiguchi <n-horiguchi@ah.jp.nec.com>,
+        Andi Kleen <andi.kleen@intel.com>,
+        Wu Fengguang <fengguang.wu@intel.com>,
+        Andrew Morton <akpm@linux-foundation.org>,
+        Tony Luck <tony.luck@intel.com>, Rik van Riel <riel@redhat.com>,
+        "Jun'ichi Nomura" <j-nomura@ce.jp.nec.com>, linux-mm@kvack.org,
+        linux-kernel@vger.kernel.org, stable@vger.kernel.org
+To: Andi Kleen <andi@firstfloor.org>
+Original-X-From: owner-linux-mm@kvack.org Sat Aug 11 02:58:35 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1T002D-0001RV-Mb
+	for glkm-linux-mm-2@m.gmane.org; Sat, 11 Aug 2012 02:58:33 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 47E456B005D; Fri, 10 Aug 2012 20:58:31 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 343376B005A; Fri, 10 Aug 2012 20:58:31 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 042CA6B005D; Fri, 10 Aug 2012 20:58:30 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx120.postini.com [74.125.245.120])
+	by kanga.kvack.org (Postfix) with SMTP id D75C16B0044
+	for <linux-mm@kvack.org>; Fri, 10 Aug 2012 20:58:29 -0400 (EDT)
+Original-Received: from mx1.redhat.com ([209.132.183.28]) (using TLSv1) by na3sys010amx120.postini.com ([74.125.244.10]) with SMTP;
+	Sat, 11 Aug 2012 00:58:29 GMT
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q7B0wL2Q006965
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Fri, 10 Aug 2012 20:58:21 -0400
+Original-Received: from nhori.redhat.com (vpn-9-222.rdu.redhat.com [10.11.9.222])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q7B0wG8Q014183;
+	Fri, 10 Aug 2012 20:58:19 -0400
+In-Reply-To: <m2a9y2cpj7.fsf@firstfloor.org>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <n-horiguchi@ah.jp.nec.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:84037 gmane.linux.kernel:1341491 gmane.linux.kernel.stable:29581
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341491>
+
+Hi Andi,
+
+On Fri, Aug 10, 2012 at 04:09:48PM -0700, Andi Kleen wrote:
+> Naoya Horiguchi <n-horiguchi@ah.jp.nec.com> writes:
+> 
+> > Current memory error handling on dirty pagecache has a bug that user
+> > processes who use corrupted pages via read() or write() can't be aware
+> > of the memory error and result in discarding dirty data silently.
+> >
+> > The following patch is to improve handling/reporting memory errors on
+> > this case, but as a short term solution I suggest that we should undo
+> > the present error handling code and just leave errors for such cases
+> > (which expect the 2nd MCE to panic the system) to ensure data consistency.
+> 
+> Not sure that's the right approach. It's not worse than any other IO 
+> errors isn't it? 
+
+Right, in current situation both memory errors and other IO errors have
+the possibility of data lost in the same manner.
+I thought that in real mission critical system (for which I think
+HWPOISON feature is targeted) closing dangerous path is better than
+keeping waiting for someone to solve the problem in more generic manner.
+
+But if we start with Fengguang's approach at first as you replied to
+patch 3, this patch is not necessary.
+
+Naoya
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

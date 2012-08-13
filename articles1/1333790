@@ -1,0 +1,156 @@
+Path: news.gmane.org!not-for-mail
+From: Ming Lei <ming.lei@canonical.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [RFC PATCH 10/13] driver core: devres: introduce devres_for_each_res
+Date: Fri, 27 Jul 2012 00:51:26 +0800
+Lines: 100
+Approved: news@gmane.org
+Message-ID: <CACVXFVNgMQGOULphipVi5L5wWFuEyuiZgzRCdh9pOSW=RA2dYA@mail.gmail.com>
+References: <1343149213-10160-1-git-send-email-ming.lei@canonical.com>
+	<1343149213-10160-11-git-send-email-ming.lei@canonical.com>
+	<20120725162529.GN11152@aftab.osrc.amd.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1343321506 19019 80.91.229.3 (26 Jul 2012 16:51:46 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 16:51:46 +0000 (UTC)
+Cc: Linus Torvalds <torvalds@linux-foundation.org>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	"Rafael J. Wysocki" <rjw@sisk.pl>, linux-kernel@vger.kernel.org
+To: Borislav Petkov <bp@amd64.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 18:51:45 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuRHr-0003be-Ru
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 18:51:44 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752628Ab2GZQvb (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 12:51:31 -0400
+Original-Received: from youngberry.canonical.com ([91.189.89.112]:37390 "EHLO
+	youngberry.canonical.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751489Ab2GZQv3 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 12:51:29 -0400
+Original-Received: from mail-qa0-f53.google.com ([209.85.216.53])
+	by youngberry.canonical.com with esmtpsa (TLS1.0:RSA_ARCFOUR_SHA1:16)
+	(Exim 4.71)
+	(envelope-from <ming.lei@canonical.com>)
+	id 1SuRHb-0005hQ-Sm
+	for linux-kernel@vger.kernel.org; Thu, 26 Jul 2012 16:51:27 +0000
+Original-Received: by qaas11 with SMTP id s11so1415197qaa.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 09:51:26 -0700 (PDT)
+Original-Received: by 10.60.29.230 with SMTP id n6mr41999533oeh.22.1343321486701; Thu,
+ 26 Jul 2012 09:51:26 -0700 (PDT)
+Original-Received: by 10.182.15.101 with HTTP; Thu, 26 Jul 2012 09:51:26 -0700 (PDT)
+In-Reply-To: <20120725162529.GN11152@aftab.osrc.amd.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333790
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333790>
+
+On Thu, Jul 26, 2012 at 12:25 AM, Borislav Petkov <bp@amd64.org> wrote:
+> On Wed, Jul 25, 2012 at 01:00:10AM +0800, Ming Lei wrote:
+>> This patch introduces one devres API of devres_for_each_res
+>> so that the device's driver can iterate each resource it has
+>> interest in.
+>>
+>> The firmware loader will use the API to get each firmware name
+>> from the device instance.
+>>
+>> Signed-off-by: Ming Lei <ming.lei@canonical.com>
+>> ---
+>>  drivers/base/devres.c  |   42 ++++++++++++++++++++++++++++++++++++++++++
+>>  include/linux/device.h |    3 +++
+>>  2 files changed, 45 insertions(+)
+>>
+>> diff --git a/drivers/base/devres.c b/drivers/base/devres.c
+>> index 2360adb..8273ba5 100644
+>> --- a/drivers/base/devres.c
+>> +++ b/drivers/base/devres.c
+>> @@ -144,6 +144,48 @@ EXPORT_SYMBOL_GPL(devres_alloc);
+>>  #endif
+>>
+>>  /**
+>> + * devres_for_each_res - Resource iterator
+>> + * @dev: Device to iterate resource from
+>> + * @release: Look for resources associated with this release function
+>> + * @match: Match function (optional)
+>> + * @match_data: Data for the match function
+>> + * @fn: function to be called for each matched resource.
+>> + *
+>> + * Call @fn for each devres of @dev which is associated with @release
+>> + * and for which @match returns 1.
+>> + *
+>> + * RETURNS:
+>> + *   void
+>> + */
+>> +void devres_for_each_res(struct device *dev, dr_release_t release,
+>> +                     dr_match_t match, void *match_data,
+>> +                     void (*fn)(struct device *, void *))
+>> +{
+>> +     struct devres_node *node;
+>> +     struct devres_node *tmp;
+>> +     unsigned long flags;
+>> +
+>> +     if (!fn)
+>> +             return;
+>> +
+>> +     spin_lock_irqsave(&dev->devres_lock, flags);
+>> +     list_for_each_entry_safe_reverse(node, tmp,
+>> +                     &dev->devres_head, entry) {
+>
+> Why break this line?
+>
+>         list_for_each_entry_safe_reverse(node, tmp, &dev->devres_head, entry) {
+>
+> is perfectly fine.
+>
+>> +             struct devres *dr = container_of(node, struct devres, node);
+>> +
+>> +             if (node->release != release)
+>> +                     continue;
+>> +             if (match && !match(dev, dr->data, match_data))
+>> +                     continue;
+>> +             spin_unlock_irqrestore(&dev->devres_lock, flags);
+>> +             fn(dev, dr->data);
+>> +             spin_lock_irqsave(&dev->devres_lock, flags);
+>> +     }
+>> +     spin_unlock_irqrestore(&dev->devres_lock, flags);
+>
+> This looks strange. For the last node on the list, we're grabbing the
+> lock and releasing it right after.
+>
+> Probably check whether node is the last element and only re-grab the
+> lock if it isn't?
+
+It is not necessary since the lock isn't held in hot path.
+
+>
+> And btw, don't we need to hold the ->devres_lock during the whole search
+> like callers of find_dr do, for example?
+
+Because I don't want to put more constraint on the 'fn' about lock use, memory
+allocation flag(gfp)..., from the view of API's user.
+
+In fact, there is problem wrt. releasing lock since add_dr may add new node
+during releasing lock.
+
+So I plan to just hold the lock to cover calling 'fn' in -v1 instead
+of using rcu list
+helpers, which may introduce a lot change on devres.
+
+Anyway the callers can copy the resources interested into a temporary list
+in 'fn' and handle it later, which may simplify devres_for_each_res and other
+devres helpers a lot.
+
+Also I will introduce another parameter of 'void *data' to 'fn' in -v1.
+
+Thanks,
+--
+Ming Lei

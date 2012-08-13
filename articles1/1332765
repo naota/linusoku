@@ -1,0 +1,120 @@
+Path: news.gmane.org!not-for-mail
+From: Hideki EIRAKU <hdk@igel.co.jp>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel,gmane.linux.drivers.video-input-infrastructure
+Subject: [PATCH 2/3] media: videobuf2-dma-contig: use dma_mmap_coherent if available
+Date: Wed, 25 Jul 2012 15:29:23 +0900
+Lines: 52
+Approved: news@gmane.org
+Message-ID: <1343197764-13659-3-git-send-email-hdk@igel.co.jp>
+References: <1343197764-13659-1-git-send-email-hdk@igel.co.jp>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343197883 26703 80.91.229.3 (25 Jul 2012 06:31:23 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 06:31:23 +0000 (UTC)
+Cc: linux-arm-kernel@lists.infradead.org, linux-kernel@vger.kernel.org,
+	linux-media@vger.kernel.org, linux-fbdev@vger.kernel.org,
+	Katsuya MATSUBARA <matsu@igel.co.jp>,
+	Hideki EIRAKU <hdk@igel.co.jp>
+To: Russell King <linux@arm.linux.org.uk>,
+	Pawel Osciak <pawel@osciak.com>,
+	Marek Szyprowski <m.szyprowski@samsung.com>,
+	Kyungmin Park <kyungmin.park@samsung.com>,
+	Mauro Carvalho Chehab <mchehab@infradead.org>,
+	Florian Tobias Schandinat <FlorianSchandinat@gmx.de>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 08:31:21 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Stv7w-0000Qz-Cb
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 08:31:20 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932945Ab2GYGbK (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 02:31:10 -0400
+Original-Received: from mail-gg0-f174.google.com ([209.85.161.174]:41003 "EHLO
+	mail-gg0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S932887Ab2GYGaT (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 02:30:19 -0400
+Original-Received: by mail-gg0-f174.google.com with SMTP id u4so348768ggl.19
+        for <linux-kernel@vger.kernel.org>; Tue, 24 Jul 2012 23:30:19 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :x-gm-message-state;
+        bh=0VaRkRj8wq5fZdP0Xe82rYGHt4/d2WSdpv09bteYTgY=;
+        b=R2MPC+HWn5i/kuUtOvq/rH7luje9S61XR55d679ftjQcuKUqRm9JxwEeMo0EY2RB3u
+         9Xqb9jCTUbvE5JZNUgtjn1AGxm0U4Gl4CnRwiHOQqoJDyK9C0KxqTgodHngzBuapYEet
+         rfdPr5+Cm862ulmNl+zgXe7dCuh9P2Nb840L9BKTHLjSp8y2h12NxFGznyAQ4IXdRZt0
+         BMepw/LViPqXTBps0OrLZ7LbOAH8bL3x47FO2nQPzNaDkIEi0aAGJzed6c2+qZOAR7/b
+         5G4GFW/K7TGN7ggYVHRi234jWPrgccgHKOseQO8nbbFbGnPVArEmrzGIXq4dyl3IqZl1
+         5vlg==
+Original-Received: by 10.66.76.226 with SMTP id n2mr10307447paw.67.1343197818777;
+        Tue, 24 Jul 2012 23:30:18 -0700 (PDT)
+Original-Received: from localhost.localdomain ([219.106.231.132])
+        by mx.google.com with ESMTPS id jz4sm13740730pbc.17.2012.07.24.23.30.16
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 24 Jul 2012 23:30:18 -0700 (PDT)
+X-Mailer: git-send-email 1.7.0.4
+In-Reply-To: <1343197764-13659-1-git-send-email-hdk@igel.co.jp>
+X-Gm-Message-State: ALoCoQmZDVdmTc3gcPdL6t1y79ad+ls48Y4fPwNXSGBnNgbe7PnbTPvH2W/MPlkXez7AOk85GwJv
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332765 gmane.linux.ports.arm.kernel:178654 gmane.linux.drivers.video-input-infrastructure:51300
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332765>
+
+Previously the vb2_dma_contig_mmap() function was using a dma_addr_t as a
+physical address.  The two addressses are not necessarily the same.
+For example, when using the IOMMU funtion on certain platforms, dma_addr_t
+addresses are not directly mappable physical address.
+dma_mmap_coherent() maps the address correctly.
+It is available on ARM platforms.
+
+Signed-off-by: Hideki EIRAKU <hdk@igel.co.jp>
+---
+ drivers/media/video/videobuf2-dma-contig.c |   18 ++++++++++++++++++
+ 1 files changed, 18 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/media/video/videobuf2-dma-contig.c b/drivers/media/video/videobuf2-dma-contig.c
+index 4b71326..4dc85ab 100644
+--- a/drivers/media/video/videobuf2-dma-contig.c
++++ b/drivers/media/video/videobuf2-dma-contig.c
+@@ -101,14 +101,32 @@ static unsigned int vb2_dma_contig_num_users(void *buf_priv)
+ static int vb2_dma_contig_mmap(void *buf_priv, struct vm_area_struct *vma)
+ {
+ 	struct vb2_dc_buf *buf = buf_priv;
++#ifdef ARCH_HAS_DMA_MMAP_COHERENT
++	int ret;
++#endif
+ 
+ 	if (!buf) {
+ 		printk(KERN_ERR "No buffer to map\n");
+ 		return -EINVAL;
+ 	}
+ 
++#ifdef ARCH_HAS_DMA_MMAP_COHERENT
++	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
++	ret = dma_mmap_coherent(buf->conf->dev, vma, buf->vaddr, buf->dma_addr,
++				buf->size);
++	if (ret) {
++		pr_err("Remapping memory failed, error: %d\n", ret);
++		return ret;
++	}
++	vma->vm_flags |= VM_DONTEXPAND | VM_RESERVED;
++	vma->vm_private_data = &buf->handler;
++	vma->vm_ops = &vb2_common_vm_ops;
++	vma->vm_ops->open(vma);
++	return 0;
++#else
+ 	return vb2_mmap_pfn_range(vma, buf->dma_addr, buf->size,
+ 				  &vb2_common_vm_ops, &buf->handler);
++#endif
+ }
+ 
+ static void *vb2_dma_contig_get_userptr(void *alloc_ctx, unsigned long vaddr,
+-- 
+1.7.0.4
+

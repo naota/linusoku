@@ -1,0 +1,82 @@
+Path: news.gmane.org!not-for-mail
+From: microcai <microcai@fedoraproject.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] [ipc/shm] make shmget with IPC_PRIVATE initially created with SHM_DEST
+Date: Fri,  3 Aug 2012 20:13:10 +0800
+Lines: 26
+Approved: news@gmane.org
+Message-ID: <1343995990-1358-1-git-send-email-microcai@fedoraproject.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343996078 13896 80.91.229.3 (3 Aug 2012 12:14:38 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 12:14:38 +0000 (UTC)
+Cc: kernel@vger.linux-kernel.cn, microcai <microcai@fedoraproject.org>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 14:14:38 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxGm5-0007mI-I3
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 14:14:37 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753727Ab2HCMO0 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 08:14:26 -0400
+Original-Received: from mail-gg0-f174.google.com ([209.85.161.174]:46829 "EHLO
+	mail-gg0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753557Ab2HCMOP (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 08:14:15 -0400
+Original-Received: by ggnl2 with SMTP id l2so731306ggn.19
+        for <linux-kernel@vger.kernel.org>; Fri, 03 Aug 2012 05:14:14 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer;
+        bh=Ol0izzs3PPR1VGcy1RZomTF0G88hpaDYuwepGKK1BQk=;
+        b=s7b4V5E9FtwNANxumnoWa8WeUTtWr+8hKymRwb8hvf4EMqm9lE6AGEyNI+b5lR+3WF
+         ukJLYk4LAzS/lR1ZxtewtooLIjeNZ8uQXoE0IIPNw4Ae/8jy5vF9hu1E4ZsDIY6FeJsF
+         F1J5NyOxeac+lIY2AnnZKUM1OJf9dIak7gn/ZK3bbLA36+/iEOIRK9t7q0/ju63v5ntV
+         NkazAlt04I+WhKUjddStAExxhtaflLp4lHdsn3PmpxgJAZgSqqNkXGZM1O7SzDBs7XHg
+         1o6dbpn0qG6v4Y5Ka6vM5J3CAQ6A43CQL/XjWTeS5BDSbvgQDyqWKXuZ1Q4os3k3it9Z
+         /O7Q==
+Original-Received: by 10.60.7.104 with SMTP id i8mr4215796oea.31.1343996054467;
+        Fri, 03 Aug 2012 05:14:14 -0700 (PDT)
+Original-Received: from gentoo.gentoo ([101.64.194.137])
+        by mx.google.com with ESMTPS id hd10sm9482931obc.8.2012.08.03.05.14.09
+        (version=SSLv3 cipher=OTHER);
+        Fri, 03 Aug 2012 05:14:13 -0700 (PDT)
+X-Mailer: git-send-email 1.7.8.6
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337238
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337238>
+
+The problem is SysV SHM is that , it will cause kernel resource leak.
+Initailly set shm  mode to SHM_DEST when create with key_t IPC_PRIVATE,
+then the resource leak is fixed.
+
+If program want the shmid live longer, they will probably use non
+IPC_PRIVATE nor call shmctl that remove SHM_DEST bit.
+---
+ ipc/shm.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/ipc/shm.c b/ipc/shm.c
+index 41c1285..1abc031 100644
+--- a/ipc/shm.c
++++ b/ipc/shm.c
+@@ -480,6 +480,8 @@ static int newseg(struct ipc_namespace *ns, struct ipc_params *params)
+ 
+ 	shp->shm_perm.key = key;
+ 	shp->shm_perm.mode = (shmflg & S_IRWXUGO);
++	if(key == IPC_PRIVATE)
++		shp->shm_perm.mode |= SHM_DEST;
+ 	shp->mlock_user = NULL;
+ 
+ 	shp->shm_perm.security = NULL;
+-- 
+1.7.8.6
+

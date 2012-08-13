@@ -1,0 +1,115 @@
+Path: news.gmane.org!not-for-mail
+From: Denis Turischev <denis@compulab.co.il>
+Newsgroups: gmane.linux.kernel,gmane.linux.usb.general
+Subject: [PATCH 1/2] xhci: provide usb_disable_xhci_ports function for Intel
+ chipsets.
+Date: Mon, 23 Jul 2012 14:46:22 +0300
+Lines: 52
+Approved: news@gmane.org
+Message-ID: <500D398E.1060000@compulab.co.il>
+References: <5004454E.9030903@compulab.co.il> <20120717045416.GJ7599@xanatos> <50065E5A.2040103@compulab.co.il> <20120718165916.GA30828@xanatos>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343043999 30354 80.91.229.3 (23 Jul 2012 11:46:39 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 11:46:39 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, linux-usb@vger.kernel.org,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+To: Sarah Sharp <sarah.a.sharp@linux.intel.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 13:46:39 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StH5u-0005iC-3C
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 13:46:34 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752608Ab2GWLq1 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 07:46:27 -0400
+Original-Received: from softlayer.compulab.co.il ([50.23.254.55]:48722 "EHLO
+	compulab.co.il" rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1750854Ab2GWLqZ (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 07:46:25 -0400
+Original-Received: from [62.90.235.247] (port=16325 helo=zimbra-mta.compulab.co.il)
+	by softlayer.compulab.co.il with esmtp (Exim 4.77)
+	(envelope-from <denis@compulab.co.il>)
+	id 1StH5k-0006nM-Gu; Mon, 23 Jul 2012 14:46:25 +0300
+Original-Received: from localhost (localhost.localdomain [127.0.0.1])
+	by zimbra-mta.compulab.co.il (Postfix) with ESMTP id B6F06644198;
+	Mon, 23 Jul 2012 14:46:23 +0300 (IDT)
+X-Virus-Scanned: amavisd-new at compulab.co.il
+Original-Received: from zimbra-mta.compulab.co.il ([127.0.0.1])
+	by localhost (zimbra-mta.compulab.co.il [127.0.0.1]) (amavisd-new, port 10024)
+	with ESMTP id vqp-LFCAp6cr; Mon, 23 Jul 2012 14:46:23 +0300 (IDT)
+Original-Received: from [192.168.11.73] (denis-linux.compulab.local [192.168.11.73])
+	by zimbra-mta.compulab.co.il (Postfix) with ESMTPSA id 0DD90644192;
+	Mon, 23 Jul 2012 14:46:23 +0300 (IDT)
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:14.0) Gecko/20120714 Thunderbird/14.0
+In-Reply-To: <20120718165916.GA30828@xanatos>
+X-AntiAbuse: This header was added to track abuse, please include it with any abuse report
+X-AntiAbuse: Primary Hostname - softlayer.compulab.co.il
+X-AntiAbuse: Original Domain - vger.kernel.org
+X-AntiAbuse: Originator/Caller UID/GID - [47 12] / [47 12]
+X-AntiAbuse: Sender Address Domain - compulab.co.il
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331721 gmane.linux.usb.general:68106
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331721>
+
+Some devices with Intel Panther Point chipset may require switchover
+usb ports from XHCI back to EHCI controller before shutdown.
+Overwise various BIOS bugs related to power management may be
+triggered.
+
+Signed-off-by: Denis Turischev <denis@compulab.co.il>
+---
+ drivers/usb/host/pci-quirks.c |   14 ++++++++++++++
+ drivers/usb/host/pci-quirks.h |    1 +
+ 2 files changed, 15 insertions(+)
+
+diff --git a/drivers/usb/host/pci-quirks.c b/drivers/usb/host/pci-quirks.c
+index df0828c..b19a84a 100644
+--- a/drivers/usb/host/pci-quirks.c
++++ b/drivers/usb/host/pci-quirks.c
+@@ -800,6 +800,20 @@ void usb_enable_xhci_ports(struct pci_dev *xhci_pdev)
+ }
+ EXPORT_SYMBOL_GPL(usb_enable_xhci_ports);
+
++void usb_disable_xhci_ports(struct pci_dev *xhci_pdev)
++{
++	u32		ports_available;
++
++	ports_available = 0x0;
++
++	pci_write_config_dword(xhci_pdev, USB_INTEL_USB3_PSSEN,
++			cpu_to_le32(ports_available));
++
++	pci_write_config_dword(xhci_pdev, USB_INTEL_XUSB2PR,
++			cpu_to_le32(ports_available));
++}
++EXPORT_SYMBOL_GPL(usb_disable_xhci_ports);
++
+ /**
+  * PCI Quirks for xHCI.
+  *
+diff --git a/drivers/usb/host/pci-quirks.h b/drivers/usb/host/pci-quirks.h
+index b1002a8..ef004a5 100644
+--- a/drivers/usb/host/pci-quirks.h
++++ b/drivers/usb/host/pci-quirks.h
+@@ -10,6 +10,7 @@ void usb_amd_quirk_pll_disable(void);
+ void usb_amd_quirk_pll_enable(void);
+ bool usb_is_intel_switchable_xhci(struct pci_dev *pdev);
+ void usb_enable_xhci_ports(struct pci_dev *xhci_pdev);
++void usb_disable_xhci_ports(struct pci_dev *xhci_pdev);
+ #else
+ static inline void usb_amd_quirk_pll_disable(void) {}
+ static inline void usb_amd_quirk_pll_enable(void) {}
+-- 
+1.7.9.5
+
+

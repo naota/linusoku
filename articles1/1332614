@@ -1,0 +1,102 @@
+Path: news.gmane.org!not-for-mail
+From: Zach Brown <zab@zabbo.net>
+Newsgroups: gmane.linux.kernel.aio.general,gmane.linux.file-systems,gmane.linux.kernel
+Subject: Re: [RFC][PATCH] Make io_submit non-blocking
+Date: Tue, 24 Jul 2012 15:37:02 -0700
+Lines: 41
+Approved: news@gmane.org
+Message-ID: <20120724223702.GB6723@lenny.home.zabbo.net>
+References: <500E89D1.9010303@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343169427 10200 80.91.229.3 (24 Jul 2012 22:37:07 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 22:37:07 +0000 (UTC)
+Cc: Al Viro <viro@zeniv.linux.org.uk>, bcrl@kvack.org,
+	linux-fsdevel@vger.kernel.org, linux-aio@kvack.org,
+	linux-kernel@vger.kernel.org, Jan Kara <jack@suse.cz>
+To: Ankit Jain <jankit@suse.de>
+Original-X-From: owner-linux-aio@kvack.org Wed Jul 25 00:37:06 2012
+Return-path: <owner-linux-aio@kvack.org>
+Envelope-to: gla-linux-aio@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-aio@kvack.org>)
+	id 1Stnj0-0006V1-Gj
+	for gla-linux-aio@m.gmane.org; Wed, 25 Jul 2012 00:37:06 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 7816A6B0044; Tue, 24 Jul 2012 18:37:05 -0400 (EDT)
+Delivered-To: linux-aio-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 6780F6B005A; Tue, 24 Jul 2012 18:37:05 -0400 (EDT)
+X-Original-To: int-list-linux-aio@kvack.org
+Delivered-To: int-list-linux-aio@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 343946B005D; Tue, 24 Jul 2012 18:37:05 -0400 (EDT)
+X-Original-To: linux-aio@kvack.org
+Delivered-To: linux-aio@kvack.org
+Original-Received: from psmtp.com (na3sys010amx137.postini.com [74.125.245.137])
+	by kanga.kvack.org (Postfix) with SMTP id D88976B0044;
+	Tue, 24 Jul 2012 18:37:03 -0400 (EDT)
+Original-Received: from tetsuo.zabbo.net ([50.193.208.193]) by na3sys010amx137.postini.com ([74.125.244.10]) with SMTP;
+	Tue, 24 Jul 2012 22:37:04 GMT
+Original-Received: from localhost (lenny.home.zabbo.net [192.168.242.10])
+	(using TLSv1 with cipher DHE-RSA-AES128-SHA (128/128 bits))
+	(No client certificate requested)
+	by tetsuo.zabbo.net (Postfix) with ESMTPSA id 7BB0A7200287;
+	Tue, 24 Jul 2012 15:37:02 -0700 (PDT)
+Content-Disposition: inline
+In-Reply-To: <500E89D1.9010303@suse.de>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-aio@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-aio.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.aio.general:3146 gmane.linux.file-systems:66181 gmane.linux.kernel:1332614
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332614>
+
+On Tue, Jul 24, 2012 at 05:11:05PM +0530, Ankit Jain wrote:
+> 
+> Currently, io_submit tries to execute the io requests on the
+> same thread, which could block because of various reaons (eg.
+> allocation of disk blocks). So, essentially, io_submit ends
+> up being a blocking call.
+
+Yup, sadly that's how its built.  A blocking submission phase that
+returns once completion doesn't need the submitters's context.  It
+happens to mostly work for O_DIRECT block IO most of the time.
+
+> With this patch, io_submit prepares all the kiocbs and then
+> adds (kicks) them to ctx->run_list (kicked) in one go and then
+> schedules the workqueue. The actual operations are not executed
+> on io_submit's process context, so it can return very quickly.
+
+Strong nack; this isn't safe without having done the work to ensure that
+all the task_struct references under the f_op->aio_*() paths won't be
+horribly confused to find a kernel thread instead of the process that
+called io_submit().
+
+The one-off handling of the submitters's cred is an indication that
+there might be other cases to worry about :).
+
+> 3. Also, I tried not using aio_queue_work from io_submit call, and instead
+> depending on an already scheduled one or the iocbs being run when
+> io_getevents gets called. This seemed to give improved perfomance. But
+> does this constitute as change of api semantics?
+
+You can't rely on io_getevents() being called for forward progress.  Its
+perfectly reasonable for a task to wait for io completion by polling an
+eventfd that aio_complete() notifies, for instance.
+
+- z
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-aio' in
+the body to majordomo@kvack.org.  For more info on Linux AIO,
+see: http://www.kvack.org/aio/
+Don't email: <a href=mailto:"aart@kvack.org">aart@kvack.org</a>
+

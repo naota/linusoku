@@ -1,0 +1,556 @@
+Path: news.gmane.org!not-for-mail
+From: Tejun Heo <tj@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 14/14] workqueue: use mod_delayed_work() instead of cancel + queue
+Date: Fri,  3 Aug 2012 10:43:59 -0700
+Lines: 485
+Approved: news@gmane.org
+Message-ID: <1344015839-21800-15-git-send-email-tj@kernel.org>
+References: <1344015839-21800-1-git-send-email-tj@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344015905 22096 80.91.229.3 (3 Aug 2012 17:45:05 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 17:45:05 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	padovan@profusion.mobi, marcel@holtmann.org, peterz@infradead.org,
+	mingo@redhat.com, davem@davemloft.net, dougthompson@xmission.com,
+	ibm-acpi@hmh.eng.br, cbou@mail.ru, rui.zhang@intel.com,
+	tomi.valkeinen@ti.com, Tejun Heo <tj@kernel.org>,
+	Jens Axboe <axboe@kernel.dk>, Jiri Kosina <jkosina@suse.cz>,
+	David Airlie <airlied@linux.ie>,
+	Roland Dreier <roland@kernel.org>,
+	"John W. Linville" <linville@tuxdriver.com>,
+	Len Brown <len.brown@intel.com>,
+	David Howells <dhowells@redhat.com>,
+	"J. Bruce Fields" <bfields@fieldses.org>,
+	Johannes Berg <johannes@sipsolutions.net>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 19:44:59 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxLvj-0007yq-EV
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 19:44:55 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753923Ab2HCRos (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 13:44:48 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:34680 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753223Ab2HCRol (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 13:44:41 -0400
+Original-Received: by mail-gh0-f174.google.com with SMTP id r11so1127356ghr.19
+        for <linux-kernel@vger.kernel.org>; Fri, 03 Aug 2012 10:44:40 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references;
+        bh=Ut8A/D9GroK41pFkEPTHIB1zk9j5HStYqHU5h/59OIY=;
+        b=bSGvspwZTvltvHkJ1qafc9UY0Fp7+bduqAq8giim3/t4ykitLYgQio1ONToVEeasGk
+         yyG4CawQN9lNkw4pqpjDJMq+u4jCVaBcmyG0bh9NuAp0WyHJoYMcdPE2irLmPQxEFLrN
+         iSiZOfJrs5cygTjXJRalDY/ayC3H9HAHRRa/AWMmuue17vtBt/pR4HDPbvojIqEDaOKf
+         w2exHNLDsNc5Z5sYXpflVsLxBF1lBp/j1ln5CaZFk5N8w41qGp3YZ9Zgiyp82zUR3bi8
+         tBf/slLANu/qMuBYVqGbT6oCDORe4kxGOQK1jhzIrxXxOJyGOhMs3/XZZmYxlu0PuUyl
+         ymBw==
+Original-Received: by 10.50.208.100 with SMTP id md4mr4766992igc.65.1344015875939;
+        Fri, 03 Aug 2012 10:44:35 -0700 (PDT)
+Original-Received: from wtj.mtv.corp.google.com (wtj.mtv.corp.google.com [172.18.110.84])
+        by mx.google.com with ESMTPS id yh10sm4595318igb.0.2012.08.03.10.44.32
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 03 Aug 2012 10:44:34 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7.3
+In-Reply-To: <1344015839-21800-1-git-send-email-tj@kernel.org>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337454
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337454>
+
+Convert delayed_work users doing cancel_delayed_work() followed by
+queue_delayed_work() to mod_delayed_work().
+
+Most conversions are straight-forward.  Ones worth mentioning are,
+
+* drivers/edac/edac_mc.c: edac_mc_workq_setup() converted to always
+  use mod_delayed_work() and cancel loop in
+  edac_mc_reset_delay_period() is dropped.
+
+* drivers/platform/x86/thinkpad_acpi.c: No need to remember whether
+  watchdog is active or not.  @fan_watchdog_active and related code
+  dropped.
+
+* drivers/power/charger-manager.c: Seemingly a lot of
+  delayed_work_pending() abuse going on here.
+  [delayed_]work_pending() are unsynchronized and racy when used like
+  this.  I converted one instance in fullbatt_handler().  Please
+  conver the rest so that it invokes workqueue APIs for the intended
+  target state rather than trying to game work item pending state
+  transitions.  e.g. if timer should be modified - call
+  mod_delayed_work(), canceled - call cancel_delayed_work[_sync]().
+
+* drivers/thermal/thermal_sys.c: thermal_zone_device_set_polling()
+  simplified.  Note that round_jiffies() calls in this function are
+  meaningless.  round_jiffies() work on absolute jiffies not delta
+  delay used by delayed_work.
+
+v2: Tomi pointed out that __cancel_delayed_work() users can't be
+    safely converted to mod_delayed_work().  They could be calling it
+    from irq context and if that happens while delayed_work_timer_fn()
+    is running, it could deadlock.  __cancel_delayed_work() users are
+    dropped.
+
+Signed-off-by: Tejun Heo <tj@kernel.org>
+Acked-by: Henrique de Moraes Holschuh <hmh@hmh.eng.br>
+Acked-by: Dmitry Torokhov <dmitry.torokhov@gmail.com>
+Acked-by: Anton Vorontsov <cbouatmailru@gmail.com>
+Cc: Tomi Valkeinen <tomi.valkeinen@ti.com>
+Cc: Jens Axboe <axboe@kernel.dk>
+Cc: Jiri Kosina <jkosina@suse.cz>
+Cc: Doug Thompson <dougthompson@xmission.com>
+Cc: David Airlie <airlied@linux.ie>
+Cc: Roland Dreier <roland@kernel.org>
+Cc: "John W. Linville" <linville@tuxdriver.com>
+Cc: Zhang Rui <rui.zhang@intel.com>
+Cc: Len Brown <len.brown@intel.com>
+Cc: David Howells <dhowells@redhat.com>
+Cc: "J. Bruce Fields" <bfields@fieldses.org>
+Cc: Johannes Berg <johannes@sipsolutions.net>
+---
+ block/genhd.c                          |    6 ++----
+ drivers/edac/edac_mc.c                 |   17 +----------------
+ drivers/infiniband/core/addr.c         |    4 +---
+ drivers/infiniband/hw/nes/nes_hw.c     |    6 ++----
+ drivers/infiniband/hw/nes/nes_nic.c    |    5 ++---
+ drivers/net/wireless/ipw2x00/ipw2100.c |    8 +++-----
+ drivers/net/wireless/zd1211rw/zd_usb.c |    3 +--
+ drivers/platform/x86/thinkpad_acpi.c   |   20 +++++---------------
+ drivers/power/charger-manager.c        |    9 +++------
+ drivers/power/ds2760_battery.c         |    9 +++------
+ drivers/power/jz4740-battery.c         |    6 ++----
+ drivers/thermal/thermal_sys.c          |   15 ++++++---------
+ fs/afs/callback.c                      |    4 +---
+ fs/afs/server.c                        |   10 ++--------
+ fs/afs/vlocation.c                     |   14 +++-----------
+ fs/nfs/nfs4renewd.c                    |    3 +--
+ net/core/dst.c                         |    4 ++--
+ net/rfkill/input.c                     |    3 +--
+ 18 files changed, 41 insertions(+), 105 deletions(-)
+
+diff --git a/block/genhd.c b/block/genhd.c
+index cac7366..5d8b44a 100644
+--- a/block/genhd.c
++++ b/block/genhd.c
+@@ -1534,10 +1534,8 @@ void disk_flush_events(struct gendisk *disk, unsigned int mask)
+ 
+ 	spin_lock_irq(&ev->lock);
+ 	ev->clearing |= mask;
+-	if (!ev->block) {
+-		cancel_delayed_work(&ev->dwork);
+-		queue_delayed_work(system_nrt_freezable_wq, &ev->dwork, 0);
+-	}
++	if (!ev->block)
++		mod_delayed_work(system_nrt_freezable_wq, &ev->dwork, 0);
+ 	spin_unlock_irq(&ev->lock);
+ }
+ 
+diff --git a/drivers/edac/edac_mc.c b/drivers/edac/edac_mc.c
+index 616d90b..7c0df4a 100644
+--- a/drivers/edac/edac_mc.c
++++ b/drivers/edac/edac_mc.c
+@@ -538,7 +538,7 @@ static void edac_mc_workq_setup(struct mem_ctl_info *mci, unsigned msec)
+ 		return;
+ 
+ 	INIT_DELAYED_WORK(&mci->work, edac_mc_workq_function);
+-	queue_delayed_work(edac_workqueue, &mci->work, msecs_to_jiffies(msec));
++	mod_delayed_work(edac_workqueue, &mci->work, msecs_to_jiffies(msec));
+ }
+ 
+ /*
+@@ -578,21 +578,6 @@ void edac_mc_reset_delay_period(int value)
+ 
+ 	mutex_lock(&mem_ctls_mutex);
+ 
+-	/* scan the list and turn off all workq timers, doing so under lock
+-	 */
+-	list_for_each(item, &mc_devices) {
+-		mci = list_entry(item, struct mem_ctl_info, link);
+-
+-		if (mci->op_state == OP_RUNNING_POLL)
+-			cancel_delayed_work(&mci->work);
+-	}
+-
+-	mutex_unlock(&mem_ctls_mutex);
+-
+-
+-	/* re-walk the list, and reset the poll delay */
+-	mutex_lock(&mem_ctls_mutex);
+-
+ 	list_for_each(item, &mc_devices) {
+ 		mci = list_entry(item, struct mem_ctl_info, link);
+ 
+diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
+index 28058ae..eaec8d7 100644
+--- a/drivers/infiniband/core/addr.c
++++ b/drivers/infiniband/core/addr.c
+@@ -152,13 +152,11 @@ static void set_timeout(unsigned long time)
+ {
+ 	unsigned long delay;
+ 
+-	cancel_delayed_work(&work);
+-
+ 	delay = time - jiffies;
+ 	if ((long)delay <= 0)
+ 		delay = 1;
+ 
+-	queue_delayed_work(addr_wq, &work, delay);
++	mod_delayed_work(addr_wq, &work, delay);
+ }
+ 
+ static void queue_req(struct addr_req *req)
+diff --git a/drivers/infiniband/hw/nes/nes_hw.c b/drivers/infiniband/hw/nes/nes_hw.c
+index d42c9f4..9e0895b 100644
+--- a/drivers/infiniband/hw/nes/nes_hw.c
++++ b/drivers/infiniband/hw/nes/nes_hw.c
+@@ -2679,11 +2679,9 @@ static void nes_process_mac_intr(struct nes_device *nesdev, u32 mac_number)
+ 			}
+ 		}
+ 		if (nesadapter->phy_type[mac_index] == NES_PHY_TYPE_SFP_D) {
+-			if (nesdev->link_recheck)
+-				cancel_delayed_work(&nesdev->work);
+ 			nesdev->link_recheck = 1;
+-			schedule_delayed_work(&nesdev->work,
+-					      NES_LINK_RECHECK_DELAY);
++			mod_delayed_work(system_wq, &nesdev->work,
++					 NES_LINK_RECHECK_DELAY);
+ 		}
+ 	}
+ 
+diff --git a/drivers/infiniband/hw/nes/nes_nic.c b/drivers/infiniband/hw/nes/nes_nic.c
+index f3a3ecf..e43f6e4 100644
+--- a/drivers/infiniband/hw/nes/nes_nic.c
++++ b/drivers/infiniband/hw/nes/nes_nic.c
+@@ -243,10 +243,9 @@ static int nes_netdev_open(struct net_device *netdev)
+ 
+ 	spin_lock_irqsave(&nesdev->nesadapter->phy_lock, flags);
+ 	if (nesdev->nesadapter->phy_type[nesdev->mac_index] == NES_PHY_TYPE_SFP_D) {
+-		if (nesdev->link_recheck)
+-			cancel_delayed_work(&nesdev->work);
+ 		nesdev->link_recheck = 1;
+-		schedule_delayed_work(&nesdev->work, NES_LINK_RECHECK_DELAY);
++		mod_delayed_work(system_wq, &nesdev->work,
++				 NES_LINK_RECHECK_DELAY);
+ 	}
+ 	spin_unlock_irqrestore(&nesdev->nesadapter->phy_lock, flags);
+ 
+diff --git a/drivers/net/wireless/ipw2x00/ipw2100.c b/drivers/net/wireless/ipw2x00/ipw2100.c
+index 95aa8e1..8a34202 100644
+--- a/drivers/net/wireless/ipw2x00/ipw2100.c
++++ b/drivers/net/wireless/ipw2x00/ipw2100.c
+@@ -2180,8 +2180,7 @@ static void isr_indicate_rf_kill(struct ipw2100_priv *priv, u32 status)
+ 
+ 	/* Make sure the RF Kill check timer is running */
+ 	priv->stop_rf_kill = 0;
+-	cancel_delayed_work(&priv->rf_kill);
+-	schedule_delayed_work(&priv->rf_kill, round_jiffies_relative(HZ));
++	mod_delayed_work(system_wq, &priv->rf_kill, round_jiffies_relative(HZ));
+ }
+ 
+ static void send_scan_event(void *data)
+@@ -4321,9 +4320,8 @@ static int ipw_radio_kill_sw(struct ipw2100_priv *priv, int disable_radio)
+ 					  "disabled by HW switch\n");
+ 			/* Make sure the RF_KILL check timer is running */
+ 			priv->stop_rf_kill = 0;
+-			cancel_delayed_work(&priv->rf_kill);
+-			schedule_delayed_work(&priv->rf_kill,
+-					      round_jiffies_relative(HZ));
++			mod_delayed_work(system_wq, &priv->rf_kill,
++					 round_jiffies_relative(HZ));
+ 		} else
+ 			schedule_reset(priv);
+ 	}
+diff --git a/drivers/net/wireless/zd1211rw/zd_usb.c b/drivers/net/wireless/zd1211rw/zd_usb.c
+index af83c43..ef2b171 100644
+--- a/drivers/net/wireless/zd1211rw/zd_usb.c
++++ b/drivers/net/wireless/zd1211rw/zd_usb.c
+@@ -1164,8 +1164,7 @@ void zd_usb_reset_rx_idle_timer(struct zd_usb *usb)
+ {
+ 	struct zd_usb_rx *rx = &usb->rx;
+ 
+-	cancel_delayed_work(&rx->idle_work);
+-	queue_delayed_work(zd_workqueue, &rx->idle_work, ZD_RX_IDLE_INTERVAL);
++	mod_delayed_work(zd_workqueue, &rx->idle_work, ZD_RX_IDLE_INTERVAL);
+ }
+ 
+ static inline void init_usb_interrupt(struct zd_usb *usb)
+diff --git a/drivers/platform/x86/thinkpad_acpi.c b/drivers/platform/x86/thinkpad_acpi.c
+index e7f7328..06d2502 100644
+--- a/drivers/platform/x86/thinkpad_acpi.c
++++ b/drivers/platform/x86/thinkpad_acpi.c
+@@ -7682,25 +7682,15 @@ static int fan_set_speed(int speed)
+ 
+ static void fan_watchdog_reset(void)
+ {
+-	static int fan_watchdog_active;
+-
+ 	if (fan_control_access_mode == TPACPI_FAN_WR_NONE)
+ 		return;
+ 
+-	if (fan_watchdog_active)
+-		cancel_delayed_work(&fan_watchdog_task);
+-
+ 	if (fan_watchdog_maxinterval > 0 &&
+-	    tpacpi_lifecycle != TPACPI_LIFE_EXITING) {
+-		fan_watchdog_active = 1;
+-		if (!queue_delayed_work(tpacpi_wq, &fan_watchdog_task,
+-				msecs_to_jiffies(fan_watchdog_maxinterval
+-						 * 1000))) {
+-			pr_err("failed to queue the fan watchdog, "
+-			       "watchdog will not trigger\n");
+-		}
+-	} else
+-		fan_watchdog_active = 0;
++	    tpacpi_lifecycle != TPACPI_LIFE_EXITING)
++		mod_delayed_work(tpacpi_wq, &fan_watchdog_task,
++			msecs_to_jiffies(fan_watchdog_maxinterval * 1000));
++	else
++		cancel_delayed_work(&fan_watchdog_task);
+ }
+ 
+ static void fan_watchdog_fire(struct work_struct *ignored)
+diff --git a/drivers/power/charger-manager.c b/drivers/power/charger-manager.c
+index 526e5c9..7ff83cf 100644
+--- a/drivers/power/charger-manager.c
++++ b/drivers/power/charger-manager.c
+@@ -509,9 +509,8 @@ static void _setup_polling(struct work_struct *work)
+ 	if (!delayed_work_pending(&cm_monitor_work) ||
+ 	    (delayed_work_pending(&cm_monitor_work) &&
+ 	     time_after(next_polling, _next_polling))) {
+-		cancel_delayed_work_sync(&cm_monitor_work);
+ 		next_polling = jiffies + polling_jiffy;
+-		queue_delayed_work(cm_wq, &cm_monitor_work, polling_jiffy);
++		mod_delayed_work(cm_wq, &cm_monitor_work, polling_jiffy);
+ 	}
+ 
+ out:
+@@ -546,10 +545,8 @@ static void fullbatt_handler(struct charger_manager *cm)
+ 	if (cm_suspended)
+ 		device_set_wakeup_capable(cm->dev, true);
+ 
+-	if (delayed_work_pending(&cm->fullbatt_vchk_work))
+-		cancel_delayed_work(&cm->fullbatt_vchk_work);
+-	queue_delayed_work(cm_wq, &cm->fullbatt_vchk_work,
+-			   msecs_to_jiffies(desc->fullbatt_vchkdrop_ms));
++	mod_delayed_work(cm_wq, &cm->fullbatt_vchk_work,
++			 msecs_to_jiffies(desc->fullbatt_vchkdrop_ms));
+ 	cm->fullbatt_vchk_jiffies_at = jiffies + msecs_to_jiffies(
+ 				       desc->fullbatt_vchkdrop_ms);
+ 
+diff --git a/drivers/power/ds2760_battery.c b/drivers/power/ds2760_battery.c
+index 076e211..704e652 100644
+--- a/drivers/power/ds2760_battery.c
++++ b/drivers/power/ds2760_battery.c
+@@ -355,8 +355,7 @@ static void ds2760_battery_external_power_changed(struct power_supply *psy)
+ 
+ 	dev_dbg(di->dev, "%s\n", __func__);
+ 
+-	cancel_delayed_work(&di->monitor_work);
+-	queue_delayed_work(di->monitor_wqueue, &di->monitor_work, HZ/10);
++	mod_delayed_work(di->monitor_wqueue, &di->monitor_work, HZ/10);
+ }
+ 
+ 
+@@ -401,8 +400,7 @@ static void ds2760_battery_set_charged(struct power_supply *psy)
+ 
+ 	/* postpone the actual work by 20 secs. This is for debouncing GPIO
+ 	 * signals and to let the current value settle. See AN4188. */
+-	cancel_delayed_work(&di->set_charged_work);
+-	queue_delayed_work(di->monitor_wqueue, &di->set_charged_work, HZ * 20);
++	mod_delayed_work(di->monitor_wqueue, &di->set_charged_work, HZ * 20);
+ }
+ 
+ static int ds2760_battery_get_property(struct power_supply *psy,
+@@ -616,8 +614,7 @@ static int ds2760_battery_resume(struct platform_device *pdev)
+ 	di->charge_status = POWER_SUPPLY_STATUS_UNKNOWN;
+ 	power_supply_changed(&di->bat);
+ 
+-	cancel_delayed_work(&di->monitor_work);
+-	queue_delayed_work(di->monitor_wqueue, &di->monitor_work, HZ);
++	mod_delayed_work(di->monitor_wqueue, &di->monitor_work, HZ);
+ 
+ 	return 0;
+ }
+diff --git a/drivers/power/jz4740-battery.c b/drivers/power/jz4740-battery.c
+index 8dbc7bf..ffbed5e 100644
+--- a/drivers/power/jz4740-battery.c
++++ b/drivers/power/jz4740-battery.c
+@@ -173,16 +173,14 @@ static void jz_battery_external_power_changed(struct power_supply *psy)
+ {
+ 	struct jz_battery *jz_battery = psy_to_jz_battery(psy);
+ 
+-	cancel_delayed_work(&jz_battery->work);
+-	schedule_delayed_work(&jz_battery->work, 0);
++	mod_delayed_work(system_wq, &jz_battery->work, 0);
+ }
+ 
+ static irqreturn_t jz_battery_charge_irq(int irq, void *data)
+ {
+ 	struct jz_battery *jz_battery = data;
+ 
+-	cancel_delayed_work(&jz_battery->work);
+-	schedule_delayed_work(&jz_battery->work, 0);
++	mod_delayed_work(system_wq, &jz_battery->work, 0);
+ 
+ 	return IRQ_HANDLED;
+ }
+diff --git a/drivers/thermal/thermal_sys.c b/drivers/thermal/thermal_sys.c
+index 2ab31e4..67789b8 100644
+--- a/drivers/thermal/thermal_sys.c
++++ b/drivers/thermal/thermal_sys.c
+@@ -694,17 +694,14 @@ thermal_remove_hwmon_sysfs(struct thermal_zone_device *tz)
+ static void thermal_zone_device_set_polling(struct thermal_zone_device *tz,
+ 					    int delay)
+ {
+-	cancel_delayed_work(&(tz->poll_queue));
+-
+-	if (!delay)
+-		return;
+-
+ 	if (delay > 1000)
+-		queue_delayed_work(system_freezable_wq, &(tz->poll_queue),
+-				      round_jiffies(msecs_to_jiffies(delay)));
++		mod_delayed_work(system_freezable_wq, &tz->poll_queue,
++				 round_jiffies(msecs_to_jiffies(delay)));
++	else if (delay)
++		mod_delayed_work(system_freezable_wq, &tz->poll_queue,
++				 msecs_to_jiffies(delay));
+ 	else
+-		queue_delayed_work(system_freezable_wq, &(tz->poll_queue),
+-				      msecs_to_jiffies(delay));
++		cancel_delayed_work(&tz->poll_queue);
+ }
+ 
+ static void thermal_zone_device_passive(struct thermal_zone_device *tz,
+diff --git a/fs/afs/callback.c b/fs/afs/callback.c
+index 587ef51..7ef637d 100644
+--- a/fs/afs/callback.c
++++ b/fs/afs/callback.c
+@@ -351,9 +351,7 @@ void afs_dispatch_give_up_callbacks(struct work_struct *work)
+  */
+ void afs_flush_callback_breaks(struct afs_server *server)
+ {
+-	cancel_delayed_work(&server->cb_break_work);
+-	queue_delayed_work(afs_callback_update_worker,
+-			   &server->cb_break_work, 0);
++	mod_delayed_work(afs_callback_update_worker, &server->cb_break_work, 0);
+ }
+ 
+ #if 0
+diff --git a/fs/afs/server.c b/fs/afs/server.c
+index d59b751..f342acf 100644
+--- a/fs/afs/server.c
++++ b/fs/afs/server.c
+@@ -285,12 +285,7 @@ static void afs_reap_server(struct work_struct *work)
+ 		expiry = server->time_of_death + afs_server_timeout;
+ 		if (expiry > now) {
+ 			delay = (expiry - now) * HZ;
+-			if (!queue_delayed_work(afs_wq, &afs_server_reaper,
+-						delay)) {
+-				cancel_delayed_work(&afs_server_reaper);
+-				queue_delayed_work(afs_wq, &afs_server_reaper,
+-						   delay);
+-			}
++			mod_delayed_work(afs_wq, &afs_server_reaper, delay);
+ 			break;
+ 		}
+ 
+@@ -323,6 +318,5 @@ static void afs_reap_server(struct work_struct *work)
+ void __exit afs_purge_servers(void)
+ {
+ 	afs_server_timeout = 0;
+-	cancel_delayed_work(&afs_server_reaper);
+-	queue_delayed_work(afs_wq, &afs_server_reaper, 0);
++	mod_delayed_work(afs_wq, &afs_server_reaper, 0);
+ }
+diff --git a/fs/afs/vlocation.c b/fs/afs/vlocation.c
+index 431984d..57bcb15 100644
+--- a/fs/afs/vlocation.c
++++ b/fs/afs/vlocation.c
+@@ -561,12 +561,7 @@ static void afs_vlocation_reaper(struct work_struct *work)
+ 		if (expiry > now) {
+ 			delay = (expiry - now) * HZ;
+ 			_debug("delay %lu", delay);
+-			if (!queue_delayed_work(afs_wq, &afs_vlocation_reap,
+-						delay)) {
+-				cancel_delayed_work(&afs_vlocation_reap);
+-				queue_delayed_work(afs_wq, &afs_vlocation_reap,
+-						   delay);
+-			}
++			mod_delayed_work(afs_wq, &afs_vlocation_reap, delay);
+ 			break;
+ 		}
+ 
+@@ -614,13 +609,10 @@ void afs_vlocation_purge(void)
+ 	spin_lock(&afs_vlocation_updates_lock);
+ 	list_del_init(&afs_vlocation_updates);
+ 	spin_unlock(&afs_vlocation_updates_lock);
+-	cancel_delayed_work(&afs_vlocation_update);
+-	queue_delayed_work(afs_vlocation_update_worker,
+-			   &afs_vlocation_update, 0);
++	mod_delayed_work(afs_vlocation_update_worker, &afs_vlocation_update, 0);
+ 	destroy_workqueue(afs_vlocation_update_worker);
+ 
+-	cancel_delayed_work(&afs_vlocation_reap);
+-	queue_delayed_work(afs_wq, &afs_vlocation_reap, 0);
++	mod_delayed_work(afs_wq, &afs_vlocation_reap, 0);
+ }
+ 
+ /*
+diff --git a/fs/nfs/nfs4renewd.c b/fs/nfs/nfs4renewd.c
+index 6930bec..1720d32 100644
+--- a/fs/nfs/nfs4renewd.c
++++ b/fs/nfs/nfs4renewd.c
+@@ -117,8 +117,7 @@ nfs4_schedule_state_renewal(struct nfs_client *clp)
+ 		timeout = 5 * HZ;
+ 	dprintk("%s: requeueing work. Lease period = %ld\n",
+ 			__func__, (timeout + HZ - 1) / HZ);
+-	cancel_delayed_work(&clp->cl_renewd);
+-	schedule_delayed_work(&clp->cl_renewd, timeout);
++	mod_delayed_work(system_wq, &clp->cl_renewd, timeout);
+ 	set_bit(NFS_CS_RENEWD, &clp->cl_res_state);
+ 	spin_unlock(&clp->cl_lock);
+ }
+diff --git a/net/core/dst.c b/net/core/dst.c
+index 069d51d..ed5a0b4 100644
+--- a/net/core/dst.c
++++ b/net/core/dst.c
+@@ -214,8 +214,8 @@ void __dst_free(struct dst_entry *dst)
+ 	if (dst_garbage.timer_inc > DST_GC_INC) {
+ 		dst_garbage.timer_inc = DST_GC_INC;
+ 		dst_garbage.timer_expires = DST_GC_MIN;
+-		cancel_delayed_work(&dst_gc_work);
+-		schedule_delayed_work(&dst_gc_work, dst_garbage.timer_expires);
++		mod_delayed_work(system_wq, &dst_gc_work,
++				 dst_garbage.timer_expires);
+ 	}
+ 	spin_unlock_bh(&dst_garbage.lock);
+ }
+diff --git a/net/rfkill/input.c b/net/rfkill/input.c
+index 24c55c5..c9d931e 100644
+--- a/net/rfkill/input.c
++++ b/net/rfkill/input.c
+@@ -164,8 +164,7 @@ static void rfkill_schedule_global_op(enum rfkill_sched_op op)
+ 	rfkill_op_pending = true;
+ 	if (op == RFKILL_GLOBAL_OP_EPO && !rfkill_is_epo_lock_active()) {
+ 		/* bypass the limiter for EPO */
+-		cancel_delayed_work(&rfkill_op_work);
+-		schedule_delayed_work(&rfkill_op_work, 0);
++		mod_delayed_work(system_wq, &rfkill_op_work, 0);
+ 		rfkill_last_scheduled = jiffies;
+ 	} else
+ 		rfkill_schedule_ratelimited();
+-- 
+1.7.7.3
+

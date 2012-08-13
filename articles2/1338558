@@ -1,0 +1,109 @@
+Path: news.gmane.org!not-for-mail
+From: Michel Lespinasse <walken@google.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [PATCH v2 6/9] rbtree: low level optimizations in rb_erase()
+Date: Mon, 6 Aug 2012 13:50:02 -0700
+Lines: 19
+Approved: news@gmane.org
+Message-ID: <CANN689Gcca_Xr8GQSjJads8psz3PZpya+s8aWTt_goVt0+O4YA@mail.gmail.com>
+References: <1343946858-8170-1-git-send-email-walken@google.com>
+	<1343946858-8170-7-git-send-email-walken@google.com>
+	<1344262863.27828.56.camel@twins>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1344286209 10723 80.91.229.3 (6 Aug 2012 20:50:09 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 20:50:09 +0000 (UTC)
+Cc: riel@redhat.com, daniel.santos@pobox.com, aarcange@redhat.com, 
+	dwmw2@infradead.org, akpm@linux-foundation.org, linux-mm@kvack.org, 
+	linux-kernel@vger.kernel.org, torvalds@linux-foundation.org
+To: Peter Zijlstra <peterz@infradead.org>
+Original-X-From: owner-linux-mm@kvack.org Mon Aug 06 22:50:08 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SyUFa-0008Px-JC
+	for glkm-linux-mm-2@m.gmane.org; Mon, 06 Aug 2012 22:50:06 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 141C56B0062; Mon,  6 Aug 2012 16:50:05 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 03B1A6B0068; Mon,  6 Aug 2012 16:50:04 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id C89EA6B0069; Mon,  6 Aug 2012 16:50:04 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx181.postini.com [74.125.245.181])
+	by kanga.kvack.org (Postfix) with SMTP id 351346B0062
+	for <linux-mm@kvack.org>; Mon,  6 Aug 2012 16:50:04 -0400 (EDT)
+Original-Received: from mail-gg0-f169.google.com ([209.85.161.169]) (using TLSv1) by na3sys010amx181.postini.com ([74.125.244.10]) with SMTP;
+	Mon, 06 Aug 2012 20:50:04 GMT
+Original-Received: by ggnf4 with SMTP id f4so876363ggn.14
+        for <linux-mm@kvack.org>; Mon, 06 Aug 2012 13:50:03 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=mime-version:in-reply-to:references:date:message-id:subject:from:to
+         :cc:content-type:x-system-of-record;
+        bh=rlh0pC+67fpqFkBFj5ABwQDeyAQLj7/6WSc47hFCVGM=;
+        b=LitXPR1EuUtEBeRURUkLpO+z5cvSI0zgWh/9KGs7C86KgIj0xmi3Q9gRTd8eEzvOEL
+         tE3Pyl+zntCxvOrLJT8ZuKpRWqTe00I5U6X5em7D0GC8X+ryhGhDILZxcW92Ldulfb6z
+         /rneMADk35suUX4jYna/WVViGGdXjvAzNOcd/nE07FwNYNEbu3Y2kSl+YLrtoet0Lzal
+         hPRm9Ay1e700+GbJUvog2FqtlF0I3ZZe2EVI3iH+WQLM6eLgmqeleNIe3Du1RvRZAMg1
+         BfbLhtE6+jcP5uxmcgxCf9azwZYEml7u8mU6cxHWWqxUu4jJZc6QZjf6Zkas7kCXp1Al
+         0ExQ==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=mime-version:in-reply-to:references:date:message-id:subject:from:to
+         :cc:content-type:x-system-of-record:x-gm-message-state;
+        bh=rlh0pC+67fpqFkBFj5ABwQDeyAQLj7/6WSc47hFCVGM=;
+        b=eJ9WRaNJYrFJ/D2TMBDO91T9pRFjW6nCA/FLZqgyU4M2uOIw9PvDQYsjGdvZdUt3eq
+         jyCH9llM794B1W/RHKNthi9G/+KpYdZyzaaKNtjd845hnuI54kie3K9TtXYaxh4Qaqoe
+         GJz1UTdrwrMg/oYGdIPzT9z5dXooUKhHaUsdjx6ElIPt8LXTb9AALgapPwQNt22A+txw
+         ms+5atomjtw0X77p99EKZonKoZiPTbcH2mpGjGMf4qb4xHXXC1/Wcm4QStNjBwC6LcNY
+         0qdznOYBGNrNs2s3LveA2gHgaZzTnZJ0GZIaliFCdysk+q74hLTJH1yca4zi1xtqDOKh
+         R7AQ==
+Original-Received: by 10.50.100.137 with SMTP id ey9mr6496283igb.61.1344286202960;
+        Mon, 06 Aug 2012 13:50:02 -0700 (PDT)
+Original-Received: by 10.50.100.137 with SMTP id ey9mr6496263igb.61.1344286202618; Mon,
+ 06 Aug 2012 13:50:02 -0700 (PDT)
+Original-Received: by 10.231.194.35 with HTTP; Mon, 6 Aug 2012 13:50:02 -0700 (PDT)
+In-Reply-To: <1344262863.27828.56.camel@twins>
+X-System-Of-Record: true
+X-Gm-Message-State: ALoCoQmt3Tv1bhKxP+izcIuNF/6+M02rIM0r+366ltLZuKAVnSjhP/PPsQ2ZriBubLwUeOalJlx/k+HchroR0UF1xtbS4E03W14emnv0WezT7auEKXTc3ovJwWzhlWfNk66N9MABzZfnyzVDobMeKh0OZFNgq6RuxwXBZk3n1A8m0lESvbAuyGVQRigZ4ohxS+F0fj2xgI1y
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 1 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0100) s cv GT3 gt2 gt1 r p m c 
+X-pstn-addresses: from <walken@google.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83719 gmane.linux.kernel:1338558
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338558>
+
+On Mon, Aug 6, 2012 at 7:21 AM, Peter Zijlstra <peterz@infradead.org> wrote:
+> On Thu, 2012-08-02 at 15:34 -0700, Michel Lespinasse wrote:
+>> +                       /* Case 3: node's successor is leftmost under its
+>> +                        * right child subtree
+>
+> Hmm?
+
+Would 'leftmost under node's right child subtree' make more sense ?
+
+-- 
+Michel "Walken" Lespinasse
+A program is never fully debugged until the last user dies.
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

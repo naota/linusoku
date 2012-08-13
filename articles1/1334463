@@ -1,0 +1,89 @@
+Path: news.gmane.org!not-for-mail
+From: Matthew Wilcox <willy@linux.intel.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] NVMe: Add a character device for each nvme device
+Date: Fri, 27 Jul 2012 15:08:21 -0400
+Lines: 34
+Approved: news@gmane.org
+Message-ID: <20120727190821.GO22985@linux.intel.com>
+References: <1343407458-29909-1-git-send-email-keith.busch@intel.com>
+ <20120727181212.GM22985@linux.intel.com>
+ <20120727182546.GA23874@kroah.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343416113 26639 80.91.229.3 (27 Jul 2012 19:08:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 19:08:33 +0000 (UTC)
+Cc: Keith Busch <keith.busch@intel.com>,
+	linux-nvme@lists.infradead.org, linux-kernel@vger.kernel.org,
+	Alan Cox <alan@lxorguk.ukuu.org.uk>
+To: Greg KH <greg@kroah.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 21:08:32 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Suptn-0007IF-6D
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 21:08:31 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752500Ab2G0TIY (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 15:08:24 -0400
+Original-Received: from mga01.intel.com ([192.55.52.88]:17920 "EHLO mga01.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751965Ab2G0TIX (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 15:08:23 -0400
+Original-Received: from fmsmga002.fm.intel.com ([10.253.24.26])
+  by fmsmga101.fm.intel.com with ESMTP; 27 Jul 2012 12:08:22 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="199064633"
+Original-Received: from unknown (HELO rizzo.int.wil.cx) ([10.255.12.103])
+  by fmsmga002.fm.intel.com with ESMTP; 27 Jul 2012 12:08:22 -0700
+Original-Received: by rizzo.int.wil.cx (Postfix, from userid 1000)
+	id 892671723DF; Fri, 27 Jul 2012 15:08:21 -0400 (EDT)
+Content-Disposition: inline
+In-Reply-To: <20120727182546.GA23874@kroah.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334463
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334463>
+
+On Fri, Jul 27, 2012 at 11:25:46AM -0700, Greg KH wrote:
+> On Fri, Jul 27, 2012 at 02:12:12PM -0400, Matthew Wilcox wrote:
+> > I don't see a problem here, but I'm no expert at sysfs / character devices.
+> > Alan, Greg, anyone else see any problems with how this character device is
+> > created / destroyed?
+> 
+> Yes, see below:
+
+Thanks!
+
+> > > +	device_create(nvme_char_cl, NULL, MKDEV(nvme_char_major, dev->instance),
+> > > +						NULL, "nvme%d", dev->instance);
+> 
+> You just created a device at the "root" of sysfs, which is wrong,
+> especially when you do have a parent device here.  Please use it.
+
+OK, that makes sense; this device should be the child of the pci_dev that
+it belongs to.
+
+> Also, why are you creating your own class?  Can't this just be a misc
+> device?  And if you want to create your own class, please don't, use a
+> bus, as that is what is really happening here, right?  We are trying to
+> move away from using 'struct class' wherever possible (one of these days
+> we'll just remove it...)
+
+What we're trying to achieve here is to create one character device
+per NVMe controller that gets plugged in.  Each NVMe controller is-a
+PCI function.  The reason we're trying to do this is so that we can send
+commands to the NVMe controller, even when there is no storage present
+(eg a drive is shipped from the factory with no configured storage).
+
+So we have no particular desire to create a new struct class, or struct
+bus.  If we can create a misc device per PCIe function that's bound to our
+driver, that's great!  Can you recommend a driver that does this already?

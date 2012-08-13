@@ -1,0 +1,100 @@
+Path: news.gmane.org!not-for-mail
+From: Cyril Chemparathy <cyril@ti.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: [RFC 05/23] ARM: LPAE: use phys_addr_t in free_memmap()
+Date: Mon, 23 Jul 2012 21:09:07 -0400
+Lines: 41
+Approved: news@gmane.org
+Message-ID: <1343092165-9470-6-git-send-email-cyril@ti.com>
+References: <1343092165-9470-1-git-send-email-cyril@ti.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1343092209 5643 80.91.229.3 (24 Jul 2012 01:10:09 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 01:10:09 +0000 (UTC)
+Cc: <linux-kernel@vger.kernel.org>, <nico@linaro.org>,
+	<will.deacon@arm.com>, <catalin.marinas@arm.com>,
+	Vitaly Andrianov <vitalya@ti.com>,
+	Cyril Chemparathy <cyril@ti.com>
+To: <linux-arm-kernel@lists.infradead.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 03:10:08 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StTdU-0005DN-GW
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 03:10:04 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755499Ab2GXBJ4 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 21:09:56 -0400
+Original-Received: from comal.ext.ti.com ([198.47.26.152]:45806 "EHLO comal.ext.ti.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755444Ab2GXBJy (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 21:09:54 -0400
+Original-Received: from dlelxv30.itg.ti.com ([172.17.2.17])
+	by comal.ext.ti.com (8.13.7/8.13.7) with ESMTP id q6O19c4j022358;
+	Mon, 23 Jul 2012 20:09:38 -0500
+Original-Received: from DFLE73.ent.ti.com (dfle73.ent.ti.com [128.247.5.110])
+	by dlelxv30.itg.ti.com (8.13.8/8.13.8) with ESMTP id q6O19cpW010228;
+	Mon, 23 Jul 2012 20:09:38 -0500
+Original-Received: from dlelxv22.itg.ti.com (172.17.1.197) by dfle73.ent.ti.com
+ (128.247.5.110) with Microsoft SMTP Server id 14.1.323.3; Mon, 23 Jul 2012
+ 20:09:38 -0500
+Original-Received: from ares-ubuntu.am.dhcp.ti.com (ares-ubuntu.am.dhcp.ti.com
+ [158.218.103.17])	by dlelxv22.itg.ti.com (8.13.8/8.13.8) with ESMTP id
+ q6O19cDd024564;	Mon, 23 Jul 2012 20:09:38 -0500
+Original-Received: from a0875269 by ares-ubuntu.am.dhcp.ti.com with local (Exim 4.76)
+	(envelope-from <cyril@ti.com>)	id 1StTd4-0002U5-8B; Mon, 23 Jul 2012 21:09:38
+ -0400
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1343092165-9470-1-git-send-email-cyril@ti.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332065 gmane.linux.ports.arm.kernel:178498
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332065>
+
+From: Vitaly Andrianov <vitalya@ti.com>
+
+The free_memmap() was mistakenly using unsigned long type to represent
+physical addresses.  This breaks on PAE systems where memory could be placed
+above the 32-bit addressible limit.
+
+This patch fixes this function to properly use phys_addr_t instead.
+
+Signed-off-by: Vitaly Andrianov <vitalya@ti.com>
+Signed-off-by: Cyril Chemparathy <cyril@ti.com>
+---
+ arch/arm/mm/init.c |    6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/mm/init.c b/arch/arm/mm/init.c
+index f54d592..8252c31 100644
+--- a/arch/arm/mm/init.c
++++ b/arch/arm/mm/init.c
+@@ -457,7 +457,7 @@ static inline void
+ free_memmap(unsigned long start_pfn, unsigned long end_pfn)
+ {
+ 	struct page *start_pg, *end_pg;
+-	unsigned long pg, pgend;
++	phys_addr_t pg, pgend;
+ 
+ 	/*
+ 	 * Convert start_pfn/end_pfn to a struct page pointer.
+@@ -469,8 +469,8 @@ free_memmap(unsigned long start_pfn, unsigned long end_pfn)
+ 	 * Convert to physical addresses, and
+ 	 * round start upwards and end downwards.
+ 	 */
+-	pg = (unsigned long)PAGE_ALIGN(__pa(start_pg));
+-	pgend = (unsigned long)__pa(end_pg) & PAGE_MASK;
++	pg = PAGE_ALIGN(__pa(start_pg));
++	pgend = __pa(end_pg) & PAGE_MASK;
+ 
+ 	/*
+ 	 * If there are free pages between these,
+-- 
+1.7.9.5
+

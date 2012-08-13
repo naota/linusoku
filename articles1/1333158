@@ -1,0 +1,216 @@
+Path: news.gmane.org!not-for-mail
+From: "H. Peter Anvin" <hpa@zytor.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [PATCH] random: mix in architectural randomness in extract_buf()
+Date: Wed, 25 Jul 2012 10:37:02 -0700
+Lines: 159
+Approved: news@gmane.org
+Message-ID: <1343237822-7789-1-git-send-email-hpa@zytor.com>
+References: <20120725151000.GA30996@thunk.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343237874 7132 80.91.229.3 (25 Jul 2012 17:37:54 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 17:37:54 +0000 (UTC)
+Cc: Ingo Molnar <mingo@kernel.org>, w@1wt.edu, ewust@umich.edu,
+	zakir@umich.edu, greg@kroah.com, mpm@selenic.com,
+	nadiah@cs.ucsd.edu, jhalderm@umich.edu, tglx@linutronix.de,
+	davem@davemloft.net, stable@vger.kernel.org,
+	DJ Johnston <dj.johnston@intel.com>,
+	"H. Peter Anvin" <hpa@linux.intel.com>
+To: linux-kernel@vger.kernel.org, "Theodore T'so" <tytso@mit.edu>,
+	Linus Torvalds <torvalds@linux-foundation.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 19:37:50 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su5Wv-0003KB-2s
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 19:37:49 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751220Ab2GYRhl (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 13:37:41 -0400
+Original-Received: from terminus.zytor.com ([198.137.202.10]:57319 "EHLO
+	terminus.zytor.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750763Ab2GYRhj (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 13:37:39 -0400
+Original-Received: from terminus.zytor.com (localhost [127.0.0.1])
+	by terminus.zytor.com (8.14.5/8.14.5) with ESMTP id q6PHbDR1007829
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Wed, 25 Jul 2012 10:37:19 -0700
+Original-Received: (from hpa@localhost)
+	by terminus.zytor.com (8.14.5/8.14.5/Submit) id q6PHbDwQ007828;
+	Wed, 25 Jul 2012 10:37:13 -0700
+X-Mailer: git-send-email 1.7.6.5
+In-Reply-To: <20120725151000.GA30996@thunk.org>
+X-Spam-Status: No, score=-2.9 required=5.0 tests=ALL_TRUSTED,BAYES_00
+	autolearn=ham version=3.3.2
+X-Spam-Checker-Version: SpamAssassin 3.3.2 (2011-06-06) on terminus.zytor.com
+X-Greylist: Sender IP whitelisted, not delayed by milter-greylist-4.2.6 (terminus.zytor.com [127.0.0.1]); Wed, 25 Jul 2012 10:37:19 -0700 (PDT)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333158 gmane.linux.kernel.stable:28808
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333158>
+
+From: "H. Peter Anvin" <hpa@linux.intel.com>
+
+RDRAND is so much faster than the Linux pool system that we can
+always just mix in architectural randomness.
+
+Doing this in extract_buf() lets us do this in one convenient
+place, unfortunately the output size (10 bytes) is maximally
+awkward.  That, plus the fact that every output byte will have
+passed through extract_buf() twice means we are not being very
+efficient with the RDRAND use.
+
+Measurements show that RDRAND is 12-15 times faster than the Linux
+pool system.  Doing the math shows this corresponds to about an
+11.5% slowdown which is confirmed by measurements.
+
+Users who are very performance- or power-sensitive could definitely
+still benefit from being allowed to use RDRAND directly, but I
+believe this version should satisfy even the most hyper-paranoid
+crowd.
+
+[ v2: changed the final memcpy() from hash.w to hash in order to
+  make it more obvious that mucking with hash.l doesn't leave
+  hash.w unmodified.  This doesn't have any impact on the final
+  code as the Linux kernel is alwasy compiled with -fno-strict-aliasing
+  but it might make it more obvious to the human reader who might get
+  confused and think it is a structure. ]
+
+Signed-off-by: H. Peter Anvin <hpa@linux.intel.com>
+Acked-by: Ingo Molnar <mingo@kernel.org>
+Cc: DJ Johnston <dj.johnston@intel.com>
+---
+ drivers/char/random.c | 56 +++++++++++++++++++++++++++++----------------------
+ 1 file changed, 32 insertions(+), 24 deletions(-)
+
+diff --git a/drivers/char/random.c b/drivers/char/random.c
+index 9793b40..7bc0b36 100644
+--- a/drivers/char/random.c
++++ b/drivers/char/random.c
+@@ -277,6 +277,8 @@
+ #define SEC_XFER_SIZE 512
+ #define EXTRACT_SIZE 10
+ 
++#define LONGS(x) (((x) + sizeof(unsigned long) - 1)/sizeof(unsigned long))
++
+ /*
+  * The minimum number of bits of entropy before we wake up a read on
+  * /dev/random.  Should be enough to do a significant reseed.
+@@ -813,11 +815,7 @@ static ssize_t extract_entropy(struct entropy_store *r, void *buf,
+  */
+ static void xfer_secondary_pool(struct entropy_store *r, size_t nbytes)
+ {
+-	union {
+-		__u32	tmp[OUTPUT_POOL_WORDS];
+-		long	hwrand[4];
+-	} u;
+-	int	i;
++	__u32	tmp[OUTPUT_POOL_WORDS];
+ 
+ 	if (r->pull && r->entropy_count < nbytes * 8 &&
+ 	    r->entropy_count < r->poolinfo->POOLBITS) {
+@@ -828,23 +826,17 @@ static void xfer_secondary_pool(struct entropy_store *r, size_t nbytes)
+ 		/* pull at least as many as BYTES as wakeup BITS */
+ 		bytes = max_t(int, bytes, random_read_wakeup_thresh / 8);
+ 		/* but never more than the buffer size */
+-		bytes = min_t(int, bytes, sizeof(u.tmp));
++		bytes = min_t(int, bytes, sizeof(tmp));
+ 
+ 		DEBUG_ENT("going to reseed %s with %d bits "
+ 			  "(%d of %d requested)\n",
+ 			  r->name, bytes * 8, nbytes * 8, r->entropy_count);
+ 
+-		bytes = extract_entropy(r->pull, u.tmp, bytes,
++		bytes = extract_entropy(r->pull, tmp, bytes,
+ 					random_read_wakeup_thresh / 8, rsvd);
+-		mix_pool_bytes(r, u.tmp, bytes, NULL);
++		mix_pool_bytes(r, tmp, bytes, NULL);
+ 		credit_entropy_bits(r, bytes*8);
+ 	}
+-	kmemcheck_mark_initialized(&u.hwrand, sizeof(u.hwrand));
+-	for (i = 0; i < 4; i++)
+-		if (arch_get_random_long(&u.hwrand[i]))
+-			break;
+-	if (i)
+-		mix_pool_bytes(r, &u.hwrand, sizeof(u.hwrand), 0);
+ }
+ 
+ /*
+@@ -901,15 +893,19 @@ static size_t account(struct entropy_store *r, size_t nbytes, int min,
+ static void extract_buf(struct entropy_store *r, __u8 *out)
+ {
+ 	int i;
+-	__u32 hash[5], workspace[SHA_WORKSPACE_WORDS];
++	union {
++		__u32 w[5];
++		unsigned long l[LONGS(EXTRACT_SIZE)];
++	} hash;
++	__u32 workspace[SHA_WORKSPACE_WORDS];
+ 	__u8 extract[64];
+ 	unsigned long flags;
+ 
+ 	/* Generate a hash across the pool, 16 words (512 bits) at a time */
+-	sha_init(hash);
++	sha_init(hash.w);
+ 	spin_lock_irqsave(&r->lock, flags);
+ 	for (i = 0; i < r->poolinfo->poolwords; i += 16)
+-		sha_transform(hash, (__u8 *)(r->pool + i), workspace);
++		sha_transform(hash.w, (__u8 *)(r->pool + i), workspace);
+ 
+ 	/*
+ 	 * We mix the hash back into the pool to prevent backtracking
+@@ -920,14 +916,14 @@ static void extract_buf(struct entropy_store *r, __u8 *out)
+ 	 * brute-forcing the feedback as hard as brute-forcing the
+ 	 * hash.
+ 	 */
+-	__mix_pool_bytes(r, hash, sizeof(hash), extract);
++	__mix_pool_bytes(r, hash.w, sizeof(hash.w), extract);
+ 	spin_unlock_irqrestore(&r->lock, flags);
+ 
+ 	/*
+ 	 * To avoid duplicates, we atomically extract a portion of the
+ 	 * pool while mixing, and hash one final time.
+ 	 */
+-	sha_transform(hash, extract, workspace);
++	sha_transform(hash.w, extract, workspace);
+ 	memset(extract, 0, sizeof(extract));
+ 	memset(workspace, 0, sizeof(workspace));
+ 
+@@ -936,11 +932,23 @@ static void extract_buf(struct entropy_store *r, __u8 *out)
+ 	 * pattern, we fold it in half. Thus, we always feed back
+ 	 * twice as much data as we output.
+ 	 */
+-	hash[0] ^= hash[3];
+-	hash[1] ^= hash[4];
+-	hash[2] ^= rol32(hash[2], 16);
+-	memcpy(out, hash, EXTRACT_SIZE);
+-	memset(hash, 0, sizeof(hash));
++	hash.w[0] ^= hash.w[3];
++	hash.w[1] ^= hash.w[4];
++	hash.w[2] ^= rol32(hash.w[2], 16);
++
++	/*
++	 * If we have a architectural hardware random number
++	 * generator, mix that in, too.
++	 */
++	for (i = 0; i < LONGS(EXTRACT_SIZE); i++) {
++		unsigned long v;
++		if (!arch_get_random_long(&v))
++			break;
++		hash.l[i] ^= v;
++	}
++
++	memcpy(out, &hash, EXTRACT_SIZE);
++	memset(&hash, 0, sizeof(hash));
+ }
+ 
+ static ssize_t extract_entropy(struct entropy_store *r, void *buf,
+-- 
+1.7.11.2
+

@@ -1,0 +1,183 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton@redhat.com>
+Newsgroups: gmane.linux.file-systems,gmane.linux.redhat.security.audit,gmane.linux.kernel
+Subject: [PATCH v5 8/9] audit: optimize audit_compare_dname_path
+Date: Thu, 26 Jul 2012 07:21:12 -0400
+Lines: 122
+Approved: news@gmane.org
+Message-ID: <1343301673-10642-9-git-send-email-jlayton@redhat.com>
+References: <1343301673-10642-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343301763 9369 80.91.229.3 (26 Jul 2012 11:22:43 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 11:22:43 +0000 (UTC)
+Cc: linux-audit@redhat.com, linux-fsdevel@vger.kernel.org,
+	linux-kernel@vger.kernel.org
+To: eparis@redhat.com, viro@zeniv.linux.org.uk
+Original-X-From: linux-fsdevel-owner@vger.kernel.org Thu Jul 26 13:22:42 2012
+Return-path: <linux-fsdevel-owner@vger.kernel.org>
+Envelope-to: lnx-linux-fsdevel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-fsdevel-owner@vger.kernel.org>)
+	id 1SuM9R-0001Rj-QB
+	for lnx-linux-fsdevel@plane.gmane.org; Thu, 26 Jul 2012 13:22:42 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752362Ab2GZLWY (ORCPT <rfc822;lnx-linux-fsdevel@m.gmane.org>);
+	Thu, 26 Jul 2012 07:22:24 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:56132 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752607Ab2GZLVa (ORCPT
+	<rfc822;linux-fsdevel@vger.kernel.org>);
+	Thu, 26 Jul 2012 07:21:30 -0400
+Original-Received: by mail-gh0-f174.google.com with SMTP id r11so1816650ghr.19
+        for <linux-fsdevel@vger.kernel.org>; Thu, 26 Jul 2012 04:21:30 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:x-gm-message-state;
+        bh=zacPbCqGLAIiDivkLxY4SqwMC4VURuI0Attv+d6aQ0g=;
+        b=GftCxzB7m+ivfNff8T+it0RGvF4YsfGH6e0odamY5gnYv+SMiGbysknK8F5vEKGohk
+         oxGBvY8EvRxCK3ls7kHqB7p4veed8hmH3sChGqFag3qGKPllCkOHWTmtU2NAphd5Lgjn
+         6kUc4uIDPc42VQXkmI2lNrcE4vd50eyJfUGsks/BO0RIY5TrDqbL/1M5qacT/XHMqoYa
+         wM60hmmW2kULlf9iZGF73GGCNGAF4BkCQ5jbvtbMxaubWdb9vV7zm/pmK1AyW/qXo0Aa
+         ts6THKTWOs1Tt1ZhGAmEO33rPHCznDo67Qv67Leos9wLWypZwW4d1evMZTlyO7Gx9+E1
+         YFCw==
+Original-Received: by 10.101.175.12 with SMTP id c12mr8373568anp.77.1343301690356;
+        Thu, 26 Jul 2012 04:21:30 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-076-182-054-194.nc.res.rr.com. [76.182.54.194])
+        by mx.google.com with ESMTPS id e24sm41620099yhh.4.2012.07.26.04.21.29
+        (version=SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 04:21:29 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1343301673-10642-1-git-send-email-jlayton@redhat.com>
+X-Gm-Message-State: ALoCoQkHODU32asXWl7CCYOLny+q20KIdAsIAQ5SXABC33ykiV32Z+b5KP9Z3RZ9w7c7yQfUZFP9
+Original-Sender: linux-fsdevel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-fsdevel.vger.kernel.org>
+X-Mailing-List: linux-fsdevel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.file-systems:66238 gmane.linux.redhat.security.audit:4341 gmane.linux.kernel:1333564
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333564>
+
+In the cases where we already know the length of the parent, pass it as
+a parm so we don't need to recompute it. In the cases where we don't
+know the length, pass in AUDIT_NAME_FULL (-1) to indicate that it should
+be determined.
+
+Signed-off-by: Jeff Layton <jlayton@redhat.com>
+---
+ kernel/audit.h       |  5 ++++-
+ kernel/audit_watch.c |  3 ++-
+ kernel/auditfilter.c | 16 +++++++++++-----
+ kernel/auditsc.c     |  8 +++-----
+ 4 files changed, 20 insertions(+), 12 deletions(-)
+
+diff --git a/kernel/audit.h b/kernel/audit.h
+index ee31316..34af33c 100644
+--- a/kernel/audit.h
++++ b/kernel/audit.h
+@@ -74,10 +74,13 @@ static inline int audit_hash_ino(u32 ino)
+ 	return (ino & (AUDIT_INODE_BUCKETS-1));
+ }
+ 
++/* Indicates that audit should log the full pathname. */
++#define AUDIT_NAME_FULL -1
++
+ extern int audit_match_class(int class, unsigned syscall);
+ extern int audit_comparator(const u32 left, const u32 op, const u32 right);
+ extern int parent_len(const char *path);
+-extern int audit_compare_dname_path(const char *dname, const char *path);
++extern int audit_compare_dname_path(const char *dname, const char *path, int plen);
+ extern struct sk_buff *	    audit_make_reply(int pid, int seq, int type,
+ 					     int done, int multi,
+ 					     const void *payload, int size);
+diff --git a/kernel/audit_watch.c b/kernel/audit_watch.c
+index b6a873a..f8e9353 100644
+--- a/kernel/audit_watch.c
++++ b/kernel/audit_watch.c
+@@ -265,7 +265,8 @@ static void audit_update_watch(struct audit_parent *parent,
+ 	/* Run all of the watches on this parent looking for the one that
+ 	 * matches the given dname */
+ 	list_for_each_entry_safe(owatch, nextw, &parent->watches, wlist) {
+-		if (audit_compare_dname_path(dname, owatch->path))
++		if (audit_compare_dname_path(dname, owatch->path,
++					     AUDIT_NAME_FULL))
+ 			continue;
+ 
+ 		/* If the update involves invalidating rules, do the inode-based
+diff --git a/kernel/auditfilter.c b/kernel/auditfilter.c
+index f47ba18..1e0899d 100644
+--- a/kernel/auditfilter.c
++++ b/kernel/auditfilter.c
+@@ -1228,11 +1228,17 @@ int parent_len(const char *path)
+ 	return p - path;
+ }
+ 
+-/* Compare given dentry name with last component in given path,
+- * return of 0 indicates a match. */
+-int audit_compare_dname_path(const char *dname, const char *path)
++/**
++ * audit_compare_dname_path - compare given dentry name with last component in
++ * 			      given path. Return of 0 indicates a match.
++ * @dname:	dentry name that we're comparing
++ * @path:	full pathname that we're comparing
++ * @parentlen:	length of the parent if known. Passing in AUDIT_NAME_FULL
++ * 		here indicates that we must compute this value.
++ */
++int audit_compare_dname_path(const char *dname, const char *path, int parentlen)
+ {
+-	int dlen, pathlen, parentlen;
++	int dlen, pathlen;
+ 	const char *p;
+ 
+ 	dlen = strlen(dname);
+@@ -1240,7 +1246,7 @@ int audit_compare_dname_path(const char *dname, const char *path)
+ 	if (pathlen < dlen)
+ 		return 1;
+ 
+-	parentlen = parent_len(path);
++	parentlen = parentlen == AUDIT_NAME_FULL ? parent_len(path) : parentlen;
+ 	if (pathlen - parentlen != dlen)
+ 		return 1;
+ 
+diff --git a/kernel/auditsc.c b/kernel/auditsc.c
+index 34d7ab2..f4cdefe 100644
+--- a/kernel/auditsc.c
++++ b/kernel/auditsc.c
+@@ -81,9 +81,6 @@
+  * a name dynamically and also add those to the list anchored by names_list. */
+ #define AUDIT_NAMES	5
+ 
+-/* Indicates that audit should log the full pathname. */
+-#define AUDIT_NAME_FULL -1
+-
+ /* no execve audit message should be longer than this (userspace limits) */
+ #define MAX_EXECVE_AUDIT_LEN 7500
+ 
+@@ -2232,7 +2229,7 @@ void __audit_inode_child(const struct inode *parent,
+ 			continue;
+ 
+ 		if (n->ino == parent->i_ino &&
+-		    !audit_compare_dname_path(dname, n->name)) {
++		    !audit_compare_dname_path(dname, n->name, n->name_len)) {
+ 			found_parent = n->name;
+ 			goto add_names;
+ 		}
+@@ -2245,7 +2242,8 @@ void __audit_inode_child(const struct inode *parent,
+ 
+ 		/* strcmp() is the more likely scenario */
+ 		if (!strcmp(dname, n->name) ||
+-		     !audit_compare_dname_path(dname, n->name)) {
++		    !audit_compare_dname_path(dname, n->name,
++						AUDIT_NAME_FULL)) {
+ 			if (inode)
+ 				audit_copy_inode(n, dentry, inode);
+ 			else
+-- 
+1.7.11.2
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

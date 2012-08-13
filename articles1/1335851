@@ -1,0 +1,103 @@
+Path: news.gmane.org!not-for-mail
+From: chetan loke <loke.chetan@gmail.com>
+Newsgroups: gmane.linux.kernel.pci,gmane.linux.kernel,gmane.linux.network
+Subject: Re: [RFC v2 1/2] PCI-Express Non-Transparent Bridge Support
+Date: Tue, 31 Jul 2012 12:14:36 -0400
+Lines: 45
+Approved: news@gmane.org
+Message-ID: <CAAsGZS4NBM0_o1-RHEZGbYDmJkwTx_RrkYFm7a7-AZRpx0dYAQ@mail.gmail.com>
+References: <1343607994-32415-1-git-send-email-jon.mason@intel.com>
+	<1343607994-32415-2-git-send-email-jon.mason@intel.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+X-Trace: dough.gmane.org 1343751281 23330 80.91.229.3 (31 Jul 2012 16:14:41 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 16:14:41 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, netdev@vger.kernel.org,
+	linux-pci@vger.kernel.org, Dave Jiang <dave.jiang@intel.com>
+To: Jon Mason <jon.mason@intel.com>
+Original-X-From: linux-pci-owner@vger.kernel.org Tue Jul 31 18:14:41 2012
+Return-path: <linux-pci-owner@vger.kernel.org>
+Envelope-to: glp-linux-pci@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-pci-owner@vger.kernel.org>)
+	id 1SwF5k-0001AS-U8
+	for glp-linux-pci@plane.gmane.org; Tue, 31 Jul 2012 18:14:41 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754643Ab2GaQOi (ORCPT <rfc822;glp-linux-pci@m.gmane.org>);
+	Tue, 31 Jul 2012 12:14:38 -0400
+Original-Received: from mail-ey0-f174.google.com ([209.85.215.174]:35973 "EHLO
+	mail-ey0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753202Ab2GaQOi (ORCPT
+	<rfc822;linux-pci@vger.kernel.org>); Tue, 31 Jul 2012 12:14:38 -0400
+Original-Received: by eaac11 with SMTP id c11so210009eaa.19
+        for <multiple recipients>; Tue, 31 Jul 2012 09:14:36 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=mime-version:in-reply-to:references:date:message-id:subject:from:to
+         :cc:content-type;
+        bh=+EgrPYVZ9X45lLiBn7M4DGgcyetDwFWSXcKuwxDXmIk=;
+        b=P+TLadufc3SAH5YdcTCVIDQJv0DxkLpv8CCg9foI3zBGuc+CpM1lX+z+FW7KzthQX4
+         C7YHMNKBqr+JMmz307P4M8ZWzy8sMYd2kOM7/BIa1Pa9xnpADy0WTRbS7q5gy+toQEpk
+         KCi98JU9C7ozM4s0cffwfACLg2mybUrUoRdO+7kYtBdHzVWLCer54mNmd0BHS9KENvqn
+         wcANlgRMBQufrtBLPNJ4CNqR1jDjKGUo8nBsajpOVwaG0MAC7c4vWX2g5lxAIZJQKY+V
+         MFp7gX+dvzypH3timOL2GubKOJhqk6xyTz7I/VcUsKL3VX4doC4avXrlfKaBPdG8pSuh
+         LIbQ==
+Original-Received: by 10.14.214.197 with SMTP id c45mr17804296eep.37.1343751276571;
+ Tue, 31 Jul 2012 09:14:36 -0700 (PDT)
+Original-Received: by 10.14.127.199 with HTTP; Tue, 31 Jul 2012 09:14:36 -0700 (PDT)
+In-Reply-To: <1343607994-32415-2-git-send-email-jon.mason@intel.com>
+Original-Sender: linux-pci-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-pci.vger.kernel.org>
+X-Mailing-List: linux-pci@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel.pci:16728 gmane.linux.kernel:1335851 gmane.linux.network:238811
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335851>
+
+On Sun, Jul 29, 2012 at 8:26 PM, Jon Mason <jon.mason@intel.com> wrote:
+
+<snip>
+
+> +static void ntb_tx_copy_task(struct ntb_transport_qp *qp,
+> +                            struct ntb_queue_entry *entry,
+> +                            void *offset)
+> +{
+> +       struct ntb_payload_header *hdr = offset;
+> +
+> +       offset += sizeof(struct ntb_payload_header);
+> +       memcpy_toio(offset, entry->buf, entry->len);
+> +
+> +       hdr->len = entry->len;
+> +       hdr->ver = qp->tx_pkts;
+> +
+> +       /* Ensure that the data is fully copied out before setting the flag */
+> +       wmb();
+> +       hdr->flags = entry->flags | DESC_DONE_FLAG;
+> +
+> +       ntb_ring_sdb(qp->ndev, qp->qp_num);
+> +
+> +       /* The entry length can only be zero if the packet is intended to be a
+> +        * "link down" or similar.  Since no payload is being sent in these
+> +        * cases, there is nothing to add to the completion queue.
+> +        */
+> +       if (entry->len > 0) {
+> +               qp->tx_bytes += entry->len;
+> +
+> +               /* Add fully transmitted data to completion queue */
+> +               ntb_list_add_tail(&qp->ntb_tx_comp_q_lock, &entry->entry,
+> +                                 &qp->tx_comp_q);
+> +
+> +               if (qp->tx_handler)
+> +                       qp->tx_handler(qp->cb_data, qp);
+> +       } else
+> +               ntb_list_add_tail(&qp->ntb_tx_free_q_lock, &entry->entry,
+> +                                 &qp->tx_free_q);
+> +}
+
+I know you talked about a fixed array. But it's not here yet. So at
+all the call-sites, for [r/t]x_free_q , add the 'entry' to the head -
+change to ntb_list_add_head here and else where.
+
+Chetan Loke

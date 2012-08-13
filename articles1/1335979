@@ -1,0 +1,498 @@
+Path: news.gmane.org!not-for-mail
+From: Peter Zijlstra <a.p.zijlstra@chello.nl>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 16/19] sched, numa: NUMA home-node selection code
+Date: Tue, 31 Jul 2012 21:12:20 +0200
+Lines: 447
+Approved: news@gmane.org
+Message-ID: <20120731192809.308468547@chello.nl>
+References: <20120731191204.540691987@chello.nl>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343764037 2872 80.91.229.3 (31 Jul 2012 19:47:17 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 19:47:17 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>
+To: mingo@kernel.org, riel@redhat.com, oleg@redhat.com, pjt@google.com,
+	akpm@linux-foundation.org, torvalds@linux-foundation.org,
+	tglx@linutronix.de, Lee.Schermerhorn@hp.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 21:47:14 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwIPL-0002V6-75
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 21:47:07 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756307Ab2GaTq5 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 15:46:57 -0400
+Original-Received: from merlin.infradead.org ([205.233.59.134]:37347 "EHLO
+	merlin.infradead.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754001Ab2GaTon (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 15:44:43 -0400
+Original-Received: from canuck.infradead.org ([2001:4978:20e::1])
+	by merlin.infradead.org with esmtps (Exim 4.76 #1 (Red Hat Linux))
+	id 1SwIMs-0006O5-Jw; Tue, 31 Jul 2012 19:44:34 +0000
+Original-Received: from dhcp-089-099-019-018.chello.nl ([89.99.19.18] helo=twins)
+	by canuck.infradead.org with esmtpsa (Exim 4.76 #1 (Red Hat Linux))
+	id 1SwIMs-0005Si-0x; Tue, 31 Jul 2012 19:44:34 +0000
+Original-Received: by twins (Postfix, from userid 0)
+	id 9BEAF8483D90; Tue, 31 Jul 2012 21:44:28 +0200 (CEST)
+User-Agent: quilt/0.48-1
+Content-Disposition: inline; filename=numa-1.patch
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335979
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335979>
+
+Now that we have infrastructure in place to migrate pages back to
+their home-node, and migrate memory towards the home-node, we need to
+set the home-node.
+
+Instead of creating a seconday control loop, fully rely on the
+existing load-balancer to do the right thing. The home-node selection
+logic will simply pick the node the task has been found to run on
+for two consequtive samples (see task_tick_numa).
+
+This means NUMA placement is directly related to regular placement.
+The home-node logic in the load-balancer tries to keep a task on the
+home-node wheras the fairness and work-conserving constraints will try
+and move it away.
+
+The balance between these two 'forces' is what will result in the NUMA
+placement.
+
+Cc: Rik van Riel <riel@redhat.com>
+Cc: Paul Turner <pjt@google.com>
+Signed-off-by: Peter Zijlstra <a.p.zijlstra@chello.nl>
+---
+ include/linux/init_task.h |    3 
+ include/linux/mm_types.h  |    3 
+ include/linux/sched.h     |   19 +++--
+ kernel/sched/core.c       |   18 ++++-
+ kernel/sched/fair.c       |  163 ++++++++++++++++++++++++++++++++++++++++++++--
+ kernel/sched/features.h   |    1 
+ kernel/sched/sched.h      |   33 ++++++---
+ kernel/sysctl.c           |   13 +++
+ 8 files changed, 227 insertions(+), 26 deletions(-)
+--- a/include/linux/init_task.h
++++ b/include/linux/init_task.h
+@@ -145,7 +145,8 @@ extern struct task_group root_task_group
+ 
+ #ifdef CONFIG_NUMA
+ # define INIT_TASK_NUMA(tsk)						\
+-	.node = -1,
++	.node = -1,							\
++	.node_last = -1,
+ #else
+ # define INIT_TASK_NUMA(tsk)
+ #endif
+--- a/include/linux/mm_types.h
++++ b/include/linux/mm_types.h
+@@ -388,6 +388,9 @@ struct mm_struct {
+ #ifdef CONFIG_CPUMASK_OFFSTACK
+ 	struct cpumask cpumask_allocation;
+ #endif
++#ifdef CONFIG_NUMA
++	unsigned long numa_next_scan;
++#endif
+ 	struct uprobes_state uprobes_state;
+ };
+ 
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -62,6 +62,7 @@ struct sched_param {
+ #include <linux/errno.h>
+ #include <linux/nodemask.h>
+ #include <linux/mm_types.h>
++#include <linux/task_work.h>
+ 
+ #include <asm/page.h>
+ #include <asm/ptrace.h>
+@@ -1519,8 +1520,14 @@ struct task_struct {
+ 	struct mempolicy *mempolicy;	/* Protected by alloc_lock */
+ 	short il_next;
+ 	short pref_node_fork;
+-	int node;
+-#endif
++
++	int node;			/* task home node   */
++	int node_last;			/* home node filter */
++#ifdef CONFIG_SMP
++	u64 node_stamp;			/* migration stamp  */
++	unsigned long numa_contrib;
++#endif /* CONFIG_SMP  */
++#endif /* CONFIG_NUMA */
+ 	struct rcu_head rcu;
+ 
+ 	/*
+@@ -2029,22 +2036,22 @@ extern unsigned int sysctl_sched_nr_migr
+ extern unsigned int sysctl_sched_time_avg;
+ extern unsigned int sysctl_timer_migration;
+ extern unsigned int sysctl_sched_shares_window;
++extern unsigned int sysctl_sched_numa_task_period;
+ 
+ int sched_proc_update_handler(struct ctl_table *table, int write,
+ 		void __user *buffer, size_t *length,
+ 		loff_t *ppos);
+-#endif
+-#ifdef CONFIG_SCHED_DEBUG
++
+ static inline unsigned int get_sysctl_timer_migration(void)
+ {
+ 	return sysctl_timer_migration;
+ }
+-#else
++#else /* CONFIG_SCHED_DEBUG */
+ static inline unsigned int get_sysctl_timer_migration(void)
+ {
+ 	return 1;
+ }
+-#endif
++#endif /* CONFIG_SCHED_DEBUG */
+ extern unsigned int sysctl_sched_rt_period;
+ extern int sysctl_sched_rt_runtime;
+ 
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -1722,6 +1722,17 @@ static void __sched_fork(struct task_str
+ #ifdef CONFIG_PREEMPT_NOTIFIERS
+ 	INIT_HLIST_HEAD(&p->preempt_notifiers);
+ #endif
++
++#ifdef CONFIG_NUMA
++	if (p->mm && atomic_read(&p->mm->mm_users) == 1)
++		p->mm->numa_next_scan = jiffies;
++
++	p->node = -1;
++	p->node_last = -1;
++#ifdef CONFIG_SMP
++	p->node_stamp = 0ULL;
++#endif /* CONFIG_SMP */
++#endif /* CONFIG_NUMA */
+ }
+ 
+ /*
+@@ -6558,9 +6569,9 @@ static struct sched_domain_topology_leve
+  * Requeues a task ensuring its on the right load-balance list so
+  * that it might get migrated to its new home.
+  *
+- * Note that we cannot actively migrate ourselves since our callers
+- * can be from atomic context. We rely on the regular load-balance
+- * mechanisms to move us around -- its all preference anyway.
++ * Since home-node is pure preference there's no hard migrate to force
++ * us anywhere, this also allows us to call this from atomic context if
++ * required.
+  */
+ void sched_setnode(struct task_struct *p, int node)
+ {
+@@ -6578,6 +6589,7 @@ void sched_setnode(struct task_struct *p
+ 		p->sched_class->put_prev_task(rq, p);
+ 
+ 	p->node = node;
++	p->node_last = node;
+ 
+ 	if (running)
+ 		p->sched_class->set_curr_task(rq);
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -27,6 +27,7 @@
+ #include <linux/profile.h>
+ #include <linux/interrupt.h>
+ #include <linux/random.h>
++#include <linux/mempolicy.h>
+ 
+ #include <trace/events/sched.h>
+ 
+@@ -774,6 +775,139 @@ update_stats_curr_start(struct cfs_rq *c
+ }
+ 
+ /**************************************************
++ * Scheduling class numa methods.
++ *
++ * The purpose of the NUMA bits are to maintain compute (task) and data
++ * (memory) locality. We try and achieve this by making tasks stick to
++ * a particular node (their home node) but if fairness mandates they run
++ * elsewhere for long enough, we let the memory follow them.
++ *
++ * Tasks start out with their home-node unset (-1) this effectively means
++ * they act !NUMA until we've established the task is busy enough to bother
++ * with placement.
++ */
++
++static unsigned long task_h_load(struct task_struct *p);
++
++#if defined(CONFIG_SMP) && defined(CONFIG_NUMA)
++static void account_offnode_enqueue(struct rq *rq, struct task_struct *p)
++{
++	p->numa_contrib = task_h_load(p);
++	rq->offnode_weight += p->numa_contrib;
++	rq->offnode_running++;
++}
++static void account_offnode_dequeue(struct rq *rq, struct task_struct *p)
++{
++	rq->offnode_weight -= p->numa_contrib;
++	rq->offnode_running--;
++}
++
++/*
++ * numa task sample period in ms
++ */
++unsigned int sysctl_sched_numa_task_period = 2500;
++
++/*
++ * The expensive part of numa migration is done from task_work context.
++ */
++void task_numa_work(struct callback_head *work)
++{
++	unsigned long migrate, next_scan, now = jiffies;
++	struct task_struct *t, *p = current;
++	int node = p->node_last;
++
++	WARN_ON_ONCE(p != container_of(work, struct task_struct, rcu));
++
++	/*
++	 * Who cares about NUMA placement when they're dying.
++	 */
++	if (p->flags & PF_EXITING)
++		return;
++
++	/*
++	 * Enforce maximal migration frequency..
++	 */
++	migrate = p->mm->numa_next_scan;
++	if (time_before(now, migrate))
++		return;
++
++	next_scan = now + 2*msecs_to_jiffies(sysctl_sched_numa_task_period);
++	if (cmpxchg(&p->mm->numa_next_scan, migrate, next_scan) != migrate)
++		return;
++
++	rcu_read_lock();
++	t = p;
++	do {
++		sched_setnode(t, node);
++	} while ((t = next_thread(p)) != p);
++	rcu_read_unlock();
++
++	lazy_migrate_process(p->mm);
++}
++
++/*
++ * Sample task location from hardirq context (tick), this has minimal bias with
++ * obvious exceptions of frequency interference and tick avoidance techniques.
++ * If this were to become a problem we could move this sampling into the
++ * sleep/wakeup path -- but we'd prefer to avoid that for obvious reasons.
++ */
++void task_tick_numa(struct rq *rq, struct task_struct *curr)
++{
++	u64 period, now;
++	int node;
++
++	/*
++	 * We don't care about NUMA placement if we don't have memory.
++	 */
++	if (!curr->mm)
++		return;
++
++	/*
++	 * Sample our node location every @sysctl_sched_numa_task_period
++	 * runtime ms. We use a two stage selection in order to filter
++	 * unlikely locations.
++	 *
++	 * If P(n) is the probability we're on node 'n', then the probability
++	 * we sample the same node twice is P(n)^2. This quadric squishes small
++	 * values and makes it more likely we end up on nodes where we have
++	 * significant presence.
++	 *
++	 * Using runtime rather than walltime has the dual advantage that
++	 * we (mostly) drive the selection from busy threads and that the
++	 * task needs to have done some actual work before we bother with
++	 * NUMA placement.
++	 */
++	now = curr->se.sum_exec_runtime;
++	period = (u64)sysctl_sched_numa_task_period * NSEC_PER_MSEC;
++
++	if (now - curr->node_stamp > period) {
++		curr->node_stamp = now;
++		node = numa_node_id();
++
++		if (curr->node_last == node && curr->node != node) {
++			/*
++			 * We can re-use curr->rcu because we checked curr->mm
++			 * != NULL so release_task()->call_rcu() was not called
++			 * yet and exit_task_work() is called before
++			 * exit_notify().
++			 */
++			init_task_work(&curr->rcu, task_numa_work);
++			task_work_add(curr, &curr->rcu, true);
++		}
++		curr->node_last = node;
++	}
++}
++#else
++static void account_offnode_enqueue(struct rq *rq, struct task_struct *p)
++{
++}
++
++static void account_offnode_dequeue(struct rq *rq, struct task_struct *p)
++{
++}
++#endif /* SMP && NUMA */
++
++/**************************************************
+  * Scheduling class queueing methods:
+  */
+ 
+@@ -784,9 +918,19 @@ account_entity_enqueue(struct cfs_rq *cf
+ 	if (!parent_entity(se))
+ 		update_load_add(&rq_of(cfs_rq)->load, se->load.weight);
+ #ifdef CONFIG_SMP
+-	if (entity_is_task(se))
+-		list_add(&se->group_node, &rq_of(cfs_rq)->cfs_tasks);
+-#endif
++	if (entity_is_task(se)) {
++		struct rq *rq = rq_of(cfs_rq);
++		struct task_struct *p = task_of(se);
++		struct list_head *tasks = &rq->cfs_tasks;
++
++		if (offnode_task(p)) {
++			account_offnode_enqueue(rq, p);
++			tasks = offnode_tasks(rq);
++		}
++
++		list_add(&se->group_node, tasks);
++	}
++#endif /* CONFIG_SMP */
+ 	cfs_rq->nr_running++;
+ }
+ 
+@@ -796,8 +940,14 @@ account_entity_dequeue(struct cfs_rq *cf
+ 	update_load_sub(&cfs_rq->load, se->load.weight);
+ 	if (!parent_entity(se))
+ 		update_load_sub(&rq_of(cfs_rq)->load, se->load.weight);
+-	if (entity_is_task(se))
++	if (entity_is_task(se)) {
++		struct task_struct *p = task_of(se);
++
+ 		list_del_init(&se->group_node);
++
++		if (offnode_task(p))
++			account_offnode_dequeue(rq_of(cfs_rq), p);
++	}
+ 	cfs_rq->nr_running--;
+ }
+ 
+@@ -3286,8 +3436,6 @@ static int move_one_task(struct lb_env *
+ 	return 0;
+ }
+ 
+-static unsigned long task_h_load(struct task_struct *p);
+-
+ static const unsigned int sched_nr_migrate_break = 32;
+ 
+ /*
+@@ -5173,6 +5321,9 @@ static void task_tick_fair(struct rq *rq
+ 		cfs_rq = cfs_rq_of(se);
+ 		entity_tick(cfs_rq, se, queued);
+ 	}
++
++	if (sched_feat_numa(NUMA))
++		task_tick_numa(rq, curr);
+ }
+ 
+ /*
+--- a/kernel/sched/features.h
++++ b/kernel/sched/features.h
+@@ -71,6 +71,7 @@ SCHED_FEAT(RT_RUNTIME_SHARE, true)
+ SCHED_FEAT(LB_MIN, false)
+ 
+ #ifdef CONFIG_NUMA
++SCHED_FEAT(NUMA,           true)
+ SCHED_FEAT(NUMA_HOT,       true)
+ SCHED_FEAT(NUMA_BIAS,      true)
+ SCHED_FEAT(NUMA_PULL,      true)
+--- a/kernel/sched/sched.h
++++ b/kernel/sched/sched.h
+@@ -471,15 +471,6 @@ struct rq {
+ #endif
+ };
+ 
+-static inline struct list_head *offnode_tasks(struct rq *rq)
+-{
+-#ifdef CONFIG_NUMA
+-	return &rq->offnode_tasks;
+-#else
+-	return NULL;
+-#endif
+-}
+-
+ static inline int cpu_of(struct rq *rq)
+ {
+ #ifdef CONFIG_SMP
+@@ -497,6 +488,30 @@ DECLARE_PER_CPU(struct rq, runqueues);
+ #define cpu_curr(cpu)		(cpu_rq(cpu)->curr)
+ #define raw_rq()		(&__raw_get_cpu_var(runqueues))
+ 
++#if defined(CONFIG_SMP) && defined(CONFIG_NUMA)
++static inline bool offnode_task(struct task_struct *t)
++{
++	return t->node != -1 && t->node != cpu_to_node(task_cpu(t));
++}
++
++static inline struct list_head *offnode_tasks(struct rq *rq)
++{
++	return &rq->offnode_tasks;
++}
++
++void sched_setnode(struct task_struct *p, int node);
++#else /* SMP && NUMA */
++static inline bool offnode_task(struct task_struct *t)
++{
++	return false;
++}
++
++static inline struct list_head *offnode_tasks(struct rq *rq)
++{
++	return NULL;
++}
++#endif /* SMP && NUMA */
++
+ #ifdef CONFIG_SMP
+ 
+ #define rcu_dereference_check_sched_domain(p) \
+--- a/kernel/sysctl.c
++++ b/kernel/sysctl.c
+@@ -291,6 +291,7 @@ static struct ctl_table kern_table[] = {
+ 		.extra1		= &min_wakeup_granularity_ns,
+ 		.extra2		= &max_wakeup_granularity_ns,
+ 	},
++#ifdef CONFIG_SMP
+ 	{
+ 		.procname	= "sched_tunable_scaling",
+ 		.data		= &sysctl_sched_tunable_scaling,
+@@ -337,7 +338,17 @@ static struct ctl_table kern_table[] = {
+ 		.extra1		= &zero,
+ 		.extra2		= &one,
+ 	},
+-#endif
++#ifdef CONFIG_NUMA
++	{
++		.procname	= "sched_numa_task_period_ms",
++		.data		= &sysctl_sched_numa_task_period,
++		.maxlen		= sizeof(unsigned int),
++		.mode		= 0644,
++		.proc_handler	= proc_dointvec,
++	},
++#endif /* CONFIG_NUMA */
++#endif /* CONFIG_SMP */
++#endif /* CONFIG_SCHED_DEBUG */
+ 	{
+ 		.procname	= "sched_rt_period_us",
+ 		.data		= &sysctl_sched_rt_period,
+
+

@@ -1,0 +1,118 @@
+Path: news.gmane.org!not-for-mail
+From: Heiko Carstens <heiko.carstens@de.ibm.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] samples/seccomp: fix endianness bug in LO_ARG define
+Date: Tue, 31 Jul 2012 16:15:36 +0200
+Lines: 59
+Approved: news@gmane.org
+Message-ID: <20120731141536.GA4262@osiris.boeblingen.de.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343744151 23819 80.91.229.3 (31 Jul 2012 14:15:51 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 14:15:51 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org
+To: Will Drewry <wad@chromium.org>, Kees Cook <keescook@chromium.org>,
+	James Morris <james.l.morris@oracle.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 16:15:51 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwDEl-00052t-1M
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 16:15:51 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754093Ab2GaOPn (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 10:15:43 -0400
+Original-Received: from e06smtp11.uk.ibm.com ([195.75.94.107]:36242 "EHLO
+	e06smtp11.uk.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753107Ab2GaOPm (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 10:15:42 -0400
+Original-Received: from /spool/local
+	by e06smtp11.uk.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <heiko.carstens@de.ibm.com>;
+	Tue, 31 Jul 2012 15:15:40 +0100
+Original-Received: from d06nrmr1507.portsmouth.uk.ibm.com (9.149.38.233)
+	by e06smtp11.uk.ibm.com (192.168.101.141) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Tue, 31 Jul 2012 15:15:37 +0100
+Original-Received: from d06av09.portsmouth.uk.ibm.com (d06av09.portsmouth.uk.ibm.com [9.149.37.250])
+	by d06nrmr1507.portsmouth.uk.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6VEFbOO1548538
+	for <linux-kernel@vger.kernel.org>; Tue, 31 Jul 2012 15:15:37 +0100
+Original-Received: from d06av09.portsmouth.uk.ibm.com (loopback [127.0.0.1])
+	by d06av09.portsmouth.uk.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6VEFaUo001730
+	for <linux-kernel@vger.kernel.org>; Tue, 31 Jul 2012 08:15:36 -0600
+Original-Received: from localhost (dyn-9-152-212-237.boeblingen.de.ibm.com [9.152.212.237])
+	by d06av09.portsmouth.uk.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6VEFa9F001719;
+	Tue, 31 Jul 2012 08:15:36 -0600
+Content-Disposition: inline
+User-Agent: Mutt/1.5.21 (2010-09-15)
+x-cbid: 12073114-5024-0000-0000-000003628841
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335759
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335759>
+
+From: Heiko Carstens <heiko.carstens@de.ibm.com>
+
+The LO_ARG define needs to consider endianness also for 32 bit builds.
+
+The "bpf_fancy" test case didn't work on s390 in 32 bit and compat mode
+because the LO_ARG define resulted in a BPF program which read the upper
+halve of the 64 bit system call arguments instead of the lower halves.
+
+Signed-off-by: Heiko Carstens <heiko.carstens@de.ibm.com>
+---
+ samples/seccomp/bpf-helper.h | 15 ++++++++++-----
+ 1 file changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/samples/seccomp/bpf-helper.h b/samples/seccomp/bpf-helper.h
+index 643279d..38ee70f 100644
+--- a/samples/seccomp/bpf-helper.h
++++ b/samples/seccomp/bpf-helper.h
+@@ -59,6 +59,16 @@ void seccomp_bpf_print(struct sock_filter *filter, size_t count);
+ #define FIND_LABEL(labels, label) seccomp_bpf_label((labels), #label)
+ 
+ #define EXPAND(...) __VA_ARGS__
++
++/* Ensure that we load the logically correct offset. */
++#if __BYTE_ORDER == __LITTLE_ENDIAN
++#define LO_ARG(idx) offsetof(struct seccomp_data, args[(idx)])
++#elif __BYTE_ORDER == __BIG_ENDIAN
++#define LO_ARG(idx) offsetof(struct seccomp_data, args[(idx)]) + sizeof(__u32)
++#else
++#error "Unknown endianness"
++#endif
++
+ /* Map all width-sensitive operations */
+ #if __BITS_PER_LONG == 32
+ 
+@@ -70,21 +80,16 @@ void seccomp_bpf_print(struct sock_filter *filter, size_t count);
+ #define JLE(x, jt) JLE32(x, EXPAND(jt))
+ #define JA(x, jt) JA32(x, EXPAND(jt))
+ #define ARG(i) ARG_32(i)
+-#define LO_ARG(idx) offsetof(struct seccomp_data, args[(idx)])
+ 
+ #elif __BITS_PER_LONG == 64
+ 
+ /* Ensure that we load the logically correct offset. */
+ #if __BYTE_ORDER == __LITTLE_ENDIAN
+ #define ENDIAN(_lo, _hi) _lo, _hi
+-#define LO_ARG(idx) offsetof(struct seccomp_data, args[(idx)])
+ #define HI_ARG(idx) offsetof(struct seccomp_data, args[(idx)]) + sizeof(__u32)
+ #elif __BYTE_ORDER == __BIG_ENDIAN
+ #define ENDIAN(_lo, _hi) _hi, _lo
+-#define LO_ARG(idx) offsetof(struct seccomp_data, args[(idx)]) + sizeof(__u32)
+ #define HI_ARG(idx) offsetof(struct seccomp_data, args[(idx)])
+-#else
+-#error "Unknown endianness"
+ #endif
+ 
+ union arg64 {
+-- 
+1.7.11.4
+

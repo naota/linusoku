@@ -1,0 +1,159 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 046/109] staging: zsmalloc: Finish conversion to a separate module
+Date: Tue,  7 Aug 2012 15:35:05 -0700
+Lines: 94
+Approved: news@gmane.org
+Message-ID: <20120807222047.141020981@linuxfoundation.org>
+References: <20120807222043.089735600@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344381105 32080 80.91.229.3 (7 Aug 2012 23:11:45 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 23:11:45 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Christian Ohm <chr.ohm@gmx.net>,
+	Ben Hutchings <ben@decadent.org.uk>,
+	Jonathan Nieder <jrnieder@gmail.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 01:11:44 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sysw3-00009v-4s
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 01:11:35 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S933066Ab2HGXL0 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 19:11:26 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:47761 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030499Ab2HGWif (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:38:35 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so359593pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:38:35 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=iSP/fYRoJf8e/Mg+Ulv8oB9xtKiW5sa3iK7dXNyijM0=;
+        b=PMUVEwxwhiKUKovqi2j11ZC3Ddo1B03tKDo5XxtrTeotAz0HmJGHPzmQh2zuIuddL5
+         4QTfa5ry7cXOG6/0fQKXyCYLWga8u0KyB5IxrXnyMez6IQPlv9Vy+hlyR1qaCYdgXatC
+         7h91go/SQSny1emDaevyHOJJUJHDR3ussMK2s0t0Jw3K5XLvHzpTBSvXvJ7FyNfYXASj
+         +NQJRoTKNEuwYgcYmsgDAM7aVqyI4aGILi/44UWjFhqavEWgMbJqhGC+GYq4tnpexZPL
+         smxUOXVcnQYJKz0j8KdG40+/ZjbXhPjV27juzhPLjx0BySdTJdYdTKyw15Pr76FYHLBz
+         Qa8Q==
+Original-Received: by 10.68.129.164 with SMTP id nx4mr15779452pbb.28.1344379115244;
+        Tue, 07 Aug 2012 15:38:35 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id nu5sm11966890pbb.53.2012.08.07.15.38.33
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:38:34 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222043.089735600@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQn338Z/OaQ/AQ+ZfGW+zJVIZcZIOZLrVOPP+7gTvcx0tQ7v3Z1lc+oTtF8/MQz80HXIGDRk
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339618 gmane.linux.kernel.stable:29450
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339618>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.4-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Ben Hutchings <ben@decadent.org.uk>
+
+commit 069f101fa463351f528773d73b74e9b606b3f66a upstream.
+
+ZSMALLOC is tristate, but the code has no MODULE_LICENSE and since it
+depends on GPL-only symbols it cannot be loaded as a module.  This in
+turn breaks zram which now depends on it.  I assume it's meant to be
+Dual BSD/GPL like the other z-stuff.
+
+There is also no module_exit, which will make it impossible to unload.
+Add the appropriate module_init and module_exit declarations suggested
+by comments.
+
+Reported-by: Christian Ohm <chr.ohm@gmx.net>
+References: http://bugs.debian.org/677273
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+Reviewed-by: Jonathan Nieder <jrnieder@gmail.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ drivers/staging/zsmalloc/zsmalloc-main.c |   33 ++++++-------------------------
+ 1 file changed, 7 insertions(+), 26 deletions(-)
+
+--- a/drivers/staging/zsmalloc/zsmalloc-main.c
++++ b/drivers/staging/zsmalloc/zsmalloc-main.c
+@@ -426,12 +426,6 @@ static struct page *find_get_zspage(stru
+ }
+ 
+ 
+-/*
+- * If this becomes a separate module, register zs_init() with
+- * module_init(), zs_exit with module_exit(), and remove zs_initialized
+-*/
+-static int zs_initialized;
+-
+ static int zs_cpu_notifier(struct notifier_block *nb, unsigned long action,
+ 				void *pcpu)
+ {
+@@ -490,7 +484,7 @@ fail:
+ 
+ struct zs_pool *zs_create_pool(const char *name, gfp_t flags)
+ {
+-	int i, error, ovhd_size;
++	int i, ovhd_size;
+ 	struct zs_pool *pool;
+ 
+ 	if (!name)
+@@ -517,28 +511,9 @@ struct zs_pool *zs_create_pool(const cha
+ 
+ 	}
+ 
+-	/*
+-	 * If this becomes a separate module, register zs_init with
+-	 * module_init, and remove this block
+-	*/
+-	if (!zs_initialized) {
+-		error = zs_init();
+-		if (error)
+-			goto cleanup;
+-		zs_initialized = 1;
+-	}
+-
+ 	pool->flags = flags;
+ 	pool->name = name;
+ 
+-	error = 0; /* Success */
+-
+-cleanup:
+-	if (error) {
+-		zs_destroy_pool(pool);
+-		pool = NULL;
+-	}
+-
+ 	return pool;
+ }
+ EXPORT_SYMBOL_GPL(zs_create_pool);
+@@ -749,3 +724,9 @@ u64 zs_get_total_size_bytes(struct zs_po
+ 	return npages << PAGE_SHIFT;
+ }
+ EXPORT_SYMBOL_GPL(zs_get_total_size_bytes);
++
++module_init(zs_init);
++module_exit(zs_exit);
++
++MODULE_LICENSE("Dual BSD/GPL");
++MODULE_AUTHOR("Nitin Gupta <ngupta@vflare.org>");
+
+

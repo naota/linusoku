@@ -1,0 +1,160 @@
+Path: news.gmane.org!not-for-mail
+From: Borislav Petkov <bp@amd64.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH v0 11/12] x86, microcode, AMD: Add a small, per-family patches cache
+Date: Tue,  7 Aug 2012 19:44:20 +0200
+Lines: 105
+Approved: news@gmane.org
+Message-ID: <1344361461-10076-12-git-send-email-bp@amd64.org>
+References: <1344361461-10076-1-git-send-email-bp@amd64.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344361485 23048 80.91.229.3 (7 Aug 2012 17:44:45 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 17:44:45 +0000 (UTC)
+Cc: Andreas Herrmann <andreas.herrmann3@amd.com>,
+	Henrique de Moraes Holschuh <hmh@hmh.eng.br>,
+	LKML <linux-kernel@vger.kernel.org>,
+	Borislav Petkov <borislav.petkov@amd.com>
+To: X86-ML <x86@kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 19:44:43 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Synpi-0003jH-4m
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 19:44:42 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755716Ab2HGRob (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 13:44:31 -0400
+Original-Received: from mail.x86-64.org ([217.9.48.20]:35601 "EHLO mail.x86-64.org"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755651Ab2HGRo2 (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 13:44:28 -0400
+Original-Received: from localhost (localhost [127.0.0.1])
+	by mail.x86-64.org (Postfix) with ESMTP id 1A04B1405C7;
+	Tue,  7 Aug 2012 19:44:27 +0200 (CEST)
+X-Virus-Scanned: Nedap ESD1 at etzel.amd.com
+Original-Received: from mail.x86-64.org ([127.0.0.1])
+	by localhost (www.amd64.org [127.0.0.1]) (amavisd-new, port 10024)
+	with ESMTP id 31BM18DDEpBv; Tue,  7 Aug 2012 19:44:27 +0200 (CEST)
+Original-Received: from gwo.osrc.amd.com (gwo.osrc.amd.com [10.97.0.252])
+	by mail.x86-64.org (Postfix) with ESMTP;
+	Tue,  7 Aug 2012 19:44:25 +0200 (CEST)
+Original-Received: from aftab.osrc.amd.com (aftab.osrc.amd.com [165.204.15.109])
+	by gwo.osrc.amd.com (Postfix) with ESMTP id 7239449C6E0;
+	Tue,  7 Aug 2012 18:44:25 +0100 (BST)
+X-Mailer: git-send-email 1.7.11.rc1
+In-Reply-To: <1344361461-10076-1-git-send-email-bp@amd64.org>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339213
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339213>
+
+From: Borislav Petkov <borislav.petkov@amd.com>
+
+This is a trivial cache which collects all ucode patches for the current
+family of CPUs on the system. If a newer patch appears due to the
+container file being updated in userspace, we replace our cached version
+with the new one.
+
+Signed-off-by: Borislav Petkov <borislav.petkov@amd.com>
+---
+ arch/x86/kernel/microcode_amd.c | 67 ++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 66 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/kernel/microcode_amd.c b/arch/x86/kernel/microcode_amd.c
+index 03ed5af7053d..cacdc9a5ee49 100644
+--- a/arch/x86/kernel/microcode_amd.c
++++ b/arch/x86/kernel/microcode_amd.c
+@@ -78,12 +78,22 @@ static struct equiv_cpu_entry *equiv_cpu_table;
+ /* page-sized ucode patch buffer */
+ void *patch;
+ 
++struct ucode_patch {
++	struct list_head plist;
++	void *data;
++	u32 patch_id;
++	u16 equiv_cpu;
++};
++
++static LIST_HEAD(pcache);
++
+ static u16 find_equiv_id(unsigned int cpu)
+ {
+ 	struct ucode_cpu_info *uci = ucode_cpu_info + cpu;
+ 	int i = 0;
+ 
+-	BUG_ON(equiv_cpu_table == NULL);
++	if (!equiv_cpu_table)
++		return 0;
+ 
+ 	while (equiv_cpu_table[i].installed_cpu != 0) {
+ 		if (uci->cpu_sig.sig == equiv_cpu_table[i].installed_cpu)
+@@ -108,6 +118,61 @@ static u32 find_cpu_family_by_equiv_cpu(u16 equiv_cpu)
+ 	return 0;
+ }
+ 
++/*
++ * a small, trivial cache of per-family ucode patches
++ */
++static struct ucode_patch *cache_find_patch(u16 equiv_cpu)
++{
++	struct ucode_patch *p;
++
++	list_for_each_entry(p, &pcache, plist)
++		if (p->equiv_cpu == equiv_cpu)
++			return p;
++	return NULL;
++}
++
++static void update_cache(struct ucode_patch *new_patch)
++{
++	struct ucode_patch *p;
++
++	list_for_each_entry(p, &pcache, plist) {
++		if (p->equiv_cpu == new_patch->equiv_cpu) {
++			if (p->patch_id >= new_patch->patch_id)
++				/* we already have the latest patch */
++				return;
++
++			list_replace(&p->plist, &new_patch->plist);
++			kfree(p->data);
++			kfree(p);
++			return;
++		}
++	}
++	/* no patch found, add it */
++	list_add_tail(&new_patch->plist, &pcache);
++}
++
++static void free_cache(void)
++{
++	struct ucode_patch *p;
++
++	list_for_each_entry_reverse(p, &pcache, plist) {
++		__list_del(p->plist.prev, p->plist.next);
++		kfree(p->data);
++		kfree(p);
++	}
++}
++
++static struct ucode_patch *find_patch(unsigned int cpu)
++{
++	u16 equiv_id;
++
++	equiv_id = find_equiv_id(cpu);
++	if (!equiv_id)
++		return NULL;
++
++	return cache_find_patch(equiv_id);
++}
++
+ static int collect_cpu_info_amd(int cpu, struct cpu_signature *csig)
+ {
+ 	struct cpuinfo_x86 *c = &cpu_data(cpu);
+-- 
+1.7.11.rc1
+

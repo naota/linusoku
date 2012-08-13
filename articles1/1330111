@@ -1,0 +1,112 @@
+Path: news.gmane.org!not-for-mail
+From: H Hartley Sweeten <hartleys@visionengravers.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 74/90] staging: comedi: dyna_pci10xx: use dev->iobase
+Date: Wed, 18 Jul 2012 19:00:54 -0700
+Lines: 58
+Approved: news@gmane.org
+Message-ID: <201207181900.55048.hartleys@visionengravers.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342663277 29814 80.91.229.3 (19 Jul 2012 02:01:17 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 02:01:17 +0000 (UTC)
+Cc: <devel@driverdev.osuosl.org>, <abbotti@mev.co.uk>,
+	<gregkh@linuxfoundation.org>
+To: Linux Kernel <linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 04:01:16 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Srg3H-00028x-6Q
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 04:01:15 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755238Ab2GSCBH (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 18 Jul 2012 22:01:07 -0400
+Original-Received: from mail160.messagelabs.com ([216.82.253.99]:31930 "EHLO
+	mail160.messagelabs.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751012Ab2GSCBB (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 18 Jul 2012 22:01:01 -0400
+X-Env-Sender: hartleys@visionengravers.com
+X-Msg-Ref: server-15.tower-160.messagelabs.com!1342663260!10107397!1
+X-Originating-IP: [216.166.12.98]
+X-StarScan-Version: 6.5.10; banners=-,-,-
+X-VirusChecked: Checked
+Original-Received: (qmail 13138 invoked from network); 19 Jul 2012 02:01:00 -0000
+Original-Received: from out001.collaborationhost.net (HELO out001.collaborationhost.net) (216.166.12.98)
+  by server-15.tower-160.messagelabs.com with RC4-SHA encrypted SMTP; 19 Jul 2012 02:01:00 -0000
+Original-Received: from etch.local (10.2.3.210) by smtp.collaborationhost.net
+ (10.2.0.59) with Microsoft SMTP Server (TLS) id 8.3.213.0; Wed, 18 Jul 2012
+ 21:00:59 -0500
+User-Agent: KMail/1.9.9
+Content-Disposition: inline
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330111
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330111>
+
+Use dev->iobase to hold one of the pci base addresses used
+by the driver instead of carrying it in the private data.
+
+Signed-off-by: H Hartley Sweeten <hsweeten@visionengravers.com>
+Cc: Ian Abbott <abbotti@mev.co.uk>
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/staging/comedi/drivers/dyna_pci10xx.c | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/staging/comedi/drivers/dyna_pci10xx.c b/drivers/staging/comedi/drivers/dyna_pci10xx.c
+index 95ee422..e7086b1 100644
+--- a/drivers/staging/comedi/drivers/dyna_pci10xx.c
++++ b/drivers/staging/comedi/drivers/dyna_pci10xx.c
+@@ -104,7 +104,7 @@ struct dyna_pci10xx_private {
+ 	struct mutex mutex;
+ 
+ 	/* device base address registers */
+-	unsigned long BADR2, BADR3;
++	unsigned long BADR3;
+ };
+ 
+ #define thisboard ((const struct boardtype *)dev->board_ptr)
+@@ -132,11 +132,11 @@ static int dyna_pci10xx_insn_read_ai(struct comedi_device *dev,
+ 	for (n = 0; n < insn->n; n++) {
+ 		/* trigger conversion */
+ 		smp_mb();
+-		outw_p(0x0000 + range + chan, devpriv->BADR2 + 2);
++		outw_p(0x0000 + range + chan, dev->iobase + 2);
+ 		udelay(10);
+ 		/* read data */
+ 		for (counter = 0; counter < READ_TIMEOUT; counter++) {
+-			d = inw_p(devpriv->BADR2);
++			d = inw_p(dev->iobase);
+ 
+ 			/* check if read is successful if the EOC bit is set */
+ 			if (d & (1 << 15))
+@@ -172,7 +172,7 @@ static int dyna_pci10xx_insn_write_ao(struct comedi_device *dev,
+ 	for (n = 0; n < insn->n; n++) {
+ 		smp_mb();
+ 		/* trigger conversion and write data */
+-		outw_p(data[n], devpriv->BADR2);
++		outw_p(data[n], dev->iobase);
+ 		udelay(10);
+ 	}
+ 	mutex_unlock(&devpriv->mutex);
+@@ -288,7 +288,7 @@ static int dyna_pci10xx_attach(struct comedi_device *dev,
+ 
+ 	printk(KERN_INFO "comedi: dyna_pci10xx: device found!\n");
+ 
+-	devpriv->BADR2 = pci_resource_start(pcidev, 2);
++	dev->iobase = pci_resource_start(pcidev, 2);
+ 	devpriv->BADR3 = pci_resource_start(pcidev, 3);
+ 
+ 	ret = comedi_alloc_subdevices(dev, 4);
+-- 
+1.7.11
+

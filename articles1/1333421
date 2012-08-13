@@ -1,0 +1,111 @@
+Path: news.gmane.org!not-for-mail
+From: Jeremy Fitzhardinge <jeremy@goop.org>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] x86/mm: stop allocating pmd page if failed
+Date: Wed, 25 Jul 2012 22:39:56 -0700
+Lines: 58
+Approved: news@gmane.org
+Message-ID: <5010D82C.4050802@goop.org>
+References: <1343135751-8336-1-git-send-email-yliu.null@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-15
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343281646 19790 80.91.229.3 (26 Jul 2012 05:47:26 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 05:47:26 +0000 (UTC)
+Cc: x86@kernel.org, linux-kernel@vger.kernel.org,
+	Thomas Gleixner <tglx@linutronix.de>,
+	Ingo Molnar <mingo@elte.hu>, "H. Peter Anvin" <hpa@zytor.com>
+To: Yuanhan Liu <yliu.null@gmail.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 07:47:25 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuGuy-0008Kd-9r
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 07:47:24 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751481Ab2GZFqj (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 01:46:39 -0400
+Original-Received: from claw.goop.org ([74.207.240.146]:45853 "EHLO claw.goop.org"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751011Ab2GZFqi (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 01:46:38 -0400
+X-Greylist: delayed 400 seconds by postgrey-1.27 at vger.kernel.org; Thu, 26 Jul 2012 01:46:38 EDT
+Original-Received: from saboo.goop.org (c-67-188-9-0.hsd1.ca.comcast.net [67.188.9.0])
+	(Authenticated sender: smtp-saboo)
+	by claw.goop.org (Postfix) with ESMTPSA id 5C06099F5;
+	Wed, 25 Jul 2012 22:39:58 -0700 (PDT)
+Original-Received: from saboo.goop.org (localhost [IPv6:::1])
+	by saboo.goop.org (Postfix) with ESMTP id 8023D20D12;
+	Wed, 25 Jul 2012 22:39:56 -0700 (PDT)
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:14.0) Gecko/20120717 Thunderbird/14.0
+In-Reply-To: <1343135751-8336-1-git-send-email-yliu.null@gmail.com>
+X-Enigmail-Version: 1.4.3
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333421
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333421>
+
+On 07/24/2012 06:15 AM, Yuanhan Liu wrote:
+> The old code would call __get_free_page() even though previous
+> allocation fail met. This is not needed.
+
+Yeah, I guess, but its hardly worth changing.
+
+    J
+
+
+>
+> Signed-off-by: Yuanhan Liu <yliu.null@gmail.com>
+> Cc: Jeremy Fitzhardinge <jeremy@goop.org>
+> Cc: Thomas Gleixner <tglx@linutronix.de>
+> Cc: Ingo Molnar <mingo@elte.hu>
+> Cc: "H. Peter Anvin" <hpa@zytor.com>
+> ---
+>  arch/x86/mm/pgtable.c |   18 +++++++++---------
+>  1 files changed, 9 insertions(+), 9 deletions(-)
+>
+> diff --git a/arch/x86/mm/pgtable.c b/arch/x86/mm/pgtable.c
+> index 8573b83..6760348 100644
+> --- a/arch/x86/mm/pgtable.c
+> +++ b/arch/x86/mm/pgtable.c
+> @@ -181,24 +181,24 @@ static void free_pmds(pmd_t *pmds[])
+>  {
+>  	int i;
+>  
+> -	for(i = 0; i < PREALLOCATED_PMDS; i++)
+> -		if (pmds[i])
+> -			free_page((unsigned long)pmds[i]);
+> +	for(i = 0; i < PREALLOCATED_PMDS; i++) {
+> +		if (pmds[i] == NULL)
+> +			break;
+> +		free_page((unsigned long)pmds[i]);
+> +	}
+>  }
+>  
+>  static int preallocate_pmds(pmd_t *pmds[])
+>  {
+>  	int i;
+> -	bool failed = false;
+>  
+>  	for(i = 0; i < PREALLOCATED_PMDS; i++) {
+> -		pmd_t *pmd = (pmd_t *)__get_free_page(PGALLOC_GFP);
+> -		if (pmd == NULL)
+> -			failed = true;
+> -		pmds[i] = pmd;
+> +		pmds[i] = (pmd_t *)__get_free_page(PGALLOC_GFP);
+> +		if (pmds[i] == NULL)
+> +			break;
+>  	}
+>  
+> -	if (failed) {
+> +	if (i < PREALLOCATED_PMDS) {
+>  		free_pmds(pmds);
+>  		return -ENOMEM;
+>  	}
+

@@ -1,0 +1,118 @@
+Path: news.gmane.org!not-for-mail
+From: Prarit Bhargava <prarit@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH 2/2] time: Cleanup offs_real/wall_to_mono and offs_boot/total_sleep_time
+ updates
+Date: Thu, 19 Jul 2012 08:37:00 -0400
+Lines: 63
+Approved: news@gmane.org
+Message-ID: <5007FF6C.3060302@redhat.com>
+References: <1342660753-10382-1-git-send-email-john.stultz@linaro.org> <1342660753-10382-3-git-send-email-john.stultz@linaro.org>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342701450 10657 80.91.229.3 (19 Jul 2012 12:37:30 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 12:37:30 +0000 (UTC)
+Cc: lkml <linux-kernel@vger.kernel.org>,
+	Ingo Molnar <mingo@kernel.org>,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Richard Cochran <richardcochran@gmail.com>,
+	Thomas Gleixner <tglx@linutronix.de>
+To: John Stultz <john.stultz@linaro.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 14:37:29 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Srpyy-0007Te-Tu
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 14:37:29 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751945Ab2GSMhV (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 08:37:21 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:27051 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1750847Ab2GSMhS (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 08:37:18 -0400
+Original-Received: from int-mx11.intmail.prod.int.phx2.redhat.com (int-mx11.intmail.prod.int.phx2.redhat.com [10.5.11.24])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6JCb2VX026464
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Thu, 19 Jul 2012 08:37:02 -0400
+Original-Received: from prarit.bos.redhat.com (prarit.bos.redhat.com [10.16.184.34])
+	by int-mx11.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6JCb0Rh018688;
+	Thu, 19 Jul 2012 08:37:01 -0400
+User-Agent: Mozilla/5.0 (X11; U; Linux x86_64; en-US; rv:1.9.2.17) Gecko/20110419 Red Hat/3.1.10-1.el6_0 Thunderbird/3.1.10
+In-Reply-To: <1342660753-10382-3-git-send-email-john.stultz@linaro.org>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.24
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330317
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330317>
+
+
+
+On 07/18/2012 09:19 PM, John Stultz wrote:
+> For performance reasons, we maintain ktime_t based duplicates of
+> wall_to_monotonic (offs_real) and total_sleep_time (offs_boot).
+> 
+> Since large problems could occur (such as the resume regression
+> on 3.5-rc7, or the leapsecond hrtimer issue) if these value pairs
+> were to be inconsistently updated, this patch this cleans up how
+> we modify these value pairs to ensure we are always consistent.
+> 
+> As a side-effect this is also more efficient as we only
+> caulculate the duplicate values when they are changed,
+> rather then every update_wall_time call.
+> 
+> This also provides WARN_ONs to detect if future changes break
+> the invariants.
+> 
+> Cc: Ingo Molnar <mingo@kernel.org>
+> Cc: Peter Zijlstra <a.p.zijlstra@chello.nl>
+> Cc: Richard Cochran <richardcochran@gmail.com>
+> Cc: Prarit Bhargava <prarit@redhat.com>
+> Cc: Thomas Gleixner <tglx@linutronix.de>
+> Signed-off-by: John Stultz <john.stultz@linaro.org>
+
+<snip>
+
+> @@ -1024,11 +1041,18 @@ static inline void accumulate_nsecs_to_secs(struct timekeeper *tk)
+>  
+>  		/* Figure out if its a leap sec and apply if needed */
+>  		leap = second_overflow(tk->xtime_sec);
+> -		tk->xtime_sec += leap;
+> -		tk->wall_to_monotonic.tv_sec -= leap;
+> -		if (leap)
+> -			clock_was_set_delayed();
+> +		if (unlikely(leap)) {
+
+I'm likely a bit behind the times with this comment ...
+
+I thought someone did a comparison of the usage of unlikely() within the kernel
+and found that it didn't really add that much.  I'm not strongly opposed to it
+in anyway, it is just that I'm curious about unlikely()'s continued usage within
+the kernel; does it really add anything *other* than code readability at this point?
+
+> +			struct timespec ts;
+> +
+> +			tk->xtime_sec += leap;
+>  
+> +			ts.tv_sec = leap;
+> +			ts.tv_nsec = 0;
+
+I wonder if this is true or not when the kernel handles the leap second.  I
+suppose, in theory it is ... but it might be ahead by a bit.  I guess it is
+"close enough" ;)
+
+> +			tk_set_wall_to_mono(tk,
+> +				timespec_sub(tk->wall_to_monotonic, ts));
+> +
+> +			clock_was_set_delayed();
+> +		}
+>  	}
+>  }
+>  

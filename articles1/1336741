@@ -1,0 +1,436 @@
+Path: news.gmane.org!not-for-mail
+From: Anthony Olech <anthony.olech.opensource@diasemi.com>
+Newsgroups: gmane.linux.kernel
+Subject: [NEW DRIVER V1 7/7] DA9058 REGULATOR driver
+Date: Thu, 2 Aug 2012 09:48:58 +0100
+Lines: 391
+Approved: news@gmane.org
+Message-ID: <201208020849.q728nio0007834@latitude.olech.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343897401 8747 80.91.229.3 (2 Aug 2012 08:50:01 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 2 Aug 2012 08:50:01 +0000 (UTC)
+Cc: LKML <linux-kernel@vger.kernel.org>
+To: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 02 10:50:01 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Swr6V-0008A5-VA
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 02 Aug 2012 10:50:00 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753356Ab2HBItv (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 2 Aug 2012 04:49:51 -0400
+Original-Received: from mailrelay1.diasemi.com ([82.210.246.133]:57128 "EHLO
+	mailrelay1.diasemi.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752390Ab2HBItt (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 2 Aug 2012 04:49:49 -0400
+Original-Received: from latitude.olech.com (Not Verified[10.20.27.23]) by mailrelay1.diasemi.com with ESMTP Gateway 
+	id <B501a3f290000>; Thu, 02 Aug 2012 10:49:46 +0200
+Original-Received: from latitude.olech.com (localhost [127.0.0.1])
+	by latitude.olech.com (8.14.4/8.14.4/Debian-2ubuntu2) with ESMTP id q728niB1007835;
+	Thu, 2 Aug 2012 09:49:44 +0100
+Original-Received: (from root@localhost)
+	by latitude.olech.com (8.14.4/8.14.4/Submit) id q728nio0007834;
+	Thu, 2 Aug 2012 09:49:44 +0100
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336741
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336741>
+
+This is the REGULATOR component driver of the Dialog DA9058 PMIC.
+This driver is just one component of the whole DA9058 PMIC driver.
+It depends on the core DA9058 MFD driver.
+
+Signed-off-by: Tony Olech (at Home) <tony@olech.com>
+---
+ drivers/regulator/Kconfig            |   11 +
+ drivers/regulator/Makefile           |    1 +
+ drivers/regulator/da9058-regulator.c |  336 ++++++++++++++++++++++++++++++++++
+ 3 files changed, 348 insertions(+), 0 deletions(-)
+ create mode 100644 drivers/regulator/da9058-regulator.c
+
+diff --git a/drivers/regulator/Kconfig b/drivers/regulator/Kconfig
+index c86b886..1fc04f9 100644
+--- a/drivers/regulator/Kconfig
++++ b/drivers/regulator/Kconfig
+@@ -64,6 +64,17 @@ config REGULATOR_USERSPACE_CONSUMER
+ 
+           If unsure, say no.
+ 
++config REGULATOR_DA9058
++	tristate "Support regulators on Dialog Semiconductor DA9058 PMIC"
++	depends on MFD_DA9058
++	help
++	  Say y here to support the BUCKs and LDOs regulators found on
++	  Dialog Semiconductor DA9058 PMIC.
++
++	  This driver can also be built as a module. If so, the module
++	  will be called da9058-regulator.
++
++
+ config REGULATOR_GPIO
+ 	tristate "GPIO regulator support"
+ 	depends on GENERIC_GPIO
+diff --git a/drivers/regulator/Makefile b/drivers/regulator/Makefile
+index 977fd46..f4d0bff 100644
+--- a/drivers/regulator/Makefile
++++ b/drivers/regulator/Makefile
+@@ -21,6 +21,7 @@ obj-$(CONFIG_REGULATOR_DBX500_PRCMU) += dbx500-prcmu.o
+ obj-$(CONFIG_REGULATOR_DB8500_PRCMU) += db8500-prcmu.o
+ obj-$(CONFIG_REGULATOR_GPIO) += gpio-regulator.o
+ obj-$(CONFIG_REGULATOR_ISL6271A) += isl6271a-regulator.o
++obj-$(CONFIG_REGULATOR_DA9058) += da9058-regulator.o
+ obj-$(CONFIG_REGULATOR_LP3971) += lp3971.o
+ obj-$(CONFIG_REGULATOR_LP3972) += lp3972.o
+ obj-$(CONFIG_REGULATOR_MAX1586) += max1586.o
+diff --git a/drivers/regulator/da9058-regulator.c b/drivers/regulator/da9058-regulator.c
+new file mode 100644
+index 0000000..842b793
+--- /dev/null
++++ b/drivers/regulator/da9058-regulator.c
+@@ -0,0 +1,336 @@
++/*
++ *  Copyright (C) 2012 Dialog Semiconductor Ltd.
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; either version 2 of the License, or
++ *  (at your option) any later version.
++ *
++ */
++
++#include <linux/module.h>
++#include <linux/err.h>
++#include <linux/slab.h>
++#include <linux/regulator/machine.h>
++#include <linux/regulator/driver.h>
++#include <linux/mfd/core.h>
++
++#include <linux/mfd/da9058/version.h>
++#include <linux/mfd/da9058/registers.h>
++#include <linux/mfd/da9058/core.h>
++#include <linux/mfd/da9058/regulator.h>
++
++struct da9058_regulator {
++	struct da9058 *da9058;
++	int control_voltage_step;
++	int control_register;
++	int control_enable_mask;
++	int ramp_register;
++	int ramp_enable_mask;
++	int fixed_voltage;
++	struct platform_device *pdev;
++	struct regulator_dev *reg_dev;
++	struct regulator_desc desc;
++	struct regulator_init_data init;
++};
++
++static unsigned int da9058_regulator_val_to_mvolts(unsigned int val,
++						struct regulator_dev *rdev)
++{
++	struct da9058_regulator *regulator = rdev_get_drvdata(rdev);
++	struct regulation_constraints *constraints = rdev->constraints;
++	int min_mV = constraints->min_uV / 1000;
++
++	return (val * regulator->control_voltage_step) + min_mV;
++}
++
++static unsigned int da9058_regulator_mvolts_to_val(unsigned int mV,
++						struct regulator_dev *rdev)
++{
++	struct da9058_regulator *regulator = rdev_get_drvdata(rdev);
++	struct regulation_constraints *constraints = rdev->constraints;
++	int min_mV = constraints->min_uV / 1000;
++
++	return (mV - min_mV) / regulator->control_voltage_step;
++}
++
++static int da9058_regulator_is_enabled(struct regulator_dev *rdev)
++{
++	struct da9058_regulator *regulator = rdev_get_drvdata(rdev);
++	struct da9058 *da9058 = regulator->da9058;
++	int ret;
++	u8 val;
++
++	if (!regulator->control_register)
++		return -EINVAL;
++
++	ret = da9058_reg_read(da9058, regulator->control_register, &val);
++	if (ret)
++		return ret;
++
++	if (regulator->control_enable_mask&val)
++		return true;
++	else
++		return false;
++}
++
++static int da9058_regulator_set_voltage(struct regulator_dev *rdev,
++					int min_uV, int max_uV,
++					unsigned *selector)
++{
++	struct da9058_regulator *regulator = rdev_get_drvdata(rdev);
++	struct da9058 *da9058 = regulator->da9058;
++	struct regulation_constraints *constraints = rdev->constraints;
++	int mV_val, min_mV, max_mV, tmp, ret;
++	int tmp_max_mV, tmp_min_mV;
++	u8 val;
++
++	if (regulator->control_voltage_step == 0)
++		return -EINVAL;
++
++	max_mV = max_uV / 1000;
++	min_mV = min_uV / 1000;
++	tmp_max_mV = constraints->max_uV / 1000;
++	tmp_min_mV = constraints->min_uV / 1000;
++
++	if (0 == max_mV)
++		max_mV = tmp_max_mV;
++
++	if (min_mV > max_mV)
++		return -EINVAL;
++
++	if (min_mV < tmp_min_mV || min_mV > tmp_max_mV)
++		return -EINVAL;
++	if (max_mV < tmp_min_mV || max_mV > tmp_max_mV)
++		return -EINVAL;
++
++	/* before we do anything check the lock bit */
++	ret = da9058_reg_read(da9058, DA9058_SUPPLY_REG, &val);
++	if (ret)
++		return ret;
++
++	if (val & DA9058_SUPPLY_VLOCK)
++		da9058_clear_bits(da9058, DA9058_SUPPLY_REG,
++					DA9058_SUPPLY_VLOCK);
++
++	mV_val = da9058_regulator_mvolts_to_val(min_mV, rdev);
++
++	tmp = da9058_regulator_val_to_mvolts(mV_val, rdev);
++	if (!tmp || (tmp > max_mV))
++		return -EINVAL;
++
++	*selector = mV_val;
++
++	ret = da9058_reg_read(da9058, regulator->control_register, &val);
++	if (ret)
++		return ret;
++	val &= ~DA9058_MAX_VSEL;
++	ret = da9058_reg_write(da9058, regulator->control_register,
++				(val | mV_val));
++	if (ret)
++		return ret;
++	if (regulator->ramp_register && regulator->ramp_enable_mask)
++		ret =
++			da9058_set_bits(da9058, regulator->ramp_register,
++					regulator->ramp_enable_mask);
++
++	return ret;
++}
++
++static int da9058_regulator_get_voltage(struct regulator_dev *rdev)
++{
++	struct da9058_regulator *regulator = rdev_get_drvdata(rdev);
++	struct da9058 *da9058 = regulator->da9058;
++	int ret = 0;
++	u8 val;
++
++	if (regulator->control_voltage_step == 0) {
++		if (da9058_regulator_is_enabled(rdev))
++			return regulator->fixed_voltage;
++		else
++			return 0;
++	}
++
++	ret = da9058_reg_read(da9058, regulator->control_register, &val);
++	if (ret)
++		return ret;
++
++	val = val & DA9058_MAX_VSEL;
++	ret = da9058_regulator_val_to_mvolts(val, rdev) * 1000;
++	return ret;
++}
++
++static int da9058_regulator_enable(struct regulator_dev *rdev)
++{
++	struct da9058_regulator *regulator = rdev_get_drvdata(rdev);
++	struct da9058 *da9058 = regulator->da9058;
++
++	if (!regulator->control_register)
++		return -EINVAL;
++
++	return da9058_set_bits(da9058, regulator->control_register,
++				regulator->control_enable_mask);
++}
++
++static int da9058_regulator_disable(struct regulator_dev *rdev)
++{
++	struct da9058_regulator *regulator = rdev_get_drvdata(rdev);
++	struct da9058 *da9058 = regulator->da9058;
++
++	if (!regulator->control_register)
++		return -EINVAL;
++
++	return da9058_clear_bits(da9058, regulator->control_register,
++				regulator->control_enable_mask);
++}
++
++static unsigned int da9058_regulator_get_mode(struct regulator_dev *rdev)
++{
++	return REGULATOR_MODE_NORMAL;
++}
++
++static struct regulator_ops da9058_regulator_ops = {
++	.set_voltage = da9058_regulator_set_voltage,
++	.get_voltage = da9058_regulator_get_voltage,
++	.enable = da9058_regulator_enable,
++	.disable = da9058_regulator_disable,
++	.is_enabled = da9058_regulator_is_enabled,
++	.get_mode = da9058_regulator_get_mode,
++};
++
++static int da9058_regulator_probe(struct platform_device *pdev)
++{
++	struct da9058 *da9058 = dev_get_drvdata(pdev->dev.parent);
++	const struct mfd_cell *cell = mfd_get_cell(pdev);
++	struct da9058_regulator_pdata *regulator_pdata;
++	struct da9058_regulator *regulator;
++	struct regulator_dev *rdev;
++	struct regulator_config config = { };
++	int ret;
++
++	if (cell == NULL) {
++		ret = -ENODEV;
++		goto exit;
++	}
++
++	regulator_pdata = cell->platform_data;
++
++	if (regulator_pdata == NULL) {
++		ret = -EINVAL;
++		goto exit;
++	}
++
++	dev_info(&pdev->dev, "Starting REGULATOR %d = %s\n",
++					regulator_pdata->regulator_id,
++					regulator_pdata->regulator_name);
++
++	regulator = devm_kzalloc(&pdev->dev, sizeof(struct da9058_regulator),
++				GFP_KERNEL);
++	if (!regulator) {
++		ret = -ENOMEM;
++		goto exit;
++	}
++
++	platform_set_drvdata(pdev, regulator);
++
++	regulator->da9058 = da9058;
++	regulator->pdev = pdev;
++	regulator->control_voltage_step = regulator_pdata->control_voltage_step;
++	regulator->control_register = regulator_pdata->control_register;
++	regulator->control_enable_mask = regulator_pdata->control_enable_mask;
++	regulator->ramp_register = regulator_pdata->ramp_register;
++	regulator->ramp_enable_mask = regulator_pdata->ramp_enable_mask;
++	regulator->fixed_voltage = regulator_pdata->fixed_voltage;
++
++	regulator->desc.name = regulator_pdata->regulator_name;
++	regulator->desc.id = regulator_pdata->regulator_id;
++	regulator->desc.ops = &da9058_regulator_ops;
++	regulator->desc.type = REGULATOR_VOLTAGE;
++	regulator->desc.n_voltages = DA9058_MAX_VSEL + 1;
++	regulator->desc.owner = THIS_MODULE;
++
++	if (regulator_pdata->control_voltage_step > 0 &&
++					regulator_pdata->ramp_register == 0) {
++		regulator->desc.min_uV = regulator_pdata->min_uV;
++		regulator->desc.uV_step = regulator_pdata->control_voltage_step;
++		regulator->desc.vsel_reg = regulator_pdata->control_register;
++		regulator->desc.vsel_mask = DA9058_MAX_VSEL;
++		regulator->desc.enable_reg = regulator_pdata->control_register;
++		regulator->desc.enable_mask = regulator_pdata->ramp_enable_mask;
++	}
++
++	regulator->init.constraints.name = regulator_pdata->regulator_name;
++	regulator->init.constraints.min_uV = regulator_pdata->min_uV;
++	regulator->init.constraints.max_uV = regulator_pdata->max_uV;
++	regulator->init.constraints.valid_ops_mask =
++		regulator_pdata->valid_ops_mask;
++	regulator->init.constraints.valid_modes_mask =
++		regulator_pdata->valid_modes_mask;
++	regulator->init.constraints.boot_on = regulator_pdata->boot_on;
++	regulator->init.constraints.always_on = regulator_pdata->always_on;
++	regulator->init.num_consumer_supplies =
++					regulator_pdata->num_consumer_supplies;
++	regulator->init.consumer_supplies = regulator_pdata->consumer_supplies;
++
++	config.dev = pdev->dev.parent;
++	config.init_data = &regulator->init;
++	config.driver_data = regulator;
++	config.regmap = da9058->regmap;
++
++	rdev = regulator_register(&regulator->desc, &config);
++
++	if (IS_ERR(rdev)) {
++		dev_err(&pdev->dev, "failed to register %s\n",
++			regulator_pdata->regulator_name);
++		ret = PTR_ERR(rdev);
++		goto err;
++	}
++	regulator->reg_dev = rdev;
++	ret = 0;
++	goto exit;
++
++err:
++	platform_set_drvdata(pdev, NULL);
++exit:
++	return ret;
++}
++
++static int da9058_regulator_remove(struct platform_device *pdev)
++{
++	struct regulator_dev *rdev = platform_get_drvdata(pdev);
++
++	regulator_unregister(rdev);
++
++	return 0;
++}
++
++static struct platform_driver da9058_regulator_driver = {
++	.probe = da9058_regulator_probe,
++	.remove = da9058_regulator_remove,
++	.driver = {
++		.name = "da9058-regulator",
++		.owner = THIS_MODULE,
++	},
++};
++
++/*
++ *  This driver potentially needs to be started early
++ */
++static int __init da9058_regulator_init(void)
++{
++	return platform_driver_register(&da9058_regulator_driver);
++}
++
++subsys_initcall(da9058_regulator_init);
++
++static void __exit da9058_regulator_exit(void)
++{
++	platform_driver_unregister(&da9058_regulator_driver);
++}
++
++module_exit(da9058_regulator_exit);
++
++MODULE_DESCRIPTION("Dialog DA9058 PMIC voltage and current regulator");
++MODULE_AUTHOR("Anthony Olech <Anthony.Olech@diasemi.com>");
++MODULE_LICENSE("GPL v2");
++MODULE_ALIAS("platform:da9058-regulator");
+-- 
+end-of-patch for NEW DRIVER V1
+

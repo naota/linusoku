@@ -1,0 +1,120 @@
+Path: news.gmane.org!not-for-mail
+From: Russell King <rmk@arm.linux.org.uk>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH 0/5] mfd: replace IORESOURCE_IO by IORESOURCE_MEM
+Date: Tue, 7 Aug 2012 16:50:02 +0100
+Lines: 61
+Approved: news@gmane.org
+Message-ID: <20120807155001.GL24257@flint.arm.linux.org.uk>
+References: <1344184373-9670-1-git-send-email-haojian.zhuang@gmail.com> <1344327742.2698.15.camel@pasglop> <20120807082813.GB24257@flint.arm.linux.org.uk> <201208071128.27616.arnd@arndb.de> <20120807113521.GA16861@opensource.wolfsonmicro.com> <20120807114111.GF24257@flint.arm.linux.org.uk> <20120807164555.07c689e1@pyramind.ukuu.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344354642 27893 80.91.229.3 (7 Aug 2012 15:50:42 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 15:50:42 +0000 (UTC)
+Cc: Mark Brown <broonie@opensource.wolfsonmicro.com>,
+	Arnd Bergmann <arnd@arndb.de>,
+	Benjamin Herrenschmidt <benh@kernel.crashing.org>,
+	Haojian Zhuang <haojian.zhuang@gmail.com>,
+	sameo@linux.intel.com, rpurdie@rpsys.net, bryan.wu@canonical.com,
+	linux-kernel@vger.kernel.org
+To: Alan Cox <alan@lxorguk.ukuu.org.uk>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 17:50:41 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sym3M-0000Wb-EU
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 17:50:40 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754108Ab2HGPud (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 11:50:33 -0400
+Original-Received: from caramon.arm.linux.org.uk ([78.32.30.218]:56602 "EHLO
+	caramon.arm.linux.org.uk" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753262Ab2HGPuc (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 11:50:32 -0400
+DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; c=relaxed/relaxed; d=arm.linux.org.uk; s=caramon;
+	h=Sender:In-Reply-To:Content-Type:MIME-Version:References:Message-ID:Subject:Cc:To:From:Date; bh=pS56qxzLtiTomHpfokfvq4ccUlP+NJ+9hlRPjP53FXs=;
+	b=dksCSkiZBLttSshvAywMiGBpt9S311BvGVINlQHjkmCPojgNVnIR8GflqHRS2bruQPty7Yvx+nosJTur7TPqxJ5NcKgRwELITx250/PQUsg7zvYpyhmphPgWQwBpa/g6fJYMmLhFc9v4OjWgiKnnCbCw+EPRf2Hf4ri8lv7+SIw=;
+Original-Received: from flint.arm.linux.org.uk ([2002:4e20:1eda:1:201:2ff:fe14:8fad]:52612)
+	by caramon.arm.linux.org.uk with esmtpsa (TLSv1:AES256-SHA:256)
+	(Exim 4.76)
+	(envelope-from <rmk@arm.linux.org.uk>)
+	id 1Sym2o-0004lo-TC; Tue, 07 Aug 2012 16:50:07 +0100
+Original-Received: from rmk by flint.arm.linux.org.uk with local (Exim 4.69)
+	(envelope-from <rmk@flint.arm.linux.org.uk>)
+	id 1Sym2l-0002vu-Js; Tue, 07 Aug 2012 16:50:03 +0100
+Content-Disposition: inline
+In-Reply-To: <20120807164555.07c689e1@pyramind.ukuu.org.uk>
+User-Agent: Mutt/1.5.18 (2008-05-17)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339125
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339125>
+
+On Tue, Aug 07, 2012 at 04:45:55PM +0100, Alan Cox wrote:
+> >  #define IORESOURCE_TYPE_BITS	0x00001f00	/* Resource type */
+> >  #define IORESOURCE_IO		0x00000100
+> >  #define IORESOURCE_MEM		0x00000200
+> > +#define IORESOURCE_FOO		0x00000300
+> 
+> These are bit masks and checked as such in many places. This makes no
+> sense at all.
+
+Correct, but nowhere are they checked as masks in the platform
+device/driver code nor the MFD driver code.  Here's the relevant
+extracts from the platform driver code:
+
+struct resource *platform_get_resource(struct platform_device *dev,
+                                       unsigned int type, unsigned int num)
+{
+        int i;
+
+        for (i = 0; i < dev->num_resources; i++) {
+                struct resource *r = &dev->resource[i];
+
+                if (type == resource_type(r) && num-- == 0)
+                        return r;
+        }
+        return NULL;
+}
+
+...
+                        if (resource_type(r) == IORESOURCE_MEM)
+                                p = &iomem_resource;
+                        else if (resource_type(r) == IORESOURCE_IO)
+                                p = &ioport_resource;
+
+This is modern code, written using the accessors provided in ioport.h.
+
+resource_type() is defined as:
+
+static inline unsigned long resource_type(const struct resource *res)
+{
+        return res->flags & IORESOURCE_TYPE_BITS;
+}
+
+So, provided these don't leak outside of the platform and the affected
+MFD drivers, what the rest of the kernel does doesn't matter.
+
+> Moving to IO_RESOURCE_TYPE() being 0-31 values might be smart but its a
+> massive all kernel change.
+
+Only if we want to change the existing numbering _or_ propagate them
+outside of platform devices etc, and when that happens that's the time
+to start fixing stuff one subsystem at a time.
+
+Of course, if the above helper was being used, we'd already be set.
+
+I don't see that as a blocker to its local use, contained completely
+within the MFD and platform device subsystems.
+
+-- 
+Russell King
+ Linux kernel    2.6 ARM Linux   - http://www.arm.linux.org.uk/
+ maintainer of:

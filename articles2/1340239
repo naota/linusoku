@@ -1,0 +1,92 @@
+Path: news.gmane.org!not-for-mail
+From: Stephan Linz <linz@li-pro.net>
+Newsgroups: gmane.linux.kernel,gmane.linux.uclinux.microblaze
+Subject: [PATCH] microblaze: uartlite: avoid NULL pointer exception
+Date: Wed,  8 Aug 2012 20:44:53 +0200
+Lines: 48
+Approved: news@gmane.org
+Message-ID: <1344451493-30836-1-git-send-email-linz@li-pro.net>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344451505 4741 80.91.229.3 (8 Aug 2012 18:45:05 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 18:45:05 +0000 (UTC)
+Cc: microblaze-uclinux@itee.uq.edu.au, linux-kernel@vger.kernel.org,
+	Stephan Linz <linz@li-pro.net>
+To: monstr@monstr.eu
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 20:45:05 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzBFg-0008E0-Bz
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 20:45:04 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030335Ab2HHSo4 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 14:44:56 -0400
+Original-Received: from mo-p00-ob.rzone.de ([81.169.146.160]:18499 "EHLO
+	mo-p00-ob.rzone.de" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753374Ab2HHSoz (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 14:44:55 -0400
+X-RZG-AUTH: :IGUKb2CkcrLHmZv+FHarxbxlXmJO7WRQLa+vsyW+4RLunWeioNrxJjHjnSyY
+X-RZG-CLASS-ID: mo00
+Original-Received: from localhost.localdomain (i58828B70.versanet.de [88.130.139.112])
+	by smtp.strato.de (joses mo23) (RZmta 30.7 DYNA|AUTH)
+	with ESMTPA id I07582o78HIANz ; Wed, 8 Aug 2012 20:44:54 +0200 (CEST)
+X-Mailer: git-send-email 1.7.0.4
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340239 gmane.linux.uclinux.microblaze:11865
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340239>
+
+'prop' is an pointer and can only be unset (NULL) after
+prop = of_get_property() when it goes wrong.
+
+Kernel oops in ulite_probe():
+
+[    1.016645] uartlite 8fff0000.debug: failed to get alias id, errno -19
+[    1.024246] Oops: kernel access of bad area, sig: 11
+[    1.029733]  Registers dump: mode=27827D60
+[    1.034362]  r1=C79113E0, r2=00000000, r3=00000000, r4=00000000
+[    1.040918]  r5=C02E1E49, r6=C02D5918, r7=00000070, r8=000014C9
+[    1.047475]  r9=000014C8, r10=000014C9, r11=00000006, r12=FFFFFFFC
+[    1.054318]  r13=00000000, r14=C79114A0, r15=C0293BDC, r16=00000000
+[    1.061261]  r17=C0293BE4, r18=FFFFFFFE, r19=C788BDC8, r20=00000000
+[    1.068207]  r21=00000000, r22=FFFFFFED, r23=C788BDC0, r24=C033E840
+[    1.075145]  r25=C033EEA4, r26=00000000, r27=00000000, r28=00000000
+[    1.082086]  r29=00000000, r30=00000000, r31=C7824AC0, rPC=C0293BE4
+[    1.089024]  msr=000046A2, ear=00000000, esr=00000872, fsr=C7827E08
+[    1.096281] Kernel panic - not syncing: Attempted to kill init!
+
+Now it is:
+
+[    1.014924] uartlite 8fff0000.debug: failed to get alias id, errno -19
+[    1.022543] uartlite 8fff0000.debug: failed to get port-number
+
+Signed-off-by: Stephan Linz <linz@li-pro.net>
+---
+ drivers/tty/serial/uartlite.c |    5 ++---
+ 1 files changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/tty/serial/uartlite.c b/drivers/tty/serial/uartlite.c
+index a276282..3cba732 100644
+--- a/drivers/tty/serial/uartlite.c
++++ b/drivers/tty/serial/uartlite.c
+@@ -589,9 +589,8 @@ static int __devinit ulite_probe(struct platform_device *pdev)
+ 		dev_warn(&pdev->dev, "failed to get alias id, errno %d\n", id);
+ 		/* Fall back to old port-number property */
+ 		prop = of_get_property(pdev->dev.of_node, "port-number", NULL);
+-		if (prop < 0) {
+-			dev_warn(&pdev->dev,
+-				"failed to get port-number, errno %d\n", prop);
++		if (!prop) {
++			dev_warn(&pdev->dev, "failed to get port-number\n");
+ 			id = -1;
+ 		} else
+ 			id = be32_to_cpup(prop);
+-- 
+1.7.0.4
+

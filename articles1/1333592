@@ -1,0 +1,178 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton@redhat.com>
+Newsgroups: gmane.linux.file-systems,gmane.linux.nfs,gmane.linux.kernel
+Subject: [PATCH v4 12/17] vfs: make rmdir retry on ESTALE errors
+Date: Thu, 26 Jul 2012 07:55:15 -0400
+Lines: 116
+Approved: news@gmane.org
+Message-ID: <1343303720-11199-13-git-send-email-jlayton@redhat.com>
+References: <1343303720-11199-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343303782 26186 80.91.229.3 (26 Jul 2012 11:56:22 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 11:56:22 +0000 (UTC)
+Cc: linux-fsdevel@vger.kernel.org, linux-nfs@vger.kernel.org,
+	linux-kernel@vger.kernel.org, michael.brantley@deshaw.com,
+	hch@infradead.org, miklos@szeredi.hu, pstaubach@exagrid.com
+To: viro@ZenIV.linux.org.uk
+Original-X-From: linux-fsdevel-owner@vger.kernel.org Thu Jul 26 13:56:18 2012
+Return-path: <linux-fsdevel-owner@vger.kernel.org>
+Envelope-to: lnx-linux-fsdevel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-fsdevel-owner@vger.kernel.org>)
+	id 1SuMfv-0000MD-64
+	for lnx-linux-fsdevel@plane.gmane.org; Thu, 26 Jul 2012 13:56:15 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752559Ab2GZLzt (ORCPT <rfc822;lnx-linux-fsdevel@m.gmane.org>);
+	Thu, 26 Jul 2012 07:55:49 -0400
+Original-Received: from mail-yx0-f174.google.com ([209.85.213.174]:52185 "EHLO
+	mail-yx0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752542Ab2GZLzp (ORCPT
+	<rfc822;linux-fsdevel@vger.kernel.org>);
+	Thu, 26 Jul 2012 07:55:45 -0400
+Original-Received: by mail-yx0-f174.google.com with SMTP id l2so1826946yen.19
+        for <linux-fsdevel@vger.kernel.org>; Thu, 26 Jul 2012 04:55:44 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:x-gm-message-state;
+        bh=WuLi7IgX3WR8INjhudlh05olcLkh74Yh2CFpUMe6jus=;
+        b=DObvE+hmvplHJqxzxs/L4BVI1RlJ65KGPG6hjGTupOq+pPJwHSJMxWITBUu9nHVJ6F
+         l5I6GS6OKOaGI8q0UQPbgTEYxru3ErVvIFYAhWT8gI8zpI92KY2kkAiq8YQ9HOMNXv0p
+         sjFkpGnQ1JgFZ+EUDp43AQkhF63djAPV4JUiN97wq+uUiT81sRFyNpxoSdot+5XcBzEO
+         5K8wAlilWK4rO44YzkFJ/GXy4+J44a2noEvG/mmdKRC6bkqZ1JR5KKrz7/bHCNuy0pnA
+         ElIeHeOlCakgU0NMJ6sEYjV4HxGUk8ZVZW3QXNpLS7frR6VYY/87197R4CZFRG80b2vb
+         v0dg==
+Original-Received: by 10.236.193.105 with SMTP id j69mr27534075yhn.21.1343303744663;
+        Thu, 26 Jul 2012 04:55:44 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-076-182-054-194.nc.res.rr.com. [76.182.54.194])
+        by mx.google.com with ESMTPS id l12sm4436364ank.2.2012.07.26.04.55.43
+        (version=SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 04:55:44 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1343303720-11199-1-git-send-email-jlayton@redhat.com>
+X-Gm-Message-State: ALoCoQmZSF+HwBRh+Bvj4U0MaHwLCLRRb6mI4/GybCdFHgq8wr20eGgp/W8aMlPNDoj6JpS8emok
+Original-Sender: linux-fsdevel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-fsdevel.vger.kernel.org>
+X-Mailing-List: linux-fsdevel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.file-systems:66248 gmane.linux.nfs:51140 gmane.linux.kernel:1333592
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333592>
+
+Signed-off-by: Jeff Layton <jlayton@redhat.com>
+---
+ fs/namei.c | 82 +++++++++++++++++++++++++++++++++++---------------------------
+ 1 file changed, 46 insertions(+), 36 deletions(-)
+
+diff --git a/fs/namei.c b/fs/namei.c
+index defb210..09427f2 100644
+--- a/fs/namei.c
++++ b/fs/namei.c
+@@ -3152,52 +3152,62 @@ out:
+ static long do_rmdir(int dfd, const char __user *pathname)
+ {
+ 	int error = 0;
+-	char * name;
++	char *name;
+ 	struct dentry *dentry;
+ 	struct nameidata nd;
++	unsigned int try = 0;
++	unsigned int lookup_flags = LOOKUP_PARENT;
+ 
+-	error = user_path_parent(dfd, pathname, &nd, &name);
+-	if (error)
+-		return error;
++	name = getname(pathname);
++	if (IS_ERR(name))
++		return PTR_ERR(name);
+ 
+-	switch(nd.last_type) {
+-	case LAST_DOTDOT:
+-		error = -ENOTEMPTY;
+-		goto exit1;
+-	case LAST_DOT:
+-		error = -EINVAL;
+-		goto exit1;
+-	case LAST_ROOT:
+-		error = -EBUSY;
+-		goto exit1;
+-	}
++	do {
++		error = do_path_lookup(dfd, name, lookup_flags, &nd);
++		if (error)
++			break;
+ 
+-	nd.flags &= ~LOOKUP_PARENT;
++		switch (nd.last_type) {
++		case LAST_DOTDOT:
++			error = -ENOTEMPTY;
++			goto exit1;
++		case LAST_DOT:
++			error = -EINVAL;
++			goto exit1;
++		case LAST_ROOT:
++			error = -EBUSY;
++			goto exit1;
++		}
+ 
+-	mutex_lock_nested(&nd.path.dentry->d_inode->i_mutex, I_MUTEX_PARENT);
+-	dentry = lookup_hash(&nd);
+-	error = PTR_ERR(dentry);
+-	if (IS_ERR(dentry))
+-		goto exit2;
+-	if (!dentry->d_inode) {
+-		error = -ENOENT;
+-		goto exit3;
+-	}
+-	error = mnt_want_write(nd.path.mnt);
+-	if (error)
+-		goto exit3;
+-	error = security_path_rmdir(&nd.path, dentry);
+-	if (error)
+-		goto exit4;
+-	error = vfs_rmdir(nd.path.dentry->d_inode, dentry);
++		nd.flags &= ~LOOKUP_PARENT;
++
++		mutex_lock_nested(&nd.path.dentry->d_inode->i_mutex,
++							I_MUTEX_PARENT);
++		dentry = lookup_hash(&nd);
++		error = PTR_ERR(dentry);
++		if (IS_ERR(dentry))
++			goto exit2;
++		if (!dentry->d_inode) {
++			error = -ENOENT;
++			goto exit3;
++		}
++		error = mnt_want_write(nd.path.mnt);
++		if (error)
++			goto exit3;
++		error = security_path_rmdir(&nd.path, dentry);
++		if (error)
++			goto exit4;
++		error = vfs_rmdir(nd.path.dentry->d_inode, dentry);
+ exit4:
+-	mnt_drop_write(nd.path.mnt);
++		mnt_drop_write(nd.path.mnt);
+ exit3:
+-	dput(dentry);
++		dput(dentry);
+ exit2:
+-	mutex_unlock(&nd.path.dentry->d_inode->i_mutex);
++		mutex_unlock(&nd.path.dentry->d_inode->i_mutex);
+ exit1:
+-	path_put(&nd.path);
++		path_put(&nd.path);
++		lookup_flags |= LOOKUP_REVAL;
++	} while (retry_estale(error, try++));
+ 	putname(name);
+ 	return error;
+ }
+-- 
+1.7.11.2
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

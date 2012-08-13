@@ -1,0 +1,130 @@
+Path: news.gmane.org!not-for-mail
+From: Jiang Liu <liuj97@gmail.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.pci
+Subject: [RFC PATCH v1 18/22] PCI/acpiphp: use PCI bus lock to avoid race conditions
+Date: Wed,  8 Aug 2012 00:10:58 +0800
+Lines: 63
+Approved: news@gmane.org
+Message-ID: <1344355862-2726-19-git-send-email-jiang.liu@huawei.com>
+References: <1344355862-2726-1-git-send-email-jiang.liu@huawei.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344356499 11778 80.91.229.3 (7 Aug 2012 16:21:39 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 16:21:39 +0000 (UTC)
+Cc: Jiang Liu <liuj97@gmail.com>,
+	Taku Izumi <izumi.taku@jp.fujitsu.com>,
+	"Rafael J . Wysocki" <rjw@sisk.pl>,
+	Yijing Wang <wangyijing@huawei.com>,
+	Xinwei Hu <huxinwei@huawei.com>, linux-kernel@vger.kernel.org,
+	linux-pci@vger.kernel.org
+To: Bjorn Helgaas <bhelgaas@google.com>,
+	Don Dutile <ddutile@redhat.com>,
+	Yinghai Lu <yinghai@kernel.org>,
+	Greg KH <gregkh@linuxfoundation.org>,
+	Kenji Kaneshige <kaneshige.kenji@jp.fujitsu.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 18:21:38 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SymXI-0001NC-6Y
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 18:21:36 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755751Ab2HGQVU (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 12:21:20 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:51364 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755678Ab2HGQVO (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 12:21:14 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so4529963pbb.19
+        for <multiple recipients>; Tue, 07 Aug 2012 09:21:14 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=O578ZmviEXDHwxUIYpfOtzqC0Ad1lwDw9CIYrlZ6Z0Q=;
+        b=YqarPLKwtDXXlq1tD3Xgrl5HqDEJUq+OVqkSC9ADGH+VBJIW3YNEAaOGEhsMQQVE5d
+         ulJxIbyl9aaJ3rtgSXWTKaG1ip3qlXwn4zEQo2DeCS5eyv3N5ZFWBBlBJ9tHTFvk+6Ky
+         VTopvy5pu57O8T7dSnu24D0RkhLjzD/Y/LB/bZM2sz4TmIAzQKhpXQPXF78d0na2JqeK
+         ULShEweP9VLGrkETJYAGFri41fJRG3Xlwfbsdi+35HpFFgUISbgGRc+dcRkVmv+XYig1
+         2H2Ba6WyZaivaflTxNMeZ1G+fJytwNAXhSvXEUSSb2NZS64EVwRNW9GTPtbIpYKN0HMD
+         ukZA==
+Original-Received: by 10.68.194.168 with SMTP id hx8mr28863474pbc.36.1344356474003;
+        Tue, 07 Aug 2012 09:21:14 -0700 (PDT)
+Original-Received: from localhost.localdomain ([58.250.81.2])
+        by mx.google.com with ESMTPS id pt2sm11429362pbb.58.2012.08.07.09.21.06
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 09:21:13 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1344355862-2726-1-git-send-email-jiang.liu@huawei.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339159 gmane.linux.kernel.pci:16966
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339159>
+
+From: Jiang Liu <liuj97@gmail.com>
+
+This patch uses PCI bus lock mechanism to avoid race conditions when doing
+PCI device/host bridge hotplug by acpiphp driver.
+
+Signed-off-by: Jiang Liu <liuj97@gmail.com>
+---
+ drivers/pci/hotplug/acpiphp_glue.c |   13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/pci/hotplug/acpiphp_glue.c b/drivers/pci/hotplug/acpiphp_glue.c
+index 73af337..0ea7ab1 100644
+--- a/drivers/pci/hotplug/acpiphp_glue.c
++++ b/drivers/pci/hotplug/acpiphp_glue.c
+@@ -800,11 +800,14 @@ static int __ref enable_device(struct acpiphp_slot *slot)
+ 	if (slot->flags & SLOT_ENABLED)
+ 		goto err_exit;
+ 
++	if (pci_bus_lock_states(bus, PCI_BUS_STATE_WORKING) < 0)
++		return -EINVAL;
++
+ 	num = pci_scan_slot(bus, PCI_DEVFN(slot->device, 0));
+ 	if (num == 0) {
+ 		/* Maybe only part of funcs are added. */
+ 		dbg("No new device found\n");
+-		goto err_exit;
++		goto out_unlock;
+ 	}
+ 
+ 	max = acpiphp_max_busnr(bus);
+@@ -862,8 +865,10 @@ static int __ref enable_device(struct acpiphp_slot *slot)
+ 		pci_dev_put(dev);
+ 	}
+ 
++out_unlock:
++	pci_bus_unlock(bus);
+ 
+- err_exit:
++err_exit:
+ 	return retval;
+ }
+ 
+@@ -906,6 +911,9 @@ static int disable_device(struct acpiphp_slot *slot)
+ 	struct pci_dev *pdev;
+ 	struct pci_bus *bus = slot->bridge->pci_bus;
+ 
++	if (pci_bus_lock_states(bus, PCI_BUS_STATE_WORKING) < 0)
++		goto err_exit;
++
+ 	/* The slot will be enabled when func 0 is added, so check
+ 	   func 0 before disable the slot. */
+ 	pdev = pci_get_slot(bus, PCI_DEVFN(slot->device, 0));
+@@ -943,6 +951,7 @@ static int disable_device(struct acpiphp_slot *slot)
+ 	}
+ 
+ 	slot->flags &= (~SLOT_ENABLED);
++	pci_bus_unlock(bus);
+ 
+ err_exit:
+ 	return 0;
+-- 
+1.7.9.5
+

@@ -1,0 +1,109 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 101/108] stmmac: Fix for nfs hang on multiple reboot
+Date: Mon, 23 Jul 2012 02:08:32 +0100
+Lines: 56
+Approved: news@gmane.org
+Message-ID: <20120723010706.893460314@decadent.org.uk>
+References: <20120723010651.408577075@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343008768 18203 80.91.229.3 (23 Jul 2012 01:59:28 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 01:59:28 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Deepak Sikri <deepak.sikri@st.com>,
+	"David S. Miller" <davem@davemloft.net>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 03:59:27 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1St7vf-0005QA-G6
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 03:59:23 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753327Ab2GWB7P (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 21:59:15 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:54185 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1753247Ab2GWBmw (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 21:42:52 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7fS-0008Rk-Eg; Mon, 23 Jul 2012 02:42:38 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7en-0008HO-SB; Mon, 23 Jul 2012 02:41:57 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120723010651.408577075@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331534 gmane.linux.kernel.stable:28684
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331534>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Deepak Sikri <deepak.sikri@st.com>
+
+commit 8e83989106562326bfd6aaf92174fe138efd026b upstream.
+
+It was observed that during multiple reboots nfs hangs. The status of
+receive descriptors shows that all the descriptors were in control of
+CPU, and none were assigned to DMA.
+Also the DMA status register confirmed that the Rx buffer is
+unavailable.
+
+This patch adds the fix for the same by adding the memory barriers to
+ascertain that the all instructions before enabling the Rx or Tx DMA are
+completed which involves the proper setting of the ownership bit in DMA
+descriptors.
+
+Signed-off-by: Deepak Sikri <deepak.sikri@st.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ drivers/net/ethernet/stmicro/stmmac/stmmac_main.c |    3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+index 51b3b68..ea3003e 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
++++ b/drivers/net/ethernet/stmicro/stmmac/stmmac_main.c
+@@ -1212,6 +1212,7 @@ static netdev_tx_t stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
+ 		priv->hw->desc->prepare_tx_desc(desc, 0, len, csum_insertion);
+ 		wmb();
+ 		priv->hw->desc->set_tx_owner(desc);
++		wmb();
+ 	}
+ 
+ 	/* Interrupt on completition only for the latest segment */
+@@ -1227,6 +1228,7 @@ static netdev_tx_t stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
+ 
+ 	/* To avoid raise condition */
+ 	priv->hw->desc->set_tx_owner(first);
++	wmb();
+ 
+ 	priv->cur_tx++;
+ 
+@@ -1290,6 +1292,7 @@ static inline void stmmac_rx_refill(struct stmmac_priv *priv)
+ 		}
+ 		wmb();
+ 		priv->hw->desc->set_rx_owner(p + entry);
++		wmb();
+ 	}
+ }
+ 
+
+

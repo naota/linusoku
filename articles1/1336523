@@ -1,0 +1,154 @@
+Path: news.gmane.org!not-for-mail
+From: Peter Stuge <peter@stuge.se>
+Newsgroups: gmane.linux.kernel,gmane.linux.usb.general
+Subject: Re: [PATCH] usb: host: xhci: Fix Compliance Mode on SN65LVPE502CP
+	Hardware
+Date: Wed, 1 Aug 2012 22:01:31 +0200
+Lines: 105
+Approved: news@gmane.org
+Message-ID: <20120801200131.15606.qmail@stuge.se>
+References: <50197DC2.5060905@ti.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343851306 13629 80.91.229.3 (1 Aug 2012 20:01:46 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 1 Aug 2012 20:01:46 +0000 (UTC)
+Cc: sarah.a.sharp@linux.intel.com, gregkh@linuxfoundation.org,
+	linux-usb@vger.kernel.org, linux-kernel@vger.kernel.org,
+	brian.quach@ti.com, jorge.llamas@ti.com
+To: "Alexis R. Cortes" <alexis.cortes@ti.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 01 22:01:45 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Swf71-0003kV-ST
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 01 Aug 2012 22:01:44 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755504Ab2HAUBg (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 1 Aug 2012 16:01:36 -0400
+Original-Received: from foo.stuge.se ([212.116.89.98]:55670 "HELO foo.stuge.se"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with SMTP
+	id S1754703Ab2HAUBe (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 1 Aug 2012 16:01:34 -0400
+Original-Received: (qmail 15607 invoked by uid 501); 1 Aug 2012 20:01:31 -0000
+Mail-Followup-To: "Alexis R. Cortes" <alexis.cortes@ti.com>,
+	sarah.a.sharp@linux.intel.com, gregkh@linuxfoundation.org,
+	linux-usb@vger.kernel.org, linux-kernel@vger.kernel.org,
+	brian.quach@ti.com, jorge.llamas@ti.com
+Content-Disposition: inline
+In-Reply-To: <50197DC2.5060905@ti.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336523 gmane.linux.usb.general:68703
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336523>
+
+Hi Alexis,
+
+Did you run the patch through checkpatch.pl before submitting it?
+
+I think you will get a bunch of important and completely automatic
+feedback when you do that. Please fix everything that the script
+mentions.
+
+
+Alexis R. Cortes wrote:
+> This patch is intended to work around a known issue on the
+> SN65LVPE502CP USB3.0 re-driver that can delay the negotiation
+> between a device and the host past the usual handshake timeout,
+> and if that happens on the first insertion, the host controller
+> port will enter in Compliance Mode as per xHCI Spec. The patch
+> creates a timer which polls every 2 seconds the link state of each
+> host controller's port (this by reading the PORTSC register) and
+> recovers the port by issuing a Warm reset every time Compliance mode
+> is detected.
+
+This is a pretty awful workaround for a teeny tiny hardware error.
+You're making systems wake up every two seconds. I don't want that on
+my system. I think making the timer settable would be nice.
+
+Also, the patch does more things than what you describe. It adds a
+new quirk, and it adds checks to set said quirk for various different
+laptop models. Each of those changes (add timer+quirk, and add checks
+to set quirk for laptops) should rather be a separate commit.
+
+
+> @@ -645,6 +657,22 @@ int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
+>  		/* Update Port Link State for super speed ports*/
+>  		if (hcd->speed == HCD_USB3) {
+>  			xhci_hub_report_link_state(&status, temp);
+> +			/*
+> +			 * Verify if all USB3 Ports Have entered U0. Delete compliance
+> +			 * mode timer if so.
+> +			 */
+> +			if (xhci->quirks & XHCI_COMP_MODE_QUIRK) {
+> +				if (xhci->port_status_u0 != ((1 << xhci->num_usb3_ports)-1)) {
+> +					if ((temp & PORT_PLS_MASK) == XDEV_U0) {
+> +						xhci->port_status_u0 |= 1 << wIndex;
+> +						if (xhci->port_status_u0 == ((1 << xhci->num_usb3_ports)-1)) {
+> +							del_timer_sync(&xhci->comp_mode_recovery_timer);
+> +							xhci_dbg(xhci, "Compliance Mode Recovery Timer Deleted. "
+> +									"All USB3 ports have entered U0 at least once.\n");
+> +						}
+> +					}
+> +				}
+> +			}
+>  		}
+
+Is this style consistent with the surrounding code? I would be
+surprised. The kernel frequently uses the "early exits" concept.
+Please try to embrace it, I think it makes for lovely readable code.
+
+A quote from
+http://www.cranked.me/2008/07/spartan-programming-real-man-way-to-do.html
+
+--8<--
+Spartan programming strives for simultaneous minimization of all of
+the following measures of code complexity:
+
+1. horizontal complexity, that is, the depth of nesting of control
+   structures, just as the total line length.
+
+..
+
+8. conditionals, that is the number of if and multiple branch
+   switch statements. 
+-->8--
+
+This may not be in http://kernel.org/doc/Documentation/CodingStyle
+per se, but Chapter 7: Centralized exiting of functions touches on
+the issue, includes an example, and I've found it used a lot in the
+kernel code. It's a very good idea.
+
+
+> +++ b/drivers/usb/host/xhci.h
+> @@ -1494,6 +1494,7 @@ struct xhci_hcd {
+>  #define XHCI_TRUST_TX_LENGTH	(1 << 10)
+>  #define XHCI_LPM_SUPPORT	(1 << 11)
+>  #define XHCI_INTEL_HOST		(1 << 12)
+> +#define XHCI_COMP_MODE_QUIRK	(1 << 13)
+>  	unsigned int		num_active_eps;
+>  	unsigned int		limit_active_eps;
+>  	/* There are two roothubs to keep track of bus suspend info for */
+> @@ -1510,6 +1511,11 @@ struct xhci_hcd {
+>  	unsigned		sw_lpm_support:1;
+>  	/* support xHCI 1.0 spec USB2 hardware LPM */
+>  	unsigned		hw_lpm_support:1;
+> +	/* Compliance Mode Recovery Data */
+> +	struct timer_list	comp_mode_recovery_timer;
+> +	u32			port_status_u0;
+> +/* Compliance Mode Timer Triggered every 2 seconds */
+> +#define COMP_MODE_RCVRY_MSECS 2000
+
+I'm surprised how this get hardcoded from a header file.
+
+I for one would like it to be settable.
+
+
+Thanks
+
+//Peter

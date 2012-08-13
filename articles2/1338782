@@ -1,0 +1,214 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 01/70] sched: Fix race in task_group()
+Date: Tue, 07 Aug 2012 04:27:56 +0100
+Lines: 159
+Approved: news@gmane.org
+Message-ID: <20120807032756.313313678@decadent.org.uk>
+References: <20120807032755.803571133@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344311768 24702 80.91.229.3 (7 Aug 2012 03:56:08 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 03:56:08 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Peter Zijlstra <peterz@infradead.org>,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Ingo Molnar <mingo@kernel.org>,
+	Stefan Bader <stefan.bader@canonical.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 05:56:06 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Syati-0007Gi-R3
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 05:55:59 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757380Ab2HGDzu (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 23:55:50 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:59617 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1757270Ab2HGDiJ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 23:38:09 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Syac9-00081e-J3; Tue, 07 Aug 2012 04:37:49 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Syabw-0002mH-1O; Tue, 07 Aug 2012 04:37:36 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120807032755.803571133@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338782 gmane.linux.kernel.stable:29223
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338782>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Peter Zijlstra <peterz@infradead.org>
+
+commit 8323f26ce3425460769605a6aece7a174edaa7d1 upstream
+
+Stefan reported a crash on a kernel before a3e5d1091c1 ("sched:
+Don't call task_group() too many times in set_task_rq()"), he
+found the reason to be that the multiple task_group()
+invocations in set_task_rq() returned different values.
+
+Looking at all that I found a lack of serialization and plain
+wrong comments.
+
+The below tries to fix it using an extra pointer which is
+updated under the appropriate scheduler locks. Its not pretty,
+but I can't really see another way given how all the cgroup
+stuff works.
+
+Reported-and-tested-by: Stefan Bader <stefan.bader@canonical.com>
+Signed-off-by: Peter Zijlstra <a.p.zijlstra@chello.nl>
+Link: http://lkml.kernel.org/r/1340364965.18025.71.camel@twins
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+
+(backported to previous file names and layout)
+Signed-off-by: Stefan Bader <stefan.bader@canonical.com>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ include/linux/init_task.h |   12 +++++++++++-
+ include/linux/sched.h     |    5 ++++-
+ kernel/sched.c            |   32 ++++++++++++++++++--------------
+ 3 files changed, 33 insertions(+), 16 deletions(-)
+
+diff --git a/include/linux/init_task.h b/include/linux/init_task.h
+index 32574ee..13b2684 100644
+--- a/include/linux/init_task.h
++++ b/include/linux/init_task.h
+@@ -117,8 +117,17 @@ extern struct group_info init_groups;
+ 
+ extern struct cred init_cred;
+ 
++extern struct task_group root_task_group;
++
++#ifdef CONFIG_CGROUP_SCHED
++# define INIT_CGROUP_SCHED(tsk)						\
++	.sched_task_group = &root_task_group,
++#else
++# define INIT_CGROUP_SCHED(tsk)
++#endif
++
+ #ifdef CONFIG_PERF_EVENTS
+-# define INIT_PERF_EVENTS(tsk)					\
++# define INIT_PERF_EVENTS(tsk)						\
+ 	.perf_event_mutex = 						\
+ 		 __MUTEX_INITIALIZER(tsk.perf_event_mutex),		\
+ 	.perf_event_list = LIST_HEAD_INIT(tsk.perf_event_list),
+@@ -155,6 +164,7 @@ extern struct cred init_cred;
+ 	},								\
+ 	.tasks		= LIST_HEAD_INIT(tsk.tasks),			\
+ 	INIT_PUSHABLE_TASKS(tsk)					\
++	INIT_CGROUP_SCHED(tsk)						\
+ 	.ptraced	= LIST_HEAD_INIT(tsk.ptraced),			\
+ 	.ptrace_entry	= LIST_HEAD_INIT(tsk.ptrace_entry),		\
+ 	.real_parent	= &tsk,						\
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index 5afa2a3..d404c12 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -1235,6 +1235,9 @@ struct task_struct {
+ 	const struct sched_class *sched_class;
+ 	struct sched_entity se;
+ 	struct sched_rt_entity rt;
++#ifdef CONFIG_CGROUP_SCHED
++	struct task_group *sched_task_group;
++#endif
+ 
+ #ifdef CONFIG_PREEMPT_NOTIFIERS
+ 	/* list of struct preempt_notifier: */
+@@ -2645,7 +2648,7 @@ extern int sched_group_set_rt_period(struct task_group *tg,
+ extern long sched_group_rt_period(struct task_group *tg);
+ extern int sched_rt_can_attach(struct task_group *tg, struct task_struct *tsk);
+ #endif
+-#endif
++#endif /* CONFIG_CGROUP_SCHED */
+ 
+ extern int task_can_switch_user(struct user_struct *up,
+ 					struct task_struct *tsk);
+diff --git a/kernel/sched.c b/kernel/sched.c
+index 52ac69b..cd9c72e 100644
+--- a/kernel/sched.c
++++ b/kernel/sched.c
+@@ -746,22 +746,19 @@ static inline int cpu_of(struct rq *rq)
+ /*
+  * Return the group to which this tasks belongs.
+  *
+- * We use task_subsys_state_check() and extend the RCU verification with
+- * pi->lock and rq->lock because cpu_cgroup_attach() holds those locks for each
+- * task it moves into the cgroup. Therefore by holding either of those locks,
+- * we pin the task to the current cgroup.
++ * We cannot use task_subsys_state() and friends because the cgroup
++ * subsystem changes that value before the cgroup_subsys::attach() method
++ * is called, therefore we cannot pin it and might observe the wrong value.
++ *
++ * The same is true for autogroup's p->signal->autogroup->tg, the autogroup
++ * core changes this before calling sched_move_task().
++ *
++ * Instead we use a 'copy' which is updated from sched_move_task() while
++ * holding both task_struct::pi_lock and rq::lock.
+  */
+ static inline struct task_group *task_group(struct task_struct *p)
+ {
+-	struct task_group *tg;
+-	struct cgroup_subsys_state *css;
+-
+-	css = task_subsys_state_check(p, cpu_cgroup_subsys_id,
+-			lockdep_is_held(&p->pi_lock) ||
+-			lockdep_is_held(&task_rq(p)->lock));
+-	tg = container_of(css, struct task_group, css);
+-
+-	return autogroup_task_group(p, tg);
++	return p->sched_task_group;
+ }
+ 
+ /* Change a task's cfs_rq and parent entity if it moves across CPUs/groups */
+@@ -2372,7 +2369,7 @@ void set_task_cpu(struct task_struct *p, unsigned int new_cpu)
+ 	 * a task's CPU. ->pi_lock for waking tasks, rq->lock for runnable tasks.
+ 	 *
+ 	 * sched_move_task() holds both and thus holding either pins the cgroup,
+-	 * see set_task_rq().
++	 * see task_group().
+ 	 *
+ 	 * Furthermore, all task_rq users should acquire both locks, see
+ 	 * task_rq_lock().
+@@ -8892,6 +8889,7 @@ void sched_destroy_group(struct task_group *tg)
+  */
+ void sched_move_task(struct task_struct *tsk)
+ {
++	struct task_group *tg;
+ 	int on_rq, running;
+ 	unsigned long flags;
+ 	struct rq *rq;
+@@ -8906,6 +8904,12 @@ void sched_move_task(struct task_struct *tsk)
+ 	if (unlikely(running))
+ 		tsk->sched_class->put_prev_task(rq, tsk);
+ 
++	tg = container_of(task_subsys_state_check(tsk, cpu_cgroup_subsys_id,
++				lockdep_is_held(&tsk->sighand->siglock)),
++			  struct task_group, css);
++	tg = autogroup_task_group(tsk, tg);
++	tsk->sched_task_group = tg;
++
+ #ifdef CONFIG_FAIR_GROUP_SCHED
+ 	if (tsk->sched_class->task_move_group)
+ 		tsk->sched_class->task_move_group(tsk, on_rq);
+
+
+

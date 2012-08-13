@@ -1,0 +1,101 @@
+Path: news.gmane.org!not-for-mail
+From: "Paul E. McKenney" <paulmck@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel
+Subject: Question about tboot_wait_for_aps()
+Date: Tue, 24 Jul 2012 08:58:53 -0700
+Lines: 37
+Approved: news@gmane.org
+Message-ID: <20120724155853.GA32362@linux.vnet.ibm.com>
+Reply-To: paulmck@linux.vnet.ibm.com
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343148055 28589 80.91.229.3 (24 Jul 2012 16:40:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 16:40:55 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, x86@kernel.org
+To: tglx@linutronix.de, mingo@redhat.com, hpa@zytor.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 18:40:52 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StiAB-0006gz-Q0
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 18:40:48 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755568Ab2GXQko (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 12:40:44 -0400
+Original-Received: from e4.ny.us.ibm.com ([32.97.182.144]:38313 "EHLO e4.ny.us.ibm.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755394Ab2GXQkl (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 12:40:41 -0400
+Original-Received: from /spool/local
+	by e4.ny.us.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <paulmck@linux.vnet.ibm.com>;
+	Tue, 24 Jul 2012 12:34:42 -0400
+Original-Received: from d01dlp03.pok.ibm.com (9.56.224.17)
+	by e4.ny.us.ibm.com (192.168.1.104) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Tue, 24 Jul 2012 12:34:36 -0400
+Original-Received: from d01relay03.pok.ibm.com (d01relay03.pok.ibm.com [9.56.227.235])
+	by d01dlp03.pok.ibm.com (Postfix) with ESMTP id EE5AE3C6060D
+	for <linux-kernel@vger.kernel.org>; Tue, 24 Jul 2012 11:59:50 -0400 (EDT)
+Original-Received: from d03av01.boulder.ibm.com (d03av01.boulder.ibm.com [9.17.195.167])
+	by d01relay03.pok.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6OFxnqT165248
+	for <linux-kernel@vger.kernel.org>; Tue, 24 Jul 2012 11:59:50 -0400
+Original-Received: from d03av01.boulder.ibm.com (loopback [127.0.0.1])
+	by d03av01.boulder.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6OFxE9w019912
+	for <linux-kernel@vger.kernel.org>; Tue, 24 Jul 2012 09:59:15 -0600
+Original-Received: from paulmck-ThinkPad-W500 ([9.47.24.210])
+	by d03av01.boulder.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6OFwrnG017374;
+	Tue, 24 Jul 2012 09:58:53 -0600
+Original-Received: by paulmck-ThinkPad-W500 (Postfix, from userid 1000)
+	id 530A4E50E2; Tue, 24 Jul 2012 08:58:53 -0700 (PDT)
+Content-Disposition: inline
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Content-Scanned: Fidelis XPS MAILER
+x-cbid: 12072416-3534-0000-0000-00000ABD959B
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332443
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332443>
+
+Hello!
+
+While taking another pass through the CPU_DYING notifiers, I came upon
+the following:
+
+	static int tboot_wait_for_aps(int num_aps)
+	{
+		unsigned long timeout;
+
+		timeout = AP_WAIT_TIMEOUT*HZ;
+		while (atomic_read((atomic_t *)&tboot->num_in_wfs) != num_aps &&
+		       timeout) {
+			mdelay(1);
+			timeout--;
+		}
+
+		if (timeout)
+			pr_warning("tboot wait for APs timeout\n");
+
+		return !(atomic_read((atomic_t *)&tboot->num_in_wfs) == num_aps);
+	}
+
+Questions:
+
+1.	Why AP_WAIT_TIMEOUT*HZ?  Given the mdelay(), shouldn't this
+	instead be AP_WAIT_TIMEOUT*1000?  The definition of AP_WAIT_TIMEOUT
+	indicates that it is in seconds.
+
+2.	Who changes ->num_in_wfs?  Any other CPUs are in stop_machine(),
+	plus I don't see any assignments to this field.  Does the boot
+	firmware run again to make this change, sort of like SMIs?
+
+I guess that the good news is that I don't seen anything that cares about
+stop_machine().  ;-)
+
+							Thanx, Paul
+

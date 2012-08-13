@@ -1,0 +1,120 @@
+Path: news.gmane.org!not-for-mail
+From: H Hartley Sweeten <hartleys@visionengravers.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 3/5] staging: comedi: daqboard2000: ioremap'ed addresses are resource_size_t
+Date: Fri, 20 Jul 2012 10:32:29 -0700
+Lines: 66
+Approved: news@gmane.org
+Message-ID: <201207201032.29352.hartleys@visionengravers.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342805589 5089 80.91.229.3 (20 Jul 2012 17:33:09 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 17:33:09 +0000 (UTC)
+Cc: <devel@driverdev.osuosl.org>, <abbotti@mev.co.uk>,
+	<gregkh@linuxfoundation.org>
+To: Linux Kernel <linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 19:33:06 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsH4X-0002FB-Dt
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 19:33:01 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753494Ab2GTRcw (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 13:32:52 -0400
+Original-Received: from mail209.messagelabs.com ([216.82.255.3]:58193 "EHLO
+	mail209.messagelabs.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753101Ab2GTRcu (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 13:32:50 -0400
+X-Env-Sender: hartleys@visionengravers.com
+X-Msg-Ref: server-16.tower-209.messagelabs.com!1342805559!9248191!10
+X-Originating-IP: [216.166.12.178]
+X-StarScan-Version: 6.5.10; banners=-,-,-
+X-VirusChecked: Checked
+Original-Received: (qmail 10697 invoked from network); 20 Jul 2012 17:32:49 -0000
+Original-Received: from out001.collaborationhost.net (HELO out001.collaborationhost.net) (216.166.12.178)
+  by server-16.tower-209.messagelabs.com with RC4-SHA encrypted SMTP; 20 Jul 2012 17:32:49 -0000
+Original-Received: from etch.local (10.2.3.210) by smtp.collaborationhost.net
+ (10.2.0.191) with Microsoft SMTP Server (TLS) id 8.3.213.0; Fri, 20 Jul 2012
+ 12:32:41 -0500
+User-Agent: KMail/1.9.9
+Content-Disposition: inline
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330971
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330971>
+
+As mentioned by Ian Abbott, the pci address passed to ioremap
+should be a resource_size_t not an unsigned long. Use a local
+variable of that type to hold the pci_resource_start() that is
+passed to ioremp().
+
+Set the dev->iobase to a dummy non-zero value so that the "detach"
+can use it as a flag to know that comedi_pci_disable() needs to
+be called.
+
+Signed-off-by: H Hartley Sweeten <hsweeten@visionengravers.com>
+Reported-by: Ian Abbott <abbotti@mev.co.uk>
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/staging/comedi/drivers/daqboard2000.c | 14 +++++++-------
+ 1 file changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/staging/comedi/drivers/daqboard2000.c b/drivers/staging/comedi/drivers/daqboard2000.c
+index 7236cbe..cad559a 100644
+--- a/drivers/staging/comedi/drivers/daqboard2000.c
++++ b/drivers/staging/comedi/drivers/daqboard2000.c
+@@ -740,6 +740,7 @@ static int daqboard2000_attach(struct comedi_device *dev,
+ {
+ 	struct pci_dev *pcidev;
+ 	struct comedi_subdevice *s;
++	resource_size_t pci_base;
+ 	void *aux_data;
+ 	unsigned int aux_len;
+ 	int result;
+@@ -759,11 +760,12 @@ static int daqboard2000_attach(struct comedi_device *dev,
+ 			"failed to enable PCI device and request regions\n");
+ 		return -EIO;
+ 	}
+-	dev->iobase = pci_resource_start(pcidev, 2);
++	dev->iobase = 1;	/* the "detach" needs this */
+ 
+-	devpriv->plx =
+-	    ioremap(pci_resource_start(pcidev, 0), DAQBOARD2000_PLX_SIZE);
+-	devpriv->daq = ioremap(dev->iobase, DAQBOARD2000_DAQ_SIZE);
++	pci_base = pci_resource_start(pcidev, 0);
++	devpriv->plx = ioremap(pci_base, DAQBOARD2000_PLX_SIZE);
++	pci_base = pci_resource_start(pcidev, 2);
++	devpriv->daq = ioremap(pci_base, DAQBOARD2000_DAQ_SIZE);
+ 	if (!devpriv->plx || !devpriv->daq)
+ 		return -ENOMEM;
+ 
+@@ -800,8 +802,6 @@ static int daqboard2000_attach(struct comedi_device *dev,
+ 	   printk("Interrupt after is: %x\n", interrupt);
+ 	 */
+ 
+-	dev->iobase = (unsigned long)devpriv->daq;
+-
+ 	dev->board_name = this_board->name;
+ 
+ 	s = dev->subdevices + 0;
+@@ -825,7 +825,7 @@ static int daqboard2000_attach(struct comedi_device *dev,
+ 
+ 	s = dev->subdevices + 2;
+ 	result = subdev_8255_init(dev, s, daqboard2000_8255_cb,
+-				  (unsigned long)(dev->iobase + 0x40));
++				  (unsigned long)(devpriv->daq + 0x40));
+ 
+ out:
+ 	return result;
+-- 
+1.7.11
+

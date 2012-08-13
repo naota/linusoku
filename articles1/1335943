@@ -1,0 +1,108 @@
+Path: news.gmane.org!not-for-mail
+From: Oleg Nesterov <oleg@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] uprobes: don't enable/disable signle step if the user
+	did it
+Date: Tue, 31 Jul 2012 19:38:54 +0200
+Lines: 50
+Approved: news@gmane.org
+Message-ID: <20120731173854.GA14576@redhat.com>
+References: <1343316043-13475-1-git-send-email-bigeasy@linutronix.de> <20120730110658.GC11147@in.ibm.com> <20120730141638.GA5306@redhat.com> <20120731052226.GA5087@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343759012 24329 80.91.229.3 (31 Jul 2012 18:23:32 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 18:23:32 +0000 (UTC)
+Cc: Ananth N Mavinakayanahalli <ananth@in.ibm.com>,
+	Sebastian Andrzej Siewior <bigeasy@linutronix.de>,
+	linux-kernel@vger.kernel.org,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Ingo Molnar <mingo@redhat.com>,
+	Roland McGrath <roland@hack.frob.com>
+To: Srikar Dronamraju <srikar@linux.vnet.ibm.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 20:23:31 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwH6O-0000Vd-1w
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 20:23:28 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756000Ab2GaSXU (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 14:23:20 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:64999 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753623Ab2GaSXS (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 14:23:18 -0400
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6VIMbPa022617
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Tue, 31 Jul 2012 14:23:04 -0400
+Original-Received: from tranklukator.englab.brq.redhat.com (dhcp-1-232.brq.redhat.com [10.34.1.232])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with SMTP id q6VHfmpu007998;
+	Tue, 31 Jul 2012 13:41:49 -0400
+Original-Received: by tranklukator.englab.brq.redhat.com (nbSMTP-1.00) for uid 500
+	oleg@redhat.com; Tue, 31 Jul 2012 19:38:56 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <20120731052226.GA5087@linux.vnet.ibm.com>
+User-Agent: Mutt/1.5.18 (2008-05-17)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335943
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335943>
+
+On 07/31, Srikar Dronamraju wrote:
+>
+> * Oleg Nesterov <oleg@redhat.com> [2012-07-30 16:16:38]:
+>
+> > So I think we need arch_uprobe_*able_step(struct uprobe_task *utask).
+> > Ignoring all problems except the one this patch tries to fix, x86
+> > can simply do:
+> >
+> > 	arch_uprobe_enble_step(utask, struct arch_uprobe *auprobe)
+> > 	{
+> > 		utask->clear_tf =
+> > 			!(regs->flags & X86_EFLAGS_TF) &&
+> > 			(auprobe->insn != "popf");
+> > 		regs->flags |= X86_EFLAGS_TF;
+> > 	}
+> >
+> > 	arch_uprobe_disable_step(utask)
+> > 	{
+> > 		if (utask->clear_tf)
+> > 			regs->flags &= ~X86_EFLAGS_TF;
+> > 	}
+> >
+>
+> We were using something similar to this approach. [though we were still
+> using TIF_SINGLESTEP flag].
+
+(and afaics the code was wrong)
+
+> However this was all changed based on
+> feedback from Roland and Peter.
+>
+> Here is the pointer to the discussion.
+>
+> https://lkml.org/lkml/2011/1/27/283
+
+Looking at this discussion now, I am not sure that Roland was against
+the per-arch uprobe_enable_step() implementation.
+
+And when I read you message I do not understand your opinion ;)
+
+And just in case, the pseudo code above is only for illustration,
+note also "Ignoring all problems except the one".
+
+In any case I agree, this needs more discussion. Personally I think
+it doesn't make sense to try to teach user_enable_single_step() to
+work correctly with ptrace and uprobes at the same time, I can be
+wrong of-course.
+
+Oleg.
+

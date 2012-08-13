@@ -1,0 +1,125 @@
+Path: news.gmane.org!not-for-mail
+From: Matthew Garrett <mjg@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.pci
+Subject: [PATCH V2 2/4] PCI: Add pcibios_add_device
+Date: Fri, 27 Jul 2012 12:52:12 -0400
+Lines: 67
+Approved: news@gmane.org
+Message-ID: <1343407934-459-2-git-send-email-mjg@redhat.com>
+References: <1343407934-459-1-git-send-email-mjg@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343408041 27501 80.91.229.3 (27 Jul 2012 16:54:01 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 16:54:01 +0000 (UTC)
+Cc: linux-efi@vger.kernel.org, linux-kernel@vger.kernel.org,
+	x86@kernel.org, linux-pci@vger.kernel.org, bhelgaas@google.com,
+	Matthew Garrett <mjg@redhat.com>
+To: matt.fleming@intel.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 18:53:59 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sunnb-0003L7-7o
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 18:53:59 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752857Ab2G0Qxh (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 12:53:37 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:25273 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752534Ab2G0Qwr (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 12:52:47 -0400
+Original-Received: from int-mx11.intmail.prod.int.phx2.redhat.com (int-mx11.intmail.prod.int.phx2.redhat.com [10.5.11.24])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6RGqhKK007522
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Fri, 27 Jul 2012 12:52:43 -0400
+Original-Received: from cavan.codon.org.uk (ovpn-113-108.phx2.redhat.com [10.3.113.108])
+	by int-mx11.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6RGqguZ020397
+	(version=TLSv1/SSLv3 cipher=AES256-SHA bits=256 verify=NO);
+	Fri, 27 Jul 2012 12:52:43 -0400
+Original-Received: from 209-6-41-104.c3-0.smr-ubr1.sbo-smr.ma.cable.rcn.com ([209.6.41.104] helo=localhost.localdomain)
+	by cavan.codon.org.uk with esmtpsa (TLS1.0:DHE_RSA_AES_256_CBC_SHA1:32)
+	(Exim 4.72)
+	(envelope-from <mjg@redhat.com>)
+	id 1SunmJ-0005Kw-1l; Fri, 27 Jul 2012 17:52:39 +0100
+In-Reply-To: <1343407934-459-1-git-send-email-mjg@redhat.com>
+X-SA-Do-Not-Run: Yes
+X-SA-Exim-Connect-IP: 209.6.41.104
+X-SA-Exim-Mail-From: mjg@redhat.com
+X-SA-Exim-Scanned: No (on cavan.codon.org.uk); SAEximRunCond expanded to false
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.24
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334401 gmane.linux.kernel.pci:16670
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334401>
+
+Platforms may want to provide architecture-specific functionality during
+PCI enumeration. Add a pcibios_add_device() call that architectures can
+override to do so.
+
+Signed-off-by: Matthew Garrett <mjg@redhat.com>
+Tested-by: Seth Forshee <seth.forshee@canonical.com>
+---
+ drivers/pci/bus.c   |    5 +++++
+ drivers/pci/pci.c   |   13 +++++++++++++
+ include/linux/pci.h |    1 +
+ 3 files changed, 19 insertions(+)
+
+diff --git a/drivers/pci/bus.c b/drivers/pci/bus.c
+index 4b0970b..e2f447e 100644
+--- a/drivers/pci/bus.c
++++ b/drivers/pci/bus.c
+@@ -166,6 +166,11 @@ int pci_bus_add_device(struct pci_dev *dev)
+ 	int retval;
+ 
+ 	pci_fixup_device(pci_fixup_final, dev);
++
++	retval = pcibios_add_device(dev);
++	if (retval)
++		return retval;
++
+ 	retval = device_add(&dev->dev);
+ 	if (retval)
+ 		return retval;
+diff --git a/drivers/pci/pci.c b/drivers/pci/pci.c
+index f3ea977..fec3a92 100644
+--- a/drivers/pci/pci.c
++++ b/drivers/pci/pci.c
+@@ -1385,6 +1385,19 @@ void pcim_pin_device(struct pci_dev *pdev)
+ 		dr->pinned = 1;
+ }
+ 
++/*
++ * pcibios_add_device - provide arch specific hooks when adding device dev
++ * @dev: the PCI device being added
++ *
++ * Permits the platform to provide architecture specific functionality when
++ * devices are added. This is the default implementation. Architecture
++ * implementations can override this.
++ */
++int __weak pcibios_add_device(struct pci_dev *dev)
++{
++	return 0;
++}
++
+ /**
+  * pcibios_disable_device - disable arch specific PCI resources for device dev
+  * @dev: the PCI device to disable
+diff --git a/include/linux/pci.h b/include/linux/pci.h
+index 5faa831..6a2625c 100644
+--- a/include/linux/pci.h
++++ b/include/linux/pci.h
+@@ -1582,6 +1582,7 @@ void pcibios_disable_device(struct pci_dev *dev);
+ void pcibios_set_master(struct pci_dev *dev);
+ int pcibios_set_pcie_reset_state(struct pci_dev *dev,
+ 				 enum pcie_reset_state state);
++int pcibios_add_device(struct pci_dev *dev);
+ 
+ #ifdef CONFIG_PCI_MMCONFIG
+ extern void __init pci_mmcfg_early_init(void);
+-- 
+1.7.10.4
+

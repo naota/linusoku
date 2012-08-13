@@ -1,0 +1,112 @@
+Path: news.gmane.org!not-for-mail
+From: Vivek Goyal <vgoyal@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH 2/2] floppy: error handling fixes on do_floppy_init
+Date: Wed, 8 Aug 2012 15:57:30 -0400
+Lines: 56
+Approved: news@gmane.org
+Message-ID: <20120808195730.GG15623@redhat.com>
+References: <1344450293-5557-1-git-send-email-herton.krzesinski@canonical.com>
+ <1344450293-5557-3-git-send-email-herton.krzesinski@canonical.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344455909 8270 80.91.229.3 (8 Aug 2012 19:58:29 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 19:58:29 +0000 (UTC)
+Cc: Jiri Kosina <jkosina@suse.cz>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Jens Axboe <axboe@kernel.dk>, Tejun Heo <tj@kernel.org>,
+	linux-kernel@vger.kernel.org, Ben Hutchings <ben@decadent.org.uk>
+To: Herton Ronaldo Krzesinski <herton.krzesinski@canonical.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 21:58:24 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzCOe-0000wl-1l
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 21:58:24 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030857Ab2HHT6D (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 15:58:03 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:29112 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1030829Ab2HHT5q (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 15:57:46 -0400
+Original-Received: from int-mx11.intmail.prod.int.phx2.redhat.com (int-mx11.intmail.prod.int.phx2.redhat.com [10.5.11.24])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q78JvWm5006545
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Wed, 8 Aug 2012 15:57:32 -0400
+Original-Received: from horse.usersys.redhat.com (dhcp-187-179.bos.redhat.com [10.16.187.179])
+	by int-mx11.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q78JvUDs014124;
+	Wed, 8 Aug 2012 15:57:30 -0400
+Original-Received: by horse.usersys.redhat.com (Postfix, from userid 10451)
+	id 902ED65CD4; Wed,  8 Aug 2012 15:57:30 -0400 (EDT)
+Content-Disposition: inline
+In-Reply-To: <1344450293-5557-3-git-send-email-herton.krzesinski@canonical.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.24
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340283
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340283>
+
+On Wed, Aug 08, 2012 at 03:24:53PM -0300, Herton Ronaldo Krzesinski wrote:
+> While looking at commit 3f9a5aa ("floppy: Cleanup disk->queue before
+> caling put_disk() if add_disk() was never called") I noticed some
+> problems with the error handling and cleanup:
+> 
+> * missing cleanup (put_disk) if blk_init_queue fails, dr is decremented
+>   first in the error handling loop
+> * if something fails in the add_disk loop, there is no cleanup of
+>   previous iterations in the error handling.
+> * "if (disks[dr]->queue)" check is bogus, when reaching there for each
+>   dr should exist an queue allocated, and it doesn't take into account
+>   iterations where add_disk wasn't done, if failure happens in add_disk
+>   loop.
+> * floppy_module_exit doesn't reset queue pointer if add_disk wasn't
+>   done.
+
+Hey, these seem to be multiple cleanups. Can you break these down into
+individual patches. Review becomes easy.
+
+[..]
+> +		blk_cleanup_queue(disks[dr]->queue);
+> +		/*
+> +		 * put_disk() may not be paired with add_disk() and
+> +		 * will put queue reference one extra time. fix it.
+> +		 */
+> +		if (dr > registered || !(allowed_drive_mask & (1 << dr)) ||
+> +		    fdc_state[FDC(dr)].version == FDC_NONE)
+>  			disks[dr]->queue = NULL;
+
+I think checking for FDC_NONE and allowed_drive_mask() in multiple places
+is becoming unreadable now. Can we just maintain a separate array to keep
+track of disks on which we have called add_disk() and do the cleanup 
+accordingly.
+
+static unsigned short disk_registered[N_DRIVE];
+
+/* do add_disk */
+disk_registered[drive] = 1;
+
+
+out_put_disk:
+	while(dr--) {
+		if (disks[dr]->queue && !disk_registered[dr]) {
+			blk_cleanup_queue()
+			disks[dr]->queue = NULL;
+		}
+	}
+
+Same disk_registered[] can be used for your other loop of remove drives.
+Also it can be used in cleaning up code in floppy_module_exit().
+
+I think this will make code much more readable. Right now this error 
+handling loop is just getting too complicated.
+
+Thanks
+Vivek

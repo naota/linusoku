@@ -1,0 +1,145 @@
+Path: news.gmane.org!not-for-mail
+From: "Michael S. Tsirkin" <mst@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.kvm.devel
+Subject: [PATCH] kvm: drop parameter validation
+Date: Thu, 19 Jul 2012 14:13:13 +0300
+Lines: 97
+Approved: news@gmane.org
+Message-ID: <20120719111313.GA4361@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1342696381 32091 80.91.229.3 (19 Jul 2012 11:13:01 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 11:13:01 +0000 (UTC)
+Cc: Avi Kivity <avi@redhat.com>, Marcelo Tosatti <mtosatti@redhat.com>,
+	kvm@vger.kernel.org, linux-kernel@vger.kernel.org, gleb@redhat.com
+To: unlisted-recipients:; (no To-header on input)
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 13:13:00 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SrofD-0005te-Ut
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 13:13:00 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754006Ab2GSLMm (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 07:12:42 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:64571 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753292Ab2GSLMi (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 07:12:38 -0400
+Original-Received: from int-mx10.intmail.prod.int.phx2.redhat.com (int-mx10.intmail.prod.int.phx2.redhat.com [10.5.11.23])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6JBCc7U024555
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Thu, 19 Jul 2012 07:12:38 -0400
+Original-Received: from redhat.com (vpn1-6-74.ams2.redhat.com [10.36.6.74])
+	by int-mx10.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with SMTP id q6JBCaED030422;
+	Thu, 19 Jul 2012 07:12:37 -0400
+Content-Disposition: inline
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.23
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330286 gmane.comp.emulators.kvm.devel:94708
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330286>
+
+We validate irq pin number when routing is setup, so
+code handling illegal irq # in pic and ioapic on each injection
+is never called.
+Drop it.
+
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+---
+
+Note: this is on top of
+	[PATCHv2] kvm: fix race with level interrupts
+as these patches touch the same code.
+
+ arch/x86/kvm/i8259.c | 16 +++++++---------
+ virt/kvm/ioapic.c    | 35 +++++++++++++++++------------------
+ 2 files changed, 24 insertions(+), 27 deletions(-)
+
+diff --git a/arch/x86/kvm/i8259.c b/arch/x86/kvm/i8259.c
+index 1df8fb9..277ec0d 100644
+--- a/arch/x86/kvm/i8259.c
++++ b/arch/x86/kvm/i8259.c
+@@ -190,17 +190,15 @@ void kvm_pic_update_irq(struct kvm_pic *s)
+ 
+ int kvm_pic_set_irq(struct kvm_pic *s, int irq, int irq_source_id, int level)
+ {
+-	int ret = -1;
++	int ret, irq_level;
+ 
+ 	pic_lock(s);
+-	if (irq >= 0 && irq < PIC_NUM_PINS) {
+-		int irq_level = __kvm_irq_line_state(&s->irq_states[irq],
+-						     irq_source_id, level);
+-		ret = pic_set_irq1(&s->pics[irq >> 3], irq & 7, irq_level);
+-		pic_update_irq(s);
+-		trace_kvm_pic_set_irq(irq >> 3, irq & 7, s->pics[irq >> 3].elcr,
+-				      s->pics[irq >> 3].imr, ret == 0);
+-	}
++	irq_level = __kvm_irq_line_state(&s->irq_states[irq],
++					 irq_source_id, level);
++	ret = pic_set_irq1(&s->pics[irq >> 3], irq & 7, irq_level);
++	pic_update_irq(s);
++	trace_kvm_pic_set_irq(irq >> 3, irq & 7, s->pics[irq >> 3].elcr,
++			      s->pics[irq >> 3].imr, ret == 0);
+ 	pic_unlock(s);
+ 
+ 	return ret;
+diff --git a/virt/kvm/ioapic.c b/virt/kvm/ioapic.c
+index ef61d52..4d824c7 100644
+--- a/virt/kvm/ioapic.c
++++ b/virt/kvm/ioapic.c
+@@ -197,28 +197,27 @@ int kvm_ioapic_set_irq(struct kvm_ioapic *ioapic, int irq, int irq_source_id,
+ 	u32 old_irr;
+ 	u32 mask = 1 << irq;
+ 	union kvm_ioapic_redirect_entry entry;
+-	int ret = 1;
++	int ret, irq_level;
+ 
+ 	spin_lock(&ioapic->lock);
+ 	old_irr = ioapic->irr;
+-	if (irq >= 0 && irq < IOAPIC_NUM_PINS) {
+-		int irq_level = __kvm_irq_line_state(&ioapic->irq_states[irq],
+-						     irq_source_id, level);
+-		entry = ioapic->redirtbl[irq];
+-		irq_level ^= entry.fields.polarity;
+-		if (!irq_level)
+-			ioapic->irr &= ~mask;
+-		else {
+-			int edge = (entry.fields.trig_mode == IOAPIC_EDGE_TRIG);
+-			ioapic->irr |= mask;
+-			if ((edge && old_irr != ioapic->irr) ||
+-			    (!edge && !entry.fields.remote_irr))
+-				ret = ioapic_service(ioapic, irq);
+-			else
+-				ret = 0; /* report coalesced interrupt */
+-		}
+-		trace_kvm_ioapic_set_irq(entry.bits, irq, ret == 0);
++	irq_level = __kvm_irq_line_state(&ioapic->irq_states[irq],
++					 irq_source_id, level);
++	entry = ioapic->redirtbl[irq];
++	irq_level ^= entry.fields.polarity;
++	if (!irq_level) {
++		ioapic->irr &= ~mask;
++		ret = 1;
++	} else {
++		int edge = (entry.fields.trig_mode == IOAPIC_EDGE_TRIG);
++		ioapic->irr |= mask;
++		if ((edge && old_irr != ioapic->irr) ||
++		    (!edge && !entry.fields.remote_irr))
++			ret = ioapic_service(ioapic, irq);
++		else
++			ret = 0; /* report coalesced interrupt */
+ 	}
++	trace_kvm_ioapic_set_irq(entry.bits, irq, ret == 0);
+ 	spin_unlock(&ioapic->lock);
+ 
+ 	return ret;
+-- 
+MST

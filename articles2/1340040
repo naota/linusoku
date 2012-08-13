@@ -1,0 +1,166 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.file-systems,gmane.linux.nfs
+Subject: [PATCH v5 17/19] vfs: have faccessat retry once on an ESTALE error
+Date: Wed,  8 Aug 2012 09:21:40 -0400
+Lines: 104
+Approved: news@gmane.org
+Message-ID: <1344432102-22312-18-git-send-email-jlayton@redhat.com>
+References: <1344432102-22312-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344432188 31238 80.91.229.3 (8 Aug 2012 13:23:08 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 13:23:08 +0000 (UTC)
+Cc: linux-fsdevel@vger.kernel.org, linux-nfs@vger.kernel.org,
+	linux-kernel@vger.kernel.org, michael.brantley@deshaw.com,
+	hch@infradead.org, miklos@szeredi.hu, pstaubach@exagrid.com
+To: viro@ZenIV.linux.org.uk
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 15:23:07 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sz6E5-0006mb-Sf
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 15:23:06 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1758558Ab2HHNW7 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 09:22:59 -0400
+Original-Received: from mail-gg0-f174.google.com ([209.85.161.174]:43064 "EHLO
+	mail-gg0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1758515Ab2HHNWL (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 09:22:11 -0400
+Original-Received: by mail-gg0-f174.google.com with SMTP id k6so15462ggd.19
+        for <linux-kernel@vger.kernel.org>; Wed, 08 Aug 2012 06:22:11 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:x-gm-message-state;
+        bh=AloXVQSIbbnV7vU2ubBwADOo4F6MRCMoFHSblU5Vxkc=;
+        b=HE4sOg7e7A/UeyjoA8bkGK0ZOw44sVs+Tyn/zK+YxpXtwcaYqIO19Y7EBXBWUBon2P
+         fAVeS/MIpre2NSldOHptCF348Kre8olDjAcKY4ihoMnmOzJDz8KnpRmkJRiO1fYCzKGk
+         zhIfk3TF46cMhakyROsaJMYZZGUMU4QnZwoq8gBYF4yvLqTT16qAFo7/K67ov3ELNuns
+         hGVueEkFN0BgiCpc+Uau7ji9WR6VwDbPxNlh6nABwJSE7j+ffmbt2ayhupBj9sg6ml7N
+         vNvwi4LT6lDEVrbrupMK8xuX1uH0+Q5Zl3gqUI0YHeyMWxs90B+idhIfoouteRX09Ukm
+         BfWQ==
+Original-Received: by 10.101.75.14 with SMTP id c14mr5194215anl.32.1344432131178;
+        Wed, 08 Aug 2012 06:22:11 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-069-134-145-027.nc.res.rr.com. [69.134.145.27])
+        by mx.google.com with ESMTPS id l1sm24418002yhm.19.2012.08.08.06.22.09
+        (version=SSLv3 cipher=OTHER);
+        Wed, 08 Aug 2012 06:22:10 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1344432102-22312-1-git-send-email-jlayton@redhat.com>
+X-Gm-Message-State: ALoCoQltm74GJptlALYWqa17k2qfvzinN6cSFGkCk/fsyH3dSnNXYjVPMGOiIgnPnoK7Pscsmffl
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340040 gmane.linux.file-systems:66461 gmane.linux.nfs:51365
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340040>
+
+Signed-off-by: Jeff Layton <jlayton@redhat.com>
+---
+ fs/open.c | 70 ++++++++++++++++++++++++++++++++++++---------------------------
+ 1 file changed, 40 insertions(+), 30 deletions(-)
+
+diff --git a/fs/open.c b/fs/open.c
+index 0df0c5d..147b232 100644
+--- a/fs/open.c
++++ b/fs/open.c
+@@ -318,6 +318,9 @@ SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
+ 	struct path path;
+ 	struct inode *inode;
+ 	int res;
++	unsigned int lookup_flags = LOOKUP_FOLLOW;
++	unsigned int try = 0;
++	char *name;
+ 
+ 	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
+ 		return -EINVAL;
+@@ -339,44 +342,51 @@ SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
+ 				override_cred->cap_permitted;
+ 	}
+ 
++	name = getname_flags(filename, lookup_flags, NULL);
++	if (IS_ERR(name))
++		return PTR_ERR(name);
++
+ 	old_cred = override_creds(override_cred);
+ 
+-	res = user_path_at(dfd, filename, LOOKUP_FOLLOW, &path);
+-	if (res)
+-		goto out;
++	do {
++		res = kern_path_at(dfd, name, lookup_flags, &path);
++		if (res)
++			break;
+ 
+-	inode = path.dentry->d_inode;
++		inode = path.dentry->d_inode;
+ 
+-	if ((mode & MAY_EXEC) && S_ISREG(inode->i_mode)) {
++		if ((mode & MAY_EXEC) && S_ISREG(inode->i_mode)) {
++			/*
++			 * MAY_EXEC on regular files is denied if the fs is
++			 * mounted with the "noexec" flag.
++			 */
++			res = -EACCES;
++			if (path.mnt->mnt_flags & MNT_NOEXEC)
++				goto out_path_release;
++		}
++
++		res = inode_permission(inode, mode | MAY_ACCESS);
++		/* SuS v2 requires we report a read only fs too */
++		if (res || !(mode & S_IWOTH) || special_file(inode->i_mode))
++			goto out_path_release;
+ 		/*
+-		 * MAY_EXEC on regular files is denied if the fs is mounted
+-		 * with the "noexec" flag.
++		 * This is a rare case where using __mnt_is_readonly()
++		 * is OK without a mnt_want/drop_write() pair.  Since
++		 * no actual write to the fs is performed here, we do
++		 * not need to telegraph to that to anyone.
++		 *
++		 * By doing this, we accept that this access is
++		 * inherently racy and know that the fs may change
++		 * state before we even see this result.
+ 		 */
+-		res = -EACCES;
+-		if (path.mnt->mnt_flags & MNT_NOEXEC)
+-			goto out_path_release;
+-	}
+-
+-	res = inode_permission(inode, mode | MAY_ACCESS);
+-	/* SuS v2 requires we report a read only fs too */
+-	if (res || !(mode & S_IWOTH) || special_file(inode->i_mode))
+-		goto out_path_release;
+-	/*
+-	 * This is a rare case where using __mnt_is_readonly()
+-	 * is OK without a mnt_want/drop_write() pair.  Since
+-	 * no actual write to the fs is performed here, we do
+-	 * not need to telegraph to that to anyone.
+-	 *
+-	 * By doing this, we accept that this access is
+-	 * inherently racy and know that the fs may change
+-	 * state before we even see this result.
+-	 */
+-	if (__mnt_is_readonly(path.mnt))
+-		res = -EROFS;
++		if (__mnt_is_readonly(path.mnt))
++			res = -EROFS;
+ 
+ out_path_release:
+-	path_put(&path);
+-out:
++		path_put(&path);
++		lookup_flags |= LOOKUP_REVAL;
++	} while (retry_estale(res, try++));
++	putname(name);
+ 	revert_creds(old_cred);
+ 	put_cred(override_cred);
+ 	return res;
+-- 
+1.7.11.2
+

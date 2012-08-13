@@ -1,0 +1,89 @@
+Path: news.gmane.org!not-for-mail
+From: Steven Rostedt <rostedt@goodmis.org>
+Newsgroups: gmane.linux.kernel
+Subject: Re: __update_max_tr: rcu_read_lock() used illegally while idle!
+Date: Tue, 31 Jul 2012 14:06:41 -0400
+Lines: 26
+Approved: news@gmane.org
+Message-ID: <1343758001.27983.66.camel@gandalf.stny.rr.com>
+References: <1343662752.3847.2.camel@fedora>
+	 <20120731120556.GB17252@localhost>
+	 <1343741625.27983.39.camel@gandalf.stny.rr.com>
+	 <20120731144453.GB2422@linux.vnet.ibm.com>
+	 <1343746311.27983.52.camel@gandalf.stny.rr.com>
+	 <1343746583.27983.55.camel@gandalf.stny.rr.com>
+	 <20120731151808.GF2422@linux.vnet.ibm.com>
+	 <1343749502.27983.57.camel@gandalf.stny.rr.com>
+	 <20120731171733.GK2422@linux.vnet.ibm.com>
+	 <1343755497.27983.59.camel@gandalf.stny.rr.com>
+	 <20120731174440.GM2422@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="ISO-8859-15"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343758013 15232 80.91.229.3 (31 Jul 2012 18:06:53 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 18:06:53 +0000 (UTC)
+Cc: Fengguang Wu <fengguang.wu@intel.com>,
+	Steven Rostedt <srostedt@redhat.com>,
+	LKML <linux-kernel@vger.kernel.org>,
+	David Howells <dhowells@redhat.com>
+To: paulmck@linux.vnet.ibm.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 20:06:52 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwGqI-0001EJ-8Z
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 20:06:50 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755206Ab2GaSGn (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 14:06:43 -0400
+Original-Received: from hrndva-omtalb.mail.rr.com ([71.74.56.122]:18979 "EHLO
+	hrndva-omtalb.mail.rr.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754776Ab2GaSGm (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 14:06:42 -0400
+X-Authority-Analysis: v=2.0 cv=LIjkseq9 c=1 sm=0 a=s5Htg7xnQOKvHEu9STBOug==:17 a=OpT9cpI26MMA:10 a=I5RZEMmPgckA:10 a=5SG0PmZfjMsA:10 a=Q9fys5e9bTEA:10 a=meVymXHHAAAA:8 a=ayC55rCoAAAA:8 a=mkhFjgIERGt2ff7qgW8A:9 a=PUjeQqilurYA:10 a=s5Htg7xnQOKvHEu9STBOug==:117
+X-Cloudmark-Score: 0
+X-Originating-IP: 72.230.195.127
+Original-Received: from [72.230.195.127] ([72.230.195.127:57860] helo=[192.168.23.10])
+	by hrndva-oedge01.mail.rr.com (envelope-from <rostedt@goodmis.org>)
+	(ecelerity 2.2.3.46 r()) with ESMTP
+	id DD/CD-01685-1BE18105; Tue, 31 Jul 2012 18:06:41 +0000
+In-Reply-To: <20120731174440.GM2422@linux.vnet.ibm.com>
+X-Mailer: Evolution 3.4.3-1 
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335931
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335931>
+
+On Tue, 2012-07-31 at 10:44 -0700, Paul E. McKenney wrote:
+
+> OK, I interpret this as excluding NMI handlers, but please let me
+> know if I am still being naive.  ;-)
+> 
+
+You are correct. This is only called where lockdep is called (to trace
+enabling of IRQS). Note, that its called before normal irqs are actually
+enabled (interrupts are still disabled), this is why it's called outside
+of the in_irq() sections, because it is called just before returning
+back to process context.
+
+That said, because NMIs are so difficult, lockdep doesn't record the
+disabling (and then enabling) of interrupts when an NMI triggers. Thus,
+the irqsoff tracer also does not record NMIs. Which is fine, because
+NMIs should not take long to run (we can add other mechanisms to time
+NMI length if that is needed), and NMIs should not be enabling
+interrupts nor taking any locks.
+
+From arch/x86/kernel/entry_64.S:
+
+	/* paranoidentry do_nmi, 0; without TRACE_IRQS_OFF */
+
+-- Steve
+
+

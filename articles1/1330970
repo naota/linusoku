@@ -1,0 +1,98 @@
+Path: news.gmane.org!not-for-mail
+From: H Hartley Sweeten <hartleys@visionengravers.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 4/5] staging: comedi: dt3000: ioremap'ed addresses are resource_size_t
+Date: Fri, 20 Jul 2012 10:32:47 -0700
+Lines: 44
+Approved: news@gmane.org
+Message-ID: <201207201032.47867.hartleys@visionengravers.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342805589 5086 80.91.229.3 (20 Jul 2012 17:33:09 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 17:33:09 +0000 (UTC)
+Cc: <devel@driverdev.osuosl.org>, <abbotti@mev.co.uk>,
+	<gregkh@linuxfoundation.org>
+To: Linux Kernel <linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 19:33:06 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsH4X-0002FB-V3
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 19:33:02 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753532Ab2GTRc4 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 13:32:56 -0400
+Original-Received: from mail132.messagelabs.com ([216.82.242.115]:59341 "EHLO
+	mail132.messagelabs.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753101Ab2GTRcy (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 13:32:54 -0400
+X-Env-Sender: hartleys@visionengravers.com
+X-Msg-Ref: server-4.tower-132.messagelabs.com!1342805572!14948021!2
+X-Originating-IP: [216.166.12.31]
+X-StarScan-Version: 6.5.10; banners=-,-,-
+X-VirusChecked: Checked
+Original-Received: (qmail 5012 invoked from network); 20 Jul 2012 17:32:53 -0000
+Original-Received: from out001.collaborationhost.net (HELO out001.collaborationhost.net) (216.166.12.31)
+  by server-4.tower-132.messagelabs.com with RC4-SHA encrypted SMTP; 20 Jul 2012 17:32:53 -0000
+Original-Received: from etch.local (10.2.3.210) by smtp.collaborationhost.net
+ (10.2.0.46) with Microsoft SMTP Server (TLS) id 8.3.213.0; Fri, 20 Jul 2012
+ 12:32:53 -0500
+User-Agent: KMail/1.9.9
+Content-Disposition: inline
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330970
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330970>
+
+As mentioned by Ian Abbott, the pci address passed to ioremap
+should be a resource_size_t not an unsigned long. Use a local
+variable of that type to hold the pci_resource_start() that is
+passed to ioremp().
+
+Set the dev->iobase to a dummy non-zero value so that the "detach"
+can use it as a flag to know that comedi_pci_disable() needs to
+be called.
+
+Signed-off-by: H Hartley Sweeten <hsweeten@visionengravers.com>
+Reported-by: Ian Abbott <abbotti@mev.co.uk>
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/staging/comedi/drivers/dt3000.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/staging/comedi/drivers/dt3000.c b/drivers/staging/comedi/drivers/dt3000.c
+index a6fe6c9..3476cda 100644
+--- a/drivers/staging/comedi/drivers/dt3000.c
++++ b/drivers/staging/comedi/drivers/dt3000.c
+@@ -804,6 +804,7 @@ static int dt3000_attach(struct comedi_device *dev, struct comedi_devconfig *it)
+ {
+ 	struct pci_dev *pcidev;
+ 	struct comedi_subdevice *s;
++	resource_size_t pci_base;
+ 	int ret = 0;
+ 
+ 	dev_dbg(dev->class_dev, "dt3000:\n");
+@@ -820,9 +821,10 @@ static int dt3000_attach(struct comedi_device *dev, struct comedi_devconfig *it)
+ 	ret = comedi_pci_enable(pcidev, "dt3000");
+ 	if (ret < 0)
+ 		return ret;
++	dev->iobase = 1;	/* the "detach" needs this */
+ 
+-	dev->iobase = pci_resource_start(pcidev, 0);
+-	devpriv->io_addr = ioremap(dev->iobase, DT3000_SIZE);
++	pci_base  = pci_resource_start(pcidev, 0);
++	devpriv->io_addr = ioremap(pci_base, DT3000_SIZE);
+ 	if (!devpriv->io_addr)
+ 		return -ENOMEM;
+ 
+-- 
+1.7.11
+

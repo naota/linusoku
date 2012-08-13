@@ -1,0 +1,269 @@
+Path: news.gmane.org!not-for-mail
+From: Arnaldo Carvalho de Melo <acme@infradead.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 05/18] perf session: Use perf_evlist__sample_type more extensively
+Date: Fri,  3 Aug 2012 11:00:57 -0300
+Lines: 213
+Approved: news@gmane.org
+Message-ID: <1344002470-5965-6-git-send-email-acme@infradead.org>
+References: <1344002470-5965-1-git-send-email-acme@infradead.org>
+NNTP-Posting-Host: plane.gmane.org
+Content-Type: text/plain; charset="UTF-8"
+X-Trace: dough.gmane.org 1344002583 2752 80.91.229.3 (3 Aug 2012 14:03:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 14:03:03 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org,
+	Arnaldo Carvalho de Melo <acme@redhat.com>,
+	David Ahern <dsahern@gmail.com>,
+	Frederic Weisbecker <fweisbec@gmail.com>,
+	Jiri Olsa <jolsa@redhat.com>, Mike Galbraith <efault@gmx.de>,
+	Namhyung Kim <namhyung@gmail.com>,
+	Paul Mackerras <paulus@samba.org>,
+	Peter Zijlstra <peterz@infradead.org>,
+	Stephane Eranian <eranian@google.com>
+To: Ingo Molnar <mingo@kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 16:03:01 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxISx-0006Fj-De
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 16:02:59 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753910Ab2HCOCx (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 10:02:53 -0400
+Original-Received: from casper.infradead.org ([85.118.1.10]:45794 "EHLO
+	casper.infradead.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753110Ab2HCOB0 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 10:01:26 -0400
+Original-Received: from [187.65.5.202] (helo=sandy.ghostprotocols.net)
+	by casper.infradead.org with esmtpsa (Exim 4.76 #1 (Red Hat Linux))
+	id 1SxIRL-0006gl-FB; Fri, 03 Aug 2012 14:01:20 +0000
+Original-Received: by sandy.ghostprotocols.net (Postfix, from userid 500)
+	id CC2A12602F0; Fri,  3 Aug 2012 11:01:13 -0300 (BRT)
+X-Mailer: git-send-email 1.7.9.2.358.g22243
+In-Reply-To: <1344002470-5965-1-git-send-email-acme@infradead.org>
+X-SRS-Rewrite: SMTP reverse-path rewritten from <acme@infradead.org> by casper.infradead.org
+	See http://www.infradead.org/rpr.html
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337299
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337299>
+
+From: Arnaldo Carvalho de Melo <acme@redhat.com>
+
+Removing perf_session->sample_type, as it can be obtained from the
+evsel/evlist.
+
+Cc: David Ahern <dsahern@gmail.com>
+Cc: Frederic Weisbecker <fweisbec@gmail.com>
+Cc: Jiri Olsa <jolsa@redhat.com>
+Cc: Mike Galbraith <efault@gmx.de>
+Cc: Namhyung Kim <namhyung@gmail.com>
+Cc: Paul Mackerras <paulus@samba.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Stephane Eranian <eranian@google.com>
+Link: http://lkml.kernel.org/n/tip-mnt1zwlik7sp7z6ljc9kyefg@git.kernel.org
+Signed-off-by: Arnaldo Carvalho de Melo <acme@redhat.com>
+---
+ tools/perf/builtin-report.c |    5 +++--
+ tools/perf/builtin-test.c   |   10 ++--------
+ tools/perf/util/session.c   |   31 ++++++++++++++++++++++---------
+ tools/perf/util/session.h   |   11 +++--------
+ 4 files changed, 30 insertions(+), 27 deletions(-)
+
+diff --git a/tools/perf/builtin-report.c b/tools/perf/builtin-report.c
+index 69b1c11..7c88a24 100644
+--- a/tools/perf/builtin-report.c
++++ b/tools/perf/builtin-report.c
+@@ -249,8 +249,9 @@ static int process_read_event(struct perf_tool *tool,
+ static int perf_report__setup_sample_type(struct perf_report *rep)
+ {
+ 	struct perf_session *self = rep->session;
++	u64 sample_type = perf_evlist__sample_type(self->evlist);
+ 
+-	if (!self->fd_pipe && !(self->sample_type & PERF_SAMPLE_CALLCHAIN)) {
++	if (!self->fd_pipe && !(sample_type & PERF_SAMPLE_CALLCHAIN)) {
+ 		if (sort__has_parent) {
+ 			ui__error("Selected --sort parent, but no "
+ 				    "callchain data. Did you call "
+@@ -274,7 +275,7 @@ static int perf_report__setup_sample_type(struct perf_report *rep)
+ 
+ 	if (sort__branch_mode == 1) {
+ 		if (!self->fd_pipe &&
+-		    !(self->sample_type & PERF_SAMPLE_BRANCH_STACK)) {
++		    !(sample_type & PERF_SAMPLE_BRANCH_STACK)) {
+ 			ui__error("Selected -b but no branch data. "
+ 				  "Did you call perf record without -b?\n");
+ 			return -1;
+diff --git a/tools/perf/builtin-test.c b/tools/perf/builtin-test.c
+index 2ea5fe4..e5032ed 100644
+--- a/tools/perf/builtin-test.c
++++ b/tools/perf/builtin-test.c
+@@ -661,7 +661,7 @@ static int test__PERF_RECORD(void)
+ 	const char *cmd = "sleep";
+ 	const char *argv[] = { cmd, "1", NULL, };
+ 	char *bname;
+-	u64 sample_type, prev_time = 0;
++	u64 prev_time = 0;
+ 	bool found_cmd_mmap = false,
+ 	     found_libc_mmap = false,
+ 	     found_vdso_mmap = false,
+@@ -757,12 +757,6 @@ static int test__PERF_RECORD(void)
+ 	}
+ 
+ 	/*
+-	 * We'll need these two to parse the PERF_SAMPLE_* fields in each
+-	 * event.
+-	 */
+-	sample_type = perf_evlist__sample_type(evlist);
+-
+-	/*
+ 	 * Now that all is properly set up, enable the events, they will
+ 	 * count just on workload.pid, which will start...
+ 	 */
+@@ -787,7 +781,7 @@ static int test__PERF_RECORD(void)
+ 				if (type < PERF_RECORD_MAX)
+ 					nr_events[type]++;
+ 
+-				err = perf_event__parse_sample(event, sample_type,
++				err = perf_event__parse_sample(event, evsel->attr.sample_type,
+ 							       evsel->sample_size, true,
+ 							       &sample, false);
+ 				if (err < 0) {
+diff --git a/tools/perf/util/session.c b/tools/perf/util/session.c
+index b8da60d..00e180e 100644
+--- a/tools/perf/util/session.c
++++ b/tools/perf/util/session.c
+@@ -23,12 +23,20 @@ int perf_session__parse_sample(struct perf_session *session,
+ 	struct perf_evsel *first;
+ 	first = list_entry(session->evlist->entries.next, struct perf_evsel, node);
+ 
+-	return perf_event__parse_sample(event, session->sample_type,
++	return perf_event__parse_sample(event, first->attr.sample_type,
+ 					first->sample_size,
+ 					session->sample_id_all, sample,
+ 					session->header.needs_swap);
+ }
+ 
++int perf_session__synthesize_sample(struct perf_session *session,
++				    union perf_event *event,
++				    const struct perf_sample *sample)
++{
++	return perf_event__synthesize_sample(event, perf_evlist__sample_type(session->evlist),
++					     sample, session->header.needs_swap);
++}
++
+ static int perf_session__open(struct perf_session *self, bool force)
+ {
+ 	struct stat input_stat;
+@@ -95,7 +103,6 @@ out_close:
+ 
+ void perf_session__update_sample_type(struct perf_session *self)
+ {
+-	self->sample_type = perf_evlist__sample_type(self->evlist);
+ 	self->sample_id_all = perf_evlist__sample_id_all(self->evlist);
+ 	self->id_hdr_size = perf_evlist__id_hdr_size(self->evlist);
+ 	self->host_machine.id_hdr_size = self->id_hdr_size;
+@@ -877,16 +884,18 @@ static void perf_session__print_tstamp(struct perf_session *session,
+ 				       union perf_event *event,
+ 				       struct perf_sample *sample)
+ {
++	u64 sample_type = perf_evlist__sample_type(session->evlist);
++
+ 	if (event->header.type != PERF_RECORD_SAMPLE &&
+ 	    !session->sample_id_all) {
+ 		fputs("-1 -1 ", stdout);
+ 		return;
+ 	}
+ 
+-	if ((session->sample_type & PERF_SAMPLE_CPU))
++	if ((sample_type & PERF_SAMPLE_CPU))
+ 		printf("%u ", sample->cpu);
+ 
+-	if (session->sample_type & PERF_SAMPLE_TIME)
++	if (sample_type & PERF_SAMPLE_TIME)
+ 		printf("%" PRIu64 " ", sample->time);
+ }
+ 
+@@ -911,6 +920,8 @@ static void dump_event(struct perf_session *session, union perf_event *event,
+ static void dump_sample(struct perf_session *session, union perf_event *event,
+ 			struct perf_sample *sample)
+ {
++	u64 sample_type;
++
+ 	if (!dump_trace)
+ 		return;
+ 
+@@ -918,10 +929,12 @@ static void dump_sample(struct perf_session *session, union perf_event *event,
+ 	       event->header.misc, sample->pid, sample->tid, sample->ip,
+ 	       sample->period, sample->addr);
+ 
+-	if (session->sample_type & PERF_SAMPLE_CALLCHAIN)
++	sample_type = perf_evlist__sample_type(session->evlist);
++
++	if (sample_type & PERF_SAMPLE_CALLCHAIN)
+ 		callchain__printf(sample);
+ 
+-	if (session->sample_type & PERF_SAMPLE_BRANCH_STACK)
++	if (sample_type & PERF_SAMPLE_BRANCH_STACK)
+ 		branch_stack__printf(sample);
+ }
+ 
+@@ -1018,7 +1031,7 @@ static int perf_session__preprocess_sample(struct perf_session *session,
+ 					   union perf_event *event, struct perf_sample *sample)
+ {
+ 	if (event->header.type != PERF_RECORD_SAMPLE ||
+-	    !(session->sample_type & PERF_SAMPLE_CALLCHAIN))
++	    !(perf_evlist__sample_type(session->evlist) & PERF_SAMPLE_CALLCHAIN))
+ 		return 0;
+ 
+ 	if (!ip_callchain__valid(sample->callchain, event)) {
+@@ -1401,9 +1414,9 @@ int perf_session__process_events(struct perf_session *self,
+ 	return err;
+ }
+ 
+-bool perf_session__has_traces(struct perf_session *self, const char *msg)
++bool perf_session__has_traces(struct perf_session *session, const char *msg)
+ {
+-	if (!(self->sample_type & PERF_SAMPLE_RAW)) {
++	if (!(perf_evlist__sample_type(session->evlist) & PERF_SAMPLE_RAW)) {
+ 		pr_err("No trace sample to read. Did you call 'perf %s'?\n", msg);
+ 		return false;
+ 	}
+diff --git a/tools/perf/util/session.h b/tools/perf/util/session.h
+index 4d549e2..c45ce43 100644
+--- a/tools/perf/util/session.h
++++ b/tools/perf/util/session.h
+@@ -41,7 +41,6 @@ struct perf_session {
+ 	 *	  perf.data file.
+ 	 */
+ 	struct hists		hists;
+-	u64			sample_type;
+ 	int			fd;
+ 	bool			fd_pipe;
+ 	bool			repipe;
+@@ -133,13 +132,9 @@ int perf_session__parse_sample(struct perf_session *session,
+ 			       const union perf_event *event,
+ 			       struct perf_sample *sample);
+ 
+-static inline int perf_session__synthesize_sample(struct perf_session *session,
+-						  union perf_event *event,
+-						  const struct perf_sample *sample)
+-{
+-	return perf_event__synthesize_sample(event, session->sample_type,
+-					     sample, session->header.needs_swap);
+-}
++int perf_session__synthesize_sample(struct perf_session *session,
++				    union perf_event *event,
++				    const struct perf_sample *sample);
+ 
+ struct perf_evsel *perf_session__find_first_evtype(struct perf_session *session,
+ 					    unsigned int type);
+-- 
+1.7.1
+

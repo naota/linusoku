@@ -1,0 +1,159 @@
+Path: news.gmane.org!not-for-mail
+From: Tejun Heo <tj@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 3/7] workqueue: clean up delayed_work initializers and add missing one
+Date: Wed,  8 Aug 2012 14:37:58 -0700
+Lines: 97
+Approved: news@gmane.org
+Message-ID: <1344461882-10149-4-git-send-email-tj@kernel.org>
+References: <1344461882-10149-1-git-send-email-tj@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344461929 23303 80.91.229.3 (8 Aug 2012 21:38:49 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 21:38:49 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, mingo@redhat.com,
+	akpm@linux-foundation.org, tglx@linutronix.de,
+	peterz@infradead.org, davem@davemloft.net, tomi.valkeinen@ti.com,
+	Tejun Heo <tj@kernel.org>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 23:38:46 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzDxm-0001Jh-1A
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 23:38:46 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932295Ab2HHVic (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 17:38:32 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:38439 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750906Ab2HHVi3 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 17:38:29 -0400
+Original-Received: by pbbrr13 with SMTP id rr13so2073643pbb.19
+        for <linux-kernel@vger.kernel.org>; Wed, 08 Aug 2012 14:38:29 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references;
+        bh=A1va6VRLsdPkRdBiLbULgs3Y/pYcz/MnmN/naBwyNqQ=;
+        b=0A3P7CxsMLABGoutRaRo8WnKV6XKSajAFyQvV7AWjw47T72idFBtgSh1puFV0u4vfC
+         Gz0sLEKBLv/T8c49ZafFGCLh7x+qo1OXO/yuIFbjOuZ4nUY8JdL0gfDzLE0NLWHjnp+k
+         8kLWjuCE9jY1FYOpVXQUW6SRYiTelsMJVTwuKM/CxaKqA5kv9udbK4uuuF85G1uHyE+C
+         Kfn8ZBQwsGzqajZGboDM9i9Df9HMDIlAEWW6R53kx/smcWPDCJ4uetO+g73yJY7zAS1g
+         OSomQCp5f7uI+sscLHSAoi6/6zAAIQnBQzFYXRc9rbdI8oIz30ir797NonD3O9OlnuRu
+         1w9Q==
+Original-Received: by 10.68.213.67 with SMTP id nq3mr4041952pbc.142.1344461908972;
+        Wed, 08 Aug 2012 14:38:28 -0700 (PDT)
+Original-Received: from wtj.mtv.corp.google.com (wtj.mtv.corp.google.com [172.18.110.84])
+        by mx.google.com with ESMTPS id gj10sm14112276pbc.18.2012.08.08.14.38.27
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Wed, 08 Aug 2012 14:38:28 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7.3
+In-Reply-To: <1344461882-10149-1-git-send-email-tj@kernel.org>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340335
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340335>
+
+Reimplement delayed_work initializers using new timer initializers
+which take timer flags.  This reduces code duplications and will ease
+further initializer changes.  This patch also adds a missing
+initializer - INIT_DEFERRABLE_WORK_ONSTACK().
+
+Signed-off-by: Tejun Heo <tj@kernel.org>
+---
+ include/linux/workqueue.h |   48 +++++++++++++++++++++-----------------------
+ 1 files changed, 23 insertions(+), 25 deletions(-)
+
+diff --git a/include/linux/workqueue.h b/include/linux/workqueue.h
+index 1c1a65b..83755f4 100644
+--- a/include/linux/workqueue.h
++++ b/include/linux/workqueue.h
+@@ -133,26 +133,20 @@ struct execute_work {
+ 	__WORK_INIT_LOCKDEP_MAP(#n, &(n))				\
+ 	}
+ 
+-#define __DELAYED_WORK_INITIALIZER(n, f) {				\
++#define __DELAYED_WORK_INITIALIZER(n, f, tflags) {			\
+ 	.work = __WORK_INITIALIZER((n).work, (f)),			\
+-	.timer = TIMER_INITIALIZER(delayed_work_timer_fn,		\
+-				0, (unsigned long)&(n)),		\
+-	}
+-
+-#define __DEFERRABLE_WORK_INITIALIZER(n, f) {				\
+-	.work = __WORK_INITIALIZER((n).work, (f)),			\
+-	.timer = TIMER_DEFERRED_INITIALIZER(delayed_work_timer_fn,	\
+-				0, (unsigned long)&(n)),		\
++	.timer = __TIMER_INITIALIZER(delayed_work_timer_fn,		\
++			0, (unsigned long)&(n), (tflags)),		\
+ 	}
+ 
+ #define DECLARE_WORK(n, f)						\
+ 	struct work_struct n = __WORK_INITIALIZER(n, f)
+ 
+ #define DECLARE_DELAYED_WORK(n, f)					\
+-	struct delayed_work n = __DELAYED_WORK_INITIALIZER(n, f)
++	struct delayed_work n = __DELAYED_WORK_INITIALIZER(n, f, 0)
+ 
+ #define DECLARE_DEFERRABLE_WORK(n, f)					\
+-	struct delayed_work n = __DEFERRABLE_WORK_INITIALIZER(n, f)
++	struct delayed_work n = __DELAYED_WORK_INITIALIZER(n, f, TIMER_DEFERRABLE)
+ 
+ /*
+  * initialize a work item's function pointer
+@@ -216,29 +210,33 @@ static inline unsigned int work_static(struct work_struct *work) { return 0; }
+ 		__INIT_WORK((_work), (_func), 1);			\
+ 	} while (0)
+ 
+-#define INIT_DELAYED_WORK(_work, _func)					\
++#define __INIT_DELAYED_WORK(_work, _func, _tflags)			\
+ 	do {								\
+ 		INIT_WORK(&(_work)->work, (_func));			\
+-		init_timer(&(_work)->timer);				\
+-		(_work)->timer.function = delayed_work_timer_fn;	\
+-		(_work)->timer.data = (unsigned long)(_work);		\
++		__setup_timer(&(_work)->timer, delayed_work_timer_fn,	\
++			      (unsigned long)(_work), (_tflags));	\
+ 	} while (0)
+ 
+-#define INIT_DELAYED_WORK_ONSTACK(_work, _func)				\
++#define __INIT_DELAYED_WORK_ONSTACK(_work, _func, _tflags)		\
+ 	do {								\
+ 		INIT_WORK_ONSTACK(&(_work)->work, (_func));		\
+-		init_timer_on_stack(&(_work)->timer);			\
+-		(_work)->timer.function = delayed_work_timer_fn;	\
+-		(_work)->timer.data = (unsigned long)(_work);		\
++		__setup_timer_on_stack(&(_work)->timer,			\
++				       delayed_work_timer_fn,		\
++				       (unsigned long)(_work),		\
++				       (_tflags));			\
+ 	} while (0)
+ 
++#define INIT_DELAYED_WORK(_work, _func)					\
++	__INIT_DELAYED_WORK(_work, _func, 0)
++
++#define INIT_DELAYED_WORK_ONSTACK(_work, _func)				\
++	__INIT_DELAYED_WORK_ONSTACK(_work, _func, 0)
++
+ #define INIT_DEFERRABLE_WORK(_work, _func)				\
+-	do {								\
+-		INIT_WORK(&(_work)->work, (_func));			\
+-		init_timer_deferrable(&(_work)->timer);			\
+-		(_work)->timer.function = delayed_work_timer_fn;	\
+-		(_work)->timer.data = (unsigned long)(_work);		\
+-	} while (0)
++	__INIT_DELAYED_WORK(_work, _func, TIMER_DEFERRABLE)
++
++#define INIT_DEFERRABLE_WORK_ONSTACK(_work, _func)			\
++	__INIT_DELAYED_WORK_ONSTACK(_work, _func, TIMER_DEFERRABLE)
+ 
+ /**
+  * work_pending - Find out whether a work item is currently pending
+-- 
+1.7.7.3
+

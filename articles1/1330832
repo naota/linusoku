@@ -1,0 +1,221 @@
+Path: news.gmane.org!not-for-mail
+From: "Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH, RFC 6/6] x86: switch the 64bit uncached page clear to SSE/AVX v2
+Date: Fri, 20 Jul 2012 15:50:22 +0300
+Lines: 141
+Approved: news@gmane.org
+Message-ID: <1342788622-10290-7-git-send-email-kirill.shutemov@linux.intel.com>
+References: <1342788622-10290-1-git-send-email-kirill.shutemov@linux.intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342788546 20910 80.91.229.3 (20 Jul 2012 12:49:06 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 12:49:06 +0000 (UTC)
+Cc: Thomas Gleixner <tglx@linutronix.de>,
+	Ingo Molnar <mingo@redhat.com>,
+	"H. Peter Anvin" <hpa@zytor.com>,
+	x86@kernel.org,
+	Andi Kleen <ak@linux.intel.com>,
+	"Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>,
+	Tim Chen <tim.c.chen@linux.intel.com>,
+	Alex Shi <alex.shu@intel.com>,
+	Jan Beulich <jbeulich@novell.com>,
+	Robert Richter <robert.richter@amd.com>,
+	Andy Lutomirski <luto@amacapital.net>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Andrea Arcangeli <aarcange@redhat.com>,
+	Johannes Weiner <hannes@cmpxchg.org>,
+	Hugh Dickins <hughd@google.com>,
+	KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>,
+	Mel Gorman <mgorman@suse.de>,
+	linux-kernel@vger.kernel.org
+To: linux-mm@kvack.org
+Original-X-From: owner-linux-mm@kvack.org Fri Jul 20 14:48:59 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SsCdd-0001Cd-Ih
+	for glkm-linux-mm-2@m.gmane.org; Fri, 20 Jul 2012 14:48:57 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 48C8D6B0068; Fri, 20 Jul 2012 08:48:55 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 19A506B006C; Fri, 20 Jul 2012 08:48:54 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 9BAB06B0071; Fri, 20 Jul 2012 08:48:54 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx166.postini.com [74.125.245.166])
+	by kanga.kvack.org (Postfix) with SMTP id C594F6B0068
+	for <linux-mm@kvack.org>; Fri, 20 Jul 2012 08:48:53 -0400 (EDT)
+Original-Received: from mga11.intel.com ([192.55.52.93]) by na3sys010amx166.postini.com ([74.125.244.10]) with SMTP;
+	Fri, 20 Jul 2012 12:48:53 GMT
+Original-Received: from fmsmga001.fm.intel.com ([10.253.24.23])
+  by fmsmga102.fm.intel.com with ESMTP; 20 Jul 2012 05:48:53 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="181316901"
+Original-Received: from blue.fi.intel.com ([10.237.72.50])
+  by fmsmga001.fm.intel.com with ESMTP; 20 Jul 2012 05:48:48 -0700
+Original-Received: by blue.fi.intel.com (Postfix, from userid 1000)
+	id 9B452E008A; Fri, 20 Jul 2012 15:50:32 +0300 (EEST)
+X-Mailer: git-send-email 1.7.10
+In-Reply-To: <1342788622-10290-1-git-send-email-kirill.shutemov@linux.intel.com>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:33.12991/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0005) s cv gt3 GT2 gt1 r p m c 
+X-pstn-addresses: from <kirill.shutemov@linux.intel.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82774 gmane.linux.kernel:1330832
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330832>
+
+From: Andi Kleen <ak@linux.intel.com>
+
+With multiple threads vector stores are more efficient, so use them.
+This will cause the page clear to run non preemptable and add some
+overhead. However on 32bit it was already non preempable (due to
+kmap_atomic) and there is an preemption opportunity every 4K unit.
+
+On a NPB (Nasa Parallel Benchmark) 128GB run on a Westmere this improves
+the performance regression of enabling transparent huge pages
+by ~2% (2.81% to 0.81%), near the runtime variability now.
+On a system with AVX support more is expected.
+
+TBD more tests on other workloads
+
+Signed-off-by: Andi Kleen <ak@linux.intel.com>
+[kirill.shutemov@linux.intel.com: Properly save/restore arguments]
+Signed-off-by: Kirill A. Shutemov <kirill.shutemov@linux.intel.com>
+---
+ arch/x86/lib/clear_page_nocache_64.S |   91 ++++++++++++++++++++++++++++-----
+ 1 files changed, 77 insertions(+), 14 deletions(-)
+
+diff --git a/arch/x86/lib/clear_page_nocache_64.S b/arch/x86/lib/clear_page_nocache_64.S
+index ee16d15..c092919 100644
+--- a/arch/x86/lib/clear_page_nocache_64.S
++++ b/arch/x86/lib/clear_page_nocache_64.S
+@@ -1,29 +1,92 @@
++/*
++ * Clear pages with cache bypass.
++ * 
++ * Copyright (C) 2011, 2012 Intel Corporation
++ * Author: Andi Kleen
++ *
++ * This software may be redistributed and/or modified under the terms of
++ * the GNU General Public License ("GPL") version 2 only as published by the
++ * Free Software Foundation.
++ */
++
+ #include <linux/linkage.h>
++#include <asm/alternative-asm.h>
++#include <asm/cpufeature.h>
+ #include <asm/dwarf2.h>
+ 
++#define SSE_UNROLL 128
++
+ /*
+  * Zero a page avoiding the caches
+  * rdi	page
+  */
+ ENTRY(clear_page_nocache)
+ 	CFI_STARTPROC
+-	xorl   %eax,%eax
+-	movl   $4096/64,%ecx
++	push   %rdi
++	call   kernel_fpu_begin
++	pop    %rdi
++	sub    $16,%rsp
++	CFI_ADJUST_CFA_OFFSET 16
++	movdqu %xmm0,(%rsp)
++	xorpd  %xmm0,%xmm0
++	movl   $4096/SSE_UNROLL,%ecx
+ 	.p2align 4
+ .Lloop:
+ 	decl	%ecx
+-#define PUT(x) movnti %rax,x*8(%rdi)
+-	movnti %rax,(%rdi)
+-	PUT(1)
+-	PUT(2)
+-	PUT(3)
+-	PUT(4)
+-	PUT(5)
+-	PUT(6)
+-	PUT(7)
+-	leaq	64(%rdi),%rdi
++	.set x,0
++	.rept SSE_UNROLL/16
++	movntdq %xmm0,x(%rdi)
++	.set x,x+16
++	.endr
++	leaq	SSE_UNROLL(%rdi),%rdi
+ 	jnz	.Lloop
+-	nop
+-	ret
++	movdqu (%rsp),%xmm0
++	addq   $16,%rsp
++	CFI_ADJUST_CFA_OFFSET -16
++	jmp   kernel_fpu_end
+ 	CFI_ENDPROC
+ ENDPROC(clear_page_nocache)
++
++#ifdef CONFIG_AS_AVX
++
++	.section .altinstr_replacement,"ax"
++1:	.byte 0xeb					/* jmp <disp8> */
++	.byte (clear_page_nocache_avx - clear_page_nocache) - (2f - 1b)
++	/* offset */
++2:
++	.previous
++	.section .altinstructions,"a"
++	altinstruction_entry clear_page_nocache,1b,X86_FEATURE_AVX,\
++	                     16, 2b-1b
++	.previous
++
++#define AVX_UNROLL 256 /* TUNE ME */
++
++ENTRY(clear_page_nocache_avx)
++	CFI_STARTPROC
++	push   %rdi
++	call   kernel_fpu_begin
++	pop    %rdi
++	sub    $32,%rsp
++	CFI_ADJUST_CFA_OFFSET 32
++	vmovdqu %ymm0,(%rsp)
++	vxorpd  %ymm0,%ymm0,%ymm0
++	movl   $4096/AVX_UNROLL,%ecx
++	.p2align 4
++.Lloop_avx:
++	decl	%ecx
++	.set x,0
++	.rept AVX_UNROLL/32
++	vmovntdq %ymm0,x(%rdi)
++	.set x,x+32
++	.endr
++	leaq	AVX_UNROLL(%rdi),%rdi
++	jnz	.Lloop_avx
++	vmovdqu (%rsp),%ymm0
++	addq   $32,%rsp
++	CFI_ADJUST_CFA_OFFSET -32
++	jmp   kernel_fpu_end
++	CFI_ENDPROC
++ENDPROC(clear_page_nocache_avx)
++
++#endif
+-- 
+1.7.7.6
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

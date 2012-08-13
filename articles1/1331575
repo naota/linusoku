@@ -1,0 +1,122 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 014/108] NFSv4: Reduce the footprint of the idmapper
+Date: Mon, 23 Jul 2012 02:07:05 +0100
+Lines: 68
+Approved: news@gmane.org
+Message-ID: <20120723010653.646297879@decadent.org.uk>
+References: <20120723010651.408577075@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343009400 21860 80.91.229.3 (23 Jul 2012 02:10:00 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 02:10:00 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	Trond Myklebust <Trond.Myklebust@netapp.com>,
+	Jeff Layton <jlayton@redhat.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 04:09:59 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1St85p-0004tz-Ux
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 04:09:54 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753859Ab2GWCJ0 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 22:09:26 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:53991 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1752896Ab2GWBmR (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 21:42:17 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7eo-0008Rr-EP; Mon, 23 Jul 2012 02:41:58 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7eW-000898-5T; Mon, 23 Jul 2012 02:41:40 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120723010651.408577075@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331575 gmane.linux.kernel.stable:28720
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331575>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Trond Myklebust <Trond.Myklebust@netapp.com>
+
+commit d073e9b541e1ac3f52d72c3a153855d9a9ee3278 upstream.
+
+Instead of pre-allocating the storage for all the strings, we can
+significantly reduce the size of that table by doing the allocation
+when we do the downcall.
+
+Signed-off-by: Trond Myklebust <Trond.Myklebust@netapp.com>
+Reviewed-by: Jeff Layton <jlayton@redhat.com>
+[bwh: Backported to 3.2: adjust context in nfs_idmap_delete()]
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ fs/nfs/idmap.c |   16 +++++++++++++---
+ 1 file changed, 13 insertions(+), 3 deletions(-)
+
+--- a/fs/nfs/idmap.c
++++ b/fs/nfs/idmap.c
+@@ -318,7 +318,7 @@
+ 	unsigned long		ih_expires;
+ 	__u32			ih_id;
+ 	size_t			ih_namelen;
+-	char			ih_name[IDMAP_NAMESZ];
++	const char		*ih_name;
+ };
+ 
+ struct idmap_hashtable {
+@@ -382,11 +382,16 @@
+ nfs_idmap_delete(struct nfs_client *clp)
+ {
+ 	struct idmap *idmap = clp->cl_idmap;
++	int i;
+ 
+ 	if (!idmap)
+ 		return;
+ 	rpc_unlink(idmap->idmap_dentry);
+ 	clp->cl_idmap = NULL;
++	for (i = 0; i < ARRAY_SIZE(idmap->idmap_user_hash.h_entries); i++)
++		kfree(idmap->idmap_user_hash.h_entries[i].ih_name);
++	for (i = 0; i < ARRAY_SIZE(idmap->idmap_group_hash.h_entries); i++)
++		kfree(idmap->idmap_group_hash.h_entries[i].ih_name);
+ 	kfree(idmap);
+ }
+ 
+@@ -449,9 +454,14 @@
+ idmap_update_entry(struct idmap_hashent *he, const char *name,
+ 		size_t namelen, __u32 id)
+ {
++	char *str = kmalloc(namelen + 1, GFP_KERNEL);
++	if (str == NULL)
++		return;
++	kfree(he->ih_name);
+ 	he->ih_id = id;
+-	memcpy(he->ih_name, name, namelen);
+-	he->ih_name[namelen] = '\0';
++	memcpy(str, name, namelen);
++	str[namelen] = '\0';
++	he->ih_name = str;
+ 	he->ih_namelen = namelen;
+ 	he->ih_expires = jiffies + nfs_idmap_cache_timeout;
+ }
+
+
+

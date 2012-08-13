@@ -1,0 +1,143 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 15/41] vmscan: limit direct reclaim for higher order allocations
+Date: Mon, 30 Jul 2012 10:31:14 -0700
+Lines: 76
+Approved: news@gmane.org
+Message-ID: <20120730172902.497265875@linuxfoundation.org>
+References: <20120730172901.306897424@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343670407 31845 80.91.229.3 (30 Jul 2012 17:46:47 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 17:46:47 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Rik van Riel <riel@redhat.com>,
+	Johannes Weiner <jweiner@redhat.com>,
+	Mel Gorman <mgorman@suse.de>,
+	Andrea Arcangeli <aarcange@redhat.com>,
+	Minchan Kim <minchan.kim@gmail.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 19:46:39 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Svu3D-0003W1-87
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 19:46:39 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754661Ab2G3Rq2 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 13:46:28 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:38307 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754557Ab2G3RcF (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 13:32:05 -0400
+Original-Received: by ghrr11 with SMTP id r11so5102000ghr.19
+        for <linux-kernel@vger.kernel.org>; Mon, 30 Jul 2012 10:32:04 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=nc8FgdpjMzaK4brC058ZNOx0xPauMYhre3Jf3V+tfX8=;
+        b=Y/aa2CrYyGmsbG2Ax3smnWRcHriOjmwVBF3slPbysFp+a2dSA2qfTuxChMnVVjrx5X
+         etkq3DGvTsbHU5BaI6Q54laMgJHTBlckH1MV2jZ4bQHuL/epvCrrlWrkPSLfkzsjYAsH
+         Bnv4LoUWXyftn3UaCiU1B9esLKH5rvb7l/gtneSk2zYCa7cGO6GSUM4J9CSeTItgb4R9
+         WXnwY8yhM3qlz7TRov8dI7jOK6mTVqFagWzHs9LRTmeLjK3s5XvJGqg/XhAogC/poQQR
+         GoLFLK5JXq11BeZqgVVMWb/lRGh8BqODmjyIJvYe+TQzuTYh8Na5J5hh3IpEYwe5T0cC
+         HloA==
+Original-Received: by 10.68.223.138 with SMTP id qu10mr37692574pbc.50.1343669524001;
+        Mon, 30 Jul 2012 10:32:04 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id qp6sm8289897pbc.55.2012.07.30.10.32.01
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 30 Jul 2012 10:32:03 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120730172901.306897424@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQkqpslvpAsc2IRqMJFGUEANxvqvOlcEx70/BWIm3/7Cf0mkzjuem1bQx030LagjFg2+ij6o
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335233 gmane.linux.kernel.stable:28972
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335233>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Rik van Riel <riel@redhat.com>
+
+commit e0887c19b2daa140f20ca8104bdc5740f39dbb86 upstream.
+
+Stable note: Not tracked on Bugzilla. THP and compaction was found to
+	aggressively reclaim pages and stall systems under different
+	situations that was addressed piecemeal over time.  Paragraph
+	3 of this changelog is the motivation for this patch.
+
+When suffering from memory fragmentation due to unfreeable pages, THP page
+faults will repeatedly try to compact memory.  Due to the unfreeable
+pages, compaction fails.
+
+Needless to say, at that point page reclaim also fails to create free
+contiguous 2MB areas.  However, that doesn't stop the current code from
+trying, over and over again, and freeing a minimum of 4MB (2UL <<
+sc->order pages) at every single invocation.
+
+This resulted in my 12GB system having 2-3GB free memory, a corresponding
+amount of used swap and very sluggish response times.
+
+This can be avoided by having the direct reclaim code not reclaim from
+zones that already have plenty of free memory available for compaction.
+
+If compaction still fails due to unmovable memory, doing additional
+reclaim will only hurt the system, not help.
+
+[jweiner@redhat.com: change comment to explain the order check]
+Signed-off-by: Rik van Riel <riel@redhat.com>
+Acked-by: Johannes Weiner <jweiner@redhat.com>
+Acked-by: Mel Gorman <mgorman@suse.de>
+Cc: Andrea Arcangeli <aarcange@redhat.com>
+Reviewed-by: Minchan Kim <minchan.kim@gmail.com>
+Signed-off-by: Johannes Weiner <jweiner@redhat.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ mm/vmscan.c |   16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -2059,6 +2059,22 @@ static void shrink_zones(int priority, s
+ 				continue;
+ 			if (zone->all_unreclaimable && priority != DEF_PRIORITY)
+ 				continue;	/* Let kswapd poll it */
++			if (COMPACTION_BUILD) {
++				/*
++				 * If we already have plenty of memory
++				 * free for compaction, don't free any
++				 * more.  Even though compaction is
++				 * invoked for any non-zero order,
++				 * only frequent costly order
++				 * reclamation is disruptive enough to
++				 * become a noticable problem, like
++				 * transparent huge page allocations.
++				 */
++				if (sc->order > PAGE_ALLOC_COSTLY_ORDER &&
++					(compaction_suitable(zone, sc->order) ||
++					 compaction_deferred(zone)))
++					continue;
++			}
+ 			/*
+ 			 * This steals pages from memory cgroups over softlimit
+ 			 * and returns the number of reclaimed pages and
+
+

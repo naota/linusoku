@@ -1,0 +1,92 @@
+Path: news.gmane.org!not-for-mail
+From: David Miller <davem@davemloft.net>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel,gmane.linux.network,gmane.comp.emulators.xen.devel
+Subject: Re: [PATCH] netvm: check for page == NULL when propogating the
+ skb->pfmemalloc flag
+Date: Wed, 08 Aug 2012 15:50:46 -0700 (PDT)
+Lines: 29
+Approved: news@gmane.org
+Message-ID: <20120808.155046.820543563969484712.davem@davemloft.net>
+References: <20120807085554.GF29814@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344466255 24501 80.91.229.3 (8 Aug 2012 22:50:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 22:50:55 +0000 (UTC)
+Cc: linux-mm@kvack.org, linux-kernel@vger.kernel.org,
+ netdev@vger.kernel.org, xen-devel@lists.xensource.com, konrad@darnok.org,
+ Ian.Campbell@eu.citrix.com, akpm@linux-foundation.org
+To: mgorman@suse.de
+Original-X-From: owner-linux-mm@kvack.org Thu Aug 09 00:50:53 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SzF5X-0008EV-Vs
+	for glkm-linux-mm-2@m.gmane.org; Thu, 09 Aug 2012 00:50:52 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 60A576B0068; Wed,  8 Aug 2012 18:50:49 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 501566B0069; Wed,  8 Aug 2012 18:50:49 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 0A95E6B006E; Wed,  8 Aug 2012 18:50:48 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx199.postini.com [74.125.245.199])
+	by kanga.kvack.org (Postfix) with SMTP id 611826B0068
+	for <linux-mm@kvack.org>; Wed,  8 Aug 2012 18:50:48 -0400 (EDT)
+Original-Received: from shards.monkeyblade.net ([149.20.54.216]) by na3sys010amx199.postini.com ([74.125.244.10]) with SMTP;
+	Wed, 08 Aug 2012 22:50:48 GMT
+Original-Received: from localhost (74-93-104-98-Washington.hfc.comcastbusiness.net [74.93.104.98])
+	by shards.monkeyblade.net (Postfix) with ESMTPSA id 6B25E584F81;
+	Wed,  8 Aug 2012 15:50:49 -0700 (PDT)
+In-Reply-To: <20120807085554.GF29814@suse.de>
+X-Mailer: Mew version 6.5 on Emacs 24.1 / Mule 6.0 (HANACHIRUSATO)
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <davem@davemloft.net> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83860 gmane.linux.kernel:1340359 gmane.linux.network:239493 gmane.comp.emulators.xen.devel:136841
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340359>
+
+From: Mel Gorman <mgorman@suse.de>
+Date: Tue, 7 Aug 2012 09:55:55 +0100
+
+> Commit [c48a11c7: netvm: propagate page->pfmemalloc to skb] is responsible
+> for the following bug triggered by a xen network driver
+ ...
+> The problem is that the xenfront driver is passing a NULL page to
+> __skb_fill_page_desc() which was unexpected. This patch checks that
+> there is a page before dereferencing.
+> 
+> Reported-and-Tested-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+> Signed-off-by: Mel Gorman <mgorman@suse.de>
+
+That call to __skb_fill_page_desc() in xen-netfront.c looks completely bogus.
+It's the only driver passing NULL here.
+
+That whole song and dance figuring out what to do with the head
+fragment page, depending upon whether the length is greater than the
+RX_COPY_THRESHOLD, is completely unnecessary.
+
+Just use something like a call to __pskb_pull_tail(skb, len) and all
+that other crap around that area can simply be deleted.
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

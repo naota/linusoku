@@ -1,0 +1,118 @@
+Path: news.gmane.org!not-for-mail
+From: Eric Dumazet <eric.dumazet@gmail.com>
+Newsgroups: gmane.linux.kernel.lsm,gmane.linux.kernel,gmane.comp.security.selinux,gmane.linux.network
+Subject: [PATCH] ipv4: tcp: unicast_sock should not land outside of TCP
+ stack
+Date: Fri, 10 Aug 2012 01:56:06 +0200
+Lines: 47
+Approved: news@gmane.org
+Message-ID: <1344556566.31104.808.camel@edumazet-glaptop>
+References: <1344523833.28967.996.camel@edumazet-glaptop>
+	 <CACLa4ptkvKj2GT4ZL+msMuWOHW885Hugk8nz3hvptOoY9-totw@mail.gmail.com>
+	 <1344547743.31104.582.camel@edumazet-glaptop>
+	 <20120809.163851.1182547052663187702.davem@davemloft.net>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344556578 30661 80.91.229.3 (9 Aug 2012 23:56:18 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 23:56:18 +0000 (UTC)
+Cc: eparis@parisplace.org, paul@paul-moore.com, casey@schaufler-ca.com,
+	johnstul@us.ibm.com, serge@hallyn.com,
+	linux-kernel@vger.kernel.org, james.l.morris@oracle.com,
+	selinux@tycho.nsa.gov, john.johansen@canonical.com,
+	linux-security-module@vger.kernel.org, netdev@vger.kernel.org
+To: David Miller <davem@davemloft.net>
+Original-X-From: linux-security-module-owner@vger.kernel.org Fri Aug 10 01:56:17 2012
+Return-path: <linux-security-module-owner@vger.kernel.org>
+Envelope-to: glkl-linux-security-module-2@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-security-module-owner@vger.kernel.org>)
+	id 1SzcaO-0005zi-5R
+	for glkl-linux-security-module-2@plane.gmane.org; Fri, 10 Aug 2012 01:56:16 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755412Ab2HIX4O (ORCPT
+	<rfc822;glkl-linux-security-module-2@m.gmane.org>);
+	Thu, 9 Aug 2012 19:56:14 -0400
+Original-Received: from mail-wg0-f44.google.com ([74.125.82.44]:44429 "EHLO
+	mail-wg0-f44.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752045Ab2HIX4M (ORCPT
+	<rfc822;linux-security-module@vger.kernel.org>);
+	Thu, 9 Aug 2012 19:56:12 -0400
+Original-Received: by wgbdr13 with SMTP id dr13so923898wgb.1
+        for <multiple recipients>; Thu, 09 Aug 2012 16:56:11 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=subject:from:to:cc:in-reply-to:references:content-type:date
+         :message-id:mime-version:x-mailer:content-transfer-encoding;
+        bh=aPvycR1V6rWFEEe16Qqr5Ug5xxaGO9+KPE5SS8LmgmA=;
+        b=e+JX/hipXZMQ4C+TE74KHzQY0NeBINigVxnpZ6824IOHVuc5IR2jZ1JJq2mdVUywVG
+         8TxRSWaonTsRmHHsj1AtAlRf5QX0mNKUBpSjFeMvcrFYqcDGrj6SRR9jmxFv57d/yebe
+         p9fDPIvzIEeYJxwaT1O9lldqzhiC01BIfggIFtvoAygQ8InV/XaaNsbuzTCuJ2Tjaxlv
+         TtlIh5rd58qYtIaCYAI+0rHpBJJLM9qjEaoGXdjFUjpqrBxdqpuNCJb2Al1ULVdH4wKZ
+         h4+S/RSQotedLoy1vHH7HhS4LN/0W3dVF1QirT549hFjS1uAkkcGfz6F6brl3reUBsui
+         ++1A==
+Original-Received: by 10.216.85.130 with SMTP id u2mr457477wee.202.1344556571171;
+        Thu, 09 Aug 2012 16:56:11 -0700 (PDT)
+Original-Received: from [172.28.90.230] ([74.125.122.49])
+        by mx.google.com with ESMTPS id t8sm4557764wiy.3.2012.08.09.16.56.08
+        (version=SSLv3 cipher=OTHER);
+        Thu, 09 Aug 2012 16:56:09 -0700 (PDT)
+In-Reply-To: <20120809.163851.1182547052663187702.davem@davemloft.net>
+X-Mailer: Evolution 2.28.3 
+Original-Sender: linux-security-module-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-security-module.vger.kernel.org>
+X-Mailing-List: linux-security-module@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel.lsm:16800 gmane.linux.kernel:1341065 gmane.comp.security.selinux:17749 gmane.linux.network:239651
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341065>
+
+From: Eric Dumazet <edumazet@google.com>
+
+commit be9f4a44e7d41cee (ipv4: tcp: remove per net tcp_sock) added a
+selinux regression, reported and bisected by John Stultz
+
+selinux_ip_postroute_compat() expect to find a valid sk->sk_security
+pointer, but this field is NULL for unicast_sock
+
+It turns out that unicast_sock are really temporary stuff to be able
+to reuse  part of IP stack (ip_append_data()/ip_push_pending_frames())
+
+Fact is that frames sent by ip_send_unicast_reply() should be orphaned
+to not fool LSM.
+
+Note IPv6 never had this problem, as tcp_v6_send_response() doesnt use a
+fake socket at all. I'll probably implement tcp_v4_send_response() to
+remove these unicast_sock in linux-3.7
+
+Reported-by: John Stultz <johnstul@us.ibm.com>
+Bisected-by: John Stultz <johnstul@us.ibm.com>
+Signed-off-by: Eric Dumazet <edumazet@google.com>
+Cc: Paul Moore <paul@paul-moore.com>
+Cc: Eric Paris <eparis@parisplace.org>
+Cc: "Serge E. Hallyn" <serge@hallyn.com>
+---
+ net/ipv4/ip_output.c |    1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/net/ipv4/ip_output.c b/net/ipv4/ip_output.c
+index 76dde25..ec410e0 100644
+--- a/net/ipv4/ip_output.c
++++ b/net/ipv4/ip_output.c
+@@ -1536,6 +1536,7 @@ void ip_send_unicast_reply(struct net *net, struct sk_buff *skb, __be32 daddr,
+ 			  arg->csumoffset) = csum_fold(csum_add(nskb->csum,
+ 								arg->csum));
+ 		nskb->ip_summed = CHECKSUM_NONE;
++		skb_orphan(nskb);
+ 		skb_set_queue_mapping(nskb, skb_get_queue_mapping(skb));
+ 		ip_push_pending_frames(sk, &fl4);
+ 	}
+
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-security-module" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

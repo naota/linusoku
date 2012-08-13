@@ -1,0 +1,121 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 112/122] ALSA: hda - Fix invalid D3 of headphone DAC on VT202x codecs
+Date: Tue,  7 Aug 2012 15:26:40 -0700
+Lines: 58
+Approved: news@gmane.org
+Message-ID: <20120807222000.056928677@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344378822 15416 80.91.229.3 (7 Aug 2012 22:33:42 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:33:42 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Takashi Iwai <tiwai@suse.de>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:33:41 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysLE-0004aE-GL
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:33:32 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030433Ab2HGWc5 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:32:57 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:35918 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030363Ab2HGWcw (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:32:52 -0400
+Original-Received: by mail-gh0-f174.google.com with SMTP id r11so160404ghr.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:32:52 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=McuYRdH49QGKMV/+JdhL/sjpHXKm8nC39AVIeRtXKKo=;
+        b=CCdH1y/zoLfs0DvsW34lF9P2a5sI+4vaB5r8KszxZOqUUygRwMCafTghefLXOWIbLJ
+         Bg1T3U7i0yDfyP5GCAKQhZeF9Xeg7odvJa9IiTkFZiXfaN0/vMms6VW9LDvgsHLn/PIQ
+         d5FVXyGlJnTBNDPlX4+zvOgXc/krfMQFGqZIR2jQvQnfDt5MEN/nzwJlkeC0JQYhABA1
+         agjCj5X/R7OIMW5+X4HAwQB0S7ADZHHuAaSK9UdPbMw97GhIi//iTqvdgxrTosj5ZC7c
+         ljXnurn9xKEdAUDfeTHA5DLO2PgcnQm5gXBCBdK5DCHkToQ8ezkvlM3BYDoW2BCaoRll
+         JE5w==
+Original-Received: by 10.66.88.1 with SMTP id bc1mr13707222pab.18.1344378772044;
+        Tue, 07 Aug 2012 15:32:52 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id oa5sm11969088pbb.14.2012.08.07.15.32.50
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:32:51 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQkAM3NsUApoS2CRrT8utbNSEphbnUpEeYHMiQaEHFotfOjdze8ULYGw1Mh9WlOz4NQCHUYB
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339461 gmane.linux.kernel.stable:29300
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339461>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Takashi Iwai <tiwai@suse.de>
+
+commit 6162552b0de6ba80937c3dd53e084967851cd199 upstream.
+
+We've got a bug report about the silent output from the headphone on a
+mobo with VT2021, and spotted out that this was because of the wrong
+D3 state on the DAC for the headphone output.  The bug is triggered by
+the incomplete check for this DAC in set_widgets_power_state_vt1718S().
+It checks only the connectivity of the primary output (0x27) but
+doesn't consider the path from the headphone pin (0x28).
+
+Now this patch fixes the problem by checking both pins for DAC 0x0b.
+
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ sound/pci/hda/patch_via.c |    7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+--- a/sound/pci/hda/patch_via.c
++++ b/sound/pci/hda/patch_via.c
+@@ -3226,7 +3226,7 @@ static void set_widgets_power_state_vt17
+ {
+ 	struct via_spec *spec = codec->spec;
+ 	int imux_is_smixer;
+-	unsigned int parm;
++	unsigned int parm, parm2;
+ 	/* MUX6 (1eh) = stereo mixer */
+ 	imux_is_smixer =
+ 	snd_hda_codec_read(codec, 0x1e, 0, AC_VERB_GET_CONNECT_SEL, 0x00) == 5;
+@@ -3249,7 +3249,7 @@ static void set_widgets_power_state_vt17
+ 	parm = AC_PWRST_D3;
+ 	set_pin_power_state(codec, 0x27, &parm);
+ 	update_power_state(codec, 0x1a, parm);
+-	update_power_state(codec, 0xb, parm);
++	parm2 = parm; /* for pin 0x0b */
+ 
+ 	/* PW2 (26h), AOW2 (ah) */
+ 	parm = AC_PWRST_D3;
+@@ -3264,6 +3264,9 @@ static void set_widgets_power_state_vt17
+ 	if (!spec->hp_independent_mode) /* check for redirected HP */
+ 		set_pin_power_state(codec, 0x28, &parm);
+ 	update_power_state(codec, 0x8, parm);
++	if (!spec->hp_independent_mode && parm2 != AC_PWRST_D3)
++		parm = parm2;
++	update_power_state(codec, 0xb, parm);
+ 	/* MW9 (21h), Mw2 (1ah), AOW0 (8h) */
+ 	update_power_state(codec, 0x21, imux_is_smixer ? AC_PWRST_D0 : parm);
+ 
+
+

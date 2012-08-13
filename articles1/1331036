@@ -1,0 +1,124 @@
+Path: news.gmane.org!not-for-mail
+From: Eric Dumazet <eric.dumazet@gmail.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.network
+Subject: Re: [RFC] net: further seperate dst_entry.__refcnt from cache
+ contention
+Date: Fri, 20 Jul 2012 22:16:51 +0200
+Lines: 60
+Approved: news@gmane.org
+Message-ID: <1342815411.2626.7936.camel@edumazet-glaptop>
+References: <1342813587-31601-1-git-send-email-nzimmer@sgi.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342815433 18096 80.91.229.3 (20 Jul 2012 20:17:13 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 20:17:13 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, netdev@vger.kernel.org,
+	Robin.Holt@sgi.com, "David S. Miller" <davem@davemloft.net>
+To: Nathan Zimmer <nzimmer@sgi.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 22:17:13 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsJdQ-0004zC-1f
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 22:17:12 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752731Ab2GTURB (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 16:17:01 -0400
+Original-Received: from mail-we0-f174.google.com ([74.125.82.174]:51373 "EHLO
+	mail-we0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752111Ab2GTUQ7 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 16:16:59 -0400
+Original-Received: by weyx8 with SMTP id x8so2884015wey.19
+        for <multiple recipients>; Fri, 20 Jul 2012 13:16:58 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=subject:from:to:cc:in-reply-to:references:content-type:date
+         :message-id:mime-version:x-mailer:content-transfer-encoding;
+        bh=mcJ1qTFZsW89Vd2lEs0tzi9DW/kdpdtPMlqKEdn7/4Q=;
+        b=eGnSHj2bJ9/2RgF7nguowfJGikIuowQG4/tfYc9l1eIspzNaT0qIfTH3/uA9r6Xguw
+         vyBBnhWuD83zlk9U+ud3yZ0eN4fRDmbmMKT9BO0kFBWimBzu+/zltHm7hmNtv3mW1Git
+         DWTdfgdnWSCc0PP7Qb9VfDkud/AulJw0W/TFjzuYjlitRKpXf+Zep0GBK/82WgTBGWHe
+         HndVx6wo27Qhm0k1H6ZbHydro32T3dfLe0l55xUeGWWmr5YSMt2AbeRnRUnE6jGbPA/+
+         dIetLPZ4Epj+hsgvOr29K1sxPfP411B54jBRgOMLvMwoHISmG6WZ6IHX2u2zGSESL2Nx
+         EtIA==
+Original-Received: by 10.180.102.136 with SMTP id fo8mr9911519wib.19.1342815418037;
+        Fri, 20 Jul 2012 13:16:58 -0700 (PDT)
+Original-Received: from [172.28.91.20] ([74.125.122.49])
+        by mx.google.com with ESMTPS id fu8sm46720145wib.5.2012.07.20.13.16.55
+        (version=SSLv3 cipher=OTHER);
+        Fri, 20 Jul 2012 13:16:56 -0700 (PDT)
+In-Reply-To: <1342813587-31601-1-git-send-email-nzimmer@sgi.com>
+X-Mailer: Evolution 2.28.3 
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331036 gmane.linux.network:237947
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331036>
+
+On Fri, 2012-07-20 at 14:46 -0500, Nathan Zimmer wrote:
+> After some investigation on large machines I found that
+> dst_entry.__refcnt particpates in false cache sharing issues that show
+> when scaling past 12 threads who communicate via tcp with loopback addresses.
+> I adjusted refcnt to be on its own cache line and that helped quite a bit.
+> But perhaps a bit of a waste of space?  Is there some better way?
+> 
+> Here is some preliminary data I had gathered.  It shows nicely improved scaling.
+> 
+> Threads baseline   afterchange
+> 2       1328.03    1340.67
+> 4       2430.31    2282.09
+> 6       3087.65    3258.12
+> 8       3560.34    4165.88
+> 10      3900.34    4962.28
+> 12      3933.38    5613.76
+> 14      3876.98    6113.85
+> 16      3706.01    6338.00
+> 18      3742.48    6634.77
+> 20      3670.15    6641.25
+> 22      3660.98    6799.55
+> 24      3503.13    6613.45
+> 26      3525.73    6702.67
+> 28      3440.16    6801.27
+> 30      3497.59    6911.52
+> 32      3498.25    6540.06
+> 
+> I should say something about this test.  It is a dead simple test in which a
+> pair of threads simply pass data to each other.  They were placed in the same
+> socket to avoid cross node overhead.
+> 
+> CC: "David S. Miller" <davem@davemloft.net> 
+> Signed-off-by: Nathan Zimmer <nzimmer@sgi.com>
+> 
+> ---
+>  include/net/dst.h |    2 +-
+>  1 files changed, 1 insertions(+), 1 deletions(-)
+> 
+> diff --git a/include/net/dst.h b/include/net/dst.h
+> index 8197ead..3898643 100644
+> --- a/include/net/dst.h
+> +++ b/include/net/dst.h
+> @@ -84,7 +84,7 @@ struct dst_entry {
+>  	 * input/output/ops or performance tanks badly
+>  	 */
+>  	atomic_t		__refcnt;	/* client references	*/
+> -	int			__use;
+> +	int			__use	____cacheline_aligned;
+>  	unsigned long		lastuse;
+>  	union {
+>  		struct dst_entry	*next;
+
+Its a known problem, and we are waiting IP cache removal to address it.
+
+Before the cache removal, a machine can have million of dst
+
+Another idea concerning very hot dst would be to clone them on demand.
+
+
+

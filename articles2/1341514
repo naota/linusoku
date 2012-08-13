@@ -1,0 +1,146 @@
+Path: news.gmane.org!not-for-mail
+From: Cyril Chemparathy <cyril@ti.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: [PATCH v2 11/22] ARM: LPAE: use 64-bit accessors for TTBR registers
+Date: Fri, 10 Aug 2012 21:24:54 -0400
+Lines: 84
+Approved: news@gmane.org
+Message-ID: <1344648306-15619-12-git-send-email-cyril@ti.com>
+References: <1344648306-15619-1-git-send-email-cyril@ti.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1344648545 29080 80.91.229.3 (11 Aug 2012 01:29:05 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 11 Aug 2012 01:29:05 +0000 (UTC)
+Cc: <arnd@arndb.de>, <catalin.marinas@arm.com>,
+	<grant.likely@secretlab.ca>, <nico@linaro.org>,
+	<linux@arm.linux.org.uk>, <will.deacon@arm.com>,
+	Cyril Chemparathy <cyril@ti.com>,
+	Vitaly Andrianov <vitalya@ti.com>
+To: <linux-kernel@vger.kernel.org>,
+	<linux-arm-kernel@lists.infradead.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Aug 11 03:29:04 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1T00Vj-0001fw-Uj
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 11 Aug 2012 03:29:04 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1760525Ab2HKB26 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 10 Aug 2012 21:28:58 -0400
+Original-Received: from devils.ext.ti.com ([198.47.26.153]:53624 "EHLO
+	devils.ext.ti.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1759638Ab2HKBZx (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 10 Aug 2012 21:25:53 -0400
+Original-Received: from dlelxv30.itg.ti.com ([172.17.2.17])
+	by devils.ext.ti.com (8.13.7/8.13.7) with ESMTP id q7B1POOp014212;
+	Fri, 10 Aug 2012 20:25:24 -0500
+Original-Received: from DFLE72.ent.ti.com (dfle72.ent.ti.com [128.247.5.109])
+	by dlelxv30.itg.ti.com (8.13.8/8.13.8) with ESMTP id q7B1POdG010317;
+	Fri, 10 Aug 2012 20:25:24 -0500
+Original-Received: from dlelxv22.itg.ti.com (172.17.1.197) by dfle72.ent.ti.com
+ (128.247.5.109) with Microsoft SMTP Server id 14.1.323.3; Fri, 10 Aug 2012
+ 20:25:24 -0500
+Original-Received: from ares-ubuntu.am.dhcp.ti.com (ares-ubuntu.am.dhcp.ti.com
+ [158.218.103.17])	by dlelxv22.itg.ti.com (8.13.8/8.13.8) with ESMTP id
+ q7B1PN0R001397;	Fri, 10 Aug 2012 20:25:24 -0500
+Original-Received: from a0875269 by ares-ubuntu.am.dhcp.ti.com with local (Exim 4.76)
+	(envelope-from <cyril@ti.com>)	id 1T00SB-000451-Pw; Fri, 10 Aug 2012 21:25:23
+ -0400
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1344648306-15619-1-git-send-email-cyril@ti.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341514 gmane.linux.ports.arm.kernel:181449
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341514>
+
+This patch adds TTBR accessor macros, and modifies cpu_get_pgd() and
+the LPAE version of cpu_set_reserved_ttbr0() to use these instead.
+
+In the process, we also fix these functions to correctly handle cases
+where the physical address lies beyond the 4G limit of 32-bit addressing.
+
+Signed-off-by: Cyril Chemparathy <cyril@ti.com>
+Signed-off-by: Vitaly Andrianov <vitalya@ti.com>
+---
+ arch/arm/include/asm/proc-fns.h |   24 +++++++++++++++++++-----
+ arch/arm/mm/context.c           |    9 ++-------
+ 2 files changed, 21 insertions(+), 12 deletions(-)
+
+diff --git a/arch/arm/include/asm/proc-fns.h b/arch/arm/include/asm/proc-fns.h
+index 75b5f14..24224df 100644
+--- a/arch/arm/include/asm/proc-fns.h
++++ b/arch/arm/include/asm/proc-fns.h
+@@ -116,13 +116,27 @@ extern void cpu_resume(void);
+ #define cpu_switch_mm(pgd,mm) cpu_do_switch_mm(virt_to_phys(pgd),mm)
+ 
+ #ifdef CONFIG_ARM_LPAE
++
++#define cpu_get_ttbr(nr)					\
++	({							\
++		u64 ttbr;					\
++		__asm__("mrrc	p15, " #nr ", %Q0, %R0, c2"	\
++			: "=r" (ttbr)				\
++			: : "cc");				\
++		ttbr;						\
++	})
++
++#define cpu_set_ttbr(nr, val)					\
++	do {							\
++		u64 ttbr = val;					\
++		__asm__("mcrr	p15, " #nr ", %Q0, %R0, c2"	\
++			: : "r" (ttbr)				\
++			: "cc");				\
++	} while (0)
++
+ #define cpu_get_pgd()	\
+ 	({						\
+-		unsigned long pg, pg2;			\
+-		__asm__("mrrc	p15, 0, %0, %1, c2"	\
+-			: "=r" (pg), "=r" (pg2)		\
+-			:				\
+-			: "cc");			\
++		u64 pg = cpu_get_ttbr(0);		\
+ 		pg &= ~(PTRS_PER_PGD*sizeof(pgd_t)-1);	\
+ 		(pgd_t *)phys_to_virt(pg);		\
+ 	})
+diff --git a/arch/arm/mm/context.c b/arch/arm/mm/context.c
+index 119bc52..cd27f35 100644
+--- a/arch/arm/mm/context.c
++++ b/arch/arm/mm/context.c
+@@ -16,6 +16,7 @@
+ #include <asm/mmu_context.h>
+ #include <asm/thread_notify.h>
+ #include <asm/tlbflush.h>
++#include <asm/proc-fns.h>
+ 
+ static DEFINE_RAW_SPINLOCK(cpu_asid_lock);
+ unsigned int cpu_last_asid = ASID_FIRST_VERSION;
+@@ -23,17 +24,11 @@ unsigned int cpu_last_asid = ASID_FIRST_VERSION;
+ #ifdef CONFIG_ARM_LPAE
+ void cpu_set_reserved_ttbr0(void)
+ {
+-	unsigned long ttbl = __pa(swapper_pg_dir);
+-	unsigned long ttbh = 0;
+-
+ 	/*
+ 	 * Set TTBR0 to swapper_pg_dir which contains only global entries. The
+ 	 * ASID is set to 0.
+ 	 */
+-	asm volatile(
+-	"	mcrr	p15, 0, %0, %1, c2		@ set TTBR0\n"
+-	:
+-	: "r" (ttbl), "r" (ttbh));
++	cpu_set_ttbr(0, __pa(swapper_pg_dir));
+ 	isb();
+ }
+ #else
+-- 
+1.7.9.5
+

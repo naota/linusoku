@@ -1,0 +1,88 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 46/73] target: Check number of unmap descriptors against our limit
+Date: Tue, 31 Jul 2012 05:43:56 +0100
+Lines: 35
+Approved: news@gmane.org
+Message-ID: <20120731044318.657657711@decadent.org.uk>
+References: <20120731044310.013763753@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343710704 24289 80.91.229.3 (31 Jul 2012 04:58:24 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 04:58:24 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Roland Dreier <roland@purestorage.com>,
+	Nicholas Bellinger <nab@linux-iscsi.org>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 06:58:20 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sw4XD-0002rR-86
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 06:58:19 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755817Ab2GaE6M (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 00:58:12 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:48782 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1755635Ab2GaEuz (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 00:50:55 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Sw4Pm-0003QM-QO; Tue, 31 Jul 2012 05:50:38 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Sw4Op-0000Bi-Ek; Tue, 31 Jul 2012 05:49:39 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120731044310.013763753@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335445 gmane.linux.kernel.stable:29014
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335445>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Roland Dreier <roland@purestorage.com>
+
+commit 7409a6657aebf8be74c21d0eded80709b27275cb upstream.
+
+Fail UNMAP commands that have more than our reported limit on unmap
+descriptors.
+
+Signed-off-by: Roland Dreier <roland@purestorage.com>
+Signed-off-by: Nicholas Bellinger <nab@linux-iscsi.org>
+[bwh: Backported to 3.2: adjust filename]
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ drivers/target/target_core_cdb.c |    5 +++++
+ 1 file changed, 5 insertions(+)
+
+--- a/drivers/target/target_core_cdb.c
++++ b/drivers/target/target_core_cdb.c
+@@ -1133,6 +1133,11 @@ int target_emulate_unmap(struct se_task
+ 	bd_dl = get_unaligned_be16(&buf[2]);
+ 
+ 	size = min(size - 8, bd_dl);
++	if (size / 16 > dev->se_sub_dev->se_dev_attrib.max_unmap_block_desc_count) {
++		cmd->scsi_sense_reason = TCM_INVALID_PARAMETER_LIST;
++		ret = -EINVAL;
++		goto err;
++	}
+ 
+ 	/* First UNMAP block descriptor starts at 8 byte offset */
+ 	ptr = &buf[8];
+
+

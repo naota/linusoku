@@ -1,0 +1,127 @@
+Path: news.gmane.org!not-for-mail
+From: "Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH, RFC 2/6] mm: make clear_huge_page tolerate non aligned address
+Date: Fri, 20 Jul 2012 15:50:18 +0300
+Lines: 47
+Approved: news@gmane.org
+Message-ID: <1342788622-10290-3-git-send-email-kirill.shutemov@linux.intel.com>
+References: <1342788622-10290-1-git-send-email-kirill.shutemov@linux.intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342788542 20885 80.91.229.3 (20 Jul 2012 12:49:02 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 12:49:02 +0000 (UTC)
+Cc: Thomas Gleixner <tglx@linutronix.de>,
+	Ingo Molnar <mingo@redhat.com>,
+	"H. Peter Anvin" <hpa@zytor.com>,
+	x86@kernel.org,
+	Andi Kleen <ak@linux.intel.com>,
+	"Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>,
+	Tim Chen <tim.c.chen@linux.intel.com>,
+	Alex Shi <alex.shu@intel.com>,
+	Jan Beulich <jbeulich@novell.com>,
+	Robert Richter <robert.richter@amd.com>,
+	Andy Lutomirski <luto@amacapital.net>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Andrea Arcangeli <aarcange@redhat.com>,
+	Johannes Weiner <hannes@cmpxchg.org>,
+	Hugh Dickins <hughd@google.com>,
+	KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>,
+	Mel Gorman <mgorman@suse.de>,
+	linux-kernel@vger.kernel.org
+To: linux-mm@kvack.org
+Original-X-From: owner-linux-mm@kvack.org Fri Jul 20 14:48:56 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SsCdY-00018c-Ow
+	for glkm-linux-mm-2@m.gmane.org; Fri, 20 Jul 2012 14:48:53 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id D251F6B006E; Fri, 20 Jul 2012 08:48:50 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id A2F0C6B0069; Fri, 20 Jul 2012 08:48:50 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id DDF9B6B006E; Fri, 20 Jul 2012 08:48:49 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx146.postini.com [74.125.245.146])
+	by kanga.kvack.org (Postfix) with SMTP id E60D06B0068
+	for <linux-mm@kvack.org>; Fri, 20 Jul 2012 08:48:48 -0400 (EDT)
+Original-Received: from mga01.intel.com ([192.55.52.88]) by na3sys010amx146.postini.com ([74.125.244.10]) with SMTP;
+	Fri, 20 Jul 2012 12:48:48 GMT
+Original-Received: from fmsmga001.fm.intel.com ([10.253.24.23])
+  by fmsmga101.fm.intel.com with ESMTP; 20 Jul 2012 05:48:47 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="181316821"
+Original-Received: from blue.fi.intel.com ([10.237.72.50])
+  by fmsmga001.fm.intel.com with ESMTP; 20 Jul 2012 05:48:43 -0700
+Original-Received: by blue.fi.intel.com (Postfix, from userid 1000)
+	id 645DDE0080; Fri, 20 Jul 2012 15:50:32 +0300 (EEST)
+X-Mailer: git-send-email 1.7.10
+In-Reply-To: <1342788622-10290-1-git-send-email-kirill.shutemov@linux.intel.com>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:40.30676/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0005) s cv gt3 GT2 gt1 r p m c 
+X-pstn-addresses: from <kirill.shutemov@linux.intel.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82771 gmane.linux.kernel:1330829
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330829>
+
+From: Andi Kleen <ak@linux.intel.com>
+
+hugetlb does not necessarily pass in an aligned address, so the
+low level address computation is wrong.
+
+This will fix architectures that actually use the address for flushing
+the cleared address (very few, like xtensa/sparc/...?)
+
+Signed-off-by: Andi Kleen <ak@linux.intel.com>
+Signed-off-by: Kirill A. Shutemov <kirill.shutemov@linux.intel.com>
+---
+ mm/memory.c |    5 +++--
+ 1 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/mm/memory.c b/mm/memory.c
+index 2466d12..c356ead 100644
+--- a/mm/memory.c
++++ b/mm/memory.c
+@@ -3975,16 +3975,17 @@ void clear_huge_page(struct page *page,
+ 		     unsigned long addr, unsigned int pages_per_huge_page)
+ {
+ 	int i;
++	unsigned long haddr = addr & HPAGE_PMD_MASK;
+ 
+ 	if (unlikely(pages_per_huge_page > MAX_ORDER_NR_PAGES)) {
+-		clear_gigantic_page(page, addr, pages_per_huge_page);
++		clear_gigantic_page(page, haddr, pages_per_huge_page);
+ 		return;
+ 	}
+ 
+ 	might_sleep();
+ 	for (i = 0; i < pages_per_huge_page; i++) {
+ 		cond_resched();
+-		clear_user_highpage(page + i, addr + i * PAGE_SIZE);
++		clear_user_highpage(page + i, haddr + i * PAGE_SIZE);
+ 	}
+ }
+ 
+-- 
+1.7.7.6
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

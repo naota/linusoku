@@ -1,0 +1,135 @@
+Path: news.gmane.org!not-for-mail
+From: Minchan Kim <minchan@kernel.org>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [RESEND RFC 2/3] mm: remain migratetype in freed page
+Date: Mon, 23 Jul 2012 09:48:01 +0900
+Lines: 70
+Approved: news@gmane.org
+Message-ID: <1343004482-6916-3-git-send-email-minchan@kernel.org>
+References: <1343004482-6916-1-git-send-email-minchan@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343004478 26375 80.91.229.3 (23 Jul 2012 00:47:58 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 00:47:58 +0000 (UTC)
+Cc: linux-mm@kvack.org,
+	linux-kernel@vger.kernel.org,
+	Andrew Morton <akpm@linux-foundation.org>,
+	KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>,
+	Hugh Dickins <hughd@google.com>,
+	lliubbo@gmail.com,
+	Minchan Kim <minchan@kernel.org>
+To: Kamezawa Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>,
+	Mel Gorman <mgorman@suse.de>
+Original-X-From: owner-linux-mm@kvack.org Mon Jul 23 02:47:55 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1St6oU-0007gu-Vr
+	for glkm-linux-mm-2@m.gmane.org; Mon, 23 Jul 2012 02:47:55 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 1FCD96B0068; Sun, 22 Jul 2012 20:47:53 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id E2B646B0069; Sun, 22 Jul 2012 20:47:52 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 9F6666B006C; Sun, 22 Jul 2012 20:47:52 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx191.postini.com [74.125.245.191])
+	by kanga.kvack.org (Postfix) with SMTP id 954386B0069
+	for <linux-mm@kvack.org>; Sun, 22 Jul 2012 20:47:51 -0400 (EDT)
+Original-Received: from LGEMRELSE7Q.lge.com ([156.147.1.151]) by na3sys010amx191.postini.com ([74.125.244.10]) with SMTP;
+	Mon, 23 Jul 2012 00:47:51 GMT
+X-AuditID: 9c930197-b7b66ae000006a2c-28-500c9f327c59
+Original-Received: from localhost.localdomain ( [10.177.220.67])
+	by LGEMRELSE7Q.lge.com (Symantec Brightmail Gateway) with SMTP id 76.45.27180.23F9C005; Mon, 23 Jul 2012 09:47:46 +0900 (KST)
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1343004482-6916-1-git-send-email-minchan@kernel.org>
+X-Brightmail-Tracker: AAAAAA==
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:77.04544/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <minchan@kernel.org> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82826 gmane.linux.kernel:1331454
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331454>
+
+Page allocator doesn't keep migratetype information to page
+when the page is freed. This patch remains the information
+to freed page's index field which isn't used by free/alloc
+preparing so it shouldn't change any behavir except below one.
+
+This patch adds a new call site in __free_pages_ok so it might be
+overhead a bit but it's for high order allocation.
+So I believe damage isn't hurt.
+
+Signed-off-by: Minchan Kim <minchan@kernel.org>
+---
+ include/linux/mm.h |    6 ++++--
+ mm/page_alloc.c    |    7 ++++---
+ 2 files changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/include/linux/mm.h b/include/linux/mm.h
+index 86d61d6..8fd32da 100644
+--- a/include/linux/mm.h
++++ b/include/linux/mm.h
+@@ -251,12 +251,14 @@ struct inode;
+ 
+ static inline void set_page_migratetype(struct page *page, int migratetype)
+ {
+-	set_page_private(page, migratetype);
++	VM_BUG_ON((unsigned int)migratetype >= MIGRATE_TYPES);
++	page->index = migratetype;
+ }
+ 
+ static inline int get_page_migratetype(struct page *page)
+ {
+-	return page_private(page);
++	VM_BUG_ON((unsigned int)page->index >= MIGRATE_TYPES);
++	return page->index;
+ }
+ 
+ /*
+diff --git a/mm/page_alloc.c b/mm/page_alloc.c
+index 103ba66..32985dd 100644
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -723,6 +723,7 @@ static void __free_pages_ok(struct page *page, unsigned int order)
+ {
+ 	unsigned long flags;
+ 	int wasMlocked = __TestClearPageMlocked(page);
++	int migratetype;
+ 
+ 	if (!free_pages_prepare(page, order))
+ 		return;
+@@ -731,9 +732,9 @@ static void __free_pages_ok(struct page *page, unsigned int order)
+ 	if (unlikely(wasMlocked))
+ 		free_page_mlock(page);
+ 	__count_vm_events(PGFREE, 1 << order);
+-	free_one_page(page_zone(page), page, order,
+-					get_pageblock_migratetype(page));
+-
++	migratetype = get_pageblock_migratetype(page);
++	set_page_migratetype(page, migratetype);
++	free_one_page(page_zone(page), page, order, migratetype);
+ 	local_irq_restore(flags);
+ }
+ 
+-- 
+1.7.9.5
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

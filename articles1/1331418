@@ -1,0 +1,149 @@
+Path: news.gmane.org!not-for-mail
+From: Andy Walls <awalls-Xoej9cPu4Z+RGvkDC/A1pg@public.gmane.org>
+Newsgroups: gmane.linux.kernel.spi.devel,gmane.comp.emulators.kvm.devel,gmane.linux.kernel,gmane.linux.drivers.video-input-infrastructure
+Subject: Re: [PATCH 2/2] kthread_worker: reimplement flush_kthread_work() to
+	allow freeing the work item being executed
+Date: Sun, 22 Jul 2012 16:46:54 -0400
+Lines: 62
+Approved: news@gmane.org
+Message-ID: <1342990015.2487.19.camel@palomino.walls.org>
+References: <20120719211510.GA32763@google.com>
+	<20120719211629.GC32763@google.com>
+	<1342894814.2504.31.camel@palomino.walls.org>
+	<20120722164953.GC5144@dhcp-172-17-108-109.mtv.corp.google.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342990061 3805 80.91.229.3 (22 Jul 2012 20:47:41 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 22 Jul 2012 20:47:41 +0000 (UTC)
+Cc: kvm-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, Torvalds <torvalds-de/tnXTf+JLsfHDXvbKv3WD2FQJk+8+b@public.gmane.org>,
+	linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, ivtv-devel-jGorlIydJmRM656bX5wj8A@public.gmane.org,
+	Avi Kivity <avi-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org>, spi-devel-general-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org,
+	Andrew Morton <akpm-de/tnXTf+JLsfHDXvbKv3WD2FQJk+8+b@public.gmane.org>, Linus,
+	linux-media-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+To: Tejun Heo <tj-DgEjT+Ai2ygdnm+yROfE0A@public.gmane.org>
+Original-X-From: spi-devel-general-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org Sun Jul 22 22:47:40 2012
+Return-path: <spi-devel-general-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>
+Envelope-to: glks-spi-devel-general@m.gmane.org
+Original-Received: from lists.sourceforge.net ([216.34.181.88])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <spi-devel-general-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>)
+	id 1St33y-0007rs-8U
+	for glks-spi-devel-general@m.gmane.org; Sun, 22 Jul 2012 22:47:38 +0200
+Original-Received: from localhost ([127.0.0.1] helo=sfs-ml-3.v29.ch3.sourceforge.com)
+	by sfs-ml-3.v29.ch3.sourceforge.com with esmtp (Exim 4.76)
+	(envelope-from <spi-devel-general-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>)
+	id 1St33w-0001j7-GL; Sun, 22 Jul 2012 20:47:36 +0000
+Original-Received: from sog-mx-2.v43.ch3.sourceforge.com ([172.29.43.192]
+	helo=mx.sourceforge.net)
+	by sfs-ml-3.v29.ch3.sourceforge.com with esmtp (Exim 4.76)
+	(envelope-from <awalls-Xoej9cPu4Z+RGvkDC/A1pg@public.gmane.org>) id 1St33u-0001it-S5
+	for spi-devel-general-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org;
+	Sun, 22 Jul 2012 20:47:34 +0000
+X-ACL-Warn: 
+Original-Received: from proofpoint-cluster.metrocast.net ([65.175.128.136])
+	by sog-mx-2.v43.ch3.sourceforge.com with esmtps (TLSv1:AES256-SHA:256)
+	(Exim 4.76) id 1St33t-0002Qb-VG
+	for spi-devel-general-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org;
+	Sun, 22 Jul 2012 20:47:34 +0000
+Original-Received: from [192.168.1.2] (d-216-36-9-162.cpe.metrocast.net [216.36.9.162])
+	(authenticated bits=0)
+	by pear.metrocast.net (8.13.8/8.13.8) with ESMTP id q6MKksR7011472;
+	Sun, 22 Jul 2012 20:46:54 GMT
+In-Reply-To: <20120722164953.GC5144-RcKxWJ4Cfj1J2suj2OqeGauc2jM2gXBXkQQo+JxHRPFibQn6LdNjmg@public.gmane.org>
+X-Mailer: Evolution 3.0.3 (3.0.3-1.fc15) 
+X-Proofpoint-Virus-Version: vendor=fsecure engine=2.50.10432:5.7.7855, 1.0.260,
+	0.0.0000
+	definitions=2012-07-22_05:2012-07-20, 2012-07-22,
+	1970-01-01 signatures=0
+X-Proofpoint-Spam-Details: rule=notspam policy=default score=0 spamscore=0
+	ipscore=0 suspectscore=0
+	phishscore=0 bulkscore=0 adultscore=0 classifier=spam adjust=0
+	reason=mlx
+	scancount=1 engine=6.0.2-1203120001 definitions=main-1207220255
+X-Spam-Score: -0.0 (/)
+X-Spam-Report: Spam Filtering performed by mx.sourceforge.net.
+	See http://spamassassin.org/tag/ for more details.
+	-0.0 T_RP_MATCHES_RCVD Envelope sender domain matches handover relay
+	domain
+X-Headers-End: 1St33t-0002Qb-VG
+X-BeenThere: spi-devel-general-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org
+X-Mailman-Version: 2.1.9
+Precedence: list
+List-Id: Linux SPI core/device drivers discussion
+	<spi-devel-general.lists.sourceforge.net>
+List-Unsubscribe: <https://lists.sourceforge.net/lists/listinfo/spi-devel-general>,
+	<mailto:spi-devel-general-request-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org?subject=unsubscribe>
+List-Archive: <http://sourceforge.net/mailarchive/forum.php?forum_name=spi-devel-general>
+List-Post: <mailto:spi-devel-general-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>
+List-Help: <mailto:spi-devel-general-request-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org?subject=help>
+List-Subscribe: <https://lists.sourceforge.net/lists/listinfo/spi-devel-general>,
+	<mailto:spi-devel-general-request-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org?subject=subscribe>
+Errors-To: spi-devel-general-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org
+Xref: news.gmane.org gmane.linux.kernel.spi.devel:10765 gmane.comp.emulators.kvm.devel:94859 gmane.linux.kernel:1331418 gmane.linux.drivers.video-input-infrastructure:51199
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331418>
+
+On Sun, 2012-07-22 at 09:49 -0700, Tejun Heo wrote:
+> Hello,
+> 
+> On Sat, Jul 21, 2012 at 02:20:06PM -0400, Andy Walls wrote:
+> > > +	worker->current_work = work;
+> > >  	spin_unlock_irq(&worker->lock);
+> > >  
+> > >  	if (work) {
+> > >  		__set_current_state(TASK_RUNNING);
+> > >  		work->func(work);
+> > 
+> > If the call to 'work->func(work);' frees the memory pointed to by
+> > 'work', 'worker->current_work' points to deallocated memory.
+> > So 'worker->current_work' will only ever used as a unique 'work'
+> > identifier to handle, correct?
+> 
+> Yeah.  flush_kthread_work(@work) which can only be called if @work is
+> known to be alive looks at the pointer to determine whether it's the
+> current work item on the worker.
+
+OK.  Thanks.
+
+Hmmm, I didn't know about the constraint about 'known to be alive' in
+the other email I just sent.
+
+That might make calling flush_kthread_work() hard for a user to use, if
+the user lets the work get freed by another thread executing the work.
+
+
+> > >  void flush_kthread_work(struct kthread_work *work)
+> > >  {
+> > > -	int seq = work->queue_seq;
+> > > +	struct kthread_flush_work fwork = {
+> > > +		KTHREAD_WORK_INIT(fwork.work, kthread_flush_work_fn),
+> > > +		COMPLETION_INITIALIZER_ONSTACK(fwork.done),
+> > > +	};
+> > > +	struct kthread_worker *worker;
+> > > +	bool noop = false;
+> > > +
+> > 
+> > You might want a check for 'work == NULL' here, to gracefully handle
+> > code like the following:
+
+> workqueue's flush_work() doesn't allow %NULL pointer.  I don't want to
+> make the behaviors deviate and don't see much point in changing
+> workqueue's behavior at this point.
+
+OK.  Fair enough.
+
+Thanks.
+
+Regards,
+Andy
+
+
+
+------------------------------------------------------------------------------
+Live Security Virtual Conference
+Exclusive live event will cover all the ways today's security and 
+threat landscape has changed and how IT managers can respond. Discussions 
+will include endpoint security, mobile security and the latest in malware 
+threats. http://www.accelacomm.com/jaw/sfrnl04242012/114/50122263/

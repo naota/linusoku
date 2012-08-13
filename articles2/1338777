@@ -1,0 +1,101 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 12/70] random: Use arch-specific RNG to initialize the entropy store
+Date: Tue, 07 Aug 2012 04:28:07 +0100
+Lines: 48
+Approved: news@gmane.org
+Message-ID: <20120807032757.853527625@decadent.org.uk>
+References: <20120807032755.803571133@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344311689 24211 80.91.229.3 (7 Aug 2012 03:54:49 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 03:54:49 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Theodore Tso <tytso@mit.edu>,
+	"H. Peter Anvin" <hpa@linux.intel.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 05:54:49 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Syasa-0006Ld-Kg
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 05:54:48 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757362Ab2HGDyk (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 23:54:40 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:59631 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1757284Ab2HGDiL (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 23:38:11 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1SyacF-00081p-R8; Tue, 07 Aug 2012 04:37:55 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Syabx-0002nA-Rd; Tue, 07 Aug 2012 04:37:37 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120807032755.803571133@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338777 gmane.linux.kernel.stable:29218
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338777>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Theodore Ts'o <tytso@mit.edu>
+
+commit 3e88bdff1c65145f7ba297ccec69c774afe4c785 upstream.
+
+If there is an architecture-specific random number generator (such as
+RDRAND for Intel architectures), use it to initialize /dev/random's
+entropy stores.  Even in the worst case, if RDRAND is something like
+AES(NSA_KEY, counter++), it won't hurt, and it will definitely help
+against any other adversaries.
+
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+Link: http://lkml.kernel.org/r/1324589281-31931-1-git-send-email-tytso@mit.edu
+Signed-off-by: H. Peter Anvin <hpa@linux.intel.com>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ drivers/char/random.c |    6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/char/random.c b/drivers/char/random.c
+index 85da874..3079477 100644
+--- a/drivers/char/random.c
++++ b/drivers/char/random.c
+@@ -965,6 +965,7 @@ EXPORT_SYMBOL(get_random_bytes);
+  */
+ static void init_std_data(struct entropy_store *r)
+ {
++	int i;
+ 	ktime_t now;
+ 	unsigned long flags;
+ 
+@@ -974,6 +975,11 @@ static void init_std_data(struct entropy_store *r)
+ 
+ 	now = ktime_get_real();
+ 	mix_pool_bytes(r, &now, sizeof(now));
++	for (i = r->poolinfo->poolwords; i; i--) {
++		if (!arch_get_random_long(&flags))
++			break;
++		mix_pool_bytes(r, &flags, sizeof(flags));
++	}
+ 	mix_pool_bytes(r, utsname(), sizeof(*(utsname())));
+ }
+ 
+
+

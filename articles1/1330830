@@ -1,0 +1,119 @@
+Path: news.gmane.org!not-for-mail
+From: "Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH, RFC 0/6] Avoid cache trashing on clearing huge/gigantic page
+Date: Fri, 20 Jul 2012 15:50:16 +0300
+Lines: 41
+Approved: news@gmane.org
+Message-ID: <1342788622-10290-1-git-send-email-kirill.shutemov@linux.intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342788544 20891 80.91.229.3 (20 Jul 2012 12:49:04 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 12:49:04 +0000 (UTC)
+Cc: Thomas Gleixner <tglx@linutronix.de>,
+	Ingo Molnar <mingo@redhat.com>,
+	"H. Peter Anvin" <hpa@zytor.com>,
+	x86@kernel.org,
+	Andi Kleen <ak@linux.intel.com>,
+	"Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>,
+	Tim Chen <tim.c.chen@linux.intel.com>,
+	Alex Shi <alex.shu@intel.com>,
+	Jan Beulich <jbeulich@novell.com>,
+	Robert Richter <robert.richter@amd.com>,
+	Andy Lutomirski <luto@amacapital.net>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Andrea Arcangeli <aarcange@redhat.com>,
+	Johannes Weiner <hannes@cmpxchg.org>,
+	Hugh Dickins <hughd@google.com>,
+	KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>,
+	Mel Gorman <mgorman@suse.de>,
+	linux-kernel@vger.kernel.org
+To: linux-mm@kvack.org
+Original-X-From: owner-linux-mm@kvack.org Fri Jul 20 14:48:56 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SsCdW-00013y-VP
+	for glkm-linux-mm-2@m.gmane.org; Fri, 20 Jul 2012 14:48:51 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 2AD5F6B005D; Fri, 20 Jul 2012 08:48:49 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 110996B006C; Fri, 20 Jul 2012 08:48:48 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id CC41F6B005D; Fri, 20 Jul 2012 08:48:48 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx146.postini.com [74.125.245.146])
+	by kanga.kvack.org (Postfix) with SMTP id 3850E6B005D
+	for <linux-mm@kvack.org>; Fri, 20 Jul 2012 08:48:48 -0400 (EDT)
+Original-Received: from mga01.intel.com ([192.55.52.88]) by na3sys010amx146.postini.com ([74.125.244.10]) with SMTP;
+	Fri, 20 Jul 2012 12:48:48 GMT
+Original-Received: from fmsmga002.fm.intel.com ([10.253.24.26])
+  by fmsmga101.fm.intel.com with ESMTP; 20 Jul 2012 05:48:47 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="195528958"
+Original-Received: from blue.fi.intel.com ([10.237.72.50])
+  by fmsmga002.fm.intel.com with ESMTP; 20 Jul 2012 05:48:43 -0700
+Original-Received: by blue.fi.intel.com (Postfix, from userid 1000)
+	id 42788E0073; Fri, 20 Jul 2012 15:50:32 +0300 (EEST)
+X-Mailer: git-send-email 1.7.10
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:47.68770/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0005) s cv gt3 GT2 gt1 r p m c 
+X-pstn-addresses: from <kirill.shutemov@linux.intel.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82772 gmane.linux.kernel:1330830
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330830>
+
+From: "Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+
+Clearing a 2MB huge page will typically blow away several levels of CPU
+caches.  To avoid this only cache clear the 4K area around the fault
+address and use a cache avoiding clears for the rest of the 2MB area.
+
+It would be nice to test the patchset with more workloads. Especially if
+you see performance regression with THP.
+
+Any feedback is appreciated.
+
+Andi Kleen (6):
+  THP: Use real address for NUMA policy
+  mm: make clear_huge_page tolerate non aligned address
+  THP: Pass real, not rounded, address to clear_huge_page
+  x86: Add clear_page_nocache
+  mm: make clear_huge_page cache clear only around the fault address
+  x86: switch the 64bit uncached page clear to SSE/AVX v2
+
+ arch/x86/include/asm/page.h          |    2 +
+ arch/x86/include/asm/string_32.h     |    5 ++
+ arch/x86/include/asm/string_64.h     |    5 ++
+ arch/x86/lib/Makefile                |    1 +
+ arch/x86/lib/clear_page_nocache_32.S |   30 +++++++++++
+ arch/x86/lib/clear_page_nocache_64.S |   92 ++++++++++++++++++++++++++++++++++
+ arch/x86/mm/fault.c                  |    7 +++
+ mm/huge_memory.c                     |   17 +++---
+ mm/memory.c                          |   29 ++++++++++-
+ 9 files changed, 178 insertions(+), 10 deletions(-)
+ create mode 100644 arch/x86/lib/clear_page_nocache_32.S
+ create mode 100644 arch/x86/lib/clear_page_nocache_64.S
+
+-- 
+1.7.7.6
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

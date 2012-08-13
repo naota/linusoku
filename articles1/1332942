@@ -1,0 +1,111 @@
+Path: news.gmane.org!not-for-mail
+From: Paolo Bonzini <pbonzini@redhat.com>
+Newsgroups: gmane.linux.scsi,gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: Re: [PATCH v2] scsi: virtio-scsi: Fix address translation failure
+ of HighMem pages used by sg list
+Date: Wed, 25 Jul 2012 14:34:17 +0200
+Lines: 58
+Approved: news@gmane.org
+Message-ID: <500FE7C9.3000703@redhat.com>
+References: <1343218390-24310-1-git-send-email-senwang@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-15
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343219673 8690 80.91.229.3 (25 Jul 2012 12:34:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 12:34:33 +0000 (UTC)
+Cc: linux-scsi@vger.kernel.org, JBottomley@parallels.com,
+	stefanha@linux.vnet.ibm.com, mc@linux.vnet.ibm.com,
+	linux-kernel@vger.kernel.org, stable@vger.kernel.org
+To: Wang Sen <senwang@linux.vnet.ibm.com>
+Original-X-From: linux-scsi-owner@vger.kernel.org Wed Jul 25 14:34:32 2012
+Return-path: <linux-scsi-owner@vger.kernel.org>
+Envelope-to: lnx-linux-scsi@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-scsi-owner@vger.kernel.org>)
+	id 1Su0nP-0002Hb-Ov
+	for lnx-linux-scsi@plane.gmane.org; Wed, 25 Jul 2012 14:34:32 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932962Ab2GYMea (ORCPT <rfc822;lnx-linux-scsi@m.gmane.org>);
+	Wed, 25 Jul 2012 08:34:30 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:7994 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S932917Ab2GYMe3 (ORCPT <rfc822;linux-scsi@vger.kernel.org>);
+	Wed, 25 Jul 2012 08:34:29 -0400
+Original-Received: from int-mx10.intmail.prod.int.phx2.redhat.com (int-mx10.intmail.prod.int.phx2.redhat.com [10.5.11.23])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6PCYNS6009677
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Wed, 25 Jul 2012 08:34:23 -0400
+Original-Received: from yakj.usersys.redhat.com (ovpn-112-21.ams2.redhat.com [10.36.112.21])
+	by int-mx10.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6PCYIhW016013;
+	Wed, 25 Jul 2012 08:34:20 -0400
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120615 Thunderbird/13.0.1
+In-Reply-To: <1343218390-24310-1-git-send-email-senwang@linux.vnet.ibm.com>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.23
+Original-Sender: linux-scsi-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-scsi.vger.kernel.org>
+X-Mailing-List: linux-scsi@vger.kernel.org
+Xref: news.gmane.org gmane.linux.scsi:76539 gmane.linux.kernel:1332942 gmane.linux.kernel.stable:28797
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332942>
+
+Il 25/07/2012 14:13, Wang Sen ha scritto:
+> When using the commands below to write some data to a virtio-scsi LUN of the
+> QEMU guest(32-bit) with 1G physical memory(qemu -m 1024), the qemu will crash.
+> 
+>         # sudo mkfs.ext4 /dev/sdb  (/dev/sdb is the virtio-scsi LUN.)
+>         # sudo mount /dev/sdb /mnt
+>         # dd if=/dev/zero of=/mnt/file bs=1M count=1024
+> 
+> In current implementation, sg_set_buf is called to add buffers to sg list which
+> is put into the virtqueue eventually. But if there are some HighMem pages in
+> table->sgl you can not get virtual address by sg_virt. So, sg_virt(sg_elem) may
+> return NULL value. This will cause QEMU exit when virtqueue_map_sg is called
+> in QEMU because an invalid GPA is passed by virtqueue.
+> 
+> I take Paolo's solution mentioned in last thread to avoid failure on handling 
+> flag bits.
+
+Please include an URL or (better) summarize the reason why sg_set_page
+is not correct in the commit message.  For example, replace this
+paragraph with the following:
+
+"To fix this, we can simply copy the original scatterlist entries into
+virtio-scsi's; we need to copy the entries entirely, including the flag
+bits, so using sg_set_page is not correct".
+
+Please send v3 with this change and I'll add my Acked-by.
+
+Paolo
+
+> 
+> I have tested the patch on my workstation. QEMU would not crash any more.
+> 
+> Signed-off-by: Wang Sen <senwang@linux.vnet.ibm.com>
+> ---
+>  drivers/scsi/virtio_scsi.c |    2 +-
+>  1 file changed, 1 insertion(+), 1 deletion(-)
+> 
+> diff --git a/drivers/scsi/virtio_scsi.c b/drivers/scsi/virtio_scsi.c
+> index 1b38431..6661610 100644
+> --- a/drivers/scsi/virtio_scsi.c
+> +++ b/drivers/scsi/virtio_scsi.c
+> @@ -198,7 +198,7 @@ static void virtscsi_map_sgl(struct scatterlist *sg, unsigned int *p_idx,
+>  	int i;
+>  
+>  	for_each_sg(table->sgl, sg_elem, table->nents, i)
+> -		sg_set_buf(&sg[idx++], sg_virt(sg_elem), sg_elem->length);
+> +		sg[idx++] = *sg_elem;
+>  
+>  	*p_idx = idx;
+>  }
+> 
+
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-scsi" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

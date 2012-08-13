@@ -1,0 +1,207 @@
+Path: news.gmane.org!not-for-mail
+From: Steven Rostedt <rostedt@goodmis.org>
+Newsgroups: gmane.linux.kernel
+Subject: [RFC][PATCH 4/4] perf/events: Use helper functions in event assignment to shrink
+ macro size
+Date: Thu, 09 Aug 2012 23:43:06 -0400
+Lines: 153
+Approved: news@gmane.org
+Message-ID: <20120810034708.589220175@goodmis.org>
+References: <20120810034302.758092203@goodmis.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344570517 20684 80.91.229.3 (10 Aug 2012 03:48:37 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 03:48:37 +0000 (UTC)
+Cc: Ingo Molnar <mingo@kernel.org>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Frederic Weisbecker <fweisbec@gmail.com>,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 10 05:48:35 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzgDC-0001zH-Qu
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 10 Aug 2012 05:48:35 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756484Ab2HJDsb (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 23:48:31 -0400
+Original-Received: from hrndva-omtalb.mail.rr.com ([71.74.56.122]:27311 "EHLO
+	hrndva-omtalb.mail.rr.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1757986Ab2HJDrK (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 23:47:10 -0400
+X-Authority-Analysis: v=2.0 cv=IOWA+3TG c=1 sm=0 a=s5Htg7xnQOKvHEu9STBOug==:17 a=OpT9cpI26MMA:10 a=Ciwy3NGCPMMA:10 a=mjixex2a8-4A:10 a=5SG0PmZfjMsA:10 a=bbbx4UPp9XUA:10 a=meVymXHHAAAA:8 a=20KFwNOVAAAA:8 a=pGLkceISAAAA:8 a=jGCNUNN5igRJAktnj2cA:9 a=jEp0ucaQiEUA:10 a=MSl-tDqOz04A:10 a=jeBq3FmKZ4MA:10 a=s5Htg7xnQOKvHEu9STBOug==:117
+X-Cloudmark-Score: 0
+X-Originating-IP: 72.230.195.127
+Original-Received: from [72.230.195.127] ([72.230.195.127:57638] helo=gandalf.stny.rr.com)
+	by hrndva-oedge02.mail.rr.com (envelope-from <rostedt@goodmis.org>)
+	(ecelerity 2.2.3.46 r()) with ESMTP
+	id 06/AD-02978-D3484205; Fri, 10 Aug 2012 03:47:09 +0000
+Original-Received: from rostedt by gandalf.stny.rr.com with local (Exim 4.80)
+	(envelope-from <rostedt@goodmis.org>)
+	id 1SzgBo-00052T-LB; Thu, 09 Aug 2012 23:47:08 -0400
+User-Agent: quilt/0.60-1
+Content-Disposition: inline; filename=0004-perf-events-Use-helper-functions-in-event-assignment.patch
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341129
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341129>
+
+From: Steven Rostedt <srostedt@redhat.com>
+
+The functions that assign the contents for the perf software events are
+defined by the TRACE_EVENT() macros. Each event has its own unique
+way to assign data to its buffer. When you have over 700 events,
+that means there's 700 functions assigning data uniquely for each
+event.
+
+By making helper functions in the core kernel to do the work
+instead, we can shrink the size of the kernel down a bit.
+
+With a kernel configured with 707 events, the change in size was:
+
+   text    data     bss     dec     hex filename
+19966937        2594648 1945600 24507185        175f331 vmlinux-before
+19924761        2594584 1945600 24464945        1754e31 vmlinux-after
+
+That's a total of 42240 bytes, which comes down to 59 bytes per event.
+
+Cc: Peter Zijlstra <a.p.zijlstra@chello.nl>
+Cc: Frederic Weisbecker <fweisbec@gmail.com>
+Signed-off-by: Steven Rostedt <rostedt@goodmis.org>
+---
+ include/linux/ftrace_event.h    |   13 +++++++++++++
+ include/trace/ftrace.h          |   31 ++++++++-----------------------
+ kernel/trace/trace_event_perf.c |   26 ++++++++++++++++++++++++++
+ 3 files changed, 47 insertions(+), 23 deletions(-)
+
+diff --git a/include/linux/ftrace_event.h b/include/linux/ftrace_event.h
+index b9f39d3..06c6d04 100644
+--- a/include/linux/ftrace_event.h
++++ b/include/linux/ftrace_event.h
+@@ -313,6 +313,19 @@ struct perf_event;
+ 
+ DECLARE_PER_CPU(struct pt_regs, perf_trace_regs);
+ 
++struct perf_trace_event {
++	struct pt_regs		regs;
++	u64			addr;
++	u64			count;
++	int			entry_size;
++	int			rctx;
++};
++
++extern void *perf_trace_event_setup(struct ftrace_event_call *event_call, 
++				    struct perf_trace_event *pe);
++extern void perf_trace_event_submit(void *raw_data, struct ftrace_event_call *event_call,
++				    struct perf_trace_event *pe);
++
+ extern int  perf_trace_init(struct perf_event *event);
+ extern void perf_trace_destroy(struct perf_event *event);
+ extern int  perf_trace_add(struct perf_event *event, int flags);
+diff --git a/include/trace/ftrace.h b/include/trace/ftrace.h
+index 8118451..a02d48d 100644
+--- a/include/trace/ftrace.h
++++ b/include/trace/ftrace.h
+@@ -677,10 +677,10 @@ __attribute__((section("_ftrace_events"))) *__event_##call = &event_##call
+ #define __get_str(field) (char *)__get_dynamic_array(field)
+ 
+ #undef __perf_addr
+-#define __perf_addr(a) __addr = (a)
++#define __perf_addr(a) __pe.addr = (a)
+ 
+ #undef __perf_count
+-#define __perf_count(c) __count = (c)
++#define __perf_count(c) __pe.count = (c)
+ 
+ #undef TP_perf_assign
+ #define TP_perf_assign(args...) args
+@@ -693,36 +693,21 @@ perf_trace_##call(void *__data, proto)					\
+ 	struct ftrace_event_call *event_call = __data;			\
+ 	struct ftrace_data_offsets_##call __maybe_unused __data_offsets;\
+ 	struct ftrace_raw_##call *entry;				\
+-	struct pt_regs __regs;						\
+-	u64 __addr = 0, __count = 1;					\
+-	struct hlist_head *head;					\
+-	int __entry_size;						\
++	struct perf_trace_event __pe;					\
+ 	int __data_size;						\
+-	int rctx;							\
+-									\
+-	perf_fetch_caller_regs(&__regs);				\
+ 									\
+ 	__data_size = ftrace_get_offsets_##call(&__data_offsets, args); \
+-	__entry_size = ALIGN(__data_size + sizeof(*entry) + sizeof(u32),\
+-			     sizeof(u64));				\
+-	__entry_size -= sizeof(u32);					\
+-									\
+-	if (WARN_ONCE(__entry_size > PERF_MAX_TRACE_SIZE,		\
+-		      "profile buffer not large enough"))		\
+-		return;							\
++	__pe.entry_size = __data_size + sizeof(*entry);			\
++	__pe.addr = 0;							\
++	__pe.count = 1;							\
+ 									\
+-	entry = (struct ftrace_raw_##call *)perf_trace_buf_prepare(	\
+-		__entry_size, event_call->event.type, &__regs, &rctx);	\
+-	if (!entry)							\
+-		return;							\
++	entry = perf_trace_event_setup(event_call, &__pe);		\
+ 									\
+ 	tstruct								\
+ 									\
+ 	{ assign; }							\
+ 									\
+-	head = this_cpu_ptr(event_call->perf_events);			\
+-	perf_trace_buf_submit(entry, __entry_size, rctx, __addr,	\
+-		__count, &__regs, head);				\
++	perf_trace_event_submit(entry, event_call, &__pe);		\
+ }
+ 
+ /*
+diff --git a/kernel/trace/trace_event_perf.c b/kernel/trace/trace_event_perf.c
+index 9824419..75484aa 100644
+--- a/kernel/trace/trace_event_perf.c
++++ b/kernel/trace/trace_event_perf.c
+@@ -21,6 +21,32 @@ typedef typeof(unsigned long [PERF_MAX_TRACE_SIZE / sizeof(unsigned long)])
+ /* Count the events in use (per event id, not per instance) */
+ static int	total_ref_count;
+ 
++void *perf_trace_event_setup(struct ftrace_event_call *event_call, 
++			     struct perf_trace_event *pe)
++{
++	perf_fetch_caller_regs(&pe->regs);
++
++	pe->entry_size = ALIGN(pe->entry_size + sizeof(u32), sizeof(u64));
++	pe->entry_size -= sizeof(u32);
++
++	if (WARN_ONCE(pe->entry_size > PERF_MAX_TRACE_SIZE,
++		      "profile buffer not large enough"))
++		return NULL;
++
++	return perf_trace_buf_prepare(pe->entry_size,
++			event_call->event.type, &pe->regs, &pe->rctx);
++}
++
++void perf_trace_event_submit(void *raw_data, struct ftrace_event_call *event_call,
++			     struct perf_trace_event *pe)
++{
++	struct hlist_head *head;
++
++	head = this_cpu_ptr(event_call->perf_events);
++	perf_trace_buf_submit(raw_data, pe->entry_size, pe->rctx, pe->addr,
++			      pe->count, &pe->regs, head);
++}
++
+ static int perf_trace_event_perm(struct ftrace_event_call *tp_event,
+ 				 struct perf_event *p_event)
+ {
+-- 
+1.7.10.4
+
+

@@ -1,0 +1,293 @@
+Path: news.gmane.org!not-for-mail
+From: Anton Vorontsov <anton.vorontsov@linaro.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.debugging.kgdb.bugs
+Subject: [PATCH 6/7] kdb: Mark safe commands as KDB_SAFE and KDB_SAFE_NO_ARGS
+Date: Thu, 26 Jul 2012 07:26:30 -0700
+Lines: 228
+Approved: news@gmane.org
+Message-ID: <1343312791-9138-6-git-send-email-anton.vorontsov@linaro.org>
+References: <20120726142514.GA32158@lizard>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343312992 9435 80.91.229.3 (26 Jul 2012 14:29:52 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 14:29:52 +0000 (UTC)
+Cc: Andrew Morton <akpm@linux-foundation.org>,
+	Steven Rostedt <rostedt@goodmis.org>,
+	John Stultz <john.stultz@linaro.org>, arve@android.com,
+	linux-kernel@vger.kernel.org, linaro-kernel@lists.linaro.org,
+	patches@linaro.org, kernel-team@android.com,
+	kgdb-bugreport@lists.sourceforge.net
+To: Jason Wessel <jason.wessel@windriver.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 16:29:50 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuP4X-0000op-BJ
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 16:29:49 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752184Ab2GZO32 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 10:29:28 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:34830 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752456Ab2GZO25 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 10:28:57 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so3307833pbb.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 07:28:57 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :x-gm-message-state;
+        bh=Mu1dmN7vH7GH1xWwALQETz+tedFUjYo673ZcAUuUAgc=;
+        b=Q9d3XlMHAQUcmwrW1pjVr0XqGjp9/ZBKMKLE5Sd3YnvfskfRlS0Rm8XE7/sqqxhBsg
+         BBL1yPAW/SL0w+OmLzHBb2pNZLEY5StHWrVYSRAA9KCB9utq7IEvGtnJtCtjCdaK0xwp
+         x2n5FdmAVof/aw85JXtAqoiuxgfQZ4OfKG4p4zkbhiFnjg85HsUNjDCIk2caIcbH5feW
+         OM37w9EK3O10EzxuOsNBjXAtkEf0gw/w5ED2BHFP7Oie536mnlmS9RbUHrtynAMHHx7W
+         0tz8eibJyWS7Fw8pvsJI9EDeF7NW+ExuvMZLL5OYylVK0BLQdhvOWaqVnk6GB4kNcbTP
+         R2PQ==
+Original-Received: by 10.68.232.229 with SMTP id tr5mr5531014pbc.101.1343312937147;
+        Thu, 26 Jul 2012 07:28:57 -0700 (PDT)
+Original-Received: from localhost (c-71-204-165-222.hsd1.ca.comcast.net. [71.204.165.222])
+        by mx.google.com with ESMTPS id qd10sm16645886pbb.38.2012.07.26.07.28.55
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 07:28:56 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <20120726142514.GA32158@lizard>
+X-Gm-Message-State: ALoCoQl8c1ub1naxVuDtJjYcY1bPYsh/Ao9PJw+B700pLTdENIsPqeUIJWYMp3xqEtjLygFRBsOg
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333676 gmane.linux.kernel.debugging.kgdb.bugs:5704
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333676>
+
+This patch introduces two new flags: KDB_SAFE, denotes a safe command,
+and KDB_SAFE_NO_ARGS, denotes a safe command when used without arguments.
+
+The word "safe" here used in the sense that the commands cannot be
+used to leak sensitive data from the memory, and cannot be used
+to change program flow in a predefined manner.
+
+These flags will be used by the "kiosk" mode, i.e. when it is possible
+for the ordinary user to enter the KDB (or user can get the access to
+KDB after the crash), but we do not allow user to read dump the
+memory [and thus read some sensitive data].
+
+The following commands were marked as "safe":
+
+	Clear Breakpoint
+	Enable Breakpoint
+	Disable Breakpoint
+	Display exception frame
+	Stack traceback
+	Display stack for process
+	Display stack all processes
+	Backtrace current process on each cpu
+	Execute cmd for each element in linked list
+	Show environment variables
+	Set environment variables
+	Display Help Message
+	Switch to new cpu
+	Display active task list
+	Switch to another task
+	Reboot the machine immediately
+	List loaded kernel modules
+	Magic SysRq key
+	Display syslog buffer
+	Define a set of commands, down to endefcmd
+	Send a signal to a process
+	Summarize the system
+
+The following commands were marked as safe when issued with no arguments:
+
+	Continue Execution
+
+And the following commands are unsafe:
+
+	Continue Execution (with address argument)
+	Display Memory Contents
+	Display Raw Memory
+	Display Physical Memory
+	Display Memory Symbolically
+	Modify Memory Contents
+	Display Registers
+	Modify Registers
+	Backtrace process given its struct task address
+	Enter kgdb mode
+	Display per_cpu variables
+
+Note that we mark "display registers" command unsafe, this is because
+single stepping + constantly dumping registers in string or memory
+functions can be used as a way to read sensitive data (it's actually
+trivial to exploit). Later we can do a bit better, i.e. not displaying
+general-purpose registers, but printing control registers.
+
+Signed-off-by: Anton Vorontsov <anton.vorontsov@linaro.org>
+---
+ include/linux/kdb.h         |    2 ++
+ kernel/debug/kdb/kdb_bp.c   |   17 +++++++++--------
+ kernel/debug/kdb/kdb_main.c |   44 +++++++++++++++++++++----------------------
+ kernel/trace/trace_kdb.c    |    2 +-
+ 4 files changed, 34 insertions(+), 31 deletions(-)
+
+diff --git a/include/linux/kdb.h b/include/linux/kdb.h
+index d39d41d..36f6d09 100644
+--- a/include/linux/kdb.h
++++ b/include/linux/kdb.h
+@@ -35,6 +35,8 @@ extern atomic_t kdb_event;
+ typedef enum {
+ 	KDB_REPEAT_NO_ARGS	= 0x1, /* Repeat the command w/o arguments */
+ 	KDB_REPEAT_WITH_ARGS	= 0x2, /* Repeat the command w/ its arguments */
++	KDB_SAFE		= 0x4, /* Security-wise safe command */
++	KDB_SAFE_NO_ARGS	= 0x8, /* Only safe if run w/o arguments */
+ } kdb_cmdflags_t;
+ 
+ typedef int (*kdb_func_t)(int, const char **);
+diff --git a/kernel/debug/kdb/kdb_bp.c b/kernel/debug/kdb/kdb_bp.c
+index 928e9e9..b95ddf7 100644
+--- a/kernel/debug/kdb/kdb_bp.c
++++ b/kernel/debug/kdb/kdb_bp.c
+@@ -546,23 +546,24 @@ void __init kdb_initbptab(void)
+ 		bp->bp_free = 1;
+ 
+ 	kdb_register_flags("bp", kdb_bp, "[<vaddr>]",
+-		"Set/Display breakpoints", 0, KDB_REPEAT_NO_ARGS);
++		"Set/Display breakpoints", 0, KDB_REPEAT_NO_ARGS | KDB_SAFE);
+ 	kdb_register_flags("bl", kdb_bp, "[<vaddr>]",
+-		"Display breakpoints", 0, KDB_REPEAT_NO_ARGS);
++		"Display breakpoints", 0, KDB_REPEAT_NO_ARGS | KDB_SAFE);
+ 	if (arch_kgdb_ops.flags & KGDB_HW_BREAKPOINT)
+ 		kdb_register_flags("bph", kdb_bp, "[<vaddr>]",
+-		"[datar [length]|dataw [length]]   Set hw brk", 0, KDB_REPEAT_NO_ARGS);
++		"[datar [length]|dataw [length]]   Set hw brk", 0,
++		KDB_REPEAT_NO_ARGS | KDB_SAFE);
+ 	kdb_register_flags("bc", kdb_bc, "<bpnum>",
+-		"Clear Breakpoint", 0, 0);
++		"Clear Breakpoint", 0, KDB_SAFE);
+ 	kdb_register_flags("be", kdb_bc, "<bpnum>",
+-		"Enable Breakpoint", 0, 0);
++		"Enable Breakpoint", 0, KDB_SAFE);
+ 	kdb_register_flags("bd", kdb_bc, "<bpnum>",
+-		"Disable Breakpoint", 0, 0);
++		"Disable Breakpoint", 0, KDB_SAFE);
+ 
+ 	kdb_register_flags("ss", kdb_ss, "",
+-		"Single Step", 1, KDB_REPEAT_NO_ARGS);
++		"Single Step", 1, KDB_REPEAT_NO_ARGS | KDB_SAFE);
+ 	kdb_register_flags("ssb", kdb_ss, "",
+-		"Single step to branch/call", 0, KDB_REPEAT_NO_ARGS);
++		"Single step to branch/call", 0, KDB_REPEAT_NO_ARGS | KDB_SAFE);
+ 	/*
+ 	 * Architecture dependent initialization.
+ 	 */
+diff --git a/kernel/debug/kdb/kdb_main.c b/kernel/debug/kdb/kdb_main.c
+index 21e58fb..1bb18e6 100644
+--- a/kernel/debug/kdb/kdb_main.c
++++ b/kernel/debug/kdb/kdb_main.c
+@@ -2830,66 +2830,66 @@ static void __init kdb_inittab(void)
+ 	kdb_register_flags("mm", kdb_mm, "<vaddr> <contents>",
+ 	  "Modify Memory Contents", 0, KDB_REPEAT_NO_ARGS);
+ 	kdb_register_flags("go", kdb_go, "[<vaddr>]",
+-	  "Continue Execution", 1, 0);
++	  "Continue Execution", 1, KDB_SAFE_NO_ARGS);
+ 	kdb_register_flags("rd", kdb_rd, "",
+ 	  "Display Registers", 0, 0);
+ 	kdb_register_flags("rm", kdb_rm, "<reg> <contents>",
+ 	  "Modify Registers", 0, 0);
+ 	kdb_register_flags("ef", kdb_ef, "<vaddr>",
+-	  "Display exception frame", 0, 0);
++	  "Display exception frame", 0, KDB_SAFE);
+ 	kdb_register_flags("bt", kdb_bt, "[<vaddr>]",
+-	  "Stack traceback", 1, 0);
++	  "Stack traceback", 1, KDB_SAFE);
+ 	kdb_register_flags("btp", kdb_bt, "<pid>",
+-	  "Display stack for process <pid>", 0, 0);
++	  "Display stack for process <pid>", 0, KDB_SAFE);
+ 	kdb_register_flags("bta", kdb_bt, "[DRSTCZEUIMA]",
+-	  "Display stack all processes", 0, 0);
++	  "Display stack all processes", 0, KDB_SAFE);
+ 	kdb_register_flags("btc", kdb_bt, "",
+-	  "Backtrace current process on each cpu", 0, 0);
++	  "Backtrace current process on each cpu", 0, KDB_SAFE);
+ 	kdb_register_flags("btt", kdb_bt, "<vaddr>",
+ 	  "Backtrace process given its struct task address", 0,
+ 			    0);
+ 	kdb_register_flags("ll", kdb_ll, "<first-element> <linkoffset> <cmd>",
+-	  "Execute cmd for each element in linked list", 0, 0);
++	  "Execute cmd for each element in linked list", 0, KDB_SAFE);
+ 	kdb_register_flags("env", kdb_env, "",
+-	  "Show environment variables", 0, 0);
++	  "Show environment variables", 0, KDB_SAFE);
+ 	kdb_register_flags("set", kdb_set, "",
+-	  "Set environment variables", 0, 0);
++	  "Set environment variables", 0, KDB_SAFE);
+ 	kdb_register_flags("help", kdb_help, "",
+-	  "Display Help Message", 1, 0);
++	  "Display Help Message", 1, KDB_SAFE);
+ 	kdb_register_flags("?", kdb_help, "",
+-	  "Display Help Message", 0, 0);
++	  "Display Help Message", 0, KDB_SAFE);
+ 	kdb_register_flags("cpu", kdb_cpu, "<cpunum>",
+-	  "Switch to new cpu", 0, 0);
++	  "Switch to new cpu", 0, KDB_SAFE);
+ 	kdb_register_flags("kgdb", kdb_kgdb, "",
+ 	  "Enter kgdb mode", 0, 0);
+ 	kdb_register_flags("ps", kdb_ps, "[<flags>|A]",
+-	  "Display active task list", 0, 0);
++	  "Display active task list", 0, KDB_SAFE);
+ 	kdb_register_flags("pid", kdb_pid, "<pidnum>",
+-	  "Switch to another task", 0, 0);
++	  "Switch to another task", 0, KDB_SAFE);
+ 	kdb_register_flags("reboot", kdb_reboot, "",
+-	  "Reboot the machine immediately", 0, 0);
++	  "Reboot the machine immediately", 0, KDB_SAFE);
+ #if defined(CONFIG_MODULES)
+ 	kdb_register_flags("lsmod", kdb_lsmod, "",
+-	  "List loaded kernel modules", 0, 0);
++	  "List loaded kernel modules", 0, KDB_SAFE);
+ #endif
+ #if defined(CONFIG_MAGIC_SYSRQ)
+ 	kdb_register_flags("sr", kdb_sr, "<key>",
+-	  "Magic SysRq key", 0, 0);
++	  "Magic SysRq key", 0, KDB_SAFE);
+ #endif
+ #if defined(CONFIG_PRINTK)
+ 	kdb_register_flags("dmesg", kdb_dmesg, "[lines]",
+-	  "Display syslog buffer", 0, 0);
++	  "Display syslog buffer", 0, KDB_SAFE);
+ #endif
+ 	kdb_register_flags("defcmd", kdb_defcmd, "name \"usage\" \"help\"",
+-	  "Define a set of commands, down to endefcmd", 0, 0);
++	  "Define a set of commands, down to endefcmd", 0, KDB_SAFE);
+ 	kdb_register_flags("kill", kdb_kill, "<-signal> <pid>",
+-	  "Send a signal to a process", 0, 0);
++	  "Send a signal to a process", 0, KDB_SAFE);
+ 	kdb_register_flags("summary", kdb_summary, "",
+-	  "Summarize the system", 4, 0);
++	  "Summarize the system", 4, KDB_SAFE);
+ 	kdb_register_flags("per_cpu", kdb_per_cpu, "<sym> [<bytes>] [<cpu>]",
+ 	  "Display per_cpu variables", 3, 0);
+ 	kdb_register_flags("grephelp", kdb_grep_help, "",
+-	  "Display help on | grep", 0, 0);
++	  "Display help on | grep", 0, KDB_SAFE);
+ }
+ 
+ /* Execute any commands defined in kdb_cmds.  */
+diff --git a/kernel/trace/trace_kdb.c b/kernel/trace/trace_kdb.c
+index 1b68177..8353852 100644
+--- a/kernel/trace/trace_kdb.c
++++ b/kernel/trace/trace_kdb.c
+@@ -128,7 +128,7 @@ static int kdb_ftdump(int argc, const char **argv)
+ static __init int kdb_ftrace_register(void)
+ {
+ 	kdb_register_flags("ftdump", kdb_ftdump, "[skip_#lines] [cpu]",
+-			    "Dump ftrace log", 0, 0);
++			    "Dump ftrace log", 0, KDB_SAFE);
+ 	return 0;
+ }
+ 
+-- 
+1.7.10.4
+

@@ -1,0 +1,121 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 039/122] locks: fix checking of fcntl_setlease argument
+Date: Tue,  7 Aug 2012 15:25:27 -0700
+Lines: 58
+Approved: news@gmane.org
+Message-ID: <20120807221951.744022489@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344382644 9877 80.91.229.3 (7 Aug 2012 23:37:24 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 23:37:24 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, "J. Bruce Fields" <bfields@redhat.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 01:37:23 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SytL1-0005FW-4I
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 01:37:23 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757588Ab2HGXhN (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 19:37:13 -0400
+Original-Received: from mail-gg0-f174.google.com ([209.85.161.174]:56716 "EHLO
+	mail-gg0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S932503Ab2HGW3F (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:29:05 -0400
+Original-Received: by ggnl2 with SMTP id l2so148681ggn.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:29:03 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=pmHOmrTtkPJLCuHViMOfFDfjBKdBHgn7V2/iwtwuB9Q=;
+        b=G7ONmbJodwWcwfN+f+nfPZqI8tFtLfDvlMhJ9TOWYvv/DES9sH5lbwEp0cy+mXp9HG
+         HUq3wztG3UNLrS/B/F8DzsIwFiezCSYkBji8FQOKEKdMFAziJJX9DMUgZ1xG/04xNAxT
+         C+mKqU5CQBiunOgCc5SIb2FryL2aRTGYfFoCQEHtGvNwRRlFy68a7MtC5MhvT8SjXysx
+         /EDHIp7T5Zi1vCuhbyGID0lJWv+BC1U0vanJU76MBw4iPZpPDf6OUHpC+lQP0pOBIaIJ
+         cC9hTTmZYkohQ3DNXsV+852FznBi6hT2kecinae3Dmy5jyXuUmzP6AukUw+Z9irPV34a
+         RFzA==
+Original-Received: by 10.66.87.66 with SMTP id v2mr29164522paz.71.1344378543061;
+        Tue, 07 Aug 2012 15:29:03 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id pn4sm638678pbb.50.2012.08.07.15.29.01
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:29:02 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQl6EOKjboiIlHySuVm/v2t+BD6wQrjgB/rTMgrdD1vlWFKyTrMPrulV62+CtAeAJ3JNadis
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339685 gmane.linux.kernel.stable:29510
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339685>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: "J. Bruce Fields" <bfields@fieldses.org>
+
+commit 0ec4f431eb56d633da3a55da67d5c4b88886ccc7 upstream.
+
+The only checks of the long argument passed to fcntl(fd,F_SETLEASE,.)
+are done after converting the long to an int.  Thus some illegal values
+may be let through and cause problems in later code.
+
+[ They actually *don't* cause problems in mainline, as of Dave Jones's
+  commit 8d657eb3b438 "Remove easily user-triggerable BUG from
+  generic_setlease", but we should fix this anyway.  And this patch will
+  be necessary to fix real bugs on earlier kernels. ]
+
+Signed-off-by: J. Bruce Fields <bfields@redhat.com>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ fs/locks.c |    6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+--- a/fs/locks.c
++++ b/fs/locks.c
+@@ -308,7 +308,7 @@ static int flock_make_lock(struct file *
+ 	return 0;
+ }
+ 
+-static int assign_type(struct file_lock *fl, int type)
++static int assign_type(struct file_lock *fl, long type)
+ {
+ 	switch (type) {
+ 	case F_RDLCK:
+@@ -445,7 +445,7 @@ static const struct lock_manager_operati
+ /*
+  * Initialize a lease, use the default lock manager operations
+  */
+-static int lease_init(struct file *filp, int type, struct file_lock *fl)
++static int lease_init(struct file *filp, long type, struct file_lock *fl)
+  {
+ 	if (assign_type(fl, type) != 0)
+ 		return -EINVAL;
+@@ -463,7 +463,7 @@ static int lease_init(struct file *filp,
+ }
+ 
+ /* Allocate a file_lock initialised to this type of lease */
+-static struct file_lock *lease_alloc(struct file *filp, int type)
++static struct file_lock *lease_alloc(struct file *filp, long type)
+ {
+ 	struct file_lock *fl = locks_alloc_lock();
+ 	int error = -ENOMEM;
+
+

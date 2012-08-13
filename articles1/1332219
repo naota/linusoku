@@ -1,0 +1,110 @@
+Path: news.gmane.org!not-for-mail
+From: Namhyung Kim <namhyung@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 08/12] perf ui/browser: Add support to group viewing
+Date: Tue, 24 Jul 2012 18:01:29 +0900
+Lines: 58
+Approved: news@gmane.org
+Message-ID: <1343120493-23059-9-git-send-email-namhyung@kernel.org>
+References: <1343120493-23059-1-git-send-email-namhyung@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343121014 29427 80.91.229.3 (24 Jul 2012 09:10:14 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 09:10:14 +0000 (UTC)
+Cc: Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Paul Mackerras <paulus@samba.org>,
+	Ingo Molnar <mingo@kernel.org>,
+	LKML <linux-kernel@vger.kernel.org>,
+	Stephane Eranian <eranian@google.com>,
+	Jiri Olsa <jolsa@redhat.com>,
+	Ulrich Drepper <drepper@gmail.com>,
+	Andi Kleen <andi@firstfloor.org>,
+	Namhyung Kim <namhyung.kim@lge.com>
+To: Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 11:10:11 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Stb84-0004MI-Ux
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 11:10:09 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753330Ab2GXJJf (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 05:09:35 -0400
+Original-Received: from LGEMRELSE6Q.lge.com ([156.147.1.121]:55075 "EHLO
+	LGEMRELSE6Q.lge.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752998Ab2GXJHB (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 05:07:01 -0400
+X-AuditID: 9c930179-b7bdcae000003d91-06-500e65b23209
+Original-Received: from sejong.aot.lge.com ( [10.177.220.181])
+	by LGEMRELSE6Q.lge.com (Symantec Brightmail Gateway) with SMTP id CD.33.15761.2B56E005; Tue, 24 Jul 2012 18:06:58 +0900 (KST)
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1343120493-23059-1-git-send-email-namhyung@kernel.org>
+X-Brightmail-Tracker: AAAAAA==
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332219
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332219>
+
+From: Namhyung Kim <namhyung.kim@lge.com>
+
+Show group members' overhead also when showing the leader's.
+
+Signed-off-by: Namhyung Kim <namhyung@kernel.org>
+---
+ tools/perf/ui/browsers/hists.c |   28 +++++++++++++++++++++++++++-
+ 1 file changed, 27 insertions(+), 1 deletion(-)
+
+diff --git a/tools/perf/ui/browsers/hists.c b/tools/perf/ui/browsers/hists.c
+index 69584d79097e..bdb1b2f9f819 100644
+--- a/tools/perf/ui/browsers/hists.c
++++ b/tools/perf/ui/browsers/hists.c
+@@ -553,6 +553,33 @@ static int hist_browser__show_callchain(struct hist_browser *browser,
+ 	return row - first_row;
+ }
+ 
++static int hist_browser__hpp_color_overhead(struct hist_print_context *ctx,
++					    struct hist_entry *he)
++{
++	int ret;
++	double percent = 100.0 * he->stat.period / ctx->total_period;
++
++	/* the leader determines the color */
++	*(double *)ctx->ptr = percent;
++
++	ret = scnprintf(ctx->s, ctx->size, "%5.2f%%", percent);
++
++	if (symbol_conf.report_group) {
++		struct perf_evsel *evsel = hists_2_evsel(ctx->hists);
++		int i;
++
++		for (i = 0; i < evsel->nr_children; i++) {
++			u64 period = he->group_stats[i].period;
++			u64 total_period = ctx->hists->group_stats[i].total_period;
++
++			percent = 100.0 * period / total_period;
++			ret += scnprintf(ctx->s + ret, ctx->size - ret,
++					 "  %5.2f%%", percent);
++		}
++	}
++	return ret;
++}
++
+ #define HPP_COLOR_FN(_name, _field)						\
+ static int hist_browser__hpp_color_ ## _name(struct hist_print_context *ctx,	\
+ 					     struct hist_entry *he)		\
+@@ -562,7 +589,6 @@ static int hist_browser__hpp_color_ ## _name(struct hist_print_context *ctx,	\
+ 	return scnprintf(ctx->s, ctx->size, "%5.2f%%", percent);		\
+ }
+ 
+-HPP_COLOR_FN(overhead, period)
+ HPP_COLOR_FN(overhead_sys, period_sys)
+ HPP_COLOR_FN(overhead_us, period_us)
+ HPP_COLOR_FN(overhead_guest_sys, period_guest_sys)
+-- 
+1.7.10.4
+

@@ -1,0 +1,134 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable,gmane.linux.ports.mips.general
+Subject: [ 14/23] MIPS: Properly align the .data..init_task section.
+Date: Thu, 26 Jul 2012 14:19:53 -0700
+Lines: 69
+Approved: news@gmane.org
+Message-ID: <20120726211407.157467961@linuxfoundation.org>
+References: <20120726211420.GA7678@kroah.com>
+ <20120726211405.959857593@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343337710 4719 80.91.229.3 (26 Jul 2012 21:21:50 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 21:21:50 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, David Daney <david.daney@cavium.com>,
+	Ralf Baechle <ralf@linux-mips.org>, linux-mips@linux-mips.org
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 23:21:47 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuVV8-0006yW-Cf
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 23:21:42 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753069Ab2GZVVh (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 17:21:37 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:45953 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752945Ab2GZVVe (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 17:21:34 -0400
+Original-Received: by ghrr11 with SMTP id r11so2522593ghr.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 14:21:34 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=o59BJ0tPhRhgsWemssR4Hx3W0wzRvmy60QntA9tFC6k=;
+        b=X3PRVKB7l5/rHKPA1IAskcYEWKjNWfcASCVGVyHpyX+XlxflXAxqxumG0/SpYdeztc
+         kWg4GO9C2cJJG6/0G60rIIFnfLcQtpUOzwHZ/AHgIHdYm/3TSNlrN+vTgvyKleXL9kSD
+         GSU73lSwPYfXqc2OeKuahzlLYCnrjTn2ae/bb7rNJ2CtrvTR7ZJ8FxdUZC0lIhreLRxy
+         pqbpbrB5QDm58Fm9GZiqOio5J/GAjqkITUUqfQlTzvyMrYPeDd8EAJJUmMLTZAssuIzF
+         8HCNL1H1rBis8LvPdVKw1N9meuKX6szHuOnxAq++ottT1+xzH9iLBSjBi43PbSgjZgDB
+         rJ8Q==
+Original-Received: by 10.66.74.36 with SMTP id q4mr550178pav.13.1343337689757;
+        Thu, 26 Jul 2012 14:21:29 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id rz10sm422016pbc.32.2012.07.26.14.21.27
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 14:21:28 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120726211405.959857593@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQmsgzHp3X2UounVmB+O36pByosi+vGP8imw8WK0uA49nhfgSi4pFjfZQNnf0UNbX2WDcVcl
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333902 gmane.linux.kernel.stable:28844 gmane.linux.ports.mips.general:35094
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333902>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.4-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: David Daney <david.daney@cavium.com>
+
+commit 7b1c0d26a8e272787f0f9fcc5f3e8531df3b3409 upstream.
+
+Improper alignment can lead to unbootable systems and/or random
+crashes.
+
+[ralf@linux-mips.org: This is a lond standing bug since
+6eb10bc9e2deab06630261cd05c4cb1e9a60e980 (kernel.org) rsp.
+c422a10917f75fd19fa7fe070aaaa23e384dae6f (lmo) [MIPS: Clean up linker script
+using new linker script macros.] so dates back to 2.6.32.]
+
+Signed-off-by: David Daney <david.daney@cavium.com>
+Cc: linux-mips@linux-mips.org
+Patchwork: https://patchwork.linux-mips.org/patch/3881/
+Signed-off-by: Ralf Baechle <ralf@linux-mips.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ arch/mips/include/asm/thread_info.h |    4 ++--
+ arch/mips/kernel/vmlinux.lds.S      |    3 ++-
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+
+--- a/arch/mips/include/asm/thread_info.h
++++ b/arch/mips/include/asm/thread_info.h
+@@ -60,6 +60,8 @@ struct thread_info {
+ register struct thread_info *__current_thread_info __asm__("$28");
+ #define current_thread_info()  __current_thread_info
+ 
++#endif /* !__ASSEMBLY__ */
++
+ /* thread information allocation */
+ #if defined(CONFIG_PAGE_SIZE_4KB) && defined(CONFIG_32BIT)
+ #define THREAD_SIZE_ORDER (1)
+@@ -97,8 +99,6 @@ register struct thread_info *__current_t
+ 
+ #define free_thread_info(info) kfree(info)
+ 
+-#endif /* !__ASSEMBLY__ */
+-
+ #define PREEMPT_ACTIVE		0x10000000
+ 
+ /*
+--- a/arch/mips/kernel/vmlinux.lds.S
++++ b/arch/mips/kernel/vmlinux.lds.S
+@@ -1,5 +1,6 @@
+ #include <asm/asm-offsets.h>
+ #include <asm/page.h>
++#include <asm/thread_info.h>
+ #include <asm-generic/vmlinux.lds.h>
+ 
+ #undef mips
+@@ -72,7 +73,7 @@ SECTIONS
+ 	.data : {	/* Data */
+ 		. = . + DATAOFFSET;		/* for CONFIG_MAPPED_KERNEL */
+ 
+-		INIT_TASK_DATA(PAGE_SIZE)
++		INIT_TASK_DATA(THREAD_SIZE)
+ 		NOSAVE_DATA
+ 		CACHELINE_ALIGNED_DATA(1 << CONFIG_MIPS_L1_CACHE_SHIFT)
+ 		READ_MOSTLY_DATA(1 << CONFIG_MIPS_L1_CACHE_SHIFT)
+
+

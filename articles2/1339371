@@ -1,0 +1,96 @@
+Path: news.gmane.org!not-for-mail
+From: Jesper Juhl <jj@chaosbits.net>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] tpm: Do not dereference NULL pointer if acpi_os_map_memory()
+ fails.
+Date: Tue, 7 Aug 2012 22:50:56 +0200 (CEST)
+Lines: 43
+Approved: news@gmane.org
+Message-ID: <alpine.LNX.2.00.1208072247490.3227@swampdragon.chaosbits.net>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: TEXT/PLAIN; charset=US-ASCII
+X-Trace: dough.gmane.org 1344372695 28521 80.91.229.3 (7 Aug 2012 20:51:35 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 20:51:35 +0000 (UTC)
+Cc: tpmdd-devel@lists.sourceforge.net, Sirrix AG <tpmdd@sirrix.com>,
+	Marcel Selhorst <tpmdd@selhorst.net>,
+	Rajiv Andrade <mail@srajiv.net>,
+	Kent Yoder <key@linux.vnet.ibm.com>,
+	Seiji Munetoh <munetoh@jp.ibm.com>,
+	Stefan Berger <stefanb@us.ibm.com>,
+	Reiner Sailer <sailer@watson.ibm.com>,
+	Kylene Hall <kjhall@us.ibm.com>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 22:51:32 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyqkR-0003u8-NT
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 22:51:28 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756616Ab2HGUvQ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 16:51:16 -0400
+Original-Received: from 1010ds2-suoe.0.fullrate.dk ([90.184.90.115]:16940 "EHLO
+	swampdragon.chaosbits.net" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756328Ab2HGUu6 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 16:50:58 -0400
+Original-Received: by swampdragon.chaosbits.net (Postfix, from userid 1000)
+	id D9F1B9403D; Tue,  7 Aug 2012 22:50:56 +0200 (CEST)
+Original-Received: from localhost (localhost [127.0.0.1])
+	by swampdragon.chaosbits.net (Postfix) with ESMTP id D2C2E9403B;
+	Tue,  7 Aug 2012 22:50:56 +0200 (CEST)
+User-Agent: Alpine 2.00 (LNX 1167 2008-08-23)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339371
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339371>
+
+In drivers/char/tpm/tpm_bios.c::read_log() we call
+acpi_os_map_memory(). That call may fail for a number of reasons
+(invallid address, out of memory etc). If the call fails it returns
+NULL and we just pass that to memcpy() unconditionally, which will go
+bad when it tries to dereference the pointer.
+
+Unfortunately we just get NULL back, so we can't really tell the user
+exactely what went wrong, but we can at least avoid crashing and
+return an error (-EIO seemed more generic and more suitable here than
+-ENOMEM or something else, so I picked that).
+
+Signed-off-by: Jesper Juhl <jj@chaosbits.net>
+---
+ drivers/char/tpm/tpm_bios.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+  Compile tested only.
+
+diff --git a/drivers/char/tpm/tpm_bios.c b/drivers/char/tpm/tpm_bios.c
+index 0636520..0c5c274 100644
+--- a/drivers/char/tpm/tpm_bios.c
++++ b/drivers/char/tpm/tpm_bios.c
+@@ -410,6 +410,11 @@ static int read_log(struct tpm_bios_log *log)
+ 	log->bios_event_log_end = log->bios_event_log + len;
+ 
+ 	virt = acpi_os_map_memory(start, len);
++	if (!virt) {
++		printk("%s: ERROR - Unable to map memory\n",
++			__func__);
++		return -EIO;
++	}
+ 
+ 	memcpy(log->bios_event_log, virt, len);
+ 
+-- 
+1.7.11.4
+
+
+-- 
+Jesper Juhl <jj@chaosbits.net>       http://www.chaosbits.net/
+Don't top-post http://www.catb.org/jargon/html/T/top-post.html
+Plain text mails only, please.
+

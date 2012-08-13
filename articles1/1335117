@@ -1,0 +1,107 @@
+Path: news.gmane.org!not-for-mail
+From: Julia Lawall <Julia.Lawall-L2FTfq7BK8M@public.gmane.org>
+Newsgroups: gmane.linux.usb.general,gmane.linux.kernel.janitors,gmane.linux.kernel
+Subject: [PATCH 6/7] drivers/usb/host/ehci-vt8500.c: use devm_ functions
+Date: Mon, 30 Jul 2012 16:43:40 +0200
+Lines: 64
+Approved: news@gmane.org
+Message-ID: <1343659425-24563-2-git-send-email-Julia.Lawall@lip6.fr>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343659559 26377 80.91.229.3 (30 Jul 2012 14:45:59 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 14:45:59 +0000 (UTC)
+Cc: kernel-janitors-u79uwXL29TY76Z2rM5mHXA@public.gmane.org,
+	Greg Kroah-Hartman <gregkh-hQyY1W1yCW8ekmWlsbkhG0B+6BGkLq7r@public.gmane.org>,
+	linux-usb-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+To: Alan Stern <stern-nwvwT67g6+6dFdvTe/nMLpVzexx5G7lz@public.gmane.org>
+Original-X-From: linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org Mon Jul 30 16:45:58 2012
+Return-path: <linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Envelope-to: glug-linux-usb-wOFGN7rlS/M9smdsby/KFg@public.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>)
+	id 1SvrEL-0002xb-Om
+	for glug-linux-usb-wOFGN7rlS/M9smdsby/KFg@public.gmane.org; Mon, 30 Jul 2012 16:45:58 +0200
+Original-Received: (majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org) by vger.kernel.org via listexpand
+	id S1754743Ab2G3Op4 (ORCPT <rfc822;glug-linux-usb@m.gmane.org>);
+	Mon, 30 Jul 2012 10:45:56 -0400
+Original-Received: from mail4-relais-sop.national.inria.fr ([192.134.164.105]:12703
+	"EHLO mail4-relais-sop.national.inria.fr" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1754684Ab2G3Onx (ORCPT
+	<rfc822;linux-usb-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>); Mon, 30 Jul 2012 10:43:53 -0400
+X-IronPort-AV: E=Sophos;i="4.77,679,1336341600"; 
+   d="scan'208";a="152028599"
+Original-Received: from palace.lip6.fr (HELO localhost.localdomain) ([132.227.105.202])
+  by mail4-relais-sop.national.inria.fr with ESMTP/TLS/DHE-RSA-AES256-SHA; 30 Jul 2012 16:43:49 +0200
+X-Mailer: git-send-email 1.7.8.6
+Original-Sender: linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Precedence: bulk
+List-ID: <linux-usb.vger.kernel.org>
+X-Mailing-List: linux-usb-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Xref: news.gmane.org gmane.linux.usb.general:68546 gmane.linux.kernel.janitors:25250 gmane.linux.kernel:1335117
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335117>
+
+From: Julia Lawall <Julia.Lawall-L2FTfq7BK8M@public.gmane.org>
+
+The various devm_ functions allocate memory that is released when a driver
+detaches.  This patch uses these functions for data that is allocated in
+the probe function of a platform device and is only freed in the remove
+function.
+
+Signed-off-by: Julia Lawall <Julia.Lawall-L2FTfq7BK8M@public.gmane.org>
+
+---
+Not compiled
+
+ drivers/usb/host/ehci-vt8500.c |   15 ++-------------
+ 1 file changed, 2 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/usb/host/ehci-vt8500.c b/drivers/usb/host/ehci-vt8500.c
+index 4d147c4..a891617 100644
+--- a/drivers/usb/host/ehci-vt8500.c
++++ b/drivers/usb/host/ehci-vt8500.c
+@@ -106,17 +106,11 @@ static int vt8500_ehci_drv_probe(struct platform_device *pdev)
+ 	hcd->rsrc_start = res->start;
+ 	hcd->rsrc_len = resource_size(res);
+ 
+-	if (!request_mem_region(hcd->rsrc_start, hcd->rsrc_len, hcd_name)) {
+-		pr_debug("request_mem_region failed");
+-		ret = -EBUSY;
+-		goto err1;
+-	}
+-
+-	hcd->regs = ioremap(hcd->rsrc_start, hcd->rsrc_len);
++	hcd->regs = devm_request_and_ioremap(&pdev->dev, res);
+ 	if (!hcd->regs) {
+ 		pr_debug("ioremap failed");
+ 		ret = -ENOMEM;
+-		goto err2;
++		goto err1;
+ 	}
+ 
+ 	ehci = hcd_to_ehci(hcd);
+@@ -129,9 +123,6 @@ static int vt8500_ehci_drv_probe(struct platform_device *pdev)
+ 		return ret;
+ 	}
+ 
+-	iounmap(hcd->regs);
+-err2:
+-	release_mem_region(hcd->rsrc_start, hcd->rsrc_len);
+ err1:
+ 	usb_put_hcd(hcd);
+ 	return ret;
+@@ -142,8 +133,6 @@ static int vt8500_ehci_drv_remove(struct platform_device *pdev)
+ 	struct usb_hcd *hcd = platform_get_drvdata(pdev);
+ 
+ 	usb_remove_hcd(hcd);
+-	iounmap(hcd->regs);
+-	release_mem_region(hcd->rsrc_start, hcd->rsrc_len);
+ 	usb_put_hcd(hcd);
+ 	platform_set_drvdata(pdev, NULL);
+ 
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-usb" in
+the body of a message to majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

@@ -1,0 +1,98 @@
+Path: news.gmane.org!not-for-mail
+From: Dave Chinner <david@fromorbit.com>
+Newsgroups: gmane.comp.file-systems.btrfs,gmane.linux.kernel,gmane.linux.file-systems,gmane.comp.file-systems.ext4,gmane.comp.file-systems.ocfs2.devel
+Subject: Re: [PATCH 0/8] Set bi_rw when alloc bio before call bio_add_page.
+Date: Tue, 31 Jul 2012 07:42:13 +1000
+Lines: 35
+Approved: news@gmane.org
+Message-ID: <20120730214213.GF2877@dastard>
+References: <201207301514247032532@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343684549 18305 80.91.229.3 (30 Jul 2012 21:42:29 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 21:42:29 +0000 (UTC)
+Cc: axboe <axboe@kernel.dk>, "konrad.wilk" <konrad.wilk@oracle.com>,
+	"chris.mason" <chris.mason@fusionio.com>,
+	viro <viro@ZenIV.linux.org.uk>, tytso <tytso@mit.edu>,
+	"adilger.kernel" <adilger.kernel@dilger.ca>,
+	shaggy <shaggy@kernel.org>, mfasheh <mfasheh@suse.com>,
+	jlbec <jlbec@evilplan.org>, bpm <bpm@sgi.com>,
+	elder <elder@kernel.org>,
+	jfs-discussion <jfs-discussion@lists.sourceforge.net>,
+	linux-kernel <linux-kernel@vger.kernel.org>,
+	xfs <xfs@oss.sgi.com>, linux-btrfs <linux-btrfs@vger.kernel.org>,
+	linux-fsdevel <linux-fsdevel@vger.kernel.org>,
+	linux-ext4 <linux-ext4@vger.kernel.org>,
+	ocfs2-devel <ocfs2-devel@oss.oracle.com>
+To: majianpeng <majianpeng@gmail.com>
+Original-X-From: linux-btrfs-owner@vger.kernel.org Mon Jul 30 23:42:25 2012
+Return-path: <linux-btrfs-owner@vger.kernel.org>
+Envelope-to: gcfb-btrfs-devel-moved1@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-btrfs-owner@vger.kernel.org>)
+	id 1SvxjM-0004PT-Sf
+	for gcfb-btrfs-devel-moved1@plane.gmane.org; Mon, 30 Jul 2012 23:42:25 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754768Ab2G3VmV (ORCPT
+	<rfc822;gcfb-btrfs-devel-moved1@m.gmane.org>);
+	Mon, 30 Jul 2012 17:42:21 -0400
+Original-Received: from ipmail06.adl6.internode.on.net ([150.101.137.145]:64300 "EHLO
+	ipmail06.adl6.internode.on.net" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1754599Ab2G3VmT (ORCPT
+	<rfc822;linux-btrfs@vger.kernel.org>);
+	Mon, 30 Jul 2012 17:42:19 -0400
+X-IronPort-Anti-Spam-Filtered: true
+X-IronPort-Anti-Spam-Result: AqMMABL/FlB5LJQK/2dsb2JhbABFuE4BAoEHgQiCIAEBBScTHCMQCAMYLhQlAyETiAy7FBSLPIEAFYEFhA9gA5VIiSyGYoJx
+Original-Received: from ppp121-44-148-10.lns20.syd7.internode.on.net (HELO dastard) ([121.44.148.10])
+  by ipmail06.adl6.internode.on.net with ESMTP; 31 Jul 2012 07:12:15 +0930
+Original-Received: from dave by dastard with local (Exim 4.76)
+	(envelope-from <david@fromorbit.com>)
+	id 1SvxjB-0003dA-Ek; Tue, 31 Jul 2012 07:42:13 +1000
+Content-Disposition: inline
+In-Reply-To: <201207301514247032532@gmail.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-btrfs-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-btrfs.vger.kernel.org>
+X-Mailing-List: linux-btrfs@vger.kernel.org
+Xref: news.gmane.org gmane.comp.file-systems.btrfs:18909 gmane.linux.kernel:1335328 gmane.linux.file-systems:66337 gmane.comp.file-systems.ext4:33559 gmane.comp.file-systems.ocfs2.devel:7996
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335328>
+
+On Mon, Jul 30, 2012 at 03:14:28PM +0800, majianpeng wrote:
+> When exec bio_alloc, the bi_rw is zero.But after calling bio_add_page,
+> it will use bi_rw.
+> Fox example, in functiion __bio_add_page,it will call merge_bvec_fn().
+> The merge_bvec_fn of raid456 will use the bi_rw to judge the merge.
+> >> if ((bvm->bi_rw & 1) == WRITE)
+> >> return biovec->bv_len; /* always allow writes to be mergeable */
+
+So if bio_add_page() requires bi_rw to be set, then shouldn't it be
+set up for every caller? I noticed there are about 50 call sites for
+bio_add_page(), and you've only touched about 10 of them. Indeed, I
+notice that the RAID0/1 code uses bio_add_page, and as that can be
+stacked on top of RAID456, it also needs to set bi_rw correctly.
+As a result, your patch set is nowhere near complete, not does it
+document that bio_add_page requires that bi_rw be set before calling
+(which is the new API requirement, AFAICT).
+
+So, my question is whether the RAID456 code is doing something
+valid.  That write optimisation is clearly not enabled for a
+significant amount of code and filesystems, so the first thing to do
+is quantify the benefit of the optimisation. I can't evalute the
+merit of this change without data telling me it is worthwhile, and
+it's a lot of code to churn for no benefit....
+
+Cheers,
+
+Dave.
+-- 
+Dave Chinner
+david@fromorbit.com
+--
+To unsubscribe from this list: send the line "unsubscribe linux-btrfs" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

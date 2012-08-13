@@ -1,0 +1,171 @@
+Path: news.gmane.org!not-for-mail
+From: Kent Overstreet <koverstreet@google.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.bcache.devel,gmane.linux.kernel.device-mapper.devel,gmane.linux.kernel.drbd.devel
+Subject: [PATCH v4 12/12] block: Only clone bio vecs that are in use
+Date: Tue, 24 Jul 2012 13:11:29 -0700
+Lines: 95
+Approved: news@gmane.org
+Message-ID: <1343160689-12378-13-git-send-email-koverstreet@google.com>
+References: <1343160689-12378-1-git-send-email-koverstreet@google.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343160862 7881 80.91.229.3 (24 Jul 2012 20:14:22 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 20:14:22 +0000 (UTC)
+Cc: Kent Overstreet <koverstreet@google.com>, tj@kernel.org,
+	axboe@kernel.dk, agk@redhat.com, neilb@suse.de,
+	drbd-dev@lists.linbit.com, bharrosh@panasas.com, vgoyal@redhat.com,
+	mpatocka@redhat.com, sage@newdream.net, yehuda@hq.newdream.net
+To: linux-bcache@vger.kernel.org, linux-kernel@vger.kernel.org,
+	dm-devel@redhat.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 22:14:20 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StlUp-0004NF-FN
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 22:14:19 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755986Ab2GXUOF (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 16:14:05 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:54756 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755822Ab2GXUMJ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 16:12:09 -0400
+Original-Received: by pbbrp8 with SMTP id rp8so115769pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 24 Jul 2012 13:12:09 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=o3YjE3X8vDD+v9D9IChHAv0B4fepk6NPkodS67q+SkQ=;
+        b=WfcmxrpoHUH9rmdWvXPuSAgYl5YUFmUKZNlmcZKuRUPX7AXfG4/kazlbGGe8h0o17T
+         0UyZB9dXTL8oT9idjJM0iE83fuhsZFlsru7imd7//VdxpPdanyS3FRC9T5xzK1KRG1DB
+         eecjwVp0Uw3tENqSUvtV485S1fZrFgQAvIAUbGF2SJonwhC1A8XDLfK1udSMykWp8yJO
+         ctG386SBJ5rHlTNhVjmFYvYEgF3CHmfqH+JOdOp18wTuNTGkpKWnyAPLRCpJllpD7Ihx
+         yL9JnvZsR+DKj8Y6rUEITApjm0Blm/AUE9AefxZG7V1ceROaG56atVYUaRz2SG+NUOb7
+         JSkQ==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :x-gm-message-state;
+        bh=o3YjE3X8vDD+v9D9IChHAv0B4fepk6NPkodS67q+SkQ=;
+        b=BqalfCJHREyrLjvGHU3AnBqtdHKI+gZBKmGJc43Frt15ngiMeelca76Gx1k2UtEDCi
+         VcH2KRy3/Z3Auqm7gONFRdgEoTY+y9QXFFOajxMdNoVeO+srDgdNcz8Qy1u/zFOdJvdA
+         BeOs6t8VA9gv/rwuSEB9rITEjxl7fPWEAQXssd6YfUMocQ5f/tiyS8zevNz1taJqlO3u
+         rc19+vg+SLeXo4WOVzDLkPx8ezLr5nzBnX0tcGfg5QpfgOjw+YZCK1spBLIGu/avfFbY
+         o64F6yZQbMyFKeB0qAadIppVm8HG+PGvnYv6+d4Sd0LZSxrQLXXxBQ4d/LsGGopic4NS
+         /TTQ==
+Original-Received: by 10.68.232.197 with SMTP id tq5mr47209272pbc.53.1343160728995;
+        Tue, 24 Jul 2012 13:12:08 -0700 (PDT)
+Original-Received: by 10.68.232.197 with SMTP id tq5mr47209224pbc.53.1343160728761;
+        Tue, 24 Jul 2012 13:12:08 -0700 (PDT)
+Original-Received: from formenos.mtv.corp.google.com (formenos.mtv.corp.google.com [172.18.110.66])
+        by mx.google.com with ESMTPS id jv6sm12774301pbc.40.2012.07.24.13.12.07
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 24 Jul 2012 13:12:08 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7.3
+In-Reply-To: <1343160689-12378-1-git-send-email-koverstreet@google.com>
+X-Gm-Message-State: ALoCoQlp3aljn/rUeXXqyWqOokQj6tDunqrmlbAPQYs+vICJ5Ql04Ra4GkCsIdF363/wZI8OJtFu1mzNaoE8G85CmHn5ioMdmRUbmj5pKJGcOT5VOPVg/lD7LhFKUBgosDjpuz03xX/tePNf2xGa1YtT0pOuDz++bGK5pAldkhFIU0Aic0IPawgaDGAftxofPD/3+Ki+cWpW
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332564 gmane.linux.kernel.bcache.devel:632 gmane.linux.kernel.device-mapper.devel:16413 gmane.linux.kernel.drbd.devel:2037
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332564>
+
+bcache creates large bios internally, and then splits them according to
+the device requirements before it sends them down. If a lower level
+device tries to clone the bio, and the original bio had more than
+BIO_MAX_PAGES, the clone will fail unecessarily.
+
+We can fix this by only cloning the bio vecs that are actually in use.
+
+Signed-off-by: Kent Overstreet <koverstreet@google.com>
+---
+ drivers/block/rbd.c |    2 +-
+ drivers/md/dm.c     |    5 ++---
+ fs/bio.c            |   13 +++++++------
+ 3 files changed, 10 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/block/rbd.c b/drivers/block/rbd.c
+index 692cf05..21edfe5 100644
+--- a/drivers/block/rbd.c
++++ b/drivers/block/rbd.c
+@@ -714,7 +714,7 @@ static struct bio *bio_chain_clone(struct bio **old, struct bio **next,
+ 	}
+ 
+ 	while (old_chain && (total < len)) {
+-		tmp = bio_kmalloc(gfpmask, old_chain->bi_max_vecs);
++		tmp = bio_kmalloc(gfpmask, bio_segments(old_chain));
+ 		if (!tmp)
+ 			goto err_out;
+ 
+diff --git a/drivers/md/dm.c b/drivers/md/dm.c
+index 3f3c26e..193fb19 100644
+--- a/drivers/md/dm.c
++++ b/drivers/md/dm.c
+@@ -1057,11 +1057,10 @@ static struct bio *clone_bio(struct bio *bio, sector_t sector,
+ {
+ 	struct bio *clone;
+ 
+-	clone = bio_alloc_bioset(GFP_NOIO, bio->bi_max_vecs, bs);
++	clone = bio_alloc_bioset(GFP_NOIO, bv_count, bs);
+ 	__bio_clone(clone, bio);
+ 	clone->bi_sector = sector;
+-	clone->bi_idx = idx;
+-	clone->bi_vcnt = idx + bv_count;
++	clone->bi_vcnt = bv_count;
+ 	clone->bi_size = to_bytes(len);
+ 	clone->bi_flags &= ~(1 << BIO_SEG_VALID);
+ 
+diff --git a/fs/bio.c b/fs/bio.c
+index 7a0801d..ec6a357 100644
+--- a/fs/bio.c
++++ b/fs/bio.c
+@@ -451,8 +451,9 @@ EXPORT_SYMBOL(bio_phys_segments);
+  */
+ void __bio_clone(struct bio *bio, struct bio *bio_src)
+ {
+-	memcpy(bio->bi_io_vec, bio_src->bi_io_vec,
+-		bio_src->bi_max_vecs * sizeof(struct bio_vec));
++	memcpy(bio->bi_io_vec,
++	       bio_iovec(bio_src),
++	       bio_segments(bio_src) * sizeof(struct bio_vec));
+ 
+ 	/*
+ 	 * most users will be overriding ->bi_bdev with a new target,
+@@ -461,10 +462,10 @@ void __bio_clone(struct bio *bio, struct bio *bio_src)
+ 	bio->bi_sector = bio_src->bi_sector;
+ 	bio->bi_bdev = bio_src->bi_bdev;
+ 	bio->bi_flags |= 1 << BIO_CLONED;
++	bio->bi_flags &= ~(1 << BIO_SEG_VALID);
+ 	bio->bi_rw = bio_src->bi_rw;
+-	bio->bi_vcnt = bio_src->bi_vcnt;
++	bio->bi_vcnt = bio_segments(bio_src);
+ 	bio->bi_size = bio_src->bi_size;
+-	bio->bi_idx = bio_src->bi_idx;
+ }
+ EXPORT_SYMBOL(__bio_clone);
+ 
+@@ -479,7 +480,7 @@ EXPORT_SYMBOL(__bio_clone);
+ struct bio *bio_clone_bioset(struct bio *bio, gfp_t gfp_mask,
+ 			     struct bio_set *bs)
+ {
+-	struct bio *b = bio_alloc_bioset(gfp_mask, bio->bi_max_vecs, bs);
++	struct bio *b = bio_alloc_bioset(gfp_mask, bio_segments(bio), bs);
+ 
+ 	if (!b)
+ 		return NULL;
+@@ -509,7 +510,7 @@ EXPORT_SYMBOL(bio_clone);
+ 
+ struct bio *bio_clone_kmalloc(struct bio *bio, gfp_t gfp_mask)
+ {
+-	struct bio *b = bio_kmalloc(gfp_mask, bio->bi_max_vecs);
++	struct bio *b = bio_kmalloc(gfp_mask, bio_segments(bio));
+ 
+ 	if (!b)
+ 		return NULL;
+-- 
+1.7.7.3
+

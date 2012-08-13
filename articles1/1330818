@@ -1,0 +1,178 @@
+Path: news.gmane.org!not-for-mail
+From: Ming Lei <tom.leiming-Re5JQEeQqe8AvxtiuMwx3w@public.gmane.org>
+Newsgroups: gmane.linux.usb.general,gmane.linux.kernel
+Subject: [RFC] firmware load: defer request_firmware during early boot and resume
+Date: Fri, 20 Jul 2012 20:33:32 +0800
+Lines: 121
+Approved: news@gmane.org
+Message-ID: <CACVXFVNWOcrR9tYhU1wVUSJ_DJ8x+SCk993Sn9dYDe2kzJBDuQ@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1342787642 13218 80.91.229.3 (20 Jul 2012 12:34:02 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 12:34:02 +0000 (UTC)
+Cc: Alan Stern <stern-nwvwT67g6+6dFdvTe/nMLpVzexx5G7lz@public.gmane.org>,
+	Greg Kroah-Hartman <gregkh-hQyY1W1yCW8ekmWlsbkhG0B+6BGkLq7r@public.gmane.org>,
+	Oliver Neukum <oneukum-l3A5Bk7waGM@public.gmane.org>,
+	"Rafael J. Wysocki" <rjw-KKrjLPT3xs0@public.gmane.org>
+To: Linux Kernel Mailing List <linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>,
+	linux-usb <linux-usb-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Original-X-From: linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org Fri Jul 20 14:34:01 2012
+Return-path: <linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Envelope-to: glug-linux-usb-wOFGN7rlS/M9smdsby/KFg@public.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>)
+	id 1SsCP9-0003ID-Ii
+	for glug-linux-usb-wOFGN7rlS/M9smdsby/KFg@public.gmane.org; Fri, 20 Jul 2012 14:34:00 +0200
+Original-Received: (majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org) by vger.kernel.org via listexpand
+	id S1753465Ab2GTMdf (ORCPT <rfc822;glug-linux-usb@m.gmane.org>);
+	Fri, 20 Jul 2012 08:33:35 -0400
+Original-Received: from mail-ob0-f174.google.com ([209.85.214.174]:50517 "EHLO
+	mail-ob0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753460Ab2GTMdd (ORCPT
+	<rfc822;linux-usb-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>); Fri, 20 Jul 2012 08:33:33 -0400
+Original-Received: by obbuo13 with SMTP id uo13so4781888obb.19
+        for <multiple recipients>; Fri, 20 Jul 2012 05:33:32 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=mime-version:date:message-id:subject:from:to:cc:content-type;
+        bh=jydMMXBURRDngkNxNz6wGqP8eLpDaqDV368zSyZpjBM=;
+        b=i02JJZqCm8Wl2ml4RxASMlRqR5vwCq3YIti/80fHNpuhGT50ZMddqRCUCjc0DFlF8i
+         DCxEuuIr5hrWp/Mr0VBppLBZeaSKH2f467QEsvAlhoPgnDa1jZ7geZ/ru/uJmAIEtN+6
+         pxltE5zx0gt28PMH/M+YB2I7+AdFof3Z+oaLvwB1kBw2qszTlCyMzig184B06vy7Az45
+         N7CV9yjyR8YNiUkWvNr/dtLpwk0NtxWe4FeBa03oSDA3f+gkJh8xWgw53Jkzq/tHbYEt
+         A6Hoz7h5cIGf579RFIOT8EO4p7yFDo/32ED4zVmmuMBJQYwfh+st5EHF6GsboBZ68I6X
+         vUPQ==
+Original-Received: by 10.182.136.71 with SMTP id py7mr6912881obb.45.1342787612571; Fri,
+ 20 Jul 2012 05:33:32 -0700 (PDT)
+Original-Received: by 10.182.62.2 with HTTP; Fri, 20 Jul 2012 05:33:32 -0700 (PDT)
+Original-Sender: linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Precedence: bulk
+List-ID: <linux-usb.vger.kernel.org>
+X-Mailing-List: linux-usb-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Xref: news.gmane.org gmane.linux.usb.general:68008 gmane.linux.kernel:1330818
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330818>
+
+The RFC patch is just for discussing if the idea of deferring
+request_firmware is doable for addressing the issue of
+request_firmware in resume path, which is caused by driver
+unbind/rebind during resume.
+
+At least usb bus is involved in such things, one driver may be
+unbound and rebound in resume path at several situations, and
+request_firmware is often called inside probe().
+
+Also the idea should be helpful for other hotplug buses too,
+at least there was the similar problem report on pcmcia bus.
+
+diff --git a/drivers/base/dd.c b/drivers/base/dd.c
+index 6cd2c6c..fb02eff 100644
+--- a/drivers/base/dd.c
++++ b/drivers/base/dd.c
+@@ -123,7 +123,7 @@ static bool driver_deferred_probe_enable = false;
+  * list and schedules the deferred probe workqueue to process them.  It
+  * should be called anytime a driver is successfully bound to a device.
+  */
+-static void driver_deferred_probe_trigger(void)
++void driver_deferred_probe_trigger(void)
+ {
+ 	if (!driver_deferred_probe_enable)
+ 		return;
+@@ -144,6 +144,7 @@ static void driver_deferred_probe_trigger(void)
+ 	 */
+ 	queue_work(deferred_wq, &deferred_probe_work);
+ }
++EXPORT_SYMBOL_GPL(driver_deferred_probe_trigger);
+
+ /**
+  * deferred_probe_initcall() - Enable probing of deferred devices
+diff --git a/drivers/base/firmware_class.c b/drivers/base/firmware_class.c
+index 5401814..4fe742f 100644
+--- a/drivers/base/firmware_class.c
++++ b/drivers/base/firmware_class.c
+@@ -593,6 +593,9 @@ request_firmware(const struct firmware
+**firmware_p, const char *name,
+ 	if (IS_ERR_OR_NULL(fw_priv))
+ 		return PTR_RET(fw_priv);
+
++	if (system_state != SYSTEM_RUNNING)
++		return -EPROBE_DEFER;
++
+ 	ret = usermodehelper_read_trylock();
+ 	if (WARN_ON(ret)) {
+ 		dev_err(device, "firmware: %s will not be loaded\n", name);
+diff --git a/include/linux/device.h b/include/linux/device.h
+index d0e4d99..a63d3171 100644
+--- a/include/linux/device.h
++++ b/include/linux/device.h
+@@ -244,7 +244,7 @@ extern struct device_driver *driver_find(const char *name,
+ 					 struct bus_type *bus);
+ extern int driver_probe_done(void);
+ extern void wait_for_device_probe(void);
+-
++extern void driver_deferred_probe_trigger(void);
+
+ /* sysfs interface for exporting driver attributes */
+
+diff --git a/include/linux/kernel.h b/include/linux/kernel.h
+index e07f5e0..c8d74c6 100644
+--- a/include/linux/kernel.h
++++ b/include/linux/kernel.h
+@@ -378,6 +378,7 @@ extern enum system_states {
+ 	SYSTEM_POWER_OFF,
+ 	SYSTEM_RESTART,
+ 	SYSTEM_SUSPEND_DISK,
++	SYSTEM_SUSPEND,
+ } system_state;
+
+ #define TAINT_PROPRIETARY_MODULE	0
+diff --git a/init/main.c b/init/main.c
+index e60679d..237eae1 100644
+--- a/init/main.c
++++ b/init/main.c
+@@ -809,6 +809,8 @@ static noinline int init_post(void)
+ 	current->signal->flags |= SIGNAL_UNKILLABLE;
+ 	flush_delayed_fput();
+
++	driver_deferred_probe_trigger();
++
+ 	if (ramdisk_execute_command) {
+ 		run_init_process(ramdisk_execute_command);
+ 		printk(KERN_WARNING "Failed to execute %s\n",
+diff --git a/kernel/power/suspend.c b/kernel/power/suspend.c
+index 1da39ea..dbf6ffb 100644
+--- a/kernel/power/suspend.c
++++ b/kernel/power/suspend.c
+@@ -224,6 +224,9 @@ int suspend_devices_and_enter(suspend_state_t state)
+ 		goto Recover_platform;
+ 	}
+ 	suspend_test_finish("suspend devices");
++
++	system_state = SYSTEM_SUSPEND;
++
+ 	if (suspend_test(TEST_DEVICES))
+ 		goto Recover_platform;
+
+@@ -301,6 +304,10 @@ static int enter_state(suspend_state_t state)
+  Finish:
+ 	pr_debug("PM: Finishing wakeup.\n");
+ 	suspend_finish();
++
++	system_state = SYSTEM_RUNNING;
++	driver_deferred_probe_trigger();
++
+  Unlock:
+ 	mutex_unlock(&pm_mutex);
+ 	return error;
+
+
+Thanks,
+-- 
+Ming Lei
+--
+To unsubscribe from this list: send the line "unsubscribe linux-usb" in
+the body of a message to majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

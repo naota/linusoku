@@ -1,0 +1,138 @@
+Path: news.gmane.org!not-for-mail
+From: Jens Axboe <axboe@kernel.dk>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [REGRESSION] [PATCH] block: uninitialized ioc->nr_tasks triggers
+ WARN_ON
+Date: Wed, 01 Aug 2012 12:16:04 +0200
+Lines: 85
+Approved: news@gmane.org
+Message-ID: <501901E4.7060005@kernel.dk>
+References: <20120717213643.GA24726@quad.lixom.net>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343816186 6625 80.91.229.3 (1 Aug 2012 10:16:26 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 1 Aug 2012 10:16:26 +0000 (UTC)
+Cc: tj@kernel.org, linux-kernel@vger.kernel.org, vgoyal@redhat.com,
+	torvalds@linux-foundation.org
+To: Olof Johansson <olof@lixom.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 01 12:16:26 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwVya-0008BD-P2
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 01 Aug 2012 12:16:25 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754429Ab2HAKQR (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 1 Aug 2012 06:16:17 -0400
+Original-Received: from merlin.infradead.org ([205.233.59.134]:35511 "EHLO
+	merlin.infradead.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752430Ab2HAKQQ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 1 Aug 2012 06:16:16 -0400
+Original-Received: from canuck.infradead.org ([2001:4978:20e::1])
+	by merlin.infradead.org with esmtps (Exim 4.76 #1 (Red Hat Linux))
+	id 1SwVyN-0003vF-8y; Wed, 01 Aug 2012 10:16:11 +0000
+Original-Received: from brick.kernel.dk ([87.104.106.3] helo=kernel.dk)
+	by canuck.infradead.org with esmtpsa (Exim 4.76 #1 (Red Hat Linux))
+	id 1SwVyM-0000Tf-Ej; Wed, 01 Aug 2012 10:16:10 +0000
+Original-Received: from [192.168.0.33] (nelson.home.kernel.dk [192.168.0.33])
+	by kernel.dk (Postfix) with ESMTPA id E4703484001;
+	Wed,  1 Aug 2012 12:16:08 +0200 (CEST)
+In-Reply-To: <20120717213643.GA24726@quad.lixom.net>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336258
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336258>
+
+On 07/17/2012 11:36 PM, Olof Johansson wrote:
+> Hi,
+> 
+> I'm using the old-fashioned 'dump' backup tool, and I noticed that it spews the
+> below warning as of 3.5-rc1 and later (3.4 is fine):
+> 
+> [   10.886893] ------------[ cut here ]------------
+> [   10.886904] WARNING: at include/linux/iocontext.h:140 copy_process+0x1488/0x1560()
+> [   10.886905] Hardware name: Bochs
+> [   10.886906] Modules linked in:
+> [   10.886908] Pid: 2430, comm: dump Not tainted 3.5.0-rc7+ #27
+> [   10.886908] Call Trace:
+> [   10.886911]  [<ffffffff8107ce8a>] warn_slowpath_common+0x7a/0xb0
+> [   10.886912]  [<ffffffff8107ced5>] warn_slowpath_null+0x15/0x20
+> [   10.886913]  [<ffffffff8107c088>] copy_process+0x1488/0x1560
+> [   10.886914]  [<ffffffff8107c244>] do_fork+0xb4/0x340
+> [   10.886918]  [<ffffffff8108effa>] ? recalc_sigpending+0x1a/0x50
+> [   10.886919]  [<ffffffff8108f6b2>] ? __set_task_blocked+0x32/0x80
+> [   10.886920]  [<ffffffff81091afa>] ? __set_current_blocked+0x3a/0x60
+> [   10.886923]  [<ffffffff81051db3>] sys_clone+0x23/0x30
+> [   10.886925]  [<ffffffff8179bd73>] stub_clone+0x13/0x20
+> [   10.886927]  [<ffffffff8179baa2>] ? system_call_fastpath+0x16/0x1b
+> [   10.886928] ---[ end trace 32a14af7ee6a590b ]---
+> 
+> Reproducing is easy, I can hit it on a KVM system with a very basic
+> config (x86_64 make defconfig + enable the drivers needed). To hit it,
+> just install dump (on debian/ubuntu, not sure what the package might be
+> called on Fedora), and:
+> 
+> dump -o -f /tmp/foo /
+> 
+> You'll see the warning in dmesg once it forks off the I/O process and
+> starts dumping filesystem contents.
+> 
+> I bisected it down to the following commit:
+> 
+> commit f6e8d01bee036460e03bd4f6a79d014f98ba712e
+> Author: Tejun Heo <tj@kernel.org>
+> Date:   Mon Mar 5 13:15:26 2012 -0800
+> 
+>     block: add io_context->active_ref
+>     
+>     Currently ioc->nr_tasks is used to decide two things - whether an ioc
+>     is done issuing IOs and whether it's shared by multiple tasks.  This
+>     patch separate out the first into ioc->active_ref, which is acquired
+>     and released using {get|put}_io_context_active() respectively.
+>     
+>     This will be used to associate bio's with a given task.  This patch
+>     doesn't introduce any visible behavior change.
+>     
+>     Signed-off-by: Tejun Heo <tj@kernel.org>
+>     Cc: Vivek Goyal <vgoyal@redhat.com>
+>     Signed-off-by: Jens Axboe <axboe@kernel.dk>
+> 
+> 
+> It seems like the init of ioc->nr_tasks was removed in that patch,
+> so it starts out at 0 instead of 1.
+> 
+> Tejun, is the right thing here to add back the init, or should something else
+> be done?
+> 
+> The below patch removes the warning, but I haven't done any more extensive
+> testing on it.
+> 
+> 
+> Signed-off-by: Olof Johansson <olof@lixom.net>
+> 
+> diff --git a/block/blk-ioc.c b/block/blk-ioc.c
+> index 893b800..fab4cdd 100644
+> --- a/block/blk-ioc.c
+> +++ b/block/blk-ioc.c
+> @@ -244,6 +244,7 @@ int create_task_io_context(struct task_struct *task, gfp_t gfp_flags, int node)
+>  
+>  	/* initialize */
+>  	atomic_long_set(&ioc->refcount, 1);
+> +	atomic_set(&ioc->nr_tasks, 1);
+>  	atomic_set(&ioc->active_ref, 1);
+>  	spin_lock_init(&ioc->lock);
+>  	INIT_RADIX_TREE(&ioc->icq_tree, GFP_ATOMIC | __GFP_HIGH);
+
+Thanks Olof, analysis (and patch) look correct. Applied for 3.6.
+
+-- 
+Jens Axboe
+

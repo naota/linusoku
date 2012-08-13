@@ -1,0 +1,130 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 091/108] ACPI: Make acpi_skip_timer_override cover all source_irq==0 cases
+Date: Mon, 23 Jul 2012 02:08:22 +0100
+Lines: 77
+Approved: news@gmane.org
+Message-ID: <20120723010705.309838820@decadent.org.uk>
+References: <20120723010651.408577075@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343007776 12685 80.91.229.3 (23 Jul 2012 01:42:56 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 01:42:56 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Feng Tang <feng.tang@intel.com>,
+	Len Brown <len.brown@intel.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 03:42:54 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1St7fh-0001gQ-Ve
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 03:42:54 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753053Ab2GWBm3 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 21:42:29 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:54052 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1752837Ab2GWBmZ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 21:42:25 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7f3-0008Rh-AA; Mon, 23 Jul 2012 02:42:13 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7ek-0008G9-Eh; Mon, 23 Jul 2012 02:41:54 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120723010651.408577075@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331463 gmane.linux.kernel.stable:28616
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331463>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Feng Tang <feng.tang@intel.com>
+
+commit ae10ccdc3093486f8c2369d227583f9d79f628e5 upstream.
+
+Currently when acpi_skip_timer_override is set, it only cover the
+(source_irq == 0 && global_irq == 2) cases. While there is also
+platform which need use this option and its global_irq is not 2.
+This patch will extend acpi_skip_timer_override to cover all
+timer overriding cases as long as the source irq is 0.
+
+This is the first part of a fix to kernel bug bugzilla 40002:
+	"IRQ 0 assigned to VGA"
+https://bugzilla.kernel.org/show_bug.cgi?id=40002
+
+Reported-and-tested-by: Szymon Kowalczyk <fazerxlo@o2.pl>
+Signed-off-by: Feng Tang <feng.tang@intel.com>
+Signed-off-by: Len Brown <len.brown@intel.com>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ arch/x86/kernel/acpi/boot.c |   14 ++++++++------
+ 1 file changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/arch/x86/kernel/acpi/boot.c b/arch/x86/kernel/acpi/boot.c
+index 8afb693..e7c698e 100644
+--- a/arch/x86/kernel/acpi/boot.c
++++ b/arch/x86/kernel/acpi/boot.c
+@@ -422,12 +422,14 @@ acpi_parse_int_src_ovr(struct acpi_subtable_header * header,
+ 		return 0;
+ 	}
+ 
+-	if (intsrc->source_irq == 0 && intsrc->global_irq == 2) {
++	if (intsrc->source_irq == 0) {
+ 		if (acpi_skip_timer_override) {
+-			printk(PREFIX "BIOS IRQ0 pin2 override ignored.\n");
++			printk(PREFIX "BIOS IRQ0 override ignored.\n");
+ 			return 0;
+ 		}
+-		if (acpi_fix_pin2_polarity && (intsrc->inti_flags & ACPI_MADT_POLARITY_MASK)) {
++
++		if ((intsrc->global_irq == 2) && acpi_fix_pin2_polarity
++			&& (intsrc->inti_flags & ACPI_MADT_POLARITY_MASK)) {
+ 			intsrc->inti_flags &= ~ACPI_MADT_POLARITY_MASK;
+ 			printk(PREFIX "BIOS IRQ0 pin2 override: forcing polarity to high active.\n");
+ 		}
+@@ -1334,7 +1336,7 @@ static int __init dmi_disable_acpi(const struct dmi_system_id *d)
+ }
+ 
+ /*
+- * Force ignoring BIOS IRQ0 pin2 override
++ * Force ignoring BIOS IRQ0 override
+  */
+ static int __init dmi_ignore_irq0_timer_override(const struct dmi_system_id *d)
+ {
+@@ -1344,7 +1346,7 @@ static int __init dmi_ignore_irq0_timer_override(const struct dmi_system_id *d)
+ 	 */
+ 	if (!acpi_skip_timer_override) {
+ 		WARN(1, KERN_ERR "ati_ixp4x0 quirk not complete.\n");
+-		pr_notice("%s detected: Ignoring BIOS IRQ0 pin2 override\n",
++		pr_notice("%s detected: Ignoring BIOS IRQ0 override\n",
+ 			d->ident);
+ 		acpi_skip_timer_override = 1;
+ 	}
+@@ -1438,7 +1440,7 @@ static struct dmi_system_id __initdata acpi_dmi_table_late[] = {
+ 	 * is enabled.  This input is incorrectly designated the
+ 	 * ISA IRQ 0 via an interrupt source override even though
+ 	 * it is wired to the output of the master 8259A and INTIN0
+-	 * is not connected at all.  Force ignoring BIOS IRQ0 pin2
++	 * is not connected at all.  Force ignoring BIOS IRQ0
+ 	 * override in that cases.
+ 	 */
+ 	{
+
+

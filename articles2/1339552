@@ -1,0 +1,160 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 32/49] cipso: dont follow a NULL pointer when setsockopt() is called
+Date: Tue,  7 Aug 2012 15:44:50 -0700
+Lines: 95
+Approved: news@gmane.org
+Message-ID: <20120807222029.753269031@linuxfoundation.org>
+References: <20120807222026.848194739@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344379676 21693 80.91.229.3 (7 Aug 2012 22:47:56 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:47:56 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Lin Ming <mlin@ss.pku.edu.cn>,
+	Paul Moore <pmoore@redhat.com>,
+	"David S. Miller" <davem@davemloft.net>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:47:52 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysYz-0004yk-2O
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:47:45 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1031274Ab2HGWrR (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:47:17 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:64574 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1031257Ab2HGWrG (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:47:06 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so370773pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:47:06 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=0ErkmIEyyiqXUiwiVPxg7Li2vMlzXrHBmqGauH3114w=;
+        b=o7X/ctruynmR5QroiiVK4sihG8j1pkzm6kHOB1+AqZxanQ/GmJlm2Q31+6QugIc3rK
+         7GvW6DiYQydI9LGUNZ3VE9AoHDMC9e2pThIWgCt3Wi6KyeVdZsTzVqpudqJcKDlToL47
+         Re1exHdHs2FvUCE2itTHXrOg9L8TLSdm128ySAHB6+A3YC11UShGOJuAFHuQak/6jZTC
+         hcAm0PC+4Hh91Or82wQf8WETbu+1T3jkn54zhdyRkDftUJZehaJQiwDvUsMt4jTDRdnJ
+         7JeA4QmZOTjsU+9mTnedt6+Z0Ijw2YGqqnSkkxtmnalrPpco0XZXIXHM3VZiM5maDXmj
+         p+kA==
+Original-Received: by 10.68.213.5 with SMTP id no5mr31756012pbc.24.1344379626239;
+        Tue, 07 Aug 2012 15:47:06 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id pg9sm11985918pbb.26.2012.08.07.15.47.04
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:47:05 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222026.848194739@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQlbM5hUyB/E8kcCclae7MoU+JYhM6+K33R1BJ4l1/iWpMaPJmBUdsjUblzR8fFbP4uFWv/e
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339552 gmane.linux.kernel.stable:29387
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339552>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+
+From: Paul Moore <pmoore@redhat.com>
+
+[ Upstream commit 89d7ae34cdda4195809a5a987f697a517a2a3177 ]
+
+As reported by Alan Cox, and verified by Lin Ming, when a user
+attempts to add a CIPSO option to a socket using the CIPSO_V4_TAG_LOCAL
+tag the kernel dies a terrible death when it attempts to follow a NULL
+pointer (the skb argument to cipso_v4_validate() is NULL when called via
+the setsockopt() syscall).
+
+This patch fixes this by first checking to ensure that the skb is
+non-NULL before using it to find the incoming network interface.  In
+the unlikely case where the skb is NULL and the user attempts to add
+a CIPSO option with the _TAG_LOCAL tag we return an error as this is
+not something we want to allow.
+
+A simple reproducer, kindly supplied by Lin Ming, although you must
+have the CIPSO DOI #3 configure on the system first or you will be
+caught early in cipso_v4_validate():
+
+	#include <sys/types.h>
+	#include <sys/socket.h>
+	#include <linux/ip.h>
+	#include <linux/in.h>
+	#include <string.h>
+
+	struct local_tag {
+		char type;
+		char length;
+		char info[4];
+	};
+
+	struct cipso {
+		char type;
+		char length;
+		char doi[4];
+		struct local_tag local;
+	};
+
+	int main(int argc, char **argv)
+	{
+		int sockfd;
+		struct cipso cipso = {
+			.type = IPOPT_CIPSO,
+			.length = sizeof(struct cipso),
+			.local = {
+				.type = 128,
+				.length = sizeof(struct local_tag),
+			},
+		};
+
+		memset(cipso.doi, 0, 4);
+		cipso.doi[3] = 3;
+
+		sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+		#define SOL_IP 0
+		setsockopt(sockfd, SOL_IP, IP_OPTIONS,
+			&cipso, sizeof(struct cipso));
+
+		return 0;
+	}
+
+CC: Lin Ming <mlin@ss.pku.edu.cn>
+Reported-by: Alan Cox <alan@lxorguk.ukuu.org.uk>
+Signed-off-by: Paul Moore <pmoore@redhat.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ net/ipv4/cipso_ipv4.c |    6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+--- a/net/ipv4/cipso_ipv4.c
++++ b/net/ipv4/cipso_ipv4.c
+@@ -1725,8 +1725,10 @@ int cipso_v4_validate(const struct sk_bu
+ 		case CIPSO_V4_TAG_LOCAL:
+ 			/* This is a non-standard tag that we only allow for
+ 			 * local connections, so if the incoming interface is
+-			 * not the loopback device drop the packet. */
+-			if (!(skb->dev->flags & IFF_LOOPBACK)) {
++			 * not the loopback device drop the packet. Further,
++			 * there is no legitimate reason for setting this from
++			 * userspace so reject it if skb is NULL. */
++			if (skb == NULL || !(skb->dev->flags & IFF_LOOPBACK)) {
+ 				err_offset = opt_iter;
+ 				goto validate_return_locked;
+ 			}
+
+

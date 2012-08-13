@@ -1,0 +1,121 @@
+Path: news.gmane.org!not-for-mail
+From: David Ahern <dsahern@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 03/11] perf kvm: guest userspace samples should not be lumped with host uspace
+Date: Fri, 20 Jul 2012 17:25:48 -0600
+Lines: 59
+Approved: news@gmane.org
+Message-ID: <1342826756-64663-4-git-send-email-dsahern@gmail.com>
+References: <1342826756-64663-1-git-send-email-dsahern@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342826876 2283 80.91.229.3 (20 Jul 2012 23:27:56 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 23:27:56 +0000 (UTC)
+Cc: David Ahern <dsahern@gmail.com>, Ingo Molnar <mingo@kernel.org>,
+	Jiri Olsa <jolsa@redhat.com>,
+	Namhyung Kim <namhyung@kernel.org>,
+	Frederic Weisbecker <fweisbec@gmail.com>,
+	Peter Zijlstra <peterz@infradead.org>
+To: acme@ghostprotocols.net, linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Jul 21 01:27:55 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsMby-0005mG-IN
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 21 Jul 2012 01:27:54 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752942Ab2GTX0X (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 19:26:23 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:36363 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751618Ab2GTX0O (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 19:26:14 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so6889684pbb.19
+        for <linux-kernel@vger.kernel.org>; Fri, 20 Jul 2012 16:26:13 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=ZRmDhXbPILDpbARLsPPZQ/f0b7GoeNevegA7ETbpP5M=;
+        b=y1wkfW+kapNQHViP7bA7N5c96Iopl2JxPI29docEqSeqp3uI4O5artaCiSGIOqcWJU
+         K3DSB74smcoNsO2/xj5rWZYvLo/TxPGRaMh4XDoi4LwOjJhsF6CvoC7aGvuITvANcv/T
+         IE5U5pKkyjfHp+DoAoM7yYg476xFioJM0SictRzgKK7TANERYYqZVqmfLbU686oCm9jN
+         jftq93Qm22P1UsZr82WY376DwZBNKyabIf78/3lyIVYGRT0nWJDzl+wwG6UER9PiYt6/
+         tq0whhRHj3QH7c4TdgydSooRZYLqW1ejeUUqgz6aJKkRFxA2YxUAsEhsG/aP87b8iy/d
+         0RcA==
+Original-Received: by 10.68.228.102 with SMTP id sh6mr17455715pbc.134.1342826773737;
+        Fri, 20 Jul 2012 16:26:13 -0700 (PDT)
+Original-Received: from sjc-daahern-8912.cisco.com (128-107-239-233.cisco.com. [128.107.239.233])
+        by mx.google.com with ESMTPS id sh3sm4831220pbc.16.2012.07.20.16.26.11
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 20 Jul 2012 16:26:13 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1
+In-Reply-To: <1342826756-64663-1-git-send-email-dsahern@gmail.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331102
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331102>
+
+e.g., perf kvm --host  --guest report -i perf.data --stdio -D
+shows:
+
+1 599127912065356 0x143b8 [0x48]: PERF_RECORD_SAMPLE(IP, 5): 5671/5676: 0x7fdf95a061c0 period: 1 addr: 0
+... chain: nr:2
+.....  0: ffffffffffffff80
+.....  1: fffffffffffffe00
+ ... thread: qemu-kvm:5671
+ ...... dso: <not found>
+
+(IP, 5) means sample in guest userspace. Those samples should not be lumped
+into the VMM's host thread. i.e, the report output:
+
+    56.86%  qemu-kvm  [unknown]         [u] 0x00007fdf95a061c0
+
+With this patch the output emphasizes it is a guest userspace hit:
+
+    56.86%  [guest/5671]  [unknown]         [u] 0x00007fdf95a061c0
+
+Looking at 3 VMs (2 64-bit, 1 32-bit) with each running a CPU bound
+process (openssl speed), perf report currently shows:
+
+  93.84%  117726   qemu-kvm  [unknown]   [u] 0x00007fd7dcaea8e5
+
+which is wrong. With this patch you get:
+
+  31.50%   39258   [guest/18772]  [unknown]   [u] 0x00007fd7dcaea8e5
+  31.50%   39236   [guest/11230]  [unknown]   [u] 0x0000000000a57340
+  30.84%   39232   [guest/18395]  [unknown]   [u] 0x00007f66f641e107
+
+Signed-off-by: David Ahern <dsahern@gmail.com>
+Cc: Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
+Cc: Ingo Molnar <mingo@kernel.org>
+Cc: Jiri Olsa <jolsa@redhat.com>
+Cc: Namhyung Kim <namhyung@kernel.org>
+Cc: Frederic Weisbecker <fweisbec@gmail.com>
+Cc: Peter Zijlstra <peterz@infradead.org>
+---
+ tools/perf/util/session.c |    4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/tools/perf/util/session.c b/tools/perf/util/session.c
+index 8e48559..90ee39d 100644
+--- a/tools/perf/util/session.c
++++ b/tools/perf/util/session.c
+@@ -918,7 +918,9 @@ static struct machine *
+ {
+ 	const u8 cpumode = event->header.misc & PERF_RECORD_MISC_CPUMODE_MASK;
+ 
+-	if (cpumode == PERF_RECORD_MISC_GUEST_KERNEL && perf_guest) {
++	if (perf_guest &&
++	    ((cpumode == PERF_RECORD_MISC_GUEST_KERNEL) ||
++	     (cpumode == PERF_RECORD_MISC_GUEST_USER))) {
+ 		u32 pid;
+ 
+ 		if (event->header.type == PERF_RECORD_MMAP)
+-- 
+1.7.10.1
+

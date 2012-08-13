@@ -1,0 +1,138 @@
+Path: news.gmane.org!not-for-mail
+From: Silas Boyd-Wickizer <sbw@mit.edu>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 1/4 V2] Use get_online_cpus to avoid races involving CPU
+ hotplug
+Date: Fri, 3 Aug 2012 12:33:27 -0700
+Lines: 74
+Approved: news@gmane.org
+Message-ID: <20120803193327.GB4227@mit.edu>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344022669 10786 80.91.229.3 (3 Aug 2012 19:37:49 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 19:37:49 +0000 (UTC)
+Cc: "Paul E. McKenney" <paulmck@linux.vnet.ibm.com>,
+	"H. Peter Anvin" <hpa@zytor.com>,
+	Thomas Gleixner <tglx@linutronix.de>, x86@kernel.org,
+	Ingo Molnar <mingo@elte.hu>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 21:37:48 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxNgs-0005LI-Qt
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 21:37:43 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753604Ab2HCThf (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 15:37:35 -0400
+Original-Received: from mail-vc0-f174.google.com ([209.85.220.174]:52227 "EHLO
+	mail-vc0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752787Ab2HCThd (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 15:37:33 -0400
+Original-Received: by vcbfk26 with SMTP id fk26so1063758vcb.19
+        for <linux-kernel@vger.kernel.org>; Fri, 03 Aug 2012 12:37:32 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:date:from:to:cc:subject:message-id:mime-version:content-type
+         :content-disposition:user-agent;
+        bh=vLA1shS85BJVf+KYkVXKCG5siiFkl/9Cczn7McfFZkE=;
+        b=nHqBc8FtxpQXirAdQmhQVX3WGLNUEq2FeK5BsIWQBlTtQHckVllyZSGtmPK2io5FMA
+         Vpc6EtDjMXkAL0m1leAWNAYg6yPHYc/Jvci7JNZOTu2HV/uHkoZDA2DwMuyT/0qWkbwW
+         xYnFh+QrftO4KyS19au0H80dS1nN20omEF9/Uhr+y/3cn7H6nm5joGL2ne86kXVD5jRP
+         oXdbPm1Y727xJYXWh4SfBLeEfLBtsCd1ECVTkF7TMD8wXqQv6RxvNVOZ1YtPZeJPJxwy
+         p8VThDU7jv5lETcMK6xRbs7bhP3yrVoA2FU4VgnbxA6Sd6NHbmxx7n+uPVCPvuWjjhty
+         R+TQ==
+Original-Received: by 10.221.13.72 with SMTP id pl8mr2279588vcb.5.1344022652613;
+        Fri, 03 Aug 2012 12:37:32 -0700 (PDT)
+Original-Received: from mit.edu ([129.33.193.86])
+        by mx.google.com with ESMTPS id c8sm7431072vdh.14.2012.08.03.12.37.30
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 03 Aug 2012 12:37:31 -0700 (PDT)
+Content-Disposition: inline
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337489
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337489>
+
+If arch/x86/kernel/msr.c is a module, a CPU might offline or online
+between the for_each_online_cpu(i) loop and the call to
+register_hotcpu_notifier in msr_init or the call to
+unregister_hotcpu_notifier in msr_exit. The potential races can lead
+to leaks/duplicates, attempts to destroy non-existant devices, or
+random pointer dereferences.
+
+For example, in msr_init if:
+
+        for_each_online_cpu(i) {
+                err = msr_device_create(i);
+                if (err != 0)
+                        goto out_class;
+        }
+        <----- CPU offlines
+        register_hotcpu_notifier(&msr_class_cpu_notifier);
+
+and the CPU never onlines before msr_exit, then the module will never
+call msr_device_destroy for the associated CPU.
+
+This fix surrounds for_each_online_cpu and register_hotcpu_notifier or
+unregister_hotcpu_notifier with get_online_cpus+put_online_cpus.
+
+Tested on a VM.
+
+Signed-off-by: Silas Boyd-Wickizer <sbw@mit.edu>
+---
+ arch/x86/kernel/msr.c |    5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/arch/x86/kernel/msr.c b/arch/x86/kernel/msr.c
+index eb11369..a7c5661 100644
+--- a/arch/x86/kernel/msr.c
++++ b/arch/x86/kernel/msr.c
+@@ -257,12 +257,14 @@ static int __init msr_init(void)
+ 		goto out_chrdev;
+ 	}
+ 	msr_class->devnode = msr_devnode;
++	get_online_cpus();
+ 	for_each_online_cpu(i) {
+ 		err = msr_device_create(i);
+ 		if (err != 0)
+ 			goto out_class;
+ 	}
+ 	register_hotcpu_notifier(&msr_class_cpu_notifier);
++	put_online_cpus();
+ 
+ 	err = 0;
+ 	goto out;
+@@ -271,6 +273,7 @@ out_class:
+ 	i = 0;
+ 	for_each_online_cpu(i)
+ 		msr_device_destroy(i);
++	put_online_cpus();
+ 	class_destroy(msr_class);
+ out_chrdev:
+ 	__unregister_chrdev(MSR_MAJOR, 0, NR_CPUS, "cpu/msr");
+@@ -281,11 +284,13 @@ out:
+ static void __exit msr_exit(void)
+ {
+ 	int cpu = 0;
++	get_online_cpus();
+ 	for_each_online_cpu(cpu)
+ 		msr_device_destroy(cpu);
+ 	class_destroy(msr_class);
+ 	__unregister_chrdev(MSR_MAJOR, 0, NR_CPUS, "cpu/msr");
+ 	unregister_hotcpu_notifier(&msr_class_cpu_notifier);
++	put_online_cpus();
+ }
+ 
+ module_init(msr_init);
+-- 
+1.7.10.4
+

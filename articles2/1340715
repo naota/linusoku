@@ -1,0 +1,77 @@
+Path: news.gmane.org!not-for-mail
+From: Marina Makienko <makienko@ispras.ru>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 02/13] block: Potential null pointer dereference in pkt_generic_packet()
+Date: Thu,  9 Aug 2012 17:54:06 +0400
+Lines: 34
+Approved: news@gmane.org
+Message-ID: <1344520446-13824-2-git-send-email-makienko@ispras.ru>
+References: <1344520446-13824-1-git-send-email-makienko@ispras.ru>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344520686 29794 80.91.229.3 (9 Aug 2012 13:58:06 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 13:58:06 +0000 (UTC)
+Cc: Marina Makienko <makienko@ispras.ru>, ldv-project@ispras.ru,
+	linux-kernel@vger.kernel.org
+To: Peter Osterlund <petero2@telia.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 09 15:58:03 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzTFR-0001iz-VB
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 09 Aug 2012 15:58:02 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932768Ab2HIN5z (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 09:57:55 -0400
+Original-Received: from smtp.ispras.ru ([83.149.198.202]:52406 "EHLO smtp.ispras.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S932262Ab2HIN5x (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 09:57:53 -0400
+Original-Received: from torvalds.intra.ispras.ru (unknown [83.149.198.253])
+	by smtp.ispras.ru (Postfix) with ESMTP id 607285D4042;
+	Thu,  9 Aug 2012 17:22:24 +0400 (MSD)
+X-Mailer: git-send-email 1.7.7
+In-Reply-To: <1344520446-13824-1-git-send-email-makienko@ispras.ru>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340715
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340715>
+
+The function blk_get_request() can return NULL in some cases. There are
+checks on it if function is called with argumetns one of which is
+GFP_ATOMIC/GFP_NOIO/etc. If system couldn't find request
+blk_get_request() return NULL.
+
+But if there is function call with argument __GFP_WAIT
+the system will wait until get request or the queue becomes
+dead. If something kills the queue, blk_get_request()
+return NULL and next operations will lead to errors.
+
+Found by Linux Driver Verification project (linuxtesting.org).
+
+Signed-off-by: Marina Makienko <makienko@ispras.ru>
+---
+ drivers/block/pktcdvd.c |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/block/pktcdvd.c b/drivers/block/pktcdvd.c
+index ba66e44..be477aa 100644
+--- a/drivers/block/pktcdvd.c
++++ b/drivers/block/pktcdvd.c
+@@ -743,6 +743,9 @@ static int pkt_generic_packet(struct pktcdvd_device *pd, struct packet_command *
+ 	rq = blk_get_request(q, (cgc->data_direction == CGC_DATA_WRITE) ?
+ 			     WRITE : READ, __GFP_WAIT);
+ 
++	if (!rq)
++		return -EIO;
++
+ 	if (cgc->buflen) {
+ 		if (blk_rq_map_kern(q, rq, cgc->buffer, cgc->buflen, __GFP_WAIT))
+ 			goto out;
+-- 
+1.7.7
+

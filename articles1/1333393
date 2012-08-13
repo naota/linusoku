@@ -1,0 +1,97 @@
+Path: news.gmane.org!not-for-mail
+From: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.kvm.devel
+Subject: [PATCH v2 2/3] KVM: use kvm_release_page_clean to release the page
+Date: Thu, 26 Jul 2012 11:58:17 +0800
+Lines: 36
+Approved: news@gmane.org
+Message-ID: <5010C059.50007@linux.vnet.ibm.com>
+References: <5010C008.4030304@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343275122 11878 80.91.229.3 (26 Jul 2012 03:58:42 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 03:58:42 +0000 (UTC)
+Cc: Avi Kivity <avi@redhat.com>, Marcelo Tosatti <mtosatti@redhat.com>,
+	LKML <linux-kernel@vger.kernel.org>, KVM <kvm@vger.kernel.org>
+To: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 05:58:41 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuFDk-0000wI-W4
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 05:58:41 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751966Ab2GZD6a (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 23:58:30 -0400
+Original-Received: from e23smtp04.au.ibm.com ([202.81.31.146]:48293 "EHLO
+	e23smtp04.au.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751747Ab2GZD62 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 23:58:28 -0400
+Original-Received: from /spool/local
+	by e23smtp04.au.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <xiaoguangrong@linux.vnet.ibm.com>;
+	Thu, 26 Jul 2012 13:58:05 +1000
+Original-Received: from d23relay05.au.ibm.com (202.81.31.247)
+	by e23smtp04.au.ibm.com (202.81.31.210) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Thu, 26 Jul 2012 13:58:02 +1000
+Original-Received: from d23av03.au.ibm.com (d23av03.au.ibm.com [9.190.234.97])
+	by d23relay05.au.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6Q3o1Pc44236862;
+	Thu, 26 Jul 2012 13:50:01 +1000
+Original-Received: from d23av03.au.ibm.com (loopback [127.0.0.1])
+	by d23av03.au.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6Q3wJed017562;
+	Thu, 26 Jul 2012 13:58:19 +1000
+Original-Received: from localhost.localdomain ([9.123.236.99])
+	by d23av03.au.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6Q3wH06017519;
+	Thu, 26 Jul 2012 13:58:18 +1000
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120615 Thunderbird/13.0.1
+In-Reply-To: <5010C008.4030304@linux.vnet.ibm.com>
+x-cbid: 12072603-9264-0000-0000-000001FF8A38
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333393 gmane.comp.emulators.kvm.devel:95063
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333393>
+
+In kvm_async_pf_wakeup_all, it uses bad_page to generate broadcast wakeup,
+and uses put_page to release bad_page, the work depends on the fact that
+bad_page is the normal page. But we will use the error code instead of
+bad_page, so use kvm_release_page_clean to release the page which will
+release the error code properly
+
+Signed-off-by: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+---
+ virt/kvm/async_pf.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/virt/kvm/async_pf.c b/virt/kvm/async_pf.c
+index 74268b4..ebae24b 100644
+--- a/virt/kvm/async_pf.c
++++ b/virt/kvm/async_pf.c
+@@ -112,7 +112,7 @@ void kvm_clear_async_pf_completion_queue(struct kvm_vcpu *vcpu)
+ 				   typeof(*work), link);
+ 		list_del(&work->link);
+ 		if (work->page)
+-			put_page(work->page);
++			kvm_release_page_clean(work->page);
+ 		kmem_cache_free(async_pf_cache, work);
+ 	}
+ 	spin_unlock(&vcpu->async_pf.lock);
+@@ -139,7 +139,7 @@ void kvm_check_async_pf_completion(struct kvm_vcpu *vcpu)
+ 		list_del(&work->queue);
+ 		vcpu->async_pf.queued--;
+ 		if (work->page)
+-			put_page(work->page);
++			kvm_release_page_clean(work->page);
+ 		kmem_cache_free(async_pf_cache, work);
+ 	}
+ }
+-- 
+1.7.7.6
+

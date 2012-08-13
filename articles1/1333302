@@ -1,0 +1,114 @@
+Path: news.gmane.org!not-for-mail
+From: Peter Boonstoppel <pboonstoppel@nvidia.com>
+Newsgroups: gmane.linux.kernel
+Subject: RE: [PATCH 1/1] kthread: disable preemption during complete()
+Date: Wed, 25 Jul 2012 15:35:32 -0700
+Lines: 52
+Approved: news@gmane.org
+Message-ID: <5FBF8E85CA34454794F0F7ECBA79798F379D36485E@HQMAIL04.nvidia.com>
+References: <5FBF8E85CA34454794F0F7ECBA79798F379D364859@HQMAIL04.nvidia.com>,<20120725000901.GA5304@google.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 8BIT
+X-Trace: dough.gmane.org 1343255901 20305 80.91.229.3 (25 Jul 2012 22:38:21 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 22:38:21 +0000 (UTC)
+Cc: "linux-kernel@vger.kernel.org" <linux-kernel@vger.kernel.org>,
+	Paul Gortmaker <paul.gortmaker@windriver.com>,
+	Henrique de Moraes Holschuh <ibm-acpi@hmh.eng.br>,
+	Andy Walls <awalls@md.metrocast.net>,
+	Diwakar Tundlam <dtundlam@nvidia.com>
+To: Tejun Heo <tj@kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 00:38:20 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuADj-0002ed-Kx
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 00:38:19 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751410Ab2GYWiA (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 18:38:00 -0400
+Original-Received: from hqemgate03.nvidia.com ([216.228.121.140]:16616 "EHLO
+	hqemgate03.nvidia.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750770Ab2GYWh7 convert rfc822-to-8bit (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 18:37:59 -0400
+Original-Received: from hqnvupgp05.nvidia.com (Not Verified[216.228.121.13]) by hqemgate03.nvidia.com
+	id <B5010756f0000>; Wed, 25 Jul 2012 15:38:39 -0700
+Original-Received: from hqemhub02.nvidia.com ([172.17.108.22])
+  by hqnvupgp05.nvidia.com (PGP Universal service);
+  Wed, 25 Jul 2012 15:37:57 -0700
+X-PGP-Universal: processed;
+	by hqnvupgp05.nvidia.com on Wed, 25 Jul 2012 15:37:57 -0700
+Original-Received: from HQMAIL04.nvidia.com ([172.20.150.117]) by hqemhub02.nvidia.com
+ ([172.20.150.31]) with mapi; Wed, 25 Jul 2012 15:37:56 -0700
+Thread-Topic: [PATCH 1/1] kthread: disable preemption during complete()
+Thread-Index: Ac1p+bUOczwzIWg+S7i0bgDJNacUQAAvBftg
+In-Reply-To: <20120725000901.GA5304@google.com>
+Accept-Language: en-US
+Content-Language: en-US
+X-MS-Has-Attach: 
+X-MS-TNEF-Correlator: 
+acceptlanguage: en-US
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333302
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333302>
+
+After a kthread is created it signals the requester using complete()
+and enters TASK_UNINTERRUPTIBLE. However, since complete() wakes up
+the requesting thread this can cause a preemption. The preemption will
+not remove the task from the runqueue (for that schedule() has to be
+invoked directly).
+
+This is a problem if directly after kthread creation you try to do a
+kthread_bind(), which will block in HZ steps until the thread is off
+the runqueue.
+
+This patch disables preemption during complete(), since we call
+schedule() directly afterwards, so it will correctly enter
+TASK_UNINTERRUPTIBLE. This speeds up kthread creation/binding during
+cpu hotplug significantly.
+
+Signed-off-by: Peter Boonstoppel <pboonstoppel@nvidia.com>
+---
+ kernel/kthread.c |   11 +++++++++++
+ 1 files changed, 11 insertions(+), 0 deletions(-)
+
+diff --git a/kernel/kthread.c b/kernel/kthread.c
+index b579af5..757d8dd 100644
+--- a/kernel/kthread.c
++++ b/kernel/kthread.c
+@@ -16,6 +16,7 @@
+ #include <linux/mutex.h>
+ #include <linux/slab.h>
+ #include <linux/freezer.h>
++#include <linux/preempt.h>
+ #include <trace/events/sched.h>
+ 
+ static DEFINE_SPINLOCK(kthread_create_lock);
+@@ -113,7 +114,17 @@ static int kthread(void *_create)
+ 	/* OK, tell user we're spawned, wait for stop or wakeup */
+ 	__set_current_state(TASK_UNINTERRUPTIBLE);
+ 	create->result = current;
++
++	/*
++	 * Disable preemption so we enter TASK_UNINTERRUPTIBLE after
++	 * complete() instead of possibly being preempted. This speeds
++	 * up clients that do a kthread_bind() directly after
++	 * creation.
++	 */
++	preempt_disable();
+ 	complete(&create->done);
++	preempt_enable_no_resched();
++
+ 	schedule();
+ 
+ 	ret = -EINTR;
+-- 
+1.7.0.4

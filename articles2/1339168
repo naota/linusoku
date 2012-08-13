@@ -1,0 +1,125 @@
+Path: news.gmane.org!not-for-mail
+From: Jiang Liu <liuj97@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] x86/smp: Fix cpuN startup panic
+Date: Wed, 08 Aug 2012 00:33:49 +0800
+Lines: 62
+Approved: news@gmane.org
+Message-ID: <5021436D.4040205@gmail.com>
+References: <5020E4F0.5060203@intel.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344357260 18429 80.91.229.3 (7 Aug 2012 16:34:20 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 16:34:20 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, mingo@redhat.com, tglx@linutronix.de,
+	hpa@zytor.com, yanmin_zhang@linux.intel.com
+To: "Chen, LinX Z" <linx.z.chen@intel.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 18:34:13 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SymjR-0000VW-16
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 18:34:09 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755467Ab2HGQeB (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 12:34:01 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:56921 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752208Ab2HGQd7 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 12:33:59 -0400
+Original-Received: by pbbrr13 with SMTP id rr13so4547875pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 09:33:59 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=message-id:date:from:user-agent:mime-version:to:cc:subject
+         :references:in-reply-to:content-type:content-transfer-encoding;
+        bh=zOKVBvWwmPvxY7dmWKJCJAkjrow/M6ZYNQ1OKb3CJw0=;
+        b=ugYZsb5pk0smpTFXKopNdPLt/1wlXfhCjZrHEO1bCu/LWSsYliYd6973czSnr3yAgL
+         Zh9wIeiswxHnC9CXfJ+OH8iEOulLfcKafTE5FUEH/iH4xbQvYMlSrraO5IM3VylcLCIX
+         nulpR8IAg0jOh03Pf0ta4eLyXYJg5hWPGhfkMU3ATj8W0Om4c8cRr38V4oGrh3ZT6Ucf
+         6uu9nQ3WMNkea+v61u+VYjWLxLX4/z1agqZwGPJZdVXvB5zhk+V8L65py0oW1EbG4bMS
+         69/Vs8VPoLtojqFLmhYKtev50tETQK1Wq8paBLISbCTnBaeXflGC5y+EZXjay1AHnEze
+         U4UA==
+Original-Received: by 10.68.235.236 with SMTP id up12mr28975847pbc.79.1344357239121;
+        Tue, 07 Aug 2012 09:33:59 -0700 (PDT)
+Original-Received: from [172.30.25.2] ([58.250.81.2])
+        by mx.google.com with ESMTPS id ph1sm11463062pbb.45.2012.08.07.09.33.55
+        (version=SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 09:33:58 -0700 (PDT)
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:14.0) Gecko/20120714 Thunderbird/14.0
+In-Reply-To: <5020E4F0.5060203@intel.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339168
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339168>
+
+On 08/07/2012 05:50 PM, Chen, LinX Z wrote:
+> From: Lin Chen <linx.z.chen@intel.com>
+> 
+> We hit a panic while doing cpu hotplug test.
+> <0>[  627.982857] Kernel panic - not syncing: smp_callin: CPU1 started up but did not get a callout!
+> <0>[  627.982864]
+> <4>[  627.982876] Pid: 0, comm: kworker/0:1 Tainted: G ...
+> <4>[  627.982883] Call Trace:
+> <4>[  627.982903]  [<c18f2977>] panic+0x66/0x16c
+> <4>[  627.982918]  [<c12234cc>] ? default_get_apic_id+0x1c/0x40
+> <4>[  627.982931]  [<c18ef96d>] start_secondary+0xda/0x252
+> 
+> During BSP bootup AP, it is possible that BSP be preempted before
+> finishing STARTUP sequence of AP(set cpu_callout_mask) which maybe cause
+> AP busy wait for it. At present, AP will wait for 2 seconds then panic.
+> 
+> This patch let AP waits until BSP finish the startup sequence and gives
+> WARNING when BSP is preempted more than 2 seconds.
+> 
+> Signed-off-by: Yanmin Zhang <yanmin_zhang@linux.intel.com>
+> Signed-off-by: Lin Chen <linx.z.chen@intel.com>
+> ---
+>  arch/x86/kernel/smpboot.c |   11 ++++++-----
+>  1 files changed, 6 insertions(+), 5 deletions(-)
+> 
+> diff --git a/arch/x86/kernel/smpboot.c b/arch/x86/kernel/smpboot.c
+> index 7c5a8c3..a9e3379 100644
+> --- a/arch/x86/kernel/smpboot.c
+> +++ b/arch/x86/kernel/smpboot.c
+> @@ -165,19 +165,20 @@ static void __cpuinit smp_callin(void)
+>       * Waiting 2s total for startup (udelay is not yet working)
+>       */
+>      timeout = jiffies + 2*HZ;
+> -    while (time_before(jiffies, timeout)) {
+> +    while (1) {
+Hi Yanmin,
+
+	Seems a little risky, what if a slave CPU can't be booted due to hardware errors?
+	Regards!
+	Gerry
+
+>          /*
+>           * Has the boot CPU finished it's STARTUP sequence?
+>           */
+>          if (cpumask_test_cpu(cpuid, cpu_callout_mask))
+>              break;
+>          cpu_relax();
+> +        if (!time_before(jiffies, timeout)) {
+> +            WARN(1, "%s: CPU%d started up but did not get a callout!\n",
+> +                    __func__, cpuid);
+> +            timeout = jiffies + 2*HZ;
+> +        }
+>      }
+> 
+> -    if (!time_before(jiffies, timeout)) {
+> -        panic("%s: CPU%d started up but did not get a callout!\n",
+> -              __func__, cpuid);
+> -    }
+> 
+>      /*
+>       * the boot CPU has finished the init stage and is spinning
+

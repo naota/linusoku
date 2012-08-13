@@ -1,0 +1,96 @@
+Path: news.gmane.org!not-for-mail
+From: Denis Efremov <yefremov.denis@gmail.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.network
+Subject: [PATCH] forcedeth: spin_unlock_irq in interrupt handler fix
+Date: Sat, 21 Jul 2012 01:54:34 +0400
+Lines: 35
+Approved: news@gmane.org
+Message-ID: <1342821274-20623-1-git-send-email-yefremov.denis@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342821133 27261 80.91.229.3 (20 Jul 2012 21:52:13 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 21:52:13 +0000 (UTC)
+Cc: Denis Efremov <yefremov.denis@gmail.com>,
+	David Decotigny <david.decotigny@google.com>,
+	Eric Dumazet <edumazet@google.com>,
+	Jiri Pirko <jpirko@redhat.com>,
+	Ian Campbell <ian.campbell@citrix.com>, netdev@vger.kernel.org,
+	linux-kernel@vger.kernel.org
+To: "David S. Miller" <davem@davemloft.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 23:52:11 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsL7K-0000fO-T2
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 23:52:11 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753274Ab2GTVv4 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 17:51:56 -0400
+Original-Received: from mail-lb0-f174.google.com ([209.85.217.174]:37705 "EHLO
+	mail-lb0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751872Ab2GTVvy (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 17:51:54 -0400
+Original-Received: by mail-lb0-f174.google.com with SMTP id gm6so5612720lbb.19
+        for <multiple recipients>; Fri, 20 Jul 2012 14:51:53 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer;
+        bh=kACzXmqG1wsnmeljsdz5+gfJ5FKG+PgpMKw7RGtmOk0=;
+        b=fRdnQ9Kshk/HmpGtF9NmUEqozx5DYZ17DTS4K+2M3EXgV6zPtjYaSG97GrVPq4T9GQ
+         lrJbvt5Y5SDSZhuhGn8AY86v8rSSqEC6pVZz878oJBNSnTVKK4mD3+xja4dTZ+zABhNg
+         /8rtSPYwlNyJ6i4/LG0m6RTKBKbworv+5LpR3L391SFgpRFs4BH4JM84tNP65RPf3P1s
+         outkPho8V2NK86DskkvhApu9vas5gw2rezOJVc5dU/X7FO+mJXtuFeEQ5Mlc0C37UyaN
+         zGEqDWE0hF3kJQjPL1o0A2E0Xj17/9y9X8SXwUDnrrqaVtFMYTwYuSdtKztMiNkbSJ/u
+         kQ6g==
+Original-Received: by 10.152.146.163 with SMTP id td3mr7967443lab.26.1342821113543;
+        Fri, 20 Jul 2012 14:51:53 -0700 (PDT)
+Original-Received: from localhost.localdomain ([176.14.3.137])
+        by mx.google.com with ESMTPS id hm7sm5932441lab.12.2012.07.20.14.51.51
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 20 Jul 2012 14:51:52 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331061 gmane.linux.network:237986
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331061>
+
+The replacement of spin_lock_irq/spin_unlock_irq pair in interrupt
+handler by spin_lock_irqsave/spin_lock_irqrestore pair.
+
+Found by Linux Driver Verification project (linuxtesting.org).
+
+Signed-off-by: Denis Efremov <yefremov.denis@gmail.com>
+---
+ drivers/net/ethernet/nvidia/forcedeth.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/nvidia/forcedeth.c b/drivers/net/ethernet/nvidia/forcedeth.c
+index 928913c..7e68c00 100644
+--- a/drivers/net/ethernet/nvidia/forcedeth.c
++++ b/drivers/net/ethernet/nvidia/forcedeth.c
+@@ -3776,7 +3776,7 @@ static irqreturn_t nv_nic_irq_other(int foo, void *data)
+ 			np->link_timeout = jiffies + LINK_TIMEOUT;
+ 		}
+ 		if (events & NVREG_IRQ_RECOVER_ERROR) {
+-			spin_lock_irq(&np->lock);
++			spin_lock_irqsave(&np->lock, flags);
+ 			/* disable interrupts on the nic */
+ 			writel(NVREG_IRQ_OTHER, base + NvRegIrqMask);
+ 			pci_push(base);
+@@ -3786,7 +3786,7 @@ static irqreturn_t nv_nic_irq_other(int foo, void *data)
+ 				np->recover_error = 1;
+ 				mod_timer(&np->nic_poll, jiffies + POLL_WAIT);
+ 			}
+-			spin_unlock_irq(&np->lock);
++			spin_unlock_irqrestore(&np->lock, flags);
+ 			break;
+ 		}
+ 		if (unlikely(i > max_interrupt_work)) {
+-- 
+1.7.7
+

@@ -1,0 +1,98 @@
+Path: news.gmane.org!not-for-mail
+From: Andrey Wagin <avagin@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH 2/3] perf: teach perf inject to merge sched_stat_* and
+ sched_switch events
+Date: Mon, 6 Aug 2012 23:43:04 +0400
+Lines: 35
+Approved: news@gmane.org
+Message-ID: <CANaxB-xq_wDGZQ16nTD6agwc_JiE4dQe1fXmvmPZckAX0EVr9w@mail.gmail.com>
+References: <1344247319-304069-1-git-send-email-avagin@openvz.org>
+	<1344247319-304069-3-git-send-email-avagin@openvz.org>
+	<20120806181941.GG21441@infradead.org>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1344282200 8929 80.91.229.3 (6 Aug 2012 19:43:20 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 19:43:20 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Paul Mackerras <paulus@samba.org>,
+	Ingo Molnar <mingo@redhat.com>
+To: Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Aug 06 21:43:19 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyTCw-0000Bg-Kd
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 06 Aug 2012 21:43:18 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932546Ab2HFTnI (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 15:43:08 -0400
+Original-Received: from mail-ee0-f46.google.com ([74.125.83.46]:41377 "EHLO
+	mail-ee0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756768Ab2HFTnG (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 15:43:06 -0400
+Original-Received: by eeil10 with SMTP id l10so958831eei.19
+        for <linux-kernel@vger.kernel.org>; Mon, 06 Aug 2012 12:43:05 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=mime-version:in-reply-to:references:date:message-id:subject:from:to
+         :cc:content-type;
+        bh=SBT0uqMY4X80u0Jf6w/Yj6u7IJHRxCJ6T4ixQIrtFYw=;
+        b=SwRT9+5FErdDB2CkGZM1cqCknLibA3LYlv6b6JO+tMQ8GHx4EHiYXt/24o9UNIFuuv
+         AbgqFxNZdPVOMnJ7fp4/uCqaa10OT5n4CGWnVtfMkyvu+HSJPIuPiXbJ+RPcKwHaHzVF
+         uTPX1S/Qm3VpiV1bNpksqYkpREXWhDhAFd9WVEmBUWJBqU/MrhZN3MDfrw2N7Gmuw71c
+         KYbJjIV8Qd95fndnSWQM8I5Xmi+8Lj2FN7Vi4zOVDbBqGuJWSCM0+ygiqi5Z2tVnONi3
+         J2HqM30uOSIKQNmtZamo9FnCuzhCpUNelZjlEmw+G0Pw+M4F01A6DZQSUvIMMsEQYoHl
+         /wnQ==
+Original-Received: by 10.14.223.9 with SMTP id u9mr14467172eep.10.1344282184956; Mon,
+ 06 Aug 2012 12:43:04 -0700 (PDT)
+Original-Received: by 10.14.97.76 with HTTP; Mon, 6 Aug 2012 12:43:04 -0700 (PDT)
+In-Reply-To: <20120806181941.GG21441@infradead.org>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338525
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338525>
+
+Hello Arnaldo,
+
+Thanks for comments, I will correct them. I need a bit more details
+about two of them.
+
+2012/8/6 Arnaldo Carvalho de Melo <acme@ghostprotocols.net>:
+>> @@ -21,6 +23,9 @@ static int          output;
+>>  static u64           bytes_written;
+>>
+>>  static bool          inject_build_ids;
+>> +static bool          inject_sched_stat;
+>> +
+>> +struct perf_session  *session;
+
+perf_event__sched_stat (perf_inject.sample) uses "session" for getting
+an event name. I don't know how to get it by another way
+
+>
+> Why do we need to insert even more globals?
+>
+>>  static int perf_event__repipe_synth(struct perf_tool *tool __used,
+>>                                   union perf_event *event,
+>> @@ -47,7 +52,7 @@ static int perf_event__repipe_synth(struct perf_tool *tool __used,
+>>
+>>  static int perf_event__repipe_op2_synth(struct perf_tool *tool,
+>>                                       union perf_event *event,
+>> -                                     struct perf_session *session __used)
+>> +                                     struct perf_session *s __used)
+>
+> What is the point of the above hunk?
+
+"session" is global, for this reason I renamed all arguments.
+
+p.s. Arnaldo, sorry for the personal message with the same content.
+It's my mistake.

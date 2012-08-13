@@ -1,0 +1,100 @@
+Path: news.gmane.org!not-for-mail
+From: Jiri Olsa <jolsa@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH 04/11] perf kvm: fix bug resolving guest kernel syms - v2
+Date: Wed, 25 Jul 2012 14:11:21 +0200
+Lines: 45
+Approved: news@gmane.org
+Message-ID: <20120725121121.GB946@krava.brq.redhat.com>
+References: <1342826756-64663-1-git-send-email-dsahern@gmail.com>
+ <1342826756-64663-5-git-send-email-dsahern@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343218315 30028 80.91.229.3 (25 Jul 2012 12:11:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 12:11:55 +0000 (UTC)
+Cc: acme@ghostprotocols.net, linux-kernel@vger.kernel.org,
+	Ingo Molnar <mingo@kernel.org>,
+	Namhyung Kim <namhyung@kernel.org>,
+	Frederic Weisbecker <fweisbec@gmail.com>,
+	Peter Zijlstra <peterz@infradead.org>
+To: David Ahern <dsahern@gmail.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 14:11:49 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su0RM-0002ZJ-SB
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 14:11:45 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756704Ab2GYMLg (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 08:11:36 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:53658 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1756630Ab2GYMLe (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 08:11:34 -0400
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6PCBPN1011405
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Wed, 25 Jul 2012 08:11:25 -0400
+Original-Received: from krava.brq.redhat.com (dhcp-1-202.brq.redhat.com [10.34.1.202])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with SMTP id q6PCBMw9014588;
+	Wed, 25 Jul 2012 08:11:23 -0400
+Content-Disposition: inline
+In-Reply-To: <1342826756-64663-5-git-send-email-dsahern@gmail.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332933
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332933>
+
+On Fri, Jul 20, 2012 at 05:25:49PM -0600, David Ahern wrote:
+> Guest kernel symbols are not resolved despite passing the information
+> needed to resolve them. e.g.,
+> 
+> perf kvm --guest --guestmount=/tmp/guest-mount record -a -- sleep 1
+> perf kvm --guest --guestmount=/tmp/guest-mount report --stdio
+> 
+>     36.55%  [guest/11399]  [unknown]         [g] 0xffffffff81600bc8
+>     33.19%  [guest/10474]  [unknown]         [g] 0x00000000c0116e00
+>     30.26%  [guest/11094]  [unknown]         [g] 0xffffffff8100a288
+>     43.69%  [guest/10474]  [unknown]         [g] 0x00000000c0103d90
+>     37.38%  [guest/11399]  [unknown]         [g] 0xffffffff81600bc8
+>     12.24%  [guest/11094]  [unknown]         [g] 0xffffffff810aa91d
+>      6.69%  [guest/11094]  [unknown]         [u] 0x00007fa784d721c3
+> 
+> which is just pathetic.
+> 
+> After a maddening 2 days sifting through perf minutia I found it --
+> id_hdr_size is not initialized for guest machines. This shows up on the
+> report side as random garbage for the cpu and timestamp, e.g.,
+> 
+> 29816 7310572949125804849 0x1ac0 [0x50]: PERF_RECORD_MMAP ...
+> 
+> That messes up the sample sorting such that synthesized guest maps are
+> processed last.
+> 
+> With this patch you get a much more helpful report:
+> 
+>   12.11%  [guest/11399]  [guest.kernel.kallsyms.11399]  [g] irqtime_account_process_tick
+>   10.58%  [guest/11399]  [guest.kernel.kallsyms.11399]  [g] run_timer_softirq
+>    6.95%  [guest/11094]  [guest.kernel.kallsyms.11094]  [g] printk_needs_cpu
+>    6.50%  [guest/11094]  [guest.kernel.kallsyms.11094]  [g] do_timer
+>    6.45%  [guest/11399]  [guest.kernel.kallsyms.11399]  [g] idle_balance
+>    4.90%  [guest/11094]  [guest.kernel.kallsyms.11094]  [g] native_read_tsc
+>     ...
+> 
+> v2:
+> - changed rbtree walk to use rb_first per Namhyung's suggestion
+> 
+> Signed-off-by: David Ahern <dsahern@gmail.com>
+> Cc: Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
+> Cc: Ingo Molnar <mingo@kernel.org>
+> Cc: Jiri Olsa <jolsa@redhat.com>
+
+Tested-by: Jiri Olsa <jolsa@redhat.com>

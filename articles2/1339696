@@ -1,0 +1,115 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 021/122] ASoC: dapm: Fix locking during codec shutdown
+Date: Tue,  7 Aug 2012 15:25:09 -0700
+Lines: 50
+Approved: news@gmane.org
+Message-ID: <20120807221950.136517303@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344382896 11560 80.91.229.3 (7 Aug 2012 23:41:36 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 23:41:36 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Misael Lopez Cruz <misael.lopez@ti.com>,
+	Liam Girdwood <lrg@ti.com>,
+	Mark Brown <broonie@opensource.wolfsonmicro.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 01:41:34 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SytP3-0001fA-Bi
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 01:41:33 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757733Ab2HGXlX (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 19:41:23 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:64363 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S932306Ab2HGW2D (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:28:03 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so346923pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:28:03 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=i8sTE6MW/7s4TsfGrX29+DN0Nld+S/B/+2TK4ACcUHw=;
+        b=fanQksHSno+OFigW/A1WdB3rfD42lNN5BGnNauR3zgLIw+WiOjSUn4aeUMDIu9N+0z
+         an7oCezZRG6d91QNmnv3LD61VTyx16AqoZmnoYlRBmb85pjph2Vjn6zVQQiA24pYCpUh
+         tOr2ef1rBGWe45ccWq3Al02u2dvYHcBX/cOEzHtZ9s1ZcxAKo7ZVCcjI5mEJQIh6Pwfm
+         WV6txTBkrbjIU9lqL2ASpYYT7CSfY0DDm0/EMzKBLBsEkNEN2dfOVkzZ4O2fPGOguapr
+         XAW07FZxXRyo0/y491u9I7ghqfGhXbXUOElc+yKPxy+rTi+SHkZEhgWzgXEWdyOfmvx7
+         HkKg==
+Original-Received: by 10.68.241.99 with SMTP id wh3mr26044237pbc.16.1344378483507;
+        Tue, 07 Aug 2012 15:28:03 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id oj8sm8534697pbb.54.2012.08.07.15.28.01
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:28:02 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQkGmiFxJYUlOQoCB8jicoIlKSl5sgnYvEea14DgZLrRZHhkinuZJDzBoxcEt1F0w99W3YeG
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339696 gmane.linux.kernel.stable:29521
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339696>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Liam Girdwood <lrg@ti.com>
+
+commit 01005a729a17ab419f61a366e22f3419e7a2c3fe upstream.
+
+Codec shutdown performs a DAPM power sequence that might cause conflicts
+and/or race conditions if another stream power event is running simultaneously.
+Use card's dapm mutex to protect any potential race condition between them.
+
+Signed-off-by: Misael Lopez Cruz <misael.lopez@ti.com>
+Signed-off-by: Liam Girdwood <lrg@ti.com>
+Signed-off-by: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ sound/soc/soc-dapm.c |    5 +++++
+ 1 file changed, 5 insertions(+)
+
+--- a/sound/soc/soc-dapm.c
++++ b/sound/soc/soc-dapm.c
+@@ -3538,10 +3538,13 @@ EXPORT_SYMBOL_GPL(snd_soc_dapm_free);
+ 
+ static void soc_dapm_shutdown_codec(struct snd_soc_dapm_context *dapm)
+ {
++	struct snd_soc_card *card = dapm->card;
+ 	struct snd_soc_dapm_widget *w;
+ 	LIST_HEAD(down_list);
+ 	int powerdown = 0;
+ 
++	mutex_lock(&card->dapm_mutex);
++
+ 	list_for_each_entry(w, &dapm->card->widgets, list) {
+ 		if (w->dapm != dapm)
+ 			continue;
+@@ -3564,6 +3567,8 @@ static void soc_dapm_shutdown_codec(stru
+ 			snd_soc_dapm_set_bias_level(dapm,
+ 						    SND_SOC_BIAS_STANDBY);
+ 	}
++
++	mutex_unlock(&card->dapm_mutex);
+ }
+ 
+ /*
+
+

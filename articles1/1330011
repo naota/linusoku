@@ -1,0 +1,137 @@
+Path: news.gmane.org!not-for-mail
+From: Li Zefan <lizefan@huawei.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.network
+Subject: Re: [PATCH v4] net: cgroup: fix access the unallocated memory in
+ netprio cgroup
+Date: Thu, 19 Jul 2012 09:00:51 +0800
+Lines: 77
+Approved: news@gmane.org
+Message-ID: <50075C43.7000706@huawei.com>
+References: <1342079415-9631-1-git-send-email-gaofeng@cn.fujitsu.com> <5005CF5D.9070905@intel.com> <20120718122106.GB25563@hmsreliant.think-freely.org> <5006C3CA.3010007@intel.com> <20120718142632.GF25563@hmsreliant.think-freely.org>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342659808 8478 80.91.229.3 (19 Jul 2012 01:03:28 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 01:03:28 +0000 (UTC)
+Cc: John Fastabend <john.r.fastabend@intel.com>,
+	Gao feng <gaofeng@cn.fujitsu.com>, <eric.dumazet@gmail.com>,
+	<linux-kernel@vger.kernel.org>, <netdev@vger.kernel.org>,
+	<davem@davemloft.net>, Eric Dumazet <edumazet@google.com>,
+	"Rustad, Mark D" <mark.d.rustad@intel.com>
+To: Neil Horman <nhorman@tuxdriver.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 03:03:26 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Srf9E-0002Xg-OJ
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 03:03:21 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752502Ab2GSBDN (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 18 Jul 2012 21:03:13 -0400
+Original-Received: from szxga02-in.huawei.com ([119.145.14.65]:43933 "EHLO
+	szxga02-in.huawei.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751558Ab2GSBDK (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 18 Jul 2012 21:03:10 -0400
+Original-Received: from 172.24.2.119 (EHLO szxeml202-edg.china.huawei.com) ([172.24.2.119])
+	by szxrg02-dlp.huawei.com (MOS 4.1.9-GA FastPath queued)
+	with ESMTP id ALT13703;
+	Thu, 19 Jul 2012 09:01:00 +0800 (CST)
+Original-Received: from SZXEML401-HUB.china.huawei.com (10.82.67.31) by
+ szxeml202-edg.china.huawei.com (172.24.2.42) with Microsoft SMTP Server (TLS)
+ id 14.1.323.3; Thu, 19 Jul 2012 09:00:49 +0800
+Original-Received: from [10.166.88.115] (10.166.88.115) by smtpscn.huawei.com
+ (10.82.67.31) with Microsoft SMTP Server (TLS) id 14.1.323.3; Thu, 19 Jul
+ 2012 09:00:52 +0800
+User-Agent: Mozilla/5.0 (Windows NT 6.1; rv:11.0) Gecko/20120312 Thunderbird/11.0
+In-Reply-To: <20120718142632.GF25563@hmsreliant.think-freely.org>
+X-Originating-IP: [10.166.88.115]
+X-CFilter-Loop: Reflected
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330011 gmane.linux.network:237622
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330011>
+
+>>>>>  static struct cgroup_subsys_state *cgrp_create(struct cgroup *cgrp)
+
+>>>>>  {
+>>>>>  	struct cgroup_netprio_state *cs;
+>>>>> -	int ret;
+>>>>> +	int ret = -EINVAL;
+>>>>>
+>>>>>  	cs = kzalloc(sizeof(*cs), GFP_KERNEL);
+>>>>>  	if (!cs)
+>>>>>  		return ERR_PTR(-ENOMEM);
+>>>>>
+>>>>> -	if (cgrp->parent && cgrp_netprio_state(cgrp->parent)->prioidx) {
+>>>>> -		kfree(cs);
+>>>>> -		return ERR_PTR(-EINVAL);
+>>>>> -	}
+>>>>> +	if (cgrp->parent && cgrp_netprio_state(cgrp->parent)->prioidx)
+>>>>> +		goto out;
+>>>>>
+>>>>>  	ret = get_prioidx(&cs->prioidx);
+>>>>> -	if (ret != 0) {
+>>>>> +	if (ret < 0) {
+>>>>>  		pr_warn("No space in priority index array\n");
+>>>>> -		kfree(cs);
+>>>>> -		return ERR_PTR(ret);
+>>>>> +		goto out;
+>>>>> +	}
+>>>>> +
+>>>>> +	ret = update_netdev_tables();
+>>>>> +	if (ret < 0) {
+>>>>> +		put_prioidx(cs->prioidx);
+>>>>> +		goto out;
+>>>>>  	}
+>>>>
+>>>> Gao,
+>>>>
+>>>> This introduces a null ptr dereference when netprio_cgroup is built
+>>>> into the kernel because update_netdev_tables() depends on init_net.
+>>>> However cgrp_create is being called by cgroup_init before
+>>>> do_initcalls() is called and before net_dev_init().
+>>>>
+>>>> .John
+>>>>
+>>> Not sure I follow here John.  Shouldn't init_net be initialized prior to any
+>>> network devices getting registered?  In other words, shouldn't for_each_netdev
+>>> just result in zero iterations through the loop?
+>>> Neil
+>>>
+>>
+>> init_net _is_ initialized prior to any network devices getting
+>> registered but not before cgrp_create called via cgroup_init.
+>>
+>> #define for_each_netdev(net, d)         \
+>>                 list_for_each_entry(d, &(net)->dev_base_head, dev_list)
+>>
+>> but dev_base_head is zeroed at this time. In netdev_init we have,
+>>
+>>         INIT_LIST_HEAD(&net->dev_base_head);
+>>
+>> but we haven't got that far yet because cgroup_init is called
+>> before do_initcalls().
+>>
+> ok, I see that, and it makes sense, but at this point I'm more concerned with
+> cgroups getting initalized twice.  The early_init flag is clear in the
+> cgroup_subsystem for netprio, so we really shouldn't be getting initalized from
+> cgroup_init. We should be getting initalized from the module_init() call that
+
+> we register
+
+If the early_init flag is set, a cgroup subsys will be initialized from
+cgroup_early_init(), otherwise cgroup_init().
+
+If netprio is built as a module, the subsys will be initailized from module_init(),
+otherwise cgroup_init() (in this case cgroup_load_subsys() called in module_init()
+is a no-op).
+
+So it won't get initialized twice.
+

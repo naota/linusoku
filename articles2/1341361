@@ -1,0 +1,110 @@
+Path: news.gmane.org!not-for-mail
+From: Vivek Goyal <vgoyal@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH 6/6] floppy: use disk_registered for checking if a drive
+ is present
+Date: Fri, 10 Aug 2012 13:35:27 -0400
+Lines: 53
+Approved: news@gmane.org
+Message-ID: <20120810173527.GJ5416@redhat.com>
+References: <1344542391-16474-1-git-send-email-herton.krzesinski@canonical.com>
+ <1344542391-16474-7-git-send-email-herton.krzesinski@canonical.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344620162 15587 80.91.229.3 (10 Aug 2012 17:36:02 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 17:36:02 +0000 (UTC)
+Cc: Jiri Kosina <jkosina@suse.cz>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Jens Axboe <axboe@kernel.dk>, Tejun Heo <tj@kernel.org>,
+	linux-kernel@vger.kernel.org, Ben Hutchings <ben@decadent.org.uk>
+To: Herton Ronaldo Krzesinski <herton.krzesinski@canonical.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 10 19:36:00 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Szt7n-00038n-2q
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 10 Aug 2012 19:35:51 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1758486Ab2HJRfq (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 10 Aug 2012 13:35:46 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:37110 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1758191Ab2HJRfn (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 10 Aug 2012 13:35:43 -0400
+Original-Received: from int-mx01.intmail.prod.int.phx2.redhat.com (int-mx01.intmail.prod.int.phx2.redhat.com [10.5.11.11])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q7AHZRG8002099
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Fri, 10 Aug 2012 13:35:27 -0400
+Original-Received: from horse.usersys.redhat.com (dhcp-187-179.bos.redhat.com [10.16.187.179])
+	by int-mx01.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with ESMTP id q7AHZR2J007095;
+	Fri, 10 Aug 2012 13:35:27 -0400
+Original-Received: by horse.usersys.redhat.com (Postfix, from userid 10451)
+	id 2F9FA65CE2; Fri, 10 Aug 2012 13:35:27 -0400 (EDT)
+Content-Disposition: inline
+In-Reply-To: <1344542391-16474-7-git-send-email-herton.krzesinski@canonical.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.11
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341361
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341361>
+
+On Thu, Aug 09, 2012 at 04:59:51PM -0300, Herton Ronaldo Krzesinski wrote:
+> Simplify/cleanup code, replacing remaining checks for drives present
+> using disk_registered array.
+> 
+> Signed-off-by: Herton Ronaldo Krzesinski <herton.krzesinski@canonical.com>
+> ---
+
+Looks good to me.
+
+Acked-by: Vivek Goyal <vgoyal@redhat.com>
+
+Vivek
+
+>  drivers/block/floppy.c |   10 +++-------
+>  1 file changed, 3 insertions(+), 7 deletions(-)
+> 
+> diff --git a/drivers/block/floppy.c b/drivers/block/floppy.c
+> index 438ffc9..5fcc2a1 100644
+> --- a/drivers/block/floppy.c
+> +++ b/drivers/block/floppy.c
+> @@ -4114,9 +4114,7 @@ static struct platform_device floppy_device[N_DRIVE];
+>  static struct kobject *floppy_find(dev_t dev, int *part, void *data)
+>  {
+>  	int drive = (*part & 3) | ((*part & 0x80) >> 5);
+> -	if (drive >= N_DRIVE ||
+> -	    !(allowed_drive_mask & (1 << drive)) ||
+> -	    fdc_state[FDC(drive)].version == FDC_NONE)
+> +	if (drive >= N_DRIVE || !disk_registered[drive])
+>  		return NULL;
+>  	if (((*part >> 2) & 0x1f) >= ARRAY_SIZE(floppy_type))
+>  		return NULL;
+> @@ -4559,8 +4557,7 @@ static void __exit floppy_module_exit(void)
+>  	for (drive = 0; drive < N_DRIVE; drive++) {
+>  		del_timer_sync(&motor_off_timer[drive]);
+>  
+> -		if ((allowed_drive_mask & (1 << drive)) &&
+> -		    fdc_state[FDC(drive)].version != FDC_NONE) {
+> +		if (disk_registered[drive]) {
+>  			del_gendisk(disks[drive]);
+>  			device_remove_file(&floppy_device[drive].dev, &dev_attr_cmos);
+>  			platform_device_unregister(&floppy_device[drive]);
+> @@ -4571,8 +4568,7 @@ static void __exit floppy_module_exit(void)
+>  		 * These disks have not called add_disk().  Don't put down
+>  		 * queue reference in put_disk().
+>  		 */
+> -		if (!(allowed_drive_mask & (1 << drive)) ||
+> -		    fdc_state[FDC(drive)].version == FDC_NONE)
+> +		if (!disk_registered[drive])
+>  			disks[drive]->queue = NULL;
+>  
+>  		put_disk(disks[drive]);
+> -- 
+> 1.7.9.5

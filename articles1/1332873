@@ -1,0 +1,180 @@
+Path: news.gmane.org!not-for-mail
+From: "zhenzhong.duan" <zhenzhong.duan@oracle.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 2/2] Fetch dmi version from SMBIOS if it exist
+Date: Wed, 25 Jul 2012 19:05:09 +0800
+Organization: oracle
+Lines: 122
+Approved: news@gmane.org
+Message-ID: <500FD2E5.3010307@oracle.com>
+Reply-To: zhenzhong.duan@oracle.com
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=GB2312
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343214297 27789 80.91.229.3 (25 Jul 2012 11:04:57 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 11:04:57 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, Feng Jin <joe.jin@oracle.com>
+To: akpm@linux-foundation.org, khali@linux-fr.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 13:04:56 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StzOi-0005lP-FO
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 13:04:56 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756456Ab2GYLEi (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 07:04:38 -0400
+Original-Received: from rcsinet15.oracle.com ([148.87.113.117]:37641 "EHLO
+	rcsinet15.oracle.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755726Ab2GYLEg (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 07:04:36 -0400
+Original-Received: from acsinet21.oracle.com (acsinet21.oracle.com [141.146.126.237])
+	by rcsinet15.oracle.com (Sentrion-MTA-4.2.2/Sentrion-MTA-4.2.2) with ESMTP id q6PB4Shk006617
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Wed, 25 Jul 2012 11:04:28 GMT
+Original-Received: from acsmt357.oracle.com (acsmt357.oracle.com [141.146.40.157])
+	by acsinet21.oracle.com (8.14.4+Sun/8.14.4) with ESMTP id q6PB4RAJ004849
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Wed, 25 Jul 2012 11:04:27 GMT
+Original-Received: from abhmt101.oracle.com (abhmt101.oracle.com [141.146.116.53])
+	by acsmt357.oracle.com (8.12.11.20060308/8.12.11) with ESMTP id q6PB4RM7010114;
+	Wed, 25 Jul 2012 06:04:27 -0500
+Original-Received: from [10.191.11.1] (/10.191.11.1)
+	by default (Oracle Beehive Gateway v4.0)
+	with ESMTP ; Wed, 25 Jul 2012 04:04:27 -0700
+User-Agent: Mozilla/5.0 (Windows NT 5.1; rv:12.0) Gecko/20120428 Thunderbird/12.0.1
+X-Source-IP: acsinet21.oracle.com [141.146.126.237]
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332873
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332873>
+
+The right dmi version is in SMBIOS if it's zero in DMI region
+
+Signed-off-by: Zhenzhong Duan <zhenzhong.duan@oracle.com>
+---
+ drivers/firmware/dmi_scan.c |   63 ++++++++++++++++++++++++++++++++----------
+ 1 files changed, 48 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/firmware/dmi_scan.c b/drivers/firmware/dmi_scan.c
+index d8c804d..bedefbf 100644
+--- a/drivers/firmware/dmi_scan.c
++++ b/drivers/firmware/dmi_scan.c
+@@ -116,12 +116,12 @@ static int __init dmi_walk_early(void (*decode)(const struct dmi_header *,
+ 	return 0;
+ }
+ 
+-static int __init dmi_checksum(const u8 *buf)
++static int __init dmi_checksum(const u8 *buf, u8 len)
+ {
+ 	u8 sum = 0;
+ 	int a;
+ 
+-	for (a = 0; a < 15; a++)
++	for (a = 0; a < len; a++)
+ 		sum += buf[a];
+ 
+ 	return sum == 0;
+@@ -413,30 +413,58 @@ static int __init dmi_present(const char __iomem *p)
+ 	u8 buf[15];
+ 
+ 	memcpy_fromio(buf, p, 15);
+-	if ((memcmp(buf, "_DMI_", 5) == 0) && dmi_checksum(buf)) {
++	if (dmi_checksum(buf, 15)) {
+ 		dmi_num = (buf[13] << 8) | buf[12];
+ 		dmi_len = (buf[7] << 8) | buf[6];
+ 		dmi_base = (buf[11] << 24) | (buf[10] << 16) |
+ 			(buf[9] << 8) | buf[8];
+ 
+-		/*
+-		 * DMI version 0.0 means that the real version is taken from
+-		 * the SMBIOS version, which we don't know at this point.
+-		 */
+-		dmi_ver = (buf[14] & 0xf0) << 4 | (buf[14] & 0x0f);
+-		if (buf[14] != 0)
+-			printk(KERN_INFO "DMI %d.%d present.\n",
+-			       buf[14] >> 4, buf[14] & 0xF);
+-		else
+-			printk(KERN_INFO "DMI present.\n");
+ 		if (dmi_walk_early(dmi_decode) == 0) {
++			if (dmi_ver)
++				printk(KERN_INFO "SMBIOS %d.%d present.\n",
++				       dmi_ver >> 8, dmi_ver & 0xFF);
++			else {
++				dmi_ver = (buf[14] & 0xF0) << 4 |
++					   (buf[14] & 0x0F);
++				printk(KERN_INFO "Legacy DMI %d.%d present.\n",
++				       dmi_ver >> 8, dmi_ver & 0xFF);
++			}
+ 			dmi_dump_ids();
+ 			return 0;
+ 		}
+ 	}
++	dmi_ver = 0;
+ 	return 1;
+ }
+ 
++static int __init smbios_present(const char __iomem *p)
++{
++	u8 buf[32];
++	int offset = 0;
++
++	memcpy_fromio(buf, p, 32);
++	if ((buf[5] < 32) && dmi_checksum(buf, buf[5])) {
++		dmi_ver = (buf[6] << 8) + buf[7];
++
++		/* Some BIOS report weird SMBIOS version, fix that up */
++		switch (dmi_ver) {
++		case 0x021F:
++		case 0x0221:
++			printk(KERN_DEBUG "SMBIOS version fixup(2.%d->2.%d)\n",
++			       dmi_ver & 0xFF, 3);
++			dmi_ver = 0x0203;
++			break;
++		case 0x0233:
++			printk(KERN_DEBUG "SMBIOS version fixup(2.%d->2.%d)\n",
++			       51, 6);
++			dmi_ver = 0x0206;
++			break;
++		}
++		offset = 16;
++	}
++	return dmi_present(buf + offset);
++}
++
+ void __init dmi_scan_machine(void)
+ {
+ 	char __iomem *p, *q;
+@@ -454,7 +482,7 @@ void __init dmi_scan_machine(void)
+ 		if (p == NULL)
+ 			goto error;
+ 
+-		rc = dmi_present(p + 0x10); /* offset of _DMI_ string */
++		rc = smbios_present(p);
+ 		dmi_iounmap(p, 32);
+ 		if (!rc) {
+ 			dmi_available = 1;
+@@ -472,7 +500,12 @@ void __init dmi_scan_machine(void)
+ 			goto error;
+ 
+ 		for (q = p; q < p + 0x10000; q += 16) {
+-			rc = dmi_present(q);
++			if (memcmp(q, "_SM_", 4) == 0 && q - p <= 0xFFE0)
++				rc = smbios_present(q);
++			else if (memcmp(q, "_DMI_", 5) == 0)
++				rc = dmi_present(q);
++			else
++				continue;
+ 			if (!rc) {
+ 				dmi_available = 1;
+ 				dmi_iounmap(p, 0x10000);
+-- 
+1.7.3
+

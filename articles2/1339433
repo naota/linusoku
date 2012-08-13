@@ -1,0 +1,151 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 052/122] atl1c: fix issue of io access mode for AR8152 v2.1
+Date: Tue,  7 Aug 2012 15:25:40 -0700
+Lines: 86
+Approved: news@gmane.org
+Message-ID: <20120807221952.916532455@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344378621 14041 80.91.229.3 (7 Aug 2012 22:30:21 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:30:21 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Cloud Ren <cjren@qca.qualcomm.com>,
+	xiong <xiong@qca.qualcomm.com>,
+	"David S. Miller" <davem@davemloft.net>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:30:16 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysI0-0000lk-8i
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:30:12 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932666Ab2HGW3p (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:29:45 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:54583 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S932522Ab2HGW3l (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:29:41 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so346924pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:29:41 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=pSMeitkWEVUMKrU2GoMgqO6lKNK1inVkYcdornnuPh8=;
+        b=IYlEjOyDr9PTfHCobrp3gYDcAbUmNw3zdJrA+GfRkgO6A6Pyh+x+/WoZ8S0SxyRlOS
+         pTCYFrQPiSOxNQJbef2sV81TK5Nha43XsqrlJyOQbFgIOh3nrTiy6rElZX4yS0G7M3dp
+         XkO1TsrmVIBLoXnNFSUAnAQ1HxCYfv9gaLW2Lspo0G0+lT6k63D0Bu/JmF7s0Zp8Fo+N
+         EAHAoXgXjewMO9+mJ0xroRs/6iOqahEmDodQK5TMmDyRSy1joF5Nt+obPl1N3uW1iPOc
+         Q4mh2KUhMEW48Uy76JexX8Af6ZGhhIOazrDTGmBWAB8yaQ7uZazIc4zGPM7YTnZ66vFD
+         nLww==
+Original-Received: by 10.68.238.166 with SMTP id vl6mr31076994pbc.96.1344378581493;
+        Tue, 07 Aug 2012 15:29:41 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id qb10sm11962453pbc.21.2012.08.07.15.29.39
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:29:40 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQn11MGpJopapzhKOUogiHpQTuNrhWobgf0OctGwUJE6WtG+AbZoYcwcr05Vvtk84pfcD+D5
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339433 gmane.linux.kernel.stable:29272
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339433>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Cloud Ren <cjren@qca.qualcomm.com>
+
+commit fa0afcd10951afad2022dda09777d2bf70cdab3d upstream.
+
+When io access mode is enabled by BOOTROM or BIOS for AR8152 v2.1,
+the register can't be read/write by memory access mode.
+Clearing Bit 8  of Register 0x21c could fixed the issue.
+
+Signed-off-by: Cloud Ren <cjren@qca.qualcomm.com>
+Signed-off-by: xiong <xiong@qca.qualcomm.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ drivers/net/ethernet/atheros/atl1c/atl1c_hw.h   |    5 +++++
+ drivers/net/ethernet/atheros/atl1c/atl1c_main.c |   16 +++++++++++++++-
+ 2 files changed, 20 insertions(+), 1 deletion(-)
+
+--- a/drivers/net/ethernet/atheros/atl1c/atl1c_hw.h
++++ b/drivers/net/ethernet/atheros/atl1c/atl1c_hw.h
+@@ -74,6 +74,8 @@ void atl1c_post_phy_linkchg(struct atl1c
+ #define PCI_DEVICE_ID_ATHEROS_L1D_2_0	0x1083 /* AR8151 v2.0 Gigabit 1000 */
+ #define L2CB_V10			0xc0
+ #define L2CB_V11			0xc1
++#define L2CB_V20			0xc0
++#define L2CB_V21			0xc1
+ 
+ /* register definition */
+ #define REG_DEVICE_CAP              	0x5C
+@@ -87,6 +89,9 @@ void atl1c_post_phy_linkchg(struct atl1c
+ #define LINK_CTRL_L1_EN			0x02
+ #define LINK_CTRL_EXT_SYNC		0x80
+ 
++#define REG_PCIE_IND_ACC_ADDR		0x80
++#define REG_PCIE_IND_ACC_DATA		0x84
++
+ #define REG_DEV_SERIALNUM_CTRL		0x200
+ #define REG_DEV_MAC_SEL_MASK		0x0 /* 0:EUI; 1:MAC */
+ #define REG_DEV_MAC_SEL_SHIFT		0
+--- a/drivers/net/ethernet/atheros/atl1c/atl1c_main.c
++++ b/drivers/net/ethernet/atheros/atl1c/atl1c_main.c
+@@ -739,6 +739,8 @@ static const struct atl1c_platform_patch
+ 
+ static void __devinit atl1c_patch_assign(struct atl1c_hw *hw)
+ {
++	struct pci_dev	*pdev = hw->adapter->pdev;
++	u32 misc_ctrl;
+ 	int i = 0;
+ 
+ 	hw->msi_lnkpatch = false;
+@@ -753,6 +755,18 @@ static void __devinit atl1c_patch_assign
+ 		}
+ 		i++;
+ 	}
++
++	if (hw->device_id == PCI_DEVICE_ID_ATHEROS_L2C_B2 &&
++	    hw->revision_id == L2CB_V21) {
++		/* config acess mode */
++		pci_write_config_dword(pdev, REG_PCIE_IND_ACC_ADDR,
++				       REG_PCIE_DEV_MISC_CTRL);
++		pci_read_config_dword(pdev, REG_PCIE_IND_ACC_DATA, &misc_ctrl);
++		misc_ctrl &= ~0x100;
++		pci_write_config_dword(pdev, REG_PCIE_IND_ACC_ADDR,
++				       REG_PCIE_DEV_MISC_CTRL);
++		pci_write_config_dword(pdev, REG_PCIE_IND_ACC_DATA, misc_ctrl);
++	}
+ }
+ /*
+  * atl1c_sw_init - Initialize general software structures (struct atl1c_adapter)
+@@ -780,7 +794,7 @@ static int __devinit atl1c_sw_init(struc
+ 	hw->device_id = pdev->device;
+ 	hw->subsystem_vendor_id = pdev->subsystem_vendor;
+ 	hw->subsystem_id = pdev->subsystem_device;
+-	AT_READ_REG(hw, PCI_CLASS_REVISION, &revision);
++	pci_read_config_dword(pdev, PCI_CLASS_REVISION, &revision);
+ 	hw->revision_id = revision & 0xFF;
+ 	/* before link up, we assume hibernate is true */
+ 	hw->hibernate = true;
+
+

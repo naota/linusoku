@@ -1,0 +1,119 @@
+Path: news.gmane.org!not-for-mail
+From: Stefan Bader <stefan.bader@canonical.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: x86/mm: Limit 2/4M size calculation to x86_32
+Date: Thu, 19 Jul 2012 09:28:27 -0700
+Lines: 68
+Approved: news@gmane.org
+Message-ID: <500835AB.1090103@canonical.com>
+References: <5000259D.9020303@canonical.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-15; format=flowed
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342715330 7691 80.91.229.3 (19 Jul 2012 16:28:50 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 16:28:50 +0000 (UTC)
+Cc: WANG Cong <xiyou.wangcong@gmail.com>,
+	Yinghai Lu <yinghai@kernel.org>, Tejun Heo <tj@kernel.org>,
+	Andrew Morton <akpm@linux-foundation.org>
+To: Linux Kernel Mailing List <linux-kernel@vger.kernel.org>,
+	Ingo Molnar <mingo@elte.hu>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 18:28:49 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Srtaq-00083L-2G
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 18:28:48 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751956Ab2GSQ2i (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 12:28:38 -0400
+Original-Received: from youngberry.canonical.com ([91.189.89.112]:35907 "EHLO
+	youngberry.canonical.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751559Ab2GSQ2d (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 12:28:33 -0400
+Original-Received: from 74-95-45-185-oregon.hfc.comcastbusiness.net ([74.95.45.185] helo=[184.48.168.57])
+	by youngberry.canonical.com with esmtpsa (TLS1.0:DHE_RSA_AES_256_CBC_SHA1:32)
+	(Exim 4.71)
+	(envelope-from <stefan.bader@canonical.com>)
+	id 1SrtaZ-0006C1-6S; Thu, 19 Jul 2012 16:28:31 +0000
+User-Agent: Mozilla/5.0 (X11; Linux i686; rv:13.0) Gecko/20120615 Thunderbird/13.0.1
+In-Reply-To: <5000259D.9020303@canonical.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330444
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330444>
+
+On 07/13/2012 06:41 AM, Stefan Bader wrote:
+> I was bisecting a problem on 64bit where any attempt to cause a crash kernel to
+> boot would hang. The bisect ended up on commit 722bc6b (x86/mm: Fix the size
+> calculation of mapping tables) and somehow, looking at the calling function and
+> the ranges printed on boot, I think the calculations should only be done in the
+> 32bit case.
+>
+> On 64bit:
+> [    0.000000] init_memory_mapping: [mem 0x00000000-0x77e87fff]
+> [    0.000000]  [mem 0x00000000-0x77dfffff] page 2M
+> [    0.000000]  [mem 0x77e00000-0x77e87fff] page 4k
+>
+> Attached patch would fix this if you agree with it. Thanks.
+>
+
+Any news on this one? I thought it would be quite simple to check for sanity and 
+not wasting memory sounds like a good thing to do. Even though there is plenty 
+of it around most of the time. ;)
+
+-Stefan
+
+> -Stefan
+>
+>
+>  From 6b679d1af20656929c0e829f29eed60b0a86a74f Mon Sep 17 00:00:00 2001
+> From: Stefan Bader <stefan.bader@canonical.com>
+> Date: Fri, 13 Jul 2012 15:16:33 +0200
+> Subject: [PATCH] x86/mm: Limit 2/4M size calculation to x86_32
+>
+> commit 722bc6b (x86/mm: Fix the size calculation of mapping tables)
+> did modify the extra space calculation for mapping tables in order
+> to make up for the first 2/4M memory range using 4K pages.
+> However this setup is only used when compiling for 32bit. On 64bit
+> there is only the trailing area of 4K pages (which is already added).
+>
+> The code was already adapted once for things went wrong on a 8TB
+> machine (bd2753b x86/mm: Only add extra pages count for the first memory
+> range during pre-allocation early page table space), but it looks a bit
+> like it currently would overdo things for 64bit.
+> I only noticed while bisecting for the reason I could not make a crash
+> kernel boot (which ended up on this patch).
+>
+> Signed-off-by: Stefan Bader <stefan.bader@canonical.com>
+> Cc: WANG Cong <xiyou.wangcong@gmail.com>
+> Cc: Yinghai Lu <yinghai@kernel.org>
+> Cc: Tejun Heo <tj@kernel.org>
+> ---
+> diff --git a/arch/x86/mm/init.c b/arch/x86/mm/init.c
+> index bc4e9d8..636bbfd 100644
+> --- a/arch/x86/mm/init.c
+> +++ b/arch/x86/mm/init.c
+> @@ -60,10 +60,11 @@ static void __init find_early_table_space(struct map_range
+> *mr, unsigned long en
+>                  extra = end - ((end>>PMD_SHIFT) << PMD_SHIFT);
+>   #ifdef CONFIG_X86_32
+>                  extra += PMD_SIZE;
+> -#endif
+> +
+>                  /* The first 2/4M doesn't use large pages. */
+>                  if (mr->start < PMD_SIZE)
+>                          extra += mr->end - mr->start;
+> +#endif
+>
+>                  ptes = (extra + PAGE_SIZE - 1) >> PAGE_SHIFT;
+>          } else
+>
+
+

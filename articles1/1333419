@@ -1,0 +1,124 @@
+Path: news.gmane.org!not-for-mail
+From: Alex Shi <alex.shi@intel.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 1/2] sched: recover SD_WAKE_AFFINE in select_task_rq_fair and code clean up
+Date: Thu, 26 Jul 2012 13:27:25 +0800
+Lines: 79
+Approved: news@gmane.org
+Message-ID: <1343280446-24019-1-git-send-email-alex.shi@intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343280455 12502 80.91.229.3 (26 Jul 2012 05:27:35 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 05:27:35 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, suresh.b.siddha@intel.com,
+	alex.shi@intel.com
+To: mingo@redhat.com, peterz@infradead.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 07:27:34 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuGbk-0001eB-Ol
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 07:27:33 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751612Ab2GZF1Q (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 01:27:16 -0400
+Original-Received: from mga14.intel.com ([143.182.124.37]:36914 "EHLO mga14.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751067Ab2GZF1P (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 01:27:15 -0400
+Original-Received: from azsmga002.ch.intel.com ([10.2.17.35])
+  by azsmga102.ch.intel.com with ESMTP; 25 Jul 2012 22:27:14 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="127018852"
+Original-Received: from debian.sh.intel.com ([10.239.13.3])
+  by AZSMGA002.ch.intel.com with ESMTP; 25 Jul 2012 22:27:13 -0700
+X-Mailer: git-send-email 1.7.5.4
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333419
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333419>
+
+Since power saving code was removed from sched now, the implement
+code is out of service in this function, and even pollute other logical.
+like, 'want_sd' never has chance to be set '0', that remove the effect
+of SD_WAKE_AFFINE here.
+
+So, clean up the obsolete code and some other unnecessary code.
+
+Signed-off-by: Alex Shi <alex.shi@intel.com>
+---
+ kernel/sched/fair.c |   32 +++-----------------------------
+ 1 files changed, 3 insertions(+), 29 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 22321db..8a1db69 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -2686,7 +2686,6 @@ select_task_rq_fair(struct task_struct *p, int sd_flag, int wake_flags)
+ 	int prev_cpu = task_cpu(p);
+ 	int new_cpu = cpu;
+ 	int want_affine = 0;
+-	int want_sd = 1;
+ 	int sync = wake_flags & WF_SYNC;
+ 
+ 	if (p->nr_cpus_allowed == 1)
+@@ -2704,48 +2703,23 @@ select_task_rq_fair(struct task_struct *p, int sd_flag, int wake_flags)
+ 			continue;
+ 
+ 		/*
+-		 * If power savings logic is enabled for a domain, see if we
+-		 * are not overloaded, if so, don't balance wider.
+-		 */
+-		if (tmp->flags & (SD_PREFER_LOCAL)) {
+-			unsigned long power = 0;
+-			unsigned long nr_running = 0;
+-			unsigned long capacity;
+-			int i;
+-
+-			for_each_cpu(i, sched_domain_span(tmp)) {
+-				power += power_of(i);
+-				nr_running += cpu_rq(i)->cfs.nr_running;
+-			}
+-
+-			capacity = DIV_ROUND_CLOSEST(power, SCHED_POWER_SCALE);
+-
+-			if (nr_running < capacity)
+-				want_sd = 0;
+-		}
+-
+-		/*
+ 		 * If both cpu and prev_cpu are part of this domain,
+ 		 * cpu is a valid SD_WAKE_AFFINE target.
+ 		 */
+ 		if (want_affine && (tmp->flags & SD_WAKE_AFFINE) &&
+ 		    cpumask_test_cpu(prev_cpu, sched_domain_span(tmp))) {
+ 			affine_sd = tmp;
+-			want_affine = 0;
+-		}
+-
+-		if (!want_sd && !want_affine)
+ 			break;
++		}
+ 
+ 		if (!(tmp->flags & sd_flag))
+ 			continue;
+ 
+-		if (want_sd)
+-			sd = tmp;
++		sd = tmp;
+ 	}
+ 
+ 	if (affine_sd) {
+-		if (cpu == prev_cpu || wake_affine(affine_sd, p, sync))
++		if (wake_affine(affine_sd, p, sync))
+ 			prev_cpu = cpu;
+ 
+ 		new_cpu = select_idle_sibling(p, prev_cpu);
+-- 
+1.7.5.4
+

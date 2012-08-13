@@ -1,0 +1,101 @@
+Path: news.gmane.org!not-for-mail
+From: Alan Stern <stern@rowland.harvard.edu>
+Newsgroups: gmane.linux.kernel,gmane.linux.usb.general
+Subject: Re: [PATCH v2] usb:musb:musb_host: Handle highmem in PIO mode
+Date: Tue, 7 Aug 2012 13:47:16 -0400 (EDT)
+Lines: 53
+Approved: news@gmane.org
+Message-ID: <Pine.LNX.4.44L0.1208071342410.2400-100000@iolanthe.rowland.org>
+References: <1344330980-9064-1-git-send-email-virupax.sadashivpetimath@stericsson.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: TEXT/PLAIN; charset=US-ASCII
+X-Trace: dough.gmane.org 1344361653 24854 80.91.229.3 (7 Aug 2012 17:47:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 17:47:33 +0000 (UTC)
+Cc: balbi@ti.com, <gregkh@linuxfoundation.org>,
+	<linux-usb@vger.kernel.org>, <linux-kernel@vger.kernel.org>,
+	<linus.walleij@linaro.org>, <praveen.nadahally@stericsson.com>,
+	<ragupathy.rajaram@stericsson.com>, <vikrant.bapat@stericsson.com>
+To: Virupax Sadashivpetimath <virupax.sadashivpetimath@stericsson.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 19:47:32 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SynsP-0007BT-GO
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 19:47:29 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755942Ab2HGRrT (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 13:47:19 -0400
+Original-Received: from iolanthe.rowland.org ([192.131.102.54]:45355 "HELO
+	iolanthe.rowland.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with SMTP id S1755824Ab2HGRrR (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 13:47:17 -0400
+Original-Received: (qmail 30020 invoked by uid 2102); 7 Aug 2012 13:47:16 -0400
+Original-Received: from localhost (sendmail-bs@127.0.0.1)
+  by localhost with SMTP; 7 Aug 2012 13:47:16 -0400
+X-X-Sender: stern@iolanthe.rowland.org
+In-Reply-To: <1344330980-9064-1-git-send-email-virupax.sadashivpetimath@stericsson.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339224 gmane.linux.usb.general:69057
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339224>
+
+On Tue, 7 Aug 2012, Virupax Sadashivpetimath wrote:
+
+> In case of USB bulk transfer, when himem page
+> is received, the usb_sg_init function sets the
+> urb transfer buffer to NULL. When such URB
+> transfer is handled, kernel crashes in PIO mode.
+> Handle this by mapping the highmem buffer in PIO mode.
+
+...
+
+> @@ -1332,9 +1353,38 @@ void musb_host_tx(struct musb *musb, u8 epnum)
+>  		length = qh->maxpacket;
+>  	/* Unmap the buffer so that CPU can use it */
+>  	usb_hcd_unmap_urb_for_dma(musb_to_hcd(musb), urb);
+> -	musb_write_fifo(hw_ep, length, urb->transfer_buffer + offset);
+> +
+> +	/*
+> +	 * We need to map sg if the transfer_buffer is
+> +	 * NULL.
+> +	 */
+> +	if (!urb->transfer_buffer)
+> +		use_sg = true;
+
+Here you test urb->transfer_buffer.
+
+> +	if (use_sg) {
+> +		/* sg_miter_start is already done in musb_ep_program */
+> +		if (!sg_miter_next(&qh->sg_miter)) {
+> +			dev_err(musb->controller, "error: sg list empty\n");
+> +			sg_miter_stop(&qh->sg_miter);
+> +			status = -EINVAL;
+> +			goto done;
+> +		}
+> +		urb->transfer_buffer = qh->sg_miter.addr;
+
+And here you set it.  As a result, on the next iteration of this
+routine the test above won't work right.  (This function gets invoked
+once for each entry in the sg list, right?)
+
+Is there any reason to set urb->transfer_buffer here?  You could just
+use qh->sg_miter.addr directly in the musb_write_fifo() call two lines
+below.
+
+> +		length = min_t(u32, length, qh->sg_miter.length);
+> +		musb_write_fifo(hw_ep, length, urb->transfer_buffer);
+> +		qh->sg_miter.consumed = length;
+> +		sg_miter_stop(&qh->sg_miter);
+> +	} else {
+> +		musb_write_fifo(hw_ep, length, urb->transfer_buffer + offset);
+> +	}
+
+Alan Stern
+

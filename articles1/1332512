@@ -1,0 +1,78 @@
+Path: news.gmane.org!not-for-mail
+From: Linus Torvalds <torvalds@linux-foundation.org>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH v2] posix_types.h: make __NFDBITS compatible with glibc definition
+Date: Tue, 24 Jul 2012 11:46:25 -0700
+Lines: 18
+Approved: news@gmane.org
+Message-ID: <CA+55aFwFcWoH=QB5tKgVjWcUH3SLCDVNqJY-oXRYy7AWOJfLPA@mail.gmail.com>
+References: <20120724181209.GA10534@zod.bos.redhat.com> <CA+55aFw-=vY1eAubQAtbqL33nCrQ7mPgXTaHnEJfbKvFDVdHtw@mail.gmail.com>
+ <20120724182409.GB10534@zod.bos.redhat.com> <20120724183230.GC10534@zod.bos.redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1343155621 30757 80.91.229.3 (24 Jul 2012 18:47:01 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 18:47:01 +0000 (UTC)
+Cc: Andrew Morton <akpm@linux-foundation.org>, law@redhat.com,
+	linux-kernel@vger.kernel.org
+To: Josh Boyer <jwboyer@redhat.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 20:46:57 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Stk8F-0003p9-Qq
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 20:46:56 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756162Ab2GXSqs (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 14:46:48 -0400
+Original-Received: from mail-we0-f174.google.com ([74.125.82.174]:47740 "EHLO
+	mail-we0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755106Ab2GXSqr (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 14:46:47 -0400
+Original-Received: by weyx8 with SMTP id x8so5324538wey.19
+        for <linux-kernel@vger.kernel.org>; Tue, 24 Jul 2012 11:46:45 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=mime-version:sender:in-reply-to:references:from:date
+         :x-google-sender-auth:message-id:subject:to:cc:content-type;
+        bh=6Z+ZI3XCsRXx/oWHLSCYG3AQL/JR9pjRz+vWsMLLOOA=;
+        b=CdPNz4iAggkvyCnDeIHZtFtX6//MPV8qb75I7ws9Wx7AH1jmT/GMZR1LMTqDZFWlLG
+         yZpHBOsG8MGzypNvD+6sTUITNtbUEaaJcrCFzHYeOiFdUzDRIlGF+M95V5rWwKucwyE2
+         eya6GFY15Qzg/UJ/oCCQd83RSh+MMNJjyZdguDgb2WO3CLZcVtLYvCNpw1PNJwQbxgHR
+         tcuxmNkJZM2JGtbAiMatKc4scR4U0jWPR1D6KZj2aU0syCSDb2oKpZD2TRIcH9Um3Suq
+         T/yb7MtRYzN/S6aUfBJ3tyX4KdBamB8Z/kCHnjIcN7X/sJq8qjxGmDgmJVUJ0cYL1pci
+         S6aw==
+Original-Received: by 10.216.132.18 with SMTP id n18mr11179490wei.194.1343155605654;
+ Tue, 24 Jul 2012 11:46:45 -0700 (PDT)
+Original-Received: by 10.216.142.14 with HTTP; Tue, 24 Jul 2012 11:46:25 -0700 (PDT)
+In-Reply-To: <20120724183230.GC10534@zod.bos.redhat.com>
+X-Google-Sender-Auth: f4IVr_prZM1yBoUrntfkDzGgtdQ
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332512
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332512>
+
+On Tue, Jul 24, 2012 at 11:32 AM, Josh Boyer <jwboyer@redhat.com> wrote:
+> Recent glibc made a change to suppress sign-conversion warnings from FD_SET
+> (glibc commit ceb9e56b3d1).  That patch solved the particular error it was
+> aiming to, however applications that #include <linux/types.h> after
+> including <sys/select.h> can now hit a build failure if -Werror=sign-compare
+> and -D_FORTIFY_SOURCE=2 is passed to gcc.  This can be seen when building
+> this trivial application against a recent enough glibc:
+
+Looking more at this, I now hate it for *another* reason.
+
+Making __NFDBITS be a signed value turns __FDELT() and __FDMASK() into
+potentially pure and utter crap. Doing signed divisions (or modulus)
+is a disaster - suddenly it's not just a bit shift any more.
+
+Guys, the glibc people really seem to not have thought their change
+through. Or maybe they fixed their __FDELT/__FDMASK at the same time?
+
+                    Linus

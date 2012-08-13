@@ -1,0 +1,115 @@
+Path: news.gmane.org!not-for-mail
+From: Pekka Enberg <penberg@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] sched: Document schedule() entry points
+Date: Tue, 31 Jul 2012 09:15:00 +0300
+Lines: 58
+Approved: news@gmane.org
+Message-ID: <1343715300-6315-1-git-send-email-penberg@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343715325 21880 80.91.229.3 (31 Jul 2012 06:15:25 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 06:15:25 +0000 (UTC)
+Cc: mingo@kernel.org, peterz@infradead.org,
+	Pekka Enberg <penberg@kernel.org>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 08:15:24 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sw5jl-0000Zk-FR
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 08:15:21 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755479Ab2GaGPI (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 02:15:08 -0400
+Original-Received: from mail-wg0-f42.google.com ([74.125.82.42]:34590 "EHLO
+	mail-wg0-f42.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755439Ab2GaGPH (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 02:15:07 -0400
+Original-Received: by wgbfm10 with SMTP id fm10so3033997wgb.1
+        for <linux-kernel@vger.kernel.org>; Mon, 30 Jul 2012 23:15:05 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer;
+        bh=/ZU3vfmCVD0cSda5oe/qj0OJmlGmnT8d6qRUWVKNvC4=;
+        b=enMSpbrnaniQ4/pUz2C0MEN+DiHZ3aVrSx1F9Vxp4Wde1oEKfSGSp4JnsIEwJOvlOM
+         XMabvrFL/6QWYdie+yc1enKjnPRBfhpHZUeP2Txk3iLqwngdQmu8ofX5Rc4ZhPAhmDeP
+         uYzPUsys1MIvo8eV3/sPKNWYCBscnFVTlUIXsxo/TN0toeFCSSBoqKnH8/KNVqXoFV2s
+         GTNxiCeFNXVMy1CehCIsAXIWj4S8gaap+QnfA1myERmv8FPF5ryFVrXobYN1UZd1q5ma
+         bTNavr8cCJzevtFfSo1Cn7WHapQnj4fxkc3ROnLNwBwvoJBZI71nDNSKoRJ8tBCfjRlR
+         Ck8w==
+Original-Received: by 10.180.81.38 with SMTP id w6mr4017601wix.10.1343715305273;
+        Mon, 30 Jul 2012 23:15:05 -0700 (PDT)
+Original-Received: from tux.wlan.reaktor.fi (sidedoor.reaktor.fi. [82.203.205.72])
+        by mx.google.com with ESMTPS id el6sm20522161wib.8.2012.07.30.23.15.04
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 30 Jul 2012 23:15:04 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7.6
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335498
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335498>
+
+This patch adds a comment on top of the schedule() function to explain
+to scheduler newbies how the main scheduler function is entered.
+
+Explained-by: Ingo Molnar <mingo@kernel.org>
+Explained-by: Peter Zijlstra <a.p.zijlstra@chello.nl>
+Signed-off-by: Pekka Enberg <penberg@kernel.org>
+---
+ kernel/sched/core.c |   34 ++++++++++++++++++++++++++++++++++
+ 1 files changed, 34 insertions(+), 0 deletions(-)
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 468bdd4..9f31bbd 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -3361,6 +3361,40 @@ pick_next_task(struct rq *rq)
+ 
+ /*
+  * __schedule() is the main scheduler function.
++ *
++ * The main means of driving the scheduler and thus entering this function are:
++ *
++ *   1. Explicit blocking: mutex, semaphore, waitqueue, etc.
++ *
++ *   2. TIF_NEED_RESCHED flag is checked on interrupt and userspace return
++ *      paths. For example, see arch/x86/entry_64.S.
++ *
++ *      To drive preemption between tasks, the scheduler sets the flag is set
++ *      in timer interrupt handler scheduler_tick().
++ *
++ *   3. Wakeups don't really cause entry into schedule(). They add a
++ *      task to the run-queue and that's it.
++ *
++ *      Now, if the new task added to the run-queue preempts the current
++ *      task, then the wakeup sets TIF_NEED_RESCHED and schedule() gets
++ *      called on the nearest possible occasion:
++ *
++ *       - If the kernel is preemptible (CONFIG_PREEMPT=y):
++ *
++ *         - in syscall or exception context, at the next outmost
++ *           preempt_enable(). (this might be as soon as the wake_up()'s
++ *           spin_unlock()!)
++ *
++ *         - in IRQ context, return from interrupt-handler to
++ *           preemptible context
++ *
++ *       - If the kernel is not preemptible (CONFIG_PREEMPT is not set)
++ *         then at the next:
++ *
++ *          - cond_resched() call
++ *          - explicit schedule() call
++ *          - return from syscall or exception to user-space
++ *          - return from interrupt-handler to user-space
+  */
+ static void __sched __schedule(void)
+ {
+-- 
+1.7.7.6
+

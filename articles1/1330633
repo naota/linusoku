@@ -1,0 +1,101 @@
+Path: news.gmane.org!not-for-mail
+From: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Newsgroups: gmane.comp.emulators.kvm.devel,gmane.linux.kernel
+Subject: Re: [PATCH 2/9] KVM: x86: simplify read_emulated
+Date: Fri, 20 Jul 2012 10:17:36 +0800
+Lines: 41
+Approved: news@gmane.org
+Message-ID: <5008BFC0.4070703@linux.vnet.ibm.com>
+References: <50056DB8.7080702@linux.vnet.ibm.com> <50056DE6.6020801@linux.vnet.ibm.com> <20120719235828.GA7121@amt.cnet>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342750723 10677 80.91.229.3 (20 Jul 2012 02:18:43 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 02:18:43 +0000 (UTC)
+Cc: Avi Kivity <avi@redhat.com>, LKML <linux-kernel@vger.kernel.org>,
+	KVM <kvm@vger.kernel.org>
+To: Marcelo Tosatti <mtosatti@redhat.com>
+Original-X-From: kvm-owner@vger.kernel.org Fri Jul 20 04:18:42 2012
+Return-path: <kvm-owner@vger.kernel.org>
+Envelope-to: gcekd-kvm-devel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <kvm-owner@vger.kernel.org>)
+	id 1Ss2ni-00036w-1f
+	for gcekd-kvm-devel@plane.gmane.org; Fri, 20 Jul 2012 04:18:42 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752936Ab2GTCRq (ORCPT <rfc822;gcekd-kvm-devel@m.gmane.org>);
+	Thu, 19 Jul 2012 22:17:46 -0400
+Original-Received: from e28smtp05.in.ibm.com ([122.248.162.5]:49885 "EHLO
+	e28smtp05.in.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752589Ab2GTCRo (ORCPT <rfc822;kvm@vger.kernel.org>);
+	Thu, 19 Jul 2012 22:17:44 -0400
+Original-Received: from /spool/local
+	by e28smtp05.in.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <kvm@vger.kernel.org> from <xiaoguangrong@linux.vnet.ibm.com>;
+	Fri, 20 Jul 2012 07:47:40 +0530
+Original-Received: from d28relay04.in.ibm.com (9.184.220.61)
+	by e28smtp05.in.ibm.com (192.168.1.135) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Fri, 20 Jul 2012 07:47:39 +0530
+Original-Received: from d28av01.in.ibm.com (d28av01.in.ibm.com [9.184.220.63])
+	by d28relay04.in.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6K2HcAt4456788;
+	Fri, 20 Jul 2012 07:47:38 +0530
+Original-Received: from d28av01.in.ibm.com (loopback [127.0.0.1])
+	by d28av01.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6K7lBqU028148;
+	Fri, 20 Jul 2012 13:17:11 +0530
+Original-Received: from localhost.localdomain ([9.123.236.99])
+	by d28av01.in.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6K7lAHe028121;
+	Fri, 20 Jul 2012 13:17:10 +0530
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120615 Thunderbird/13.0.1
+In-Reply-To: <20120719235828.GA7121@amt.cnet>
+x-cbid: 12072002-8256-0000-0000-000003618F11
+Original-Sender: kvm-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <kvm.vger.kernel.org>
+X-Mailing-List: kvm@vger.kernel.org
+Xref: news.gmane.org gmane.comp.emulators.kvm.devel:94752 gmane.linux.kernel:1330633
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330633>
+
+On 07/20/2012 07:58 AM, Marcelo Tosatti wrote:
+
+>> -	}
+>> +	rc = ctxt->ops->read_emulated(ctxt, addr, mc->data + mc->end, size,
+>> +				      &ctxt->exception);
+>> +	if (rc != X86EMUL_CONTINUE)
+>> +		return rc;
+>> +
+>> +	mc->end += size;
+>> +
+>> +read_cached:
+>> +	memcpy(dest, mc->data + mc->pos, size);
+> 
+> What prevents read_emulated(size > 8) call, with
+> mc->pos == (mc->end - 8) now?
+
+Marcelo,
+
+The splitting has been done in emulator_read_write_onepage:
+
+	while (bytes) {
+		unsigned now = min(bytes, 8U);
+
+		frag = &vcpu->mmio_fragments[vcpu->mmio_nr_fragments++];
+		frag->gpa = gpa;
+		frag->data = val;
+		frag->len = now;
+		frag->write_readonly_mem = (ret == -EPERM);
+
+		gpa += now;
+		val += now;
+		bytes -= now;
+	}
+
+So i think it is safe to remove the splitting in read_emulated.
+
+--
+To unsubscribe from this list: send the line "unsubscribe kvm" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

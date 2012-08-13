@@ -1,0 +1,179 @@
+Path: news.gmane.org!not-for-mail
+From: Maxim Patlasov <mpatlasov-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+Newsgroups: gmane.comp.file-systems.fuse.devel,gmane.linux.kernel,gmane.linux.openvz.devel
+Subject: [PATCH 2/4] fuse: re-work fuse_get_user_pages() to
+	operate on iovec[]
+Date: Fri, 20 Jul 2012 15:50:33 +0400
+Lines: 109
+Approved: news@gmane.org
+Message-ID: <20120720115030.15517.89264.stgit@maximpc.sw.ru>
+References: <20120720114653.15517.74290.stgit@maximpc.sw.ru>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342785061 24469 80.91.229.3 (20 Jul 2012 11:51:01 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 11:51:01 +0000 (UTC)
+Cc: fuse-devel-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org, linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org,
+	devel-GEFAQzZX7r8dnm+yROfE0A@public.gmane.org
+To: miklos-sUDqSbJrdHQHWmgEVkV9KA@public.gmane.org
+Original-X-From: fuse-devel-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org Fri Jul 20 13:51:01 2012
+Return-path: <fuse-devel-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>
+Envelope-to: gcffd-fuse-devel@m.gmane.org
+Original-Received: from lists.sourceforge.net ([216.34.181.88])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <fuse-devel-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>)
+	id 1SsBjS-000449-DI
+	for gcffd-fuse-devel@m.gmane.org; Fri, 20 Jul 2012 13:50:54 +0200
+Original-Received: from localhost ([127.0.0.1] helo=sfs-ml-2.v29.ch3.sourceforge.com)
+	by sfs-ml-2.v29.ch3.sourceforge.com with esmtp (Exim 4.76)
+	(envelope-from <fuse-devel-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>)
+	id 1SsBjO-0006gR-TX; Fri, 20 Jul 2012 11:50:50 +0000
+Original-Received: from sog-mx-3.v43.ch3.sourceforge.com ([172.29.43.193]
+	helo=mx.sourceforge.net)
+	by sfs-ml-2.v29.ch3.sourceforge.com with esmtp (Exim 4.76)
+	(envelope-from <mpatlasov-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>) id 1SsBjN-0006gM-M3
+	for fuse-devel-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org; Fri, 20 Jul 2012 11:50:49 +0000
+Received-SPF: neutral (sog-mx-3.v43.ch3.sourceforge.com: 195.214.232.25 is
+	neither permitted nor denied by domain of parallels.com)
+	client-ip=195.214.232.25; envelope-from=mpatlasov-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org;
+	helo=relay.sw.ru; 
+Original-Received: from mailhub.sw.ru ([195.214.232.25] helo=relay.sw.ru)
+	by sog-mx-3.v43.ch3.sourceforge.com with esmtps (TLSv1:AES256-SHA:256)
+	(Exim 4.76) id 1SsBjM-0004Fv-N5
+	for fuse-devel-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org; Fri, 20 Jul 2012 11:50:49 +0000
+Original-Received: from maximpc.sw.ru ([10.30.17.2])
+	by relay.sw.ru (8.13.4/8.13.4) with ESMTP id q6KBoeiL013082;
+	Fri, 20 Jul 2012 15:50:41 +0400 (MSK)
+In-Reply-To: <20120720114653.15517.74290.stgit-vWG5eQQidJHciZdyczg/7Q@public.gmane.org>
+User-Agent: StGit/0.15
+X-Spam-Score: 0.7 (/)
+X-Spam-Report: Spam Filtering performed by mx.sourceforge.net.
+	See http://spamassassin.org/tag/ for more details.
+	0.7 SPF_NEUTRAL SPF: sender does not match SPF record (neutral)
+X-Headers-End: 1SsBjM-0004Fv-N5
+X-BeenThere: fuse-devel-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org
+X-Mailman-Version: 2.1.9
+Precedence: list
+List-Id: <fuse-devel.lists.sourceforge.net>
+List-Unsubscribe: <https://lists.sourceforge.net/lists/listinfo/fuse-devel>,
+	<mailto:fuse-devel-request-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org?subject=unsubscribe>
+List-Archive: <http://sourceforge.net/mailarchive/forum.php?forum_name=fuse-devel>
+List-Post: <mailto:fuse-devel-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>
+List-Help: <mailto:fuse-devel-request-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org?subject=help>
+List-Subscribe: <https://lists.sourceforge.net/lists/listinfo/fuse-devel>,
+	<mailto:fuse-devel-request-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org?subject=subscribe>
+Errors-To: fuse-devel-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org
+Xref: news.gmane.org gmane.comp.file-systems.fuse.devel:11856 gmane.linux.kernel:1330797 gmane.linux.openvz.devel:1859
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330797>
+
+Now fuse_get_user_pages() takes iovec[] as argument and packs so much data
+from it to req->pages[] as possible.
+
+Signed-off-by: Maxim Patlasov <mpatlasov-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+---
+ fs/fuse/file.c |   64 +++++++++++++++++++++++++++++++++++++++++---------------
+ 1 files changed, 47 insertions(+), 17 deletions(-)
+
+diff --git a/fs/fuse/file.c b/fs/fuse/file.c
+index b321a68..d84416d 100644
+--- a/fs/fuse/file.c
++++ b/fs/fuse/file.c
+@@ -1020,41 +1020,71 @@ static void fuse_release_user_pages(struct fuse_req *req, int write)
+ 	}
+ }
+ 
+-static int fuse_get_user_pages(struct fuse_req *req, const char __user *buf,
++static int fuse_get_user_pages(struct fuse_req *req,
++			       const struct iovec **iov_pp,
++			       unsigned long *nr_segs_p,
++			       size_t *iov_offset_p,
+ 			       size_t *nbytesp, int write)
+ {
+-	size_t nbytes = *nbytesp;
+-	unsigned long user_addr = (unsigned long) buf;
+-	unsigned offset = user_addr & ~PAGE_MASK;
+-	int npages;
++	size_t nbytes = 0;  /* # bytes already packed in req */
+ 
+ 	/* Special case for kernel I/O: can copy directly into the buffer */
+ 	if (segment_eq(get_fs(), KERNEL_DS)) {
++		BUG_ON(*iov_offset_p);
+ 		if (write)
+-			req->in.args[1].value = (void *) user_addr;
++			req->in.args[1].value = (*iov_pp)->iov_base;
+ 		else
+-			req->out.args[0].value = (void *) user_addr;
++			req->out.args[0].value = (*iov_pp)->iov_base;
+ 
++		(*iov_pp)++;
++		(*nr_segs_p)--;
+ 		return 0;
+ 	}
+ 
+-	nbytes = min_t(size_t, nbytes, FUSE_MAX_PAGES_PER_REQ << PAGE_SHIFT);
+-	npages = (nbytes + offset + PAGE_SIZE - 1) >> PAGE_SHIFT;
+-	npages = clamp(npages, 1, FUSE_MAX_PAGES_PER_REQ);
+-	npages = get_user_pages_fast(user_addr, npages, !write, req->pages);
+-	if (npages < 0)
+-		return npages;
++	req->iovec = *iov_pp;
++	req->iov_offset = *iov_offset_p;
+ 
+-	req->num_pages = npages;
+-	req->page_offset = offset;
++	while (nbytes < *nbytesp && req->num_pages < FUSE_MAX_PAGES_PER_REQ) {
++		int npages;
++		unsigned long user_addr = (unsigned long)(*iov_pp)->iov_base +
++					  *iov_offset_p;
++		unsigned offset = user_addr & ~PAGE_MASK;
++		size_t frag_size = min_t(size_t,
++					 (*iov_pp)->iov_len - *iov_offset_p,
++					 *nbytesp - nbytes);
++
++		int n = FUSE_MAX_PAGES_PER_REQ - req->num_pages;
++		frag_size = min_t(size_t, frag_size, n << PAGE_SHIFT);
++
++		npages = (frag_size + offset + PAGE_SIZE - 1) >> PAGE_SHIFT;
++		npages = clamp(npages, 1, n);
++
++		npages = get_user_pages_fast(user_addr, npages, !write,
++					     &req->pages[req->num_pages]);
++		if (npages < 0)
++			return npages;
++
++		frag_size = min_t(size_t, frag_size,
++				  (npages << PAGE_SHIFT) - offset);
++		nbytes += frag_size;
++
++		if (frag_size < (*iov_pp)->iov_len - *iov_offset_p) {
++			*iov_offset_p += frag_size;
++		} else {
++			(*iov_pp)++;
++			(*nr_segs_p)--;
++			*iov_offset_p = 0;
++		}
++
++		req->num_pages += npages;
++	}
+ 
+ 	if (write)
+ 		req->in.argpages = 1;
+ 	else
+ 		req->out.argpages = 1;
+ 
+-	nbytes = (req->num_pages << PAGE_SHIFT) - req->page_offset;
+-	*nbytesp = min(*nbytesp, nbytes);
++	*nbytesp = nbytes;
+ 
+ 	return 0;
+ }
+
+
+------------------------------------------------------------------------------
+Live Security Virtual Conference
+Exclusive live event will cover all the ways today's security and 
+threat landscape has changed and how IT managers can respond. Discussions 
+will include endpoint security, mobile security and the latest in malware 
+threats. http://www.accelacomm.com/jaw/sfrnl04242012/114/50122263/

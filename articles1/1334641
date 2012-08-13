@@ -1,0 +1,174 @@
+Path: news.gmane.org!not-for-mail
+From: =?utf-8?Q?Bj=C3=B8rn_Mork?= <bjorn@mork.no>
+Newsgroups: gmane.linux.kernel,gmane.linux.usb.general
+Subject: Re: Kernel Oops while disconnecting USB peripheral (always)
+Date: Sat, 28 Jul 2012 15:25:07 +0200
+Organization: m
+Lines: 113
+Approved: news@gmane.org
+Message-ID: <87mx2kvwzw.fsf@nemi.mork.no>
+References: <Pine.LNX.4.44L0.1207231044380.1633-100000@iolanthe.rowland.org>
+	<500D659E.5090207@gmail.com> <87r4rwvzop.fsf@nemi.mork.no>
+	<5013E074.20007@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: QUOTED-PRINTABLE
+X-Trace: dough.gmane.org 1343481939 21434 80.91.229.3 (28 Jul 2012 13:25:39 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 28 Jul 2012 13:25:39 +0000 (UTC)
+Cc: Alan Stern <stern@rowland.harvard.edu>,
+	Sarbojit Ganguly <unixman.linuxboy@gmail.com>,
+	gregkh@linuxfoundation.org, linux-usb@vger.kernel.org,
+	linux-kernel@vger.kernel.org, Takashi Iwai <tiwai@suse.de>
+To: Daniel Mack <zonque@gmail.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Jul 28 15:25:38 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sv71U-0005Cd-P3
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 28 Jul 2012 15:25:37 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752659Ab2G1NZV convert rfc822-to-quoted-printable (ORCPT
+	<rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 28 Jul 2012 09:25:21 -0400
+Original-Received: from canardo.mork.no ([148.122.252.1]:55054 "EHLO canardo.mork.no"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752431Ab2G1NZT convert rfc822-to-8bit (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 28 Jul 2012 09:25:19 -0400
+Original-Received: from nemi.mork.no (nemi.mork.no [148.122.252.4])
+	(authenticated bits=0)
+	by canardo.mork.no (8.14.3/8.14.3) with ESMTP id q6SDP7Vv001637
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES128-SHA bits=128 verify=NOT);
+	Sat, 28 Jul 2012 15:25:07 +0200
+Original-Received: from bjorn by nemi.mork.no with local (Exim 4.80)
+	(envelope-from <bjorn@mork.no>)
+	id 1Sv711-0001c1-9X; Sat, 28 Jul 2012 15:25:07 +0200
+In-Reply-To: <5013E074.20007@gmail.com> (Daniel Mack's message of "Sat, 28 Jul
+	2012 14:52:04 +0200")
+User-Agent: Gnus/5.11002 (No Gnus v0.20) Emacs/23.4 (gnu/linux)
+X-Virus-Scanned: clamav-milter 0.97.3 at canardo
+X-Virus-Status: Clean
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334641 gmane.linux.usb.general:68445
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334641>
+
+Daniel Mack <zonque@gmail.com> writes:
+> On 28.07.2012 14:27, Bj=C3=B8rn Mork wrote:
+>
+>> The reason is this change:
+>>=20
+>>  0998d0631 device-core: Ensure drvdata =3D NULL when no driver is bo=
+und
+>>=20
+>>=20
+>> It will make bugs like this suddenly 100% reproducible.  But the bug=
+s
+>> *are* in the drivers, and may have been there for a long time.  The
+>> drivers have been accessing drvdata after unbinding.  They just didn=
+'t
+>> crash prior to that commit.
+
+I just realized that I might have been concluding too quickly here, as
+usual..=20
+
+The crashes referred to in this thread were not NULL pointer
+dereferences, which makes it less likely that this change is the
+cause. Could of course still be related somehow, but not directly.
+
+
+>> But the commit is correct, and a very much needed improvement if my
+>> assumptions are correct.  The drivers need fixing and this just make=
+s it
+>> evident.
+>
+> Hmm, interesting. Thanks for sharing this. I personally never saw thi=
+s
+> bug kicking in, but if I understand your findings correctly, we would
+> need something like the following patch for snd-usb and the storage d=
+river?
+>
+> Sarbojit, could you give this a test and see whether your kernel stil=
+l
+> crashes in any of the two drivers?
+>
+>
+> Thanks,
+> Daniel
+>
+>
+>
+> diff --git a/sound/usb/card.c b/sound/usb/card.c
+> index d5b5c33..0e8caaa 100644
+> --- a/sound/usb/card.c
+> +++ b/sound/usb/card.c
+> @@ -555,7 +555,7 @@ static void snd_usb_audio_disconnect(struct
+> usb_device *dev,
+>         struct snd_card *card;
+>         struct list_head *p;
+>
+> -       if (chip =3D=3D (void *)-1L)
+> +       if (chip =3D=3D (void *)-1L || chip =3D=3D NULL)
+>                 return;
+
+I may be wrong, but I don't think you need this is disconnect.  The
+driver will not be unbound until after disconnect returns.
+
+But IMHO, the usage of (void *)-1L as invalid drvdata marker in that
+driver should be replaced with NULL.  suspend/resume may also be unsafe
+for example.
+
+
+>         card =3D chip->card;
+> @@ -610,6 +610,7 @@ static void usb_audio_disconnect(struct
+> usb_interface *intf)
+>  {
+>         snd_usb_audio_disconnect(interface_to_usbdev(intf),
+>                                  usb_get_intfdata(intf));
+> +       usb_set_intfdata(intf, NULL);
+
+
+This can't harm, but is not necessary given that it now will be taken
+care of by the driver core.
+
+
+>  }
+>
+>  #ifdef CONFIG_PM
+> diff --git a/drivers/usb/storage/usb.c b/drivers/usb/storage/usb.c
+> index d012fe4..36862ee 100644
+> --- a/drivers/usb/storage/usb.c
+> +++ b/drivers/usb/storage/usb.c
+> @@ -1025,9 +1025,14 @@ void usb_stor_disconnect(struct usb_interface =
+*intf)
+>  {
+>         struct us_data *us =3D usb_get_intfdata(intf);
+>
+> +       if (!us)
+> +               return;
+> +
+>         US_DEBUGP("storage_disconnect() called\n");
+>         quiesce_and_remove_host(us);
+>         release_everything(us);
+> +
+> +       usb_set_intfdata(intf, NULL);
+>  }
+>  EXPORT_SYMBOL_GPL(usb_stor_disconnect);
+
+
+I don't really think you need those changes for the same reasons I gave
+above.
+
+Sorry if my comment just confused the search for this bug.  bisecting i=
+t
+is probably the easiest way to locate it after all.
+
+
+
+Bj=C3=B8rn

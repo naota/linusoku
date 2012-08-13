@@ -1,0 +1,106 @@
+Path: news.gmane.org!not-for-mail
+From: Julia Lawall <Julia.Lawall@lip6.fr>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.janitors
+Subject: [PATCH 1/6] drivers/edac/i7core_edac.c: fix error return code
+Date: Sun,  5 Aug 2012 11:52:31 +0200
+Lines: 59
+Approved: news@gmane.org
+Message-ID: <1344160356-387-2-git-send-email-Julia.Lawall@lip6.fr>
+References: <1344160356-387-1-git-send-email-Julia.Lawall@lip6.fr>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344160481 20816 80.91.229.3 (5 Aug 2012 09:54:41 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 5 Aug 2012 09:54:41 +0000 (UTC)
+Cc: kernel-janitors@vger.kernel.org,
+	Doug Thompson <dougthompson@xmission.com>,
+	linux-edac@vger.kernel.org, linux-kernel@vger.kernel.org,
+	Julia Lawall <julia@diku.dk>
+To: Mauro Carvalho Chehab <mchehab@redhat.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Aug 05 11:54:40 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxxXi-0007wx-Un
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 05 Aug 2012 11:54:39 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754489Ab2HEJyb (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 5 Aug 2012 05:54:31 -0400
+Original-Received: from mail4-relais-sop.national.inria.fr ([192.134.164.105]:9388 "EHLO
+	mail4-relais-sop.national.inria.fr" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1754197Ab2HEJwo (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 5 Aug 2012 05:52:44 -0400
+X-IronPort-AV: E=Sophos;i="4.77,715,1336341600"; 
+   d="scan'208";a="152465603"
+Original-Received: from palace.lip6.fr (HELO localhost.localdomain) ([132.227.105.202])
+  by mail4-relais-sop.national.inria.fr with ESMTP/TLS/DHE-RSA-AES256-SHA; 05 Aug 2012 11:52:42 +0200
+X-Mailer: git-send-email 1.7.8.6
+In-Reply-To: <1344160356-387-1-git-send-email-Julia.Lawall@lip6.fr>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337805 gmane.linux.kernel.janitors:25345
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337805>
+
+From: Julia Lawall <julia@diku.dk>
+
+Convert a 0 error return code to a negative one, as returned elsewhere in the
+function.
+
+A simplified version of the semantic match that finds this problem is as
+follows: (http://coccinelle.lip6.fr/)
+
+// <smpl>
+@@
+identifier ret;
+expression e,e1,e2,e3,e4,x;
+@@
+
+(
+if (\(ret != 0\|ret < 0\) || ...) { ... return ...; }
+|
+ret = 0
+)
+... when != ret = e1
+*x = \(kmalloc\|kzalloc\|kcalloc\|devm_kzalloc\|ioremap\|ioremap_nocache\|devm_ioremap\|devm_ioremap_nocache\)(...);
+... when != x = e2
+    when != ret = e3
+*if (x == NULL || ...)
+{
+  ... when != ret = e4
+*  return ret;
+}
+// </smpl>
+
+Signed-off-by: Julia Lawall <julia@diku.dk>
+
+---
+ drivers/edac/i7core_edac.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/edac/i7core_edac.c b/drivers/edac/i7core_edac.c
+index 3672101..64dcc98 100644
+--- a/drivers/edac/i7core_edac.c
++++ b/drivers/edac/i7core_edac.c
+@@ -1177,7 +1177,7 @@ static int i7core_create_sysfs_devices(struct mem_ctl_info *mci)
+ 
+ 	pvt->addrmatch_dev = kzalloc(sizeof(*pvt->addrmatch_dev), GFP_KERNEL);
+ 	if (!pvt->addrmatch_dev)
+-		return rc;
++		return -ENOMEM;
+ 
+ 	pvt->addrmatch_dev->type = &addrmatch_type;
+ 	pvt->addrmatch_dev->bus = mci->dev.bus;
+@@ -1198,7 +1198,7 @@ static int i7core_create_sysfs_devices(struct mem_ctl_info *mci)
+ 		if (!pvt->chancounts_dev) {
+ 			put_device(pvt->addrmatch_dev);
+ 			device_del(pvt->addrmatch_dev);
+-			return rc;
++			return -ENOMEM;
+ 		}
+ 
+ 		pvt->chancounts_dev->type = &all_channel_counts_type;
+

@@ -1,0 +1,160 @@
+Path: news.gmane.org!not-for-mail
+From: "George Spelvin" <linux@horizon.com>
+Newsgroups: gmane.linux.kernel.input,gmane.linux.kernel
+Subject: [REPOST #3 PATCH v2] Input: atkbd - make repeat period more accurate.
+Date: 21 Jul 2012 23:42:28 -0400
+Lines: 119
+Approved: news@gmane.org
+Message-ID: <20120722034228.14345.qmail@science.horizon.com>
+References: <20120714110114.31895.qmail@science.horizon.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342928615 1987 80.91.229.3 (22 Jul 2012 03:43:35 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 22 Jul 2012 03:43:35 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, linux@horizon.com
+To: dmitry.torokhov@gmail.com, dtor@mail.ru,
+	linux-input@vger.kernel.org
+Original-X-From: linux-input-owner@vger.kernel.org Sun Jul 22 05:43:35 2012
+Return-path: <linux-input-owner@vger.kernel.org>
+Envelope-to: glki-linux-input-2@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-input-owner@vger.kernel.org>)
+	id 1Ssn4s-0001HG-4Y
+	for glki-linux-input-2@plane.gmane.org; Sun, 22 Jul 2012 05:43:30 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751339Ab2GVDmd (ORCPT <rfc822;glki-linux-input-2@m.gmane.org>);
+	Sat, 21 Jul 2012 23:42:33 -0400
+Original-Received: from science.horizon.com ([71.41.210.146]:54894 "HELO
+	science.horizon.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with SMTP id S1751126Ab2GVDmc (ORCPT
+	<rfc822;linux-input@vger.kernel.org>);
+	Sat, 21 Jul 2012 23:42:32 -0400
+Original-Received: (qmail 14346 invoked by uid 1000); 21 Jul 2012 23:42:28 -0400
+In-Reply-To: <20120714110114.31895.qmail@science.horizon.com>
+Original-Sender: linux-input-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-input.vger.kernel.org>
+X-Mailing-List: linux-input@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel.input:26004 gmane.linux.kernel:1331293
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331293>
+
+This replaces some inaccurate lookup tables with an exact
+computation.  Although the diff adds source comments,
+it shrinks binary size.  (By only 50 bytes, but hey.)
+
+AT keyboard repeat rates are multiples of 1/240 second
+expressed in a 0.2.3 bit floating point format.  That
+is, possible values are ({8..15} << {0..3}) / 240 s.
+
+In addition to a slightly inaccurate lookup table, the
+old code would round up to the next repeat period.
+E.g. to get a period of 9/60 = 0.15 seconds, you had to
+ask for no more than 149 ms; if you asked for 150, it
+would round up to 167.  The new code rounds to nearest.
+
+User-visible changes to the repeat periods reported by EVIOCGREP:
+
+Old	 37	109	116	149	182	232
+Exact	 37.50	108.33	116.66	150.00	183.33	233.33
+New	 38	108	117	150	183	233
+
+Old	270	303	370	435	470
+Exact	266.66	300.00	366.66	433.33	466.66
+New	267	300	367	433	467
+
+This does not bother utilities like kbdrate(8).
+
+Signed-off-by: George Spelvin <linux@horizon.com>
+---
+ drivers/input/keyboard/atkbd.c |   47 +++++++++++++++++++++++++++++++----------------
+ 1 file changed, 31 insertions(+), 16 deletions(-)
+
+Now that 3.5 is out, I'm posting this for a FOURTH time,
+hoping for some comments of any sort.
+
+
+Now that I've tweaked it (v1 had an error in rounding near exponent
+range boundaries), I think it's ready for merging upstream.
+
+
+One possible bug I observed in the code that calls this:
+
+Users of the KDKBDREP ioctl seem to assume that it returns the actual
+values set, but I'm not sure it really works that way; I don't think
+the command to change the parameters makes its way through the event
+queue and atkbd's schedule_delayed_work() to actually set dev->rep[]
+to the rounded values before kbd_rate_helper returns them to userspace.
+
+If desired, the fix that's most obvious to me would be to split this
+function in two: perform the conversion to a command byte synchronously,
+and only defer the actual ps2_command().
+
+diff --git a/drivers/input/keyboard/atkbd.c b/drivers/input/keyboard/atkbd.c
+index e05a2e7..3181b86 100644
+--- a/drivers/input/keyboard/atkbd.c
++++ b/drivers/input/keyboard/atkbd.c
+@@ -524,27 +524,42 @@ out:
+ 	return IRQ_HANDLED;
+ }
+ 
++/*
++ * AT keyboard repeat rates are set using a 2-bit initial repeat delay
++ * (250, 500, 750 or 1000 ms), and a 5-bit repeat period.  The latter
++ * is a 0.2.3-bit floating-point number (no sign, 2-bit exponent, and
++ * 3-bit mantissa), encoding a value from 8/240 to 120/240 of second.
++ *
++ * Given the requested delay and period in milliseconds, round to the
++ * nearest representable value, and convert the rounded values back to
++ * milliseconds to report the chosen values.
++ */
+ static int atkbd_set_repeat_rate(struct atkbd *atkbd)
+ {
+-	const short period[32] =
+-		{ 33,  37,  42,  46,  50,  54,  58,  63,  67,  75,  83,  92, 100, 109, 116, 125,
+-		 133, 149, 167, 182, 200, 217, 232, 250, 270, 303, 333, 370, 400, 435, 470, 500 };
+-	const short delay[4] =
+-		{ 250, 500, 750, 1000 };
+-
+ 	struct input_dev *dev = atkbd->dev;
+ 	unsigned char param;
+-	int i = 0, j = 0;
+-
+-	while (i < ARRAY_SIZE(period) - 1 && period[i] < dev->rep[REP_PERIOD])
+-		i++;
+-	dev->rep[REP_PERIOD] = period[i];
+-
+-	while (j < ARRAY_SIZE(delay) - 1 && delay[j] < dev->rep[REP_DELAY])
+-		j++;
+-	dev->rep[REP_DELAY] = delay[j];
++	unsigned exp = 3;	/* Period exponent */
++	int period;		/* Period mantissa */
++	int delay = clamp(dev->rep[REP_DELAY], 125, 1000);
++
++	/* AT kbd delay is {1..4} * 250 ms.  Round to 2 bits. */
++	delay = (delay + 125) / 250u;
++	/* Store actual value back */
++	dev->rep[REP_DELAY] = delay * 250;
++
++	/* AT kbd period is ({8..15} << {0..3}) / 240 s. */
++	period = clamp(dev->rep[REP_PERIOD], 33, 500);
++	/* Get correct exponent.  Split is at 258.333 ms */
++	while (period < 259) {
++		period <<= 1;
++		exp--;
++	}
++	/* Convert from 259..516 ms to 8..15 30ths of a second */
++	period = (period * 3 + 50) / 100u;
++	/* Store actual value back.  x * 1000 / 240 = x * 25 / 6 */
++	dev->rep[REP_PERIOD] = ((period << exp) * 25 + 3) / 6u;
+ 
+-	param = i | (j << 5);
++	param = (delay - 1) << 5 | exp << 3 | (period - 8);
+ 	return ps2_command(&atkbd->ps2dev, &param, ATKBD_CMD_SETREP);
+ }
+ 
+--
+To unsubscribe from this list: send the line "unsubscribe linux-input" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

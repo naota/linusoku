@@ -1,0 +1,102 @@
+Path: news.gmane.org!not-for-mail
+From: Stephen Warren <swarren@wwwdotorg.org>
+Newsgroups: gmane.linux.kernel
+Subject: regulators: creating a regulator device for the AC/USB/BAT/charge
+ component of a PMIC?
+Date: Thu, 26 Jul 2012 12:02:31 -0600
+Lines: 45
+Approved: news@gmane.org
+Message-ID: <50118637.9060205@wwwdotorg.org>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343325772 22789 80.91.229.3 (26 Jul 2012 18:02:52 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 18:02:52 +0000 (UTC)
+Cc: Laxman Dewangan <ldewangan@nvidia.com>,
+	"linux-kernel@vger.kernel.org" <linux-kernel@vger.kernel.org>
+To: Mark Brown <broonie@opensource.wolfsonmicro.com>,
+	Liam Girdwood <lrg@ti.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 20:02:51 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuSOg-0007C4-Ug
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 20:02:51 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752375Ab2GZSCf (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 14:02:35 -0400
+Original-Received: from avon.wwwdotorg.org ([70.85.31.133]:47637 "EHLO
+	avon.wwwdotorg.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751670Ab2GZSCe (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 14:02:34 -0400
+Original-Received: from severn.wwwdotorg.org (unknown [192.168.65.5])
+	(using TLSv1 with cipher ADH-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by avon.wwwdotorg.org (Postfix) with ESMTPS id BAB956255;
+	Thu, 26 Jul 2012 12:08:12 -0600 (MDT)
+Original-Received: from [10.20.204.51] (searspoint.nvidia.com [216.228.112.21])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by severn.wwwdotorg.org (Postfix) with ESMTPSA id A8911E40FA;
+	Thu, 26 Jul 2012 12:02:32 -0600 (MDT)
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120615 Thunderbird/13.0.1
+X-Enigmail-Version: 1.4.2
+X-Virus-Scanned: clamav-milter 0.96.5 at avon.wwwdotorg.org
+X-Virus-Status: Clean
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333817
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333817>
+
+Mark, Liam,
+
+A couple of the regulators I'm looking at (I guess many/most in fact)
+are structured as:
+
+Battery, AC, USB, ... -> PMIC -> main output (unregulated?)
+
+main output -> PMIC input pins for some of the SW-controllable
+regulators. This is an external connection on the board.
+
+Should this "main output" be represented as a regulator itself?
+
+In more graphical/concrete terms, take the TPS6586x:
+
+        +---------------+
+        |               |
+AC  --> | \             |
+USB --> |  |------> SYS | >---\
+BAT --> | /             |     |
+        |       VIN_SM0 | <---/
+        |         v     |
+        |       SM0 OUT | ---> other devices
+        ...
+
+... where SM0 is one of the regulators the driver already exposes.
+
+I assume SYS should be an explicit regulator device, because all the
+other regulators within the PMIC can be set up to require that a supply
+be specified (in the DT, a vin-sm0-supply property is mandatory for the
+TPS6586x driver), so some regulator object must exist and be provided as
+the supply.
+
+The alternative would be to this would be to ignore this aspect of the
+PMIC, and just create a standalone fixed regulator to act as the supply
+for the SM0 regulator. However, this doesn't seem like an accurate model
+of the HW.
+
+However, some of the regulators in the TPS6586x at least are fed
+directly from the SYS output by an internal connection within the PMIC
+(e.g. LDO5). Currently, the driver sets up these regulators as having no
+supply, which seems wrong too. Presumably the PMIC driver should
+internally hook up its SYS as LDO5's supply without needing any platform
+data or DT ldo5-supply property to do this?
+
+What are your thoughts here?

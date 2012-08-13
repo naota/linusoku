@@ -1,0 +1,131 @@
+Path: news.gmane.org!not-for-mail
+From: Mel Gorman <mgorman@suse.de>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel,gmane.linux.network,gmane.comp.emulators.xen.devel
+Subject: [PATCH] netvm: check for page == NULL when propogating the
+ skb->pfmemalloc flag
+Date: Tue, 7 Aug 2012 09:55:55 +0100
+Lines: 64
+Approved: news@gmane.org
+Message-ID: <20120807085554.GF29814@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=iso-8859-15
+X-Trace: dough.gmane.org 1344329773 17914 80.91.229.3 (7 Aug 2012 08:56:13 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 08:56:13 +0000 (UTC)
+Cc: Linux-MM <linux-mm@kvack.org>,
+	LKML <linux-kernel@vger.kernel.org>,
+	Linux-Netdev <netdev@vger.kernel.org>,
+	Xen-devel <xen-devel@lists.xensource.com>,
+	Konrad Rzeszutek Wilk <konrad@darnok.org>,
+	Ian Campbell <Ian.Campbell@eu.citrix.com>,
+	Andrew Morton <akpm@linux-foundation.org>
+To: David Miller <davem@davemloft.net>
+Original-X-From: owner-linux-mm@kvack.org Tue Aug 07 10:56:12 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SyfaD-0003HE-7G
+	for glkm-linux-mm-2@m.gmane.org; Tue, 07 Aug 2012 10:56:09 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id E7E9B6B0044; Tue,  7 Aug 2012 04:56:06 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id CD23D6B004D; Tue,  7 Aug 2012 04:56:06 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id A244F6B005A; Tue,  7 Aug 2012 04:56:06 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx178.postini.com [74.125.245.178])
+	by kanga.kvack.org (Postfix) with SMTP id A7B656B0044
+	for <linux-mm@kvack.org>; Tue,  7 Aug 2012 04:56:05 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx178.postini.com ([74.125.244.10]) with SMTP;
+	Tue, 07 Aug 2012 08:56:05 GMT
+Original-Received: from relay1.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 170D3A3A78;
+	Tue,  7 Aug 2012 10:55:58 +0200 (CEST)
+Content-Disposition: inline
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mgorman@suse.de> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83760 gmane.linux.kernel:1338873 gmane.linux.network:239342 gmane.comp.emulators.xen.devel:136633
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338873>
+
+Commit [c48a11c7: netvm: propagate page->pfmemalloc to skb] is responsible
+for the following bug triggered by a xen network driver
+
+[    1.908592] BUG: unable to handle kernel NULL pointer dereference at 0000000000000010
+[    1.908643] IP: [<ffffffffa0037750>] xennet_poll+0x980/0xec0 [xen_netfront]
+[    1.908703] PGD ea1df067 PUD e8ada067 PMD 0
+[    1.908774] Oops: 0000 [#1] SMP
+[    1.908797] Modules linked in: fbcon tileblit font radeon bitblit softcursor ttm drm_kms_helper crc32c_intel xen_blkfront xen_netfront xen_fbfront fb_sys_fops sysimgblt sysfillrect syscopyarea +xen_kbdfront xenfs xen_privcmd
+[    1.908938] CPU 0
+[    1.908950] Pid: 2165, comm: ip Not tainted 3.5.0upstream-08854-g444fa66 #1
+[    1.908983] RIP: e030:[<ffffffffa0037750>]  [<ffffffffa0037750>] xennet_poll+0x980/0xec0 [xen_netfront]
+[    1.909029] RSP: e02b:ffff8800ffc03db8  EFLAGS: 00010282
+[    1.909055] RAX: ffff8800ea010140 RBX: ffff8800f00e86c0 RCX: 000000000000009a
+[    1.909055] RDX: 0000000000000040 RSI: 000000000000005a RDI: ffff8800fa7dee80
+[    1.909055] RBP: ffff8800ffc03ee8 R08: ffff8800f00e86d8 R09: ffff8800ea010000
+[    1.909055] R10: dead000000200200 R11: dead000000100100 R12: ffff8800fa7dee80
+[    1.909055] R13: 000000000000005a R14: ffff8800fa7dee80 R15: 0000000000000200
+[    1.909055] FS:  00007fbafc188700(0000) GS:ffff8800ffc00000(0000) knlGS:0000000000000000
+[    1.909055] CS:  e033 DS: 0000 ES: 0000 CR0: 000000008005003b
+[    1.909055] CR2: 0000000000000010 CR3: 00000000ea108000 CR4: 0000000000002660
+[    1.909055] DR0: 0000000000000000 DR1: 0000000000000000 DR2: 0000000000000000
+[    1.909055] DR3: 0000000000000000 DR6: 00000000ffff0ff0 DR7: 0000000000000400
+[    1.909055] Process ip (pid: 2165, threadinfo ffff8800ea0f2000, task ffff8800fa783040)
+[    1.909055] Stack:
+[    1.909055]  ffff8800e27e5040 ffff8800ffc03e88 ffff8800ffc03e68 ffff8800ffc03e48
+[    1.909055]  7fffffffffffffff ffff8800ffc03e00 ffff8800e27e5040 ffff8800f00e86d8
+[    1.909055]  ffff8800ffc03eb0 00000040ffffffff ffff8800f00e8000 00000000ffc03e30
+[    1.909055] Call Trace:
+[    1.909055]  <IRQ>
+[    1.909055]  [<ffffffff81066028>] ?  pvclock_clocksource_read+0x58/0xd0
+[    1.909055]  [<ffffffff81486352>] net_rx_action+0x112/0x240
+[    1.909055]  [<ffffffff8107f319>] __do_softirq+0xb9/0x190
+[    1.909055]  [<ffffffff815d8d7c>] call_softirq+0x1c/0x30
+
+The problem is that the xenfront driver is passing a NULL page to
+__skb_fill_page_desc() which was unexpected. This patch checks that
+there is a page before dereferencing.
+
+Reported-and-Tested-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+---
+ include/linux/skbuff.h |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/linux/skbuff.h b/include/linux/skbuff.h
+index 7632c87..8857669 100644
+--- a/include/linux/skbuff.h
++++ b/include/linux/skbuff.h
+@@ -1256,7 +1256,7 @@ static inline void __skb_fill_page_desc(struct sk_buff *skb, int i,
+ 	 * do not lose pfmemalloc information as the pages would not be
+ 	 * allocated using __GFP_MEMALLOC.
+ 	 */
+-	if (page->pfmemalloc && !page->mapping)
++	if (page && page->pfmemalloc && !page->mapping)
+ 		skb->pfmemalloc	= true;
+ 	frag->page.p		  = page;
+ 	frag->page_offset	  = off;
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

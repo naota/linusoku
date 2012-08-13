@@ -1,0 +1,217 @@
+Path: news.gmane.org!not-for-mail
+From: Peter Zijlstra <a.p.zijlstra@chello.nl>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 08/19] mm/mpol: Check for misplaced page
+Date: Tue, 31 Jul 2012 21:12:12 +0200
+Lines: 165
+Approved: news@gmane.org
+Message-ID: <20120731192808.829334736@chello.nl>
+References: <20120731191204.540691987@chello.nl>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343764097 3482 80.91.229.3 (31 Jul 2012 19:48:17 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 19:48:17 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org,
+	Lee Schermerhorn <lee.schermerhorn@hp.com>,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>
+To: mingo@kernel.org, riel@redhat.com, oleg@redhat.com, pjt@google.com,
+	akpm@linux-foundation.org, torvalds@linux-foundation.org,
+	tglx@linutronix.de, Lee.Schermerhorn@hp.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 21:48:12 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwIQH-0003FV-MA
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 21:48:05 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755896Ab2GaTrP (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 15:47:15 -0400
+Original-Received: from merlin.infradead.org ([205.233.59.134]:37344 "EHLO
+	merlin.infradead.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753570Ab2GaTon (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 15:44:43 -0400
+Original-Received: from canuck.infradead.org ([2001:4978:20e::1])
+	by merlin.infradead.org with esmtps (Exim 4.76 #1 (Red Hat Linux))
+	id 1SwIMr-0006O2-Gd; Tue, 31 Jul 2012 19:44:33 +0000
+Original-Received: from dhcp-089-099-019-018.chello.nl ([89.99.19.18] helo=twins)
+	by canuck.infradead.org with esmtpsa (Exim 4.76 #1 (Red Hat Linux))
+	id 1SwIMq-0005SX-UO; Tue, 31 Jul 2012 19:44:33 +0000
+Original-Received: by twins (Postfix, from userid 0)
+	id 875348483D8C; Tue, 31 Jul 2012 21:44:28 +0200 (CEST)
+User-Agent: quilt/0.48-1
+Content-Disposition: inline; filename=mm_mpol-Check_for_misplaced_page.patch
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335983
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335983>
+
+From: Lee Schermerhorn <lee.schermerhorn@hp.com>
+
+This patch provides a new function to test whether a page resides
+on a node that is appropriate for the mempolicy for the vma and
+address where the page is supposed to be mapped.  This involves
+looking up the node where the page belongs.  So, the function
+returns that node so that it may be used to allocated the page
+without consulting the policy again.  Because interleaved and
+non-interleaved allocations are accounted differently, the function
+also returns whether or not the new node came from an interleaved
+policy, if the page is misplaced.
+
+A subsequent patch will call this function from the fault path for
+stable pages with zero page_mapcount().  Because of this, I don't
+want to go ahead and allocate the page, e.g., via alloc_page_vma()
+only to have to free it if it has the correct policy.  So, I just
+mimic the alloc_page_vma() node computation logic--sort of.
+
+Note:  we could use this function to implement a MPOL_MF_STRICT
+behavior when migrating pages to match mbind() mempolicy--e.g.,
+to ensure that pages in an interleaved range are reinterleaved
+rather than left where they are when they reside on any page in
+the interleave nodemask.
+
+Signed-off-by: Lee Schermerhorn <lee.schermerhorn@hp.com>
+Cc: Rik van Riel <riel@redhat.com>
+Cc: Andrew Morton <akpm@linux-foundation.org>
+Cc: Linus Torvalds <torvalds@linux-foundation.org>
+[ Added MPOL_F_LAZY to trigger migrate-on-fault;
+  simplified code now that we don't have to bother
+  with special crap for interleaved ]
+Signed-off-by: Peter Zijlstra <a.p.zijlstra@chello.nl>
+---
+ include/linux/mempolicy.h |    9 +++++
+ mm/mempolicy.c            |   79 ++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 88 insertions(+)
+--- a/include/linux/mempolicy.h
++++ b/include/linux/mempolicy.h
+@@ -68,6 +68,7 @@ enum mpol_rebind_step {
+ #define MPOL_F_SHARED  (1 << 0)	/* identify shared policies */
+ #define MPOL_F_LOCAL   (1 << 1)	/* preferred local allocation */
+ #define MPOL_F_REBINDING (1 << 2)	/* identify policies in rebinding */
++#define MPOL_F_MOF	(1 << 3) /* this policy wants migrate on fault */
+ 
+ #ifdef __KERNEL__
+ 
+@@ -262,6 +263,8 @@ static inline int vma_migratable(struct 
+ 	return 1;
+ }
+ 
++extern int mpol_misplaced(struct page *, struct vm_area_struct *, unsigned long);
++
+ extern void lazy_migrate_process(struct mm_struct *mm);
+ 
+ #else /* CONFIG_NUMA */
+@@ -389,6 +392,12 @@ static inline int mpol_to_str(char *buff
+ 	return 0;
+ }
+ 
++static inline int mpol_misplaced(struct page *page, struct vm_area_struct *vma,
++				 unsigned long address)
++{
++	return -1; /* no node preference */
++}
++
+ #endif /* CONFIG_NUMA */
+ #endif /* __KERNEL__ */
+ 
+--- a/mm/mempolicy.c
++++ b/mm/mempolicy.c
+@@ -1152,6 +1152,9 @@ static long do_mbind(unsigned long start
+ 	if (IS_ERR(new))
+ 		return PTR_ERR(new);
+ 
++	if (flags & MPOL_MF_LAZY)
++		new->flags |= MPOL_F_MOF;
++
+ 	/*
+ 	 * If we are using the default policy then operation
+ 	 * on discontinuous address spaces is okay after all
+@@ -2143,6 +2146,82 @@ mpol_shared_policy_lookup(struct shared_
+ 	return pol;
+ }
+ 
++/**
++ * mpol_misplaced - check whether current page node is valid in policy
++ *
++ * @page   - page to be checked
++ * @vma    - vm area where page mapped
++ * @addr   - virtual address where page mapped
++ *
++ * Lookup current policy node id for vma,addr and "compare to" page's
++ * node id.
++ *
++ * Returns:
++ *	-1	- not misplaced, page is in the right node
++ *	node	- node id where the page should be
++ *
++ * Policy determination "mimics" alloc_page_vma().
++ * Called from fault path where we know the vma and faulting address.
++ */
++int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long addr)
++{
++	struct mempolicy *pol;
++	struct zone *zone;
++	int curnid = page_to_nid(page);
++	unsigned long pgoff;
++	int polnid = -1;
++	int ret = -1;
++
++	BUG_ON(!vma);
++
++	pol = get_vma_policy(current, vma, addr);
++	if (!(pol->flags & MPOL_F_MOF))
++		goto out;
++
++	switch (pol->mode) {
++	case MPOL_INTERLEAVE:
++		BUG_ON(addr >= vma->vm_end);
++		BUG_ON(addr < vma->vm_start);
++
++		pgoff = vma->vm_pgoff;
++		pgoff += (addr - vma->vm_start) >> PAGE_SHIFT;
++		polnid = offset_il_node(pol, vma, pgoff);
++		break;
++
++	case MPOL_PREFERRED:
++		if (pol->flags & MPOL_F_LOCAL)
++			polnid = numa_node_id();
++		else
++			polnid = pol->v.preferred_node;
++		break;
++
++	case MPOL_BIND:
++		/*
++		 * allows binding to multiple nodes.
++		 * use current page if in policy nodemask,
++		 * else select nearest allowed node, if any.
++		 * If no allowed nodes, use current [!misplaced].
++		 */
++		if (node_isset(curnid, pol->v.nodes))
++			goto out;
++		(void)first_zones_zonelist(
++				node_zonelist(numa_node_id(), GFP_HIGHUSER),
++				gfp_zone(GFP_HIGHUSER),
++				&pol->v.nodes, &zone);
++		polnid = zone->node;
++		break;
++
++	default:
++		BUG();
++	}
++	if (curnid != polnid)
++		ret = polnid;
++out:
++	mpol_cond_put(pol);
++
++	return ret;
++}
++
+ static void sp_delete(struct shared_policy *sp, struct sp_node *n)
+ {
+ 	pr_debug("deleting %lx-l%lx\n", n->start, n->end);
+
+

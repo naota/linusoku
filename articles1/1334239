@@ -1,0 +1,119 @@
+Path: news.gmane.org!not-for-mail
+From: Michal Hocko <mhocko@suse.cz>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [PATCH 2/2] mm: hugetlbfs: Close race during teardown of
+ hugetlbfs shared page tables
+Date: Fri, 27 Jul 2012 13:24:45 +0200
+Lines: 49
+Approved: news@gmane.org
+Message-ID: <20120727112445.GF26351@tiehlicka.suse.cz>
+References: <1343385965-7738-1-git-send-email-mgorman@suse.de>
+ <1343385965-7738-3-git-send-email-mgorman@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343388294 16017 80.91.229.3 (27 Jul 2012 11:24:54 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 11:24:54 +0000 (UTC)
+Cc: Andrew Morton <akpm@linux-foundation.org>,
+	"Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>,
+	KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>,
+	Hugh Dickins <hughd@google.com>, Rik van Riel <riel@redhat.com>,
+	Larry Woodman <lwoodman@redhat.com>, Ken Chen <kenchen@google.com>,
+	Cong Wang <xiyou.wangcong@gmail.com>, Linux-MM <linux-mm@kvack.org>,
+	LKML <linux-kernel@vger.kernel.org>
+To: Mel Gorman <mgorman@suse.de>
+Original-X-From: owner-linux-mm@kvack.org Fri Jul 27 13:24:52 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Suif5-0008P6-VD
+	for glkm-linux-mm-2@m.gmane.org; Fri, 27 Jul 2012 13:24:52 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 6BA576B006E; Fri, 27 Jul 2012 07:24:50 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 5706E6B0070; Fri, 27 Jul 2012 07:24:50 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id EBF316B0072; Fri, 27 Jul 2012 07:24:49 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx119.postini.com [74.125.245.119])
+	by kanga.kvack.org (Postfix) with SMTP id 129216B006E
+	for <linux-mm@kvack.org>; Fri, 27 Jul 2012 07:24:49 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx119.postini.com ([74.125.244.10]) with SMTP;
+	Fri, 27 Jul 2012 11:24:49 GMT
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 3B769912E4;
+	Fri, 27 Jul 2012 13:24:47 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <1343385965-7738-3-git-send-email-mgorman@suse.de>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mhocko@suse.cz> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83095 gmane.linux.kernel:1334239
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334239>
+
+Just a nit
+
+On Fri 27-07-12 11:46:05, Mel Gorman wrote:
+> diff --git a/mm/hugetlb.c b/mm/hugetlb.c
+> index fd1d530..8c6e5a5 100644
+> --- a/mm/hugetlb.c
+> +++ b/mm/hugetlb.c
+> @@ -2429,6 +2429,25 @@ again:
+>  	tlb_end_vma(tlb, vma);
+>  }
+>
+
+I would welcome a comment here. Something like:
+/*
+ * Called when the VMA is on the way out and page tables will be freed
+ * by free_pagetables.
+ * i_mmap_mutex has to be held when calling this function
+ */
+
+> +void __unmap_hugepage_range_final(struct mmu_gather *tlb,
+> +			  struct vm_area_struct *vma, unsigned long start,
+> +			  unsigned long end, struct page *ref_page)
+> +{
+> +	__unmap_hugepage_range(tlb, vma, start, end, ref_page);
+> +
+> +	/*
+> +	 * Clear this flag so that x86's huge_pmd_share page_table_shareable
+> +	 * test will fail on a vma being torn down, and not grab a page table
+> +	 * on its way out.  We're lucky that the flag has such an appropriate
+> +	 * name, and can in fact be safely cleared here. We could clear it
+> +	 * before the __unmap_hugepage_range above, but all that's necessary
+> +	 * is to clear it before releasing the i_mmap_mutex. This works
+> +	 * because in the context this is called, the VMA is about to be
+> +	 * destroyed and the i_mmap_mutex is held.
+> +	 */
+> +	vma->vm_flags &= ~VM_MAYSHARE;
+> +}
+> +
+
+-- 
+Michal Hocko
+SUSE Labs
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

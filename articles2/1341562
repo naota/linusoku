@@ -1,0 +1,90 @@
+Path: news.gmane.org!not-for-mail
+From: Denis Efremov <yefremov.denis@gmail.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.network
+Subject: [PATCH] macvtap: rcu_dereference outside read-lock section
+Date: Sat, 11 Aug 2012 14:05:27 +0400
+Lines: 29
+Approved: news@gmane.org
+Message-ID: <1344679527-13377-1-git-send-email-yefremov.denis@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344679414 18086 80.91.229.3 (11 Aug 2012 10:03:34 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 11 Aug 2012 10:03:34 +0000 (UTC)
+Cc: Denis Efremov <yefremov.denis@gmail.com>,
+	"Michael S. Tsirkin" <mst@redhat.com>,
+	Jason Wang <jasowang@redhat.com>,
+	"Eric W. Biederman" <ebiederm@xmission.com>,
+	Ian Campbell <ian.campbell@citrix.com>, netdev@vger.kernel.org,
+	linux-kernel@vger.kernel.org, ldv-project@ispras.ru
+To: "David S. Miller" <davem@davemloft.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Aug 11 12:03:30 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1T08XQ-0000qz-BD
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 11 Aug 2012 12:03:20 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754033Ab2HKKC5 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 11 Aug 2012 06:02:57 -0400
+Original-Received: from mail-lpp01m010-f46.google.com ([209.85.215.46]:60682 "EHLO
+	mail-lpp01m010-f46.google.com" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1752588Ab2HKKCy (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 11 Aug 2012 06:02:54 -0400
+Original-Received: by lagy9 with SMTP id y9so1302713lag.19
+        for <multiple recipients>; Sat, 11 Aug 2012 03:02:52 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer;
+        bh=nej8NV23rlPV7xCFGwqyta6bUuuHn8uvOGO/GcdelsQ=;
+        b=O6W01U5Ds297NTM/6bzIA3/0OC6qRLTLZvtjqdCbn9SOcCldoPRmYTofJKVk49RKSU
+         CqIVnww5NMn6/KvsmzgfJYkcWsAjVzrKKwk4ZsxccHPx3ZH1Vm/21t8Nr6emFr1yOhNg
+         IISvLK62DOhT1WBoj84SQB4mSxcVdwGnJlxi/J2Rlj8NdLnvJvYJ3e0zcaULCECFom/N
+         c+tYo6Pv8zqZYTw39vC0Z7g90csIeUos+WYzSQKXIei1zutfqqiOU5wRYjw9aops7XH6
+         0M66iTLT9KRWmUpiYhzjNXc76u1mOOzm05r/RF4BQvzbrrUPYl4NEy2sg5DFVr1aNI1s
+         1KxA==
+Original-Received: by 10.112.29.233 with SMTP id n9mr3557234lbh.91.1344679372691;
+        Sat, 11 Aug 2012 03:02:52 -0700 (PDT)
+Original-Received: from localhost.localdomain (93-80-125-252.broadband.corbina.ru. [93.80.125.252])
+        by mx.google.com with ESMTPS id j3sm247458lbh.0.2012.08.11.03.02.51
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Sat, 11 Aug 2012 03:02:52 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341562 gmane.linux.network:239779
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341562>
+
+In this case it is not an error. rcu_dereference
+occurs in update section. Replacement by
+rcu_dereference_protected (with spinlock) in order to
+prevent lockdep complaint.
+
+Found by Linux Driver Verification project (linuxtesting.org)
+
+Signed-off-by: Denis Efremov <yefremov.denis@gmail.com>
+---
+ drivers/net/macvtap.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/net/macvtap.c b/drivers/net/macvtap.c
+index 0737bd4..8ef11a8 100644
+--- a/drivers/net/macvtap.c
++++ b/drivers/net/macvtap.c
+@@ -94,7 +94,8 @@ static int get_slot(struct macvlan_dev *vlan, struct macvtap_queue *q)
+ 	int i;
+ 
+ 	for (i = 0; i < MAX_MACVTAP_QUEUES; i++) {
+-		if (rcu_dereference(vlan->taps[i]) == q)
++		if (rcu_dereference_protected(vlan->taps[i],
++				lockdep_is_held(&macvtap_lock)) == q)
+ 			return i;
+ 	}
+ 
+-- 
+1.7.7
+

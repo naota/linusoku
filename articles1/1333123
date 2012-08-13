@@ -1,0 +1,129 @@
+Path: news.gmane.org!not-for-mail
+From: Masatake YAMATO <yamato@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.bluez.kernel
+Subject: [PATCH v5 6/8] Bluetooth: Added /proc/net/l2cap via
+ bt_procfs_init()
+Date: Thu, 26 Jul 2012 01:29:25 +0900 (JST)
+Organization: Red Hat Japan, Inc.
+Lines: 75
+Approved: news@gmane.org
+Message-ID: <20120726.012925.677562835221928940.yamato@redhat.com>
+References: <20120716.222018.2029110835026223294.yamato@redhat.com>
+	<20120725001214.GP20029@joana>
+	<20120725003507.GR20029@joana>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343233783 5711 80.91.229.3 (25 Jul 2012 16:29:43 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 16:29:43 +0000 (UTC)
+Cc: andrei.emeltchenko.news@gmail.com, linux-kernel@vger.kernel.org,
+	linux-bluetooth@vger.kernel.org
+To: gustavo@padovan.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 18:29:42 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su4Sx-0000M1-N5
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 18:29:40 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756337Ab2GYQ3c (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 12:29:32 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:64621 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753922Ab2GYQ3b (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 12:29:31 -0400
+Original-Received: from int-mx11.intmail.prod.int.phx2.redhat.com (int-mx11.intmail.prod.int.phx2.redhat.com [10.5.11.24])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6PGTTFc004595
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Wed, 25 Jul 2012 12:29:29 -0400
+Original-Received: from localhost (vpn-237-27.phx2.redhat.com [10.3.237.27])
+	by int-mx11.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6PGTQdX007724;
+	Wed, 25 Jul 2012 12:29:27 -0400
+In-Reply-To: <20120725003507.GR20029@joana>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.24
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333123 gmane.linux.bluez.kernel:27763
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333123>
+
+Added /proc/net/l2cap via bt_procfs_init().
+
+Signed-off-by: Masatake YAMATO <yamato@redhat.com>
+---
+ net/bluetooth/l2cap_sock.c |   20 ++++++++++++++++++--
+ 1 file changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/net/bluetooth/l2cap_sock.c b/net/bluetooth/l2cap_sock.c
+index a4bb27e..04bd647 100644
+--- a/net/bluetooth/l2cap_sock.c
++++ b/net/bluetooth/l2cap_sock.c
+@@ -34,6 +34,10 @@
+ #include <net/bluetooth/l2cap.h>
+ #include <net/bluetooth/smp.h>
+ 
++static struct bt_sock_list l2cap_sk_list = {
++	.lock = __RW_LOCK_UNLOCKED(l2cap_sk_list.lock)
++};
++
+ static const struct proto_ops l2cap_sock_ops;
+ static void l2cap_sock_init(struct sock *sk, struct sock *parent);
+ static struct sock *l2cap_sock_alloc(struct net *net, struct socket *sock, int proto, gfp_t prio);
+@@ -886,6 +890,8 @@ static int l2cap_sock_release(struct socket *sock)
+ 	if (!sk)
+ 		return 0;
+ 
++	bt_sock_unlink(&l2cap_sk_list, sk);
++
+ 	err = l2cap_sock_shutdown(sock, 2);
+ 
+ 	sock_orphan(sk);
+@@ -1210,6 +1216,7 @@ static int l2cap_sock_create(struct net *net, struct socket *sock, int protocol,
+ 		return -ENOMEM;
+ 
+ 	l2cap_sock_init(sk, NULL);
++	bt_sock_link(&l2cap_sk_list, sk);
+ 	return 0;
+ }
+ 
+@@ -1248,21 +1255,30 @@ int __init l2cap_init_sockets(void)
+ 		return err;
+ 
+ 	err = bt_sock_register(BTPROTO_L2CAP, &l2cap_sock_family_ops);
+-	if (err < 0)
++	if (err < 0) {
++		BT_ERR("L2CAP socket registration failed");
+ 		goto error;
++	}
++
++	err = bt_procfs_init(THIS_MODULE, &init_net, "l2cap", &l2cap_sk_list, NULL);
++	if (err < 0) {
++		BT_ERR("Failed to create L2CAP proc file");
++		bt_sock_unregister(BTPROTO_L2CAP);
++		goto error;
++	}
+ 
+ 	BT_INFO("L2CAP socket layer initialized");
+ 
+ 	return 0;
+ 
+ error:
+-	BT_ERR("L2CAP socket registration failed");
+ 	proto_unregister(&l2cap_proto);
+ 	return err;
+ }
+ 
+ void l2cap_cleanup_sockets(void)
+ {
++	bt_procfs_cleanup(&init_net, "l2cap");
+ 	if (bt_sock_unregister(BTPROTO_L2CAP) < 0)
+ 		BT_ERR("L2CAP socket unregistration failed");
+ 
+-- 
+1.7.10.4
+

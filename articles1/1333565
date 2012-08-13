@@ -1,0 +1,120 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton@redhat.com>
+Newsgroups: gmane.linux.file-systems,gmane.linux.redhat.security.audit,gmane.linux.kernel
+Subject: [PATCH v5 7/9] audit: make audit_compare_dname_path use parent_len helper
+Date: Thu, 26 Jul 2012 07:21:11 -0400
+Lines: 59
+Approved: news@gmane.org
+Message-ID: <1343301673-10642-8-git-send-email-jlayton@redhat.com>
+References: <1343301673-10642-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343301766 9388 80.91.229.3 (26 Jul 2012 11:22:46 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 11:22:46 +0000 (UTC)
+Cc: linux-audit@redhat.com, linux-fsdevel@vger.kernel.org,
+	linux-kernel@vger.kernel.org
+To: eparis@redhat.com, viro@zeniv.linux.org.uk
+Original-X-From: linux-fsdevel-owner@vger.kernel.org Thu Jul 26 13:22:45 2012
+Return-path: <linux-fsdevel-owner@vger.kernel.org>
+Envelope-to: lnx-linux-fsdevel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-fsdevel-owner@vger.kernel.org>)
+	id 1SuM9S-0001Rj-Pp
+	for lnx-linux-fsdevel@plane.gmane.org; Thu, 26 Jul 2012 13:22:43 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752642Ab2GZLWf (ORCPT <rfc822;lnx-linux-fsdevel@m.gmane.org>);
+	Thu, 26 Jul 2012 07:22:35 -0400
+Original-Received: from mail-yw0-f46.google.com ([209.85.213.46]:42185 "EHLO
+	mail-yw0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752591Ab2GZLV3 (ORCPT
+	<rfc822;linux-fsdevel@vger.kernel.org>);
+	Thu, 26 Jul 2012 07:21:29 -0400
+Original-Received: by mail-yw0-f46.google.com with SMTP id m54so1801341yhm.19
+        for <linux-fsdevel@vger.kernel.org>; Thu, 26 Jul 2012 04:21:29 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:x-gm-message-state;
+        bh=jO6kgFJYUV9gmU4LeNG1/m9EMm/UwgEbdck+hbcV9K8=;
+        b=LHT3iXeu8UllG6/0DogASqIuMw9lFz0puWOlP5TvCnPoOnuutvmHF06a3NcKX/COCe
+         aMSFs0F/IZ1Ve5vC315WK678iORN8hg1sUQw29/dBqhn1+XDQ+nqovHWmXzo9yoh/nVu
+         RANpIcLSQTzvN9lXo7eeXYUak9i7dxG1buN80sI+zv3EuMZxBcQZ5fzZItWlALYKoBDv
+         qb7kj7fSM5U9AK4ELo5sgkrvz8Gi/Qy2ybZwTZtn1JRxFML9ri5QrsbYz63wYBK31FSo
+         Hd5I7VWrEvu2EXfkhvNYKjU50XMdbrrp82nXuIsU2yRoy8WtFrVjkgdEgBCwECylKJJV
+         ZBVw==
+Original-Received: by 10.236.154.2 with SMTP id g2mr16879349yhk.29.1343301689143;
+        Thu, 26 Jul 2012 04:21:29 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-076-182-054-194.nc.res.rr.com. [76.182.54.194])
+        by mx.google.com with ESMTPS id e24sm41620099yhh.4.2012.07.26.04.21.27
+        (version=SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 04:21:28 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1343301673-10642-1-git-send-email-jlayton@redhat.com>
+X-Gm-Message-State: ALoCoQlqLZ7YI7TMgpVJRK2G++83uoy4GyD12Xzjp+EAAoGo0uNRrZdeUwFcQ/hxbJdb+SRFscxU
+Original-Sender: linux-fsdevel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-fsdevel.vger.kernel.org>
+X-Mailing-List: linux-fsdevel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.file-systems:66239 gmane.linux.redhat.security.audit:4342 gmane.linux.kernel:1333565
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333565>
+
+From: Eric Paris <eparis@redhat.com>
+
+Signed-off-by: Eric Paris <eparis@redhat.com>
+---
+ kernel/auditfilter.c | 27 +++++++--------------------
+ 1 file changed, 7 insertions(+), 20 deletions(-)
+
+diff --git a/kernel/auditfilter.c b/kernel/auditfilter.c
+index f9c48d0..f47ba18 100644
+--- a/kernel/auditfilter.c
++++ b/kernel/auditfilter.c
+@@ -1232,32 +1232,19 @@ int parent_len(const char *path)
+  * return of 0 indicates a match. */
+ int audit_compare_dname_path(const char *dname, const char *path)
+ {
+-	int dlen, plen;
++	int dlen, pathlen, parentlen;
+ 	const char *p;
+ 
+-	if (!dname || !path)
+-		return 1;
+-
+ 	dlen = strlen(dname);
+-	plen = strlen(path);
+-	if (plen < dlen)
++	pathlen = strlen(path);
++	if (pathlen < dlen)
+ 		return 1;
+ 
+-	/* disregard trailing slashes */
+-	p = path + plen - 1;
+-	while ((*p == '/') && (p > path))
+-		p--;
+-
+-	/* find last path component */
+-	p = p - dlen + 1;
+-	if (p < path)
++	parentlen = parent_len(path);
++	if (pathlen - parentlen != dlen)
+ 		return 1;
+-	else if (p > path) {
+-		if (*--p != '/')
+-			return 1;
+-		else
+-			p++;
+-	}
++
++	p = path + parentlen;
+ 
+ 	return strncmp(p, dname, dlen);
+ }
+-- 
+1.7.11.2
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-fsdevel" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

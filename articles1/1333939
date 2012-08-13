@@ -1,0 +1,119 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 36/40] mm: vmscan: convert global reclaim to per-memcg LRU lists
+Date: Thu, 26 Jul 2012 14:29:54 -0700
+Lines: 55
+Approved: news@gmane.org
+Message-ID: <20120726211414.464540343@linuxfoundation.org>
+References: <20120726211424.GA7709@kroah.com>
+ <20120726211411.164006056@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343338373 10803 80.91.229.3 (26 Jul 2012 21:32:53 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 21:32:53 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 23:32:50 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuVfr-0006sC-2H
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 23:32:47 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753779Ab2GZVcO (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 17:32:14 -0400
+Original-Received: from mail-yx0-f174.google.com ([209.85.213.174]:58435 "EHLO
+	mail-yx0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753746Ab2GZVcL (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 17:32:11 -0400
+Original-Received: by mail-yx0-f174.google.com with SMTP id l2so2513141yen.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 14:32:10 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=4W6zDBcnCp+g8zC6hRXSPwYcGzLfIltltRCBaIxEUHs=;
+        b=RW5eyR4j3jFeSF4xbgJuDPk6ncuozQAFvH7wpWfcm2Zr0LennGGBTkHsOOPXp64Lr5
+         W3CKgL2m1XoPAEmdmYCqQ9AAAQTY/HNpgj70CnupMS/8whi3SDmTA5MjF8ObJ3q/Sa05
+         YwK99wqfPyHPQWbNr+o6eRPZUN1GalXYw1pAEx4VotzMIsm9o7Pcz4h46EC9aEQayq3F
+         2g22b3fizHc4CJrXtzFXLKo3jIBk7IwWvPV98vPnwauCBn/9xr/SDwF8Q7vULGfB2H9b
+         q/yqoLtfr/6fcJjm6LAeGyhokIO+M9/MlZr8XNqE8SEqUTySqryz/HNc7lZhDvrSQkQR
+         qK9g==
+Original-Received: by 10.66.77.169 with SMTP id t9mr379375paw.70.1343338330429;
+        Thu, 26 Jul 2012 14:32:10 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id oa5sm440900pbb.14.2012.07.26.14.32.08
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 14:32:09 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120726211411.164006056@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQnBMFy9gdO+NLOXDdteS7XWY1TQbLlMrtWls0y6jSHUbe9wyRjK+MXEnN3HJeCMU4gHIbKI
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333939 gmane.linux.kernel.stable:28877
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333939>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Johannes Weiner <jweiner@redhat.com>
+
+commit b95a2f2d486d0d768a92879c023a03757b9c7e58 upstream - WARNING: this is a substitute patch.
+
+Stable note: Not tracked in Bugzilla. This is a partial backport of an
+	upstream commit addressing a completely different issue
+	that accidentally contained an important fix. The workload
+	this patch helps was memcached when IO is started in the
+	background. memcached should stay resident but without this patch
+	it gets swapped. Sometimes this manifests as a drop in throughput
+	but mostly it was observed through /proc/vmstat.
+
+Commit [246e87a9: memcg: fix get_scan_count() for small targets] was meant
+to fix a problem whereby small scan targets on memcg were ignored causing
+priority to raise too sharply. It forced scanning to take place if the
+target was small, memcg or kswapd.
+
+>From the time it was introduced it caused excessive reclaim by kswapd
+with workloads being pushed to swap that previously would have stayed
+resident. This was accidentally fixed in commit [b95a2f2d: mm: vmscan:
+convert global reclaim to per-memcg LRU lists] by making it harder for
+kswapd to force scan small targets but that patchset is not suitable for
+backporting. This was later changed again by commit [90126375: mm/vmscan:
+push lruvec pointer into get_scan_count()] into a format that looks
+like it would be a straight-forward backport but there is a subtle
+difference due to the use of lruvecs.
+
+The impact of the accidental fix is to make it harder for kswapd to force
+scan small targets by taking zone->all_unreclaimable into account. This
+patch is the closest equivalent available based on what is backported.
+
+---
+ mm/vmscan.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -1850,7 +1850,8 @@ static void get_scan_count(struct zone *
+ 	unsigned long nr_force_scan[2];
+ 
+ 	/* kswapd does zone balancing and needs to scan this zone */
+-	if (scanning_global_lru(sc) && current_is_kswapd())
++	if (scanning_global_lru(sc) && current_is_kswapd() &&
++	    zone->all_unreclaimable)
+ 		force_scan = true;
+ 	/* memcg may have small limit and need to avoid priority drop */
+ 	if (!scanning_global_lru(sc))
+
+

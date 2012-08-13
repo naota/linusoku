@@ -1,0 +1,158 @@
+Path: news.gmane.org!not-for-mail
+From: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.xen.devel
+Subject: [PATCH 3/6] xen/mmu: Recycle the Xen provided L4, L3, and L2 pages
+Date: Tue, 31 Jul 2012 10:43:21 -0400
+Lines: 100
+Approved: news@gmane.org
+Message-ID: <1343745804-28028-4-git-send-email-konrad.wilk@oracle.com>
+References: <1343745804-28028-1-git-send-email-konrad.wilk@oracle.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343746425 11748 80.91.229.3 (31 Jul 2012 14:53:45 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 14:53:45 +0000 (UTC)
+Cc: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+To: linux-kernel@vger.kernel.org, xen-devel@lists.xensource.com,
+	jbeulich@suse.com, stefano.stabellini@eu.citrix.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 16:53:43 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwDpN-0005ha-L0
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 16:53:41 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754756Ab2GaOxb (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 10:53:31 -0400
+Original-Received: from acsinet15.oracle.com ([141.146.126.227]:49491 "EHLO
+	acsinet15.oracle.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754311Ab2GaOx3 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 10:53:29 -0400
+Original-Received: from acsinet22.oracle.com (acsinet22.oracle.com [141.146.126.238])
+	by acsinet15.oracle.com (Sentrion-MTA-4.2.2/Sentrion-MTA-4.2.2) with ESMTP id q6VEqQfJ012448
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Tue, 31 Jul 2012 14:52:27 GMT
+Original-Received: from acsmt358.oracle.com (acsmt358.oracle.com [141.146.40.158])
+	by acsinet22.oracle.com (8.14.4+Sun/8.14.4) with ESMTP id q6VEqQoU018453
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Tue, 31 Jul 2012 14:52:26 GMT
+Original-Received: from abhmt104.oracle.com (abhmt104.oracle.com [141.146.116.56])
+	by acsmt358.oracle.com (8.12.11.20060308/8.12.11) with ESMTP id q6VEqQRx027063;
+	Tue, 31 Jul 2012 09:52:26 -0500
+Original-Received: from phenom.dumpdata.com (/209.6.85.33)
+	by default (Oracle Beehive Gateway v4.0)
+	with ESMTP ; Tue, 31 Jul 2012 07:52:25 -0700
+Original-Received: by phenom.dumpdata.com (Postfix, from userid 1000)
+	id C81CD402BE; Tue, 31 Jul 2012 10:43:25 -0400 (EDT)
+X-Mailer: git-send-email 1.7.7.6
+In-Reply-To: <1343745804-28028-1-git-send-email-konrad.wilk@oracle.com>
+X-Source-IP: acsinet22.oracle.com [141.146.126.238]
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335805 gmane.comp.emulators.xen.devel:135988
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335805>
+
+As we are not using them. We end up only using the L1 pagetables
+and grafting those to our page-tables.
+
+[v1: Per Stefano's suggestion squashed two commits]
+[v2: Per Stefano's suggestion simplified loop]
+Signed-off-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+---
+ arch/x86/xen/mmu.c |   40 +++++++++++++++++++++++++++++++++-------
+ 1 files changed, 33 insertions(+), 7 deletions(-)
+
+diff --git a/arch/x86/xen/mmu.c b/arch/x86/xen/mmu.c
+index a59070b..de4b8fd 100644
+--- a/arch/x86/xen/mmu.c
++++ b/arch/x86/xen/mmu.c
+@@ -1708,7 +1708,20 @@ static void convert_pfn_mfn(void *v)
+ 	for (i = 0; i < PTRS_PER_PTE; i++)
+ 		pte[i] = xen_make_pte(pte[i].pte);
+ }
+-
++static __init check_pt_base(unsigned long *pt_base, unsigned long *pt_end,
++			    unsigned long addr)
++{
++	if (pt_base == PFN_DOWN(__pa(addr))) {
++		set_page_prot((void *)addr, PAGE_KERNEL);
++		clear_page((void *)addr);
++		*pt_base++;
++	}
++	if (pt_end == PFN_DOWN(__pa(addr))) {
++		set_page_prot((void *)addr, PAGE_KERNEL);
++		clear_page((void *)addr);
++		*pt_end--;
++	}
++}
+ /*
+  * Set up the initial kernel pagetable.
+  *
+@@ -1724,6 +1737,9 @@ void __init xen_setup_kernel_pagetable(pgd_t *pgd, unsigned long max_pfn)
+ {
+ 	pud_t *l3;
+ 	pmd_t *l2;
++	unsigned long addr[3];
++	unsigned long pt_base, pt_end;
++	unsigned i;
+ 
+ 	/* max_pfn_mapped is the last pfn mapped in the initial memory
+ 	 * mappings. Considering that on Xen after the kernel mappings we
+@@ -1731,6 +1747,9 @@ void __init xen_setup_kernel_pagetable(pgd_t *pgd, unsigned long max_pfn)
+ 	 * set max_pfn_mapped to the last real pfn mapped. */
+ 	max_pfn_mapped = PFN_DOWN(__pa(xen_start_info->mfn_list));
+ 
++	pt_base = PFN_DOWN(__pa(xen_start_info->pt_base));
++	pt_end = PFN_DOWN(__pa(xen_start_info->pt_base + (xen_start_info->nr_pt_frames * PAGE_SIZE)));
++
+ 	/* Zap identity mapping */
+ 	init_level4_pgt[0] = __pgd(0);
+ 
+@@ -1749,6 +1768,9 @@ void __init xen_setup_kernel_pagetable(pgd_t *pgd, unsigned long max_pfn)
+ 	l3 = m2v(pgd[pgd_index(__START_KERNEL_map)].pgd);
+ 	l2 = m2v(l3[pud_index(__START_KERNEL_map)].pud);
+ 
++	addr[0] = (unsigned long)pgd;
++	addr[1] = (unsigned long)l3;
++	addr[2] = (unsigned long)l2;
+ 	/* Graft it onto L4[272][0]. Note that we creating an aliasing problem:
+ 	 * Both L4[272][0] and L4[511][511] have entries that point to the same
+ 	 * L2 (PMD) tables. Meaning that if you modify it in __va space
+@@ -1782,20 +1804,24 @@ void __init xen_setup_kernel_pagetable(pgd_t *pgd, unsigned long max_pfn)
+ 	/* Unpin Xen-provided one */
+ 	pin_pagetable_pfn(MMUEXT_UNPIN_TABLE, PFN_DOWN(__pa(pgd)));
+ 
+-	/* Switch over */
+-	pgd = init_level4_pgt;
+-
+ 	/*
+ 	 * At this stage there can be no user pgd, and no page
+ 	 * structure to attach it to, so make sure we just set kernel
+ 	 * pgd.
+ 	 */
+ 	xen_mc_batch();
+-	__xen_write_cr3(true, __pa(pgd));
++	__xen_write_cr3(true, __pa(init_level4_pgt));
+ 	xen_mc_issue(PARAVIRT_LAZY_CPU);
+ 
+-	memblock_reserve(__pa(xen_start_info->pt_base),
+-			 xen_start_info->nr_pt_frames * PAGE_SIZE);
++	/* We can't that easily rip out L3 and L2, as the Xen pagetables are
++	 * set out this way: [L4], [L1], [L2], [L3], [L1], [L1] ...  for
++	 * the initial domain. For guests using the toolstack, they are in:
++	 * [L4], [L3], [L2], [L1], [L1], order .. */
++	for (i = 0; i < ARRAY_SIZE(addr); i++)
++		check_pt_base(&pt_base, &pt_end, addr[i]);
++
++	/* Our (by three pages) smaller Xen pagetable that we are using */
++	memblock_reserve(PFN_PHYS(pt_base), (pt_end - pt_base) * PAGE_SIZE);
+ }
+ #else	/* !CONFIG_X86_64 */
+ static RESERVE_BRK_ARRAY(pmd_t, initial_kernel_pmd, PTRS_PER_PMD);
+-- 
+1.7.7.6
+

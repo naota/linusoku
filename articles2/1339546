@@ -1,0 +1,114 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 28/49] bnx2: Fix bug in bnx2_free_tx_skbs().
+Date: Tue,  7 Aug 2012 15:44:46 -0700
+Lines: 48
+Approved: news@gmane.org
+Message-ID: <20120807222029.403713301@linuxfoundation.org>
+References: <20120807222026.848194739@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344379666 21631 80.91.229.3 (7 Aug 2012 22:47:46 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:47:46 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Zongyun Lai <zlai@vmware.com>,
+	Jeffrey Huang <huangjw@broadcom.com>,
+	Michael Chan <mchan@broadcom.com>,
+	"David S. Miller" <davem@davemloft.net>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:47:44 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysYx-0004yk-DU
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:47:43 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1031229Ab2HGWq4 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:46:56 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:60358 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1031215Ab2HGWqw (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:46:52 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so370774pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:46:52 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=+pq6YIns1lqACjRb5rk3Xx8v0eszmktH/uPNqI/bN0U=;
+        b=ca2hBfKA8inh3fqzA0ujlQv/QvAI7wFroUCmMyiB+s5dWbivY6rolB/VhOpfvBJpxW
+         5T4dvxM2YVEgeB8uhewsY/1JlULFy80QSWyFzzyc22EHYrrD1+tuE9l7foyv6KtxuAfx
+         wePpFd6ptL8AwHUfIt3hVOHr41cLFA5pvMMDNyZFyxqNcDYhqI/ZQWVPMxzzsdDxS7Go
+         55vB/NjkCnUNsbzoZSHxLl1+z3DhfgJYsfpZf0JGmKrC64l3JebegAECFPalqeZLG0u5
+         tUYagZvYlFUh+Q58IqQ9Lm05kuvgt33buvQJO0tiyLREhFu3Cj7PcNNsbG2jrqy4zXaE
+         g+EQ==
+Original-Received: by 10.68.236.4 with SMTP id uq4mr31153899pbc.158.1344379611895;
+        Tue, 07 Aug 2012 15:46:51 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id oj8sm8561863pbb.54.2012.08.07.15.46.49
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:46:51 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222026.848194739@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQm82frOqkSTIOKHbYN1Qg4NnTacb/6buiN6d6M6Iovqgr8LPiYEYJMf0ajhazd+cT2z13wi
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339546 gmane.linux.kernel.stable:29381
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339546>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+
+From: Michael Chan <mchan@broadcom.com>
+
+[ Upstream commit c1f5163de417dab01fa9daaf09a74bbb19303f3c ]
+
+In rare cases, bnx2x_free_tx_skbs() can unmap the wrong DMA address
+when it gets to the last entry of the tx ring.  We were not using
+the proper macro to skip the last entry when advancing the tx index.
+
+Reported-by: Zongyun Lai <zlai@vmware.com>
+Reviewed-by: Jeffrey Huang <huangjw@broadcom.com>
+Signed-off-by: Michael Chan <mchan@broadcom.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/net/bnx2.c |    6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+--- a/drivers/net/bnx2.c
++++ b/drivers/net/bnx2.c
+@@ -5310,7 +5310,7 @@ bnx2_free_tx_skbs(struct bnx2 *bp)
+ 			int k, last;
+ 
+ 			if (skb == NULL) {
+-				j++;
++				j = NEXT_TX_BD(j);
+ 				continue;
+ 			}
+ 
+@@ -5322,8 +5322,8 @@ bnx2_free_tx_skbs(struct bnx2 *bp)
+ 			tx_buf->skb = NULL;
+ 
+ 			last = tx_buf->nr_frags;
+-			j++;
+-			for (k = 0; k < last; k++, j++) {
++			j = NEXT_TX_BD(j);
++			for (k = 0; k < last; k++, j = NEXT_TX_BD(j)) {
+ 				tx_buf = &txr->tx_buf_ring[TX_RING_IDX(j)];
+ 				dma_unmap_page(&bp->pdev->dev,
+ 					dma_unmap_addr(tx_buf, mapping),
+
+

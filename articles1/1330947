@@ -1,0 +1,94 @@
+Path: news.gmane.org!not-for-mail
+From: Tejun Heo <tj@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCHSET] workqueue: reimplement CPU hotplug to keep idle
+ workers
+Date: Fri, 20 Jul 2012 09:52:13 -0700
+Lines: 29
+Approved: news@gmane.org
+Message-ID: <20120720165213.GD32763@google.com>
+References: <1342545149-3515-1-git-send-email-tj@kernel.org>
+ <1342802391.2583.11.camel@twins>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1342803148 17793 80.91.229.3 (20 Jul 2012 16:52:28 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 16:52:28 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, torvalds@linux-foundation.org,
+	tglx@linutronix.de, linux-pm@vger.kernel.org
+To: Peter Zijlstra <peterz@infradead.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 18:52:28 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsGRH-00068A-Nw
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 18:52:28 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753074Ab2GTQwU (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 12:52:20 -0400
+Original-Received: from mail-gg0-f174.google.com ([209.85.161.174]:51916 "EHLO
+	mail-gg0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752890Ab2GTQwS (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 12:52:18 -0400
+Original-Received: by gglu4 with SMTP id u4so4188302ggl.19
+        for <multiple recipients>; Fri, 20 Jul 2012 09:52:17 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:date:from:to:cc:subject:message-id:references:mime-version
+         :content-type:content-disposition:in-reply-to:user-agent;
+        bh=no1SzMeQKd4R6Kzu8Dn6BvBPrvi+A8bWAAGndQibMZA=;
+        b=Yeg4UfBbiYbKrche/oo5CrYIIdlcX9kWoDGgyKkRWb49Kbbef+Bwn2k6IAqjaXugXd
+         bkPWof30qLuW6GT9Btlin6xQNvM8ZRDIwzVjuvMDGoYGiVhJicKLPKYI9sW79jyktLLC
+         dU/AtOnZX0vpn4Dw1604vcNkgloWzJknPSMV8LcNNZv8y3aZh7Y1c26D3utyjH18t64o
+         6e62Kew/AWxlpcaFANtkoecJw05LxMLRS7mgArUhjKO60ubl8OqrBATAvoB7y6OWLtzW
+         ilg0qPhx1V/aondaI3AonYjETbkzTUzHEv138GLdA0wrJ3wWYSZpl2d7WJbgIWS7eyzh
+         2Flg==
+Original-Received: by 10.66.76.227 with SMTP id n3mr12680821paw.53.1342803137505;
+        Fri, 20 Jul 2012 09:52:17 -0700 (PDT)
+Original-Received: from google.com (wtj.mtv.corp.google.com [172.18.110.84])
+        by mx.google.com with ESMTPS id wi6sm4281706pbc.35.2012.07.20.09.52.15
+        (version=SSLv3 cipher=OTHER);
+        Fri, 20 Jul 2012 09:52:16 -0700 (PDT)
+Content-Disposition: inline
+In-Reply-To: <1342802391.2583.11.camel@twins>
+User-Agent: Mutt/1.5.20 (2009-06-14)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330947
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330947>
+
+Hello, Peter.
+
+On Fri, Jul 20, 2012 at 06:39:51PM +0200, Peter Zijlstra wrote:
+> On Tue, 2012-07-17 at 10:12 -0700, Tejun Heo wrote:
+> > Currently, workqueue destroys all workers for offline CPUs unless
+> > there are lingering work items. 
+> 
+> _that_ is the root of all ugly in that thing. I still find it utterly
+> insane you can create 'per-cpu' workqueues and then violate the per-cpu
+> property with hotplug and get your work ran on a different CPU.
+
+Let's talk about this part in the other reply you made.
+
+> It should be a hard error to use queue_work_on() and then run the work
+> on a different cpu. Yet somehow this isn't so.
+
+Ooh, yeah, I agree.  That's next on the wq to-do list.  The problem is
+that queue_work() is implemented in terms of queue_work_on().  In most
+cases, the local binding serves as locality optimization than anything
+else.  There are use cases where affinity is required for correctness.
+The assumption was that they should flush during CPU_DOWN but it
+probably will be much better to require users which need CPU affinity
+to always use queue_work_on() - instead of implicit local affinity
+from queue_work() - and flush them automatically from wq callback.
+
+Thanks.
+
+-- 
+tejun

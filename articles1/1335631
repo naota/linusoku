@@ -1,0 +1,87 @@
+Path: news.gmane.org!not-for-mail
+From: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.xen.devel
+Subject: [PATCH 3/3] x86: Let extend_brk return a NULL pointer instead of just BUG_ON.
+Date: Tue, 31 Jul 2012 06:42:56 -0400
+Lines: 29
+Approved: news@gmane.org
+Message-ID: <1343731376-20658-4-git-send-email-konrad.wilk@oracle.com>
+References: <1343731376-20658-1-git-send-email-konrad.wilk@oracle.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343731942 17201 80.91.229.3 (31 Jul 2012 10:52:22 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 10:52:22 +0000 (UTC)
+Cc: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+To: linux-kernel@vger.kernel.org, xen-devel@lists.xensource.com,
+	Ian.Campbell@citrix.com, hpa@zytor.com, x86@kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 12:52:21 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwA3o-0000Fo-6r
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 12:52:20 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755946Ab2GaKwJ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 06:52:09 -0400
+Original-Received: from acsinet15.oracle.com ([141.146.126.227]:40518 "EHLO
+	acsinet15.oracle.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755495Ab2GaKwG (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 06:52:06 -0400
+Original-Received: from ucsinet22.oracle.com (ucsinet22.oracle.com [156.151.31.94])
+	by acsinet15.oracle.com (Sentrion-MTA-4.2.2/Sentrion-MTA-4.2.2) with ESMTP id q6VApxg7019734
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Tue, 31 Jul 2012 10:52:00 GMT
+Original-Received: from acsmt356.oracle.com (acsmt356.oracle.com [141.146.40.156])
+	by ucsinet22.oracle.com (8.14.4+Sun/8.14.4) with ESMTP id q6VApwMf010126
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Tue, 31 Jul 2012 10:51:59 GMT
+Original-Received: from abhmt113.oracle.com (abhmt113.oracle.com [141.146.116.65])
+	by acsmt356.oracle.com (8.12.11.20060308/8.12.11) with ESMTP id q6VApwZb005194;
+	Tue, 31 Jul 2012 05:51:58 -0500
+Original-Received: from phenom.dumpdata.com (/209.6.85.33)
+	by default (Oracle Beehive Gateway v4.0)
+	with ESMTP ; Tue, 31 Jul 2012 03:51:57 -0700
+Original-Received: by phenom.dumpdata.com (Postfix, from userid 1000)
+	id 94AD2402C1; Tue, 31 Jul 2012 06:42:57 -0400 (EDT)
+X-Mailer: git-send-email 1.7.7.6
+In-Reply-To: <1343731376-20658-1-git-send-email-konrad.wilk@oracle.com>
+X-Source-IP: ucsinet22.oracle.com [156.151.31.94]
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335631 gmane.comp.emulators.xen.devel:135937
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335631>
+
+The callers of this function (dmi_alloc) and the various
+Xen related ones can deal with a NULL pointer.
+
+Suggested-by: Ian Campbell <Ian.Campbell@citrix.com>
+Signed-off-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+---
+ arch/x86/kernel/setup.c |    5 +++--
+ 1 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/arch/x86/kernel/setup.c b/arch/x86/kernel/setup.c
+index 16be6dc..13d6c51 100644
+--- a/arch/x86/kernel/setup.c
++++ b/arch/x86/kernel/setup.c
+@@ -268,9 +268,10 @@ void * __init extend_brk(size_t size, size_t align)
+ 	BUG_ON(_brk_start == 0);
+ 	BUG_ON(align & mask);
+ 
+-	_brk_end = (_brk_end + mask) & ~mask;
+-	BUG_ON((char *)(_brk_end + size) > __brk_limit);
++	if ((char *)(((_brk_end + mask) & ~mask) + size) > __brk_limit)
++		return NULL;
+ 
++	_brk_end = (_brk_end + mask) & ~mask;
+ 	ret = (void *)_brk_end;
+ 	_brk_end += size;
+ 
+-- 
+1.7.7.6
+

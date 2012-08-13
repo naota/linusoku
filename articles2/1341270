@@ -1,0 +1,77 @@
+Path: news.gmane.org!not-for-mail
+From: Stanislav Kinsbursky <skinsbursky@parallels.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.nfs,gmane.linux.network,gmane.linux.openvz.devel
+Subject: [RFC PATCH 0/2] net: connect to UNIX sockets from specified root
+Date: Fri, 10 Aug 2012 16:57:23 +0400
+Lines: 30
+Approved: news@gmane.org
+Message-ID: <20120810125701.7115.71612.stgit@localhost.localdomain>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344603631 4099 80.91.229.3 (10 Aug 2012 13:00:31 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 13:00:31 +0000 (UTC)
+Cc: linux-nfs@vger.kernel.org, eric.dumazet@gmail.com,
+	xemul@parallels.com, netdev@vger.kernel.org,
+	linux-kernel@vger.kernel.org, bfields@fieldses.org,
+	viro@zeniv.linux.org.uk, tim.c.chen@linux.intel.com,
+	devel@openvz.org
+To: Trond.Myklebust@netapp.com, davem@davemloft.net
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 10 15:00:30 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzopH-0000tP-TC
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 10 Aug 2012 15:00:28 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756042Ab2HJNAP (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 10 Aug 2012 09:00:15 -0400
+Original-Received: from mailhub.sw.ru ([195.214.232.25]:45033 "EHLO relay.sw.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754489Ab2HJNAH (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 10 Aug 2012 09:00:07 -0400
+Original-Received: from localhost.localdomain ([10.30.21.131])
+	by relay.sw.ru (8.13.4/8.13.4) with ESMTP id q7ACxLI9012525;
+	Fri, 10 Aug 2012 16:59:21 +0400 (MSK)
+User-Agent: StGit/0.16
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341270 gmane.linux.nfs:51485 gmane.linux.network:239728 gmane.linux.openvz.devel:1977
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341270>
+
+Today, there is a problem in connecting of local SUNRPC thansports. These
+transports uses UNIX sockets and connection itself is done by rpciod
+workqueue.
+But UNIX sockets lookup is done in context of process file system root. I.e.
+all local thunsports are connecting in rpciod context.
+This works nice until we will try to mount NFS from process with other root -
+for example in container. This container can have it's own (nested) root and
+rcpbind process, listening on it's own unix sockets. But NFS mount attempt in
+this container will register new service (Lockd for example) in global rpcbind
+- not containers's one.
+
+This patch set introduces kernel connect helper for UNIX stream sockets and
+modifies unix_find_other() to be able to search from specified root.
+It also replaces generic socket connect call for local transports by new
+helper in SUNRPC layer.
+
+The following series implements...
+
+---
+
+Stanislav Kinsbursky (2):
+      unix sockets: add ability for search for peer from passed root
+      SUNRPC: connect local transports with unix_stream_connect_root() helper
+
+
+ include/net/af_unix.h |    2 ++
+ net/sunrpc/xprtsock.c |   28 +++++++++++++++++++++++++---
+ net/unix/af_unix.c    |   25 ++++++++++++++++++-------
+ 3 files changed, 45 insertions(+), 10 deletions(-)
+

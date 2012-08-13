@@ -1,0 +1,96 @@
+Path: news.gmane.org!not-for-mail
+From: Tejun Heo <tj@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCHSET] workqueue: reimplement CPU hotplug to keep idle
+ workers
+Date: Fri, 20 Jul 2012 10:43:21 -0700
+Lines: 27
+Approved: news@gmane.org
+Message-ID: <20120720174321.GH32763@google.com>
+References: <1342545149-3515-1-git-send-email-tj@kernel.org>
+ <1342802391.2583.11.camel@twins>
+ <20120720165213.GD32763@google.com>
+ <1342803700.2583.29.camel@twins>
+ <20120720170802.GF32763@google.com>
+ <1342804767.2583.40.camel@twins>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1342806221 10199 80.91.229.3 (20 Jul 2012 17:43:41 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 17:43:41 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, torvalds@linux-foundation.org,
+	tglx@linutronix.de, linux-pm@vger.kernel.org
+To: Peter Zijlstra <peterz@infradead.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 19:43:39 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsHEp-0002Ec-93
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 19:43:39 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752591Ab2GTRn2 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 13:43:28 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:42101 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751297Ab2GTRn0 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 13:43:26 -0400
+Original-Received: by pbbrp8 with SMTP id rp8so6468819pbb.19
+        for <multiple recipients>; Fri, 20 Jul 2012 10:43:26 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:date:from:to:cc:subject:message-id:references:mime-version
+         :content-type:content-disposition:in-reply-to:user-agent;
+        bh=XvgJ52YpVxpJ6cs+UjlVBzzMl4r8oeOrFag9wouk0jI=;
+        b=cN2kcypmIrWdUbYKN/7KyE8ugC5HEoWuX7GtPcT4hRMFqF+ZCkRwmn45ADV1sJYbTW
+         zczl0jekwN3JAoB4e2fFpAUKQaRkvi0lkJN2vRVr4xhkYkTieVuAmUQlTU8tuUk+KzcT
+         SxWvGoxUaOkDoBXZp/c8cY6OC3JFvVlc5dPTSzgD4ZKrs1zttGLGgLdLdAgs5ETKOwWB
+         n+ZCJ5cVPydp8Szj//i2kOb1fkVSTIsLJeFFHgVS2nHhnHH3BpgReqD8iMT6ipotDM8A
+         AIpgvQAmWoAeiObKKIxnZ3T8eEspTX8+B0iZxfmV4UYTUFKU+xOQk+9R2XRHI4D3eCw9
+         JUyg==
+Original-Received: by 10.68.219.162 with SMTP id pp2mr15547816pbc.85.1342806206058;
+        Fri, 20 Jul 2012 10:43:26 -0700 (PDT)
+Original-Received: from google.com (wtj.mtv.corp.google.com [172.18.110.84])
+        by mx.google.com with ESMTPS id ns5sm4357431pbb.26.2012.07.20.10.43.24
+        (version=SSLv3 cipher=OTHER);
+        Fri, 20 Jul 2012 10:43:25 -0700 (PDT)
+Content-Disposition: inline
+In-Reply-To: <1342804767.2583.40.camel@twins>
+User-Agent: Mutt/1.5.20 (2009-06-14)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330975
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330975>
+
+Hey,
+
+On Fri, Jul 20, 2012 at 07:19:27PM +0200, Peter Zijlstra wrote:
+> > Hmmm?  Not really.  We need to keep count of the ones which reqested
+> > fixed binding - ie. the ones which explicitly used queue_work_on() -
+> > and then flush on wq CPU_DOWN.  Then, we need to audit the current
+> > users which are using queue_work{_on}() + explicit FLUSH on CPU_DOWN
+> > and convert them.
+> 
+> No, that's the wrong way about. Just add another WQ_flag, so you can
+> tell which work-queues want sane semantics and those mucking about for
+> laughs, say WQ_NON_AFFINE.
+> 
+> Then those with sane semantics (!WQ_NON_AFFINE) get an explicit flush on
+> DOWN and don't need to muck about with detaching and re-attaching etc..
+
+Two things - 1. I'd prefer the CPU-affinity requirement to be explicit
+at the callsite.  2. To implement it the way you describe, we would
+have to implement per-cpu workqueue flush, which is possible but I
+don't wanna complicate flush_workqueue() implementation anymore than
+it already is.  It's a still a relatively cold exception path.  No
+need to complicate the usual path with it.
+
+Thanks.
+
+-- 
+tejun

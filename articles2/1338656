@@ -1,0 +1,187 @@
+Path: news.gmane.org!not-for-mail
+From: Sasha Levin <levinsasha928@gmail.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel,gmane.linux.network
+Subject: [RFC v3 6/7] tracepoint: use new hashtable implementation
+Date: Tue,  7 Aug 2012 02:45:16 +0200
+Lines: 100
+Approved: news@gmane.org
+Message-ID: <1344300317-23189-8-git-send-email-levinsasha928@gmail.com>
+References: <1344300317-23189-1-git-send-email-levinsasha928@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344300334 14390 80.91.229.3 (7 Aug 2012 00:45:34 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 00:45:34 +0000 (UTC)
+Cc: tj@kernel.org,
+	akpm@linux-foundation.org,
+	linux-kernel@vger.kernel.org,
+	linux-mm@kvack.org,
+	paul.gortmaker@windriver.com,
+	davem@davemloft.net,
+	rostedt@goodmis.org,
+	mingo@elte.hu,
+	ebiederm@xmission.com,
+	aarcange@redhat.com,
+	ericvh@gmail.com,
+	netdev@vger.kernel.org,
+	josh@joshtriplett.org,
+	eric.dumazet@gmail.com,
+	mathieu.desnoyers@efficios.com,
+	Sasha Levin <levinsasha928@gmail.com>
+To: torvalds@linux-foundation.org
+Original-X-From: owner-linux-mm@kvack.org Tue Aug 07 02:45:31 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SyXvK-00089V-Tu
+	for glkm-linux-mm-2@m.gmane.org; Tue, 07 Aug 2012 02:45:27 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 61E1A6B006E; Mon,  6 Aug 2012 20:45:25 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 40E826B0070; Mon,  6 Aug 2012 20:45:25 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 0174B6B0071; Mon,  6 Aug 2012 20:45:24 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx139.postini.com [74.125.245.139])
+	by kanga.kvack.org (Postfix) with SMTP id 083C66B006E
+	for <linux-mm@kvack.org>; Mon,  6 Aug 2012 20:45:23 -0400 (EDT)
+Original-Received: from mail-bk0-f41.google.com ([209.85.214.41]) (using TLSv1) by na3sys010amx139.postini.com ([74.125.244.10]) with SMTP;
+	Tue, 07 Aug 2012 00:45:24 GMT
+Original-Received: by mail-bk0-f41.google.com with SMTP id jc3so1661806bkc.14
+        for <linux-mm@kvack.org>; Mon, 06 Aug 2012 17:45:23 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=So4do9IJirPmrn8AeCmCiMrRSmAv4r3rTDmF6ib6wZs=;
+        b=wGsUxWkBbvoZC7HfgDq3lx8acGcwJZvnr29n9UXQdUx1DSTL3CXybwu7ffd3kBoM3J
+         h83TIWo78zCKE6iUTn0N7S6MMccxZ+dDTLLrlo1xjyBAKgT7PDoaiPMlkAr0Oq4UuyVC
+         lMwM9RdUQORhs82fb1klp7BhuHJe5q6M0IEe0k1ObCkzsTKTtBw6diVxYAFBd0VibUaR
+         eBA1qFZREHF/1oaDxsHmW/C4HDlQM4gfnuI58/KwSIQbfhxaq2fFZ/xBoIZ+KK5/Jfx/
+         YbA81S3/Wq0DqVqdlJ6v+/NpAJ4COHF01neU01hAB7KlJssULlDcMwSDi6Y/itCx3JV4
+         T7ew==
+Original-Received: by 10.204.153.10 with SMTP id i10mr4847983bkw.67.1344300323418;
+        Mon, 06 Aug 2012 17:45:23 -0700 (PDT)
+Original-Received: from localhost.localdomain (95-89-78-76-dynip.superkabel.de. [95.89.78.76])
+        by mx.google.com with ESMTPS id he8sm8120293bkc.3.2012.08.06.17.45.19
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 06 Aug 2012 17:45:22 -0700 (PDT)
+X-Mailer: git-send-email 1.7.8.6
+In-Reply-To: <1344300317-23189-1-git-send-email-levinsasha928@gmail.com>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:19.36065/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 1 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0100) s cv GT3 gt2 gt1 r p m c 
+X-pstn-addresses: from <levinsasha928@gmail.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83739 gmane.linux.kernel:1338656 gmane.linux.network:239310
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338656>
+
+Switch tracepoints to use the new hashtable implementation. This reduces the amount of
+generic unrelated code in the tracepoints.
+
+Signed-off-by: Sasha Levin <levinsasha928@gmail.com>
+---
+ kernel/tracepoint.c |   26 ++++++++++----------------
+ 1 files changed, 10 insertions(+), 16 deletions(-)
+
+diff --git a/kernel/tracepoint.c b/kernel/tracepoint.c
+index d96ba22..5a44949 100644
+--- a/kernel/tracepoint.c
++++ b/kernel/tracepoint.c
+@@ -26,6 +26,7 @@
+ #include <linux/slab.h>
+ #include <linux/sched.h>
+ #include <linux/static_key.h>
++#include <linux/hashtable.h>
+ 
+ extern struct tracepoint * const __start___tracepoints_ptrs[];
+ extern struct tracepoint * const __stop___tracepoints_ptrs[];
+@@ -49,8 +50,7 @@ static LIST_HEAD(tracepoint_module_list);
+  * Protected by tracepoints_mutex.
+  */
+ #define TRACEPOINT_HASH_BITS 6
+-#define TRACEPOINT_TABLE_SIZE (1 << TRACEPOINT_HASH_BITS)
+-static struct hlist_head tracepoint_table[TRACEPOINT_TABLE_SIZE];
++static DEFINE_HASHTABLE(tracepoint_table, TRACEPOINT_HASH_BITS);
+ 
+ /*
+  * Note about RCU :
+@@ -191,16 +191,16 @@ tracepoint_entry_remove_probe(struct tracepoint_entry *entry,
+  */
+ static struct tracepoint_entry *get_tracepoint(const char *name)
+ {
+-	struct hlist_head *head;
+ 	struct hlist_node *node;
+ 	struct tracepoint_entry *e;
+ 	u32 hash = jhash(name, strlen(name), 0);
+ 
+-	head = &tracepoint_table[hash & (TRACEPOINT_TABLE_SIZE - 1)];
+-	hlist_for_each_entry(e, node, head, hlist) {
++	hash_for_each_possible(tracepoint_table, e, TRACEPOINT_HASH_BITS,
++				node, hlist, hash) {
+ 		if (!strcmp(name, e->name))
+ 			return e;
+ 	}
++
+ 	return NULL;
+ }
+ 
+@@ -210,19 +210,13 @@ static struct tracepoint_entry *get_tracepoint(const char *name)
+  */
+ static struct tracepoint_entry *add_tracepoint(const char *name)
+ {
+-	struct hlist_head *head;
+-	struct hlist_node *node;
+ 	struct tracepoint_entry *e;
+ 	size_t name_len = strlen(name) + 1;
+ 	u32 hash = jhash(name, name_len-1, 0);
+ 
+-	head = &tracepoint_table[hash & (TRACEPOINT_TABLE_SIZE - 1)];
+-	hlist_for_each_entry(e, node, head, hlist) {
+-		if (!strcmp(name, e->name)) {
+-			printk(KERN_NOTICE
+-				"tracepoint %s busy\n", name);
+-			return ERR_PTR(-EEXIST);	/* Already there */
+-		}
++	if (get_tracepoint(name)) {
++		printk(KERN_NOTICE "tracepoint %s busy\n", name);
++		return ERR_PTR(-EEXIST);	/* Already there */
+ 	}
+ 	/*
+ 	 * Using kmalloc here to allocate a variable length element. Could
+@@ -234,7 +228,7 @@ static struct tracepoint_entry *add_tracepoint(const char *name)
+ 	memcpy(&e->name[0], name, name_len);
+ 	e->funcs = NULL;
+ 	e->refcount = 0;
+-	hlist_add_head(&e->hlist, head);
++	hash_add(tracepoint_table, TRACEPOINT_HASH_BITS, &e->hlist, hash);
+ 	return e;
+ }
+ 
+@@ -244,7 +238,7 @@ static struct tracepoint_entry *add_tracepoint(const char *name)
+  */
+ static inline void remove_tracepoint(struct tracepoint_entry *e)
+ {
+-	hlist_del(&e->hlist);
++	hash_del(&e->hlist);
+ 	kfree(e);
+ }
+ 
+-- 
+1.7.8.6
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

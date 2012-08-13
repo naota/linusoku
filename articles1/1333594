@@ -1,0 +1,101 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.file-systems,gmane.linux.nfs
+Subject: [PATCH v4 13/17] vfs: make do_unlinkat retry on ESTALE errors
+Date: Thu, 26 Jul 2012 07:55:16 -0400
+Lines: 39
+Approved: news@gmane.org
+Message-ID: <1343303720-11199-14-git-send-email-jlayton@redhat.com>
+References: <1343303720-11199-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343303858 26893 80.91.229.3 (26 Jul 2012 11:57:38 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 11:57:38 +0000 (UTC)
+Cc: linux-fsdevel@vger.kernel.org, linux-nfs@vger.kernel.org,
+	linux-kernel@vger.kernel.org, michael.brantley@deshaw.com,
+	hch@infradead.org, miklos@szeredi.hu, pstaubach@exagrid.com
+To: viro@ZenIV.linux.org.uk
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 13:57:37 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuMhE-0001Lr-Ti
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 13:57:37 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752745Ab2GZL4s (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 07:56:48 -0400
+Original-Received: from mail-gg0-f174.google.com ([209.85.161.174]:35576 "EHLO
+	mail-gg0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752321Ab2GZLzq (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 07:55:46 -0400
+Original-Received: by gglu4 with SMTP id u4so1821344ggl.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 04:55:46 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:x-gm-message-state;
+        bh=NMN6WzkxTIQtGhrgDwJ5GLYZ7PEzf1tFYkXPD9uSKwY=;
+        b=XyDBrK9zosIWOdsMk124KD/oG0hWJ7K7vKQH1AGxIztRO6tqNG0elKk6qU4DKzQyET
+         q16OEoAvTOiI5bV/T6RfvG9KM6wZ3Oyi8VWCSCvZCYJiPPwmsI6W2HVbLfq9A0BUZRB1
+         3h9vnUlTpq+GecgNjkQRxagwKQdum5rqRLGKJM2nbHrp6tE+EsJQB8EGTKHFH3t9OC3G
+         VwmrzN0AvzLxO/P4Q9hlwQzoN5VZjL2l7ioXsjBrIhhzD3fEuJQ4Ys5JKMv67WzM3wUz
+         n+oFCzHDW/klm94/MgPgD4XNQL1JI0RklTvfDHPYbpH9rbT6PPe1IZP9yKEpxdGvZZ36
+         JYPA==
+Original-Received: by 10.236.138.108 with SMTP id z72mr12272395yhi.63.1343303746020;
+        Thu, 26 Jul 2012 04:55:46 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-076-182-054-194.nc.res.rr.com. [76.182.54.194])
+        by mx.google.com with ESMTPS id l12sm4436364ank.2.2012.07.26.04.55.44
+        (version=SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 04:55:45 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1343303720-11199-1-git-send-email-jlayton@redhat.com>
+X-Gm-Message-State: ALoCoQme/EgZ2CZPSz7tD76ZoN9CjP+Muc0virhM1elbIndOuG7cH3iarxPP/gB6QbdbotLefRDV
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333594 gmane.linux.file-systems:66250 gmane.linux.nfs:51142
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333594>
+
+Signed-off-by: Jeff Layton <jlayton@redhat.com>
+---
+ fs/namei.c | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/fs/namei.c b/fs/namei.c
+index 09427f2..65e5177 100644
+--- a/fs/namei.c
++++ b/fs/namei.c
+@@ -3262,8 +3262,14 @@ static long do_unlinkat(int dfd, const char __user *pathname)
+ 	struct dentry *dentry;
+ 	struct nameidata nd;
+ 	struct inode *inode = NULL;
++	unsigned int try = 0;
++	unsigned int lookup_flags = LOOKUP_PARENT;
+ 
+-	error = user_path_parent(dfd, pathname, &nd, &name);
++	name = getname(pathname);
++	if (IS_ERR(name))
++		return PTR_ERR(name);
++retry:
++	error = do_path_lookup(dfd, name, lookup_flags, &nd);
+ 	if (error)
+ 		return error;
+ 
+@@ -3301,6 +3307,10 @@ exit3:
+ 		iput(inode);	/* truncate the inode here */
+ exit1:
+ 	path_put(&nd.path);
++	if (retry_estale(error, try++)) {
++		lookup_flags |= LOOKUP_REVAL;
++		goto retry;
++	}
+ 	putname(name);
+ 	return error;
+ 
+-- 
+1.7.11.2
+

@@ -1,0 +1,164 @@
+Path: news.gmane.org!not-for-mail
+From: Jiri Slaby <jslaby@suse.cz>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH v2 18/41] TTY: pty, switch to tty_alloc_driver
+Date: Wed,  8 Aug 2012 22:26:41 +0200
+Lines: 120
+Approved: news@gmane.org
+Message-ID: <1344457604-12823-1-git-send-email-jslaby@suse.cz>
+References: <1344368886-24033-1-git-send-email-jslaby@suse.cz>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344457667 22827 80.91.229.3 (8 Aug 2012 20:27:47 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 20:27:47 +0000 (UTC)
+Cc: alan@linux.intel.com, linux-kernel@vger.kernel.org,
+	jirislaby@gmail.com
+To: gregkh@linuxfoundation.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 22:27:47 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzCr3-0002CO-F2
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 22:27:45 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030837Ab2HHU1h (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 16:27:37 -0400
+Original-Received: from mail.pripojeni.net ([178.22.112.14]:60051 "EHLO
+	smtp.pripojeni.net" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1759218Ab2HHU0w (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 16:26:52 -0400
+Original-Received: from localhost.localdomain ([178.22.113.142])
+	by smtp.pripojeni.net (Kerio Connect 7.2.2);
+	Wed, 8 Aug 2012 22:26:46 +0200
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1344368886-24033-1-git-send-email-jslaby@suse.cz>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340297
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340297>
+
+Switch to the new driver allocation interface, as this is one of the
+special call-sites. Here, we need TTY_DRIVER_DYNAMIC_ALLOC to not
+allocate tty_driver->ports, cdevs and potentially other structures
+because we reserve too many lines in pty. Instead, it provides the
+tty_port<->tty_struct link in tty->ops->install already.
+
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+---
+ drivers/tty/pty.c          |   31 ++++++++++++++++++++-----------
+ include/linux/tty_driver.h |    4 ++++
+ 2 files changed, 24 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/tty/pty.c b/drivers/tty/pty.c
+index b726c8b..db7c6f9 100644
+--- a/drivers/tty/pty.c
++++ b/drivers/tty/pty.c
+@@ -443,11 +443,17 @@ static void __init legacy_pty_init(void)
+ 	if (legacy_count <= 0)
+ 		return;
+ 
+-	pty_driver = alloc_tty_driver(legacy_count);
++	pty_driver = tty_alloc_driver(legacy_count,
++			TTY_DRIVER_RESET_TERMIOS |
++			TTY_DRIVER_REAL_RAW |
++			TTY_DRIVER_DYNAMIC_ALLOC);
+ 	if (!pty_driver)
+ 		panic("Couldn't allocate pty driver");
+ 
+-	pty_slave_driver = alloc_tty_driver(legacy_count);
++	pty_slave_driver = tty_alloc_driver(legacy_count,
++			TTY_DRIVER_RESET_TERMIOS |
++			TTY_DRIVER_REAL_RAW |
++			TTY_DRIVER_DYNAMIC_ALLOC);
+ 	if (!pty_slave_driver)
+ 		panic("Couldn't allocate pty slave driver");
+ 
+@@ -464,7 +470,6 @@ static void __init legacy_pty_init(void)
+ 	pty_driver->init_termios.c_lflag = 0;
+ 	pty_driver->init_termios.c_ispeed = 38400;
+ 	pty_driver->init_termios.c_ospeed = 38400;
+-	pty_driver->flags = TTY_DRIVER_RESET_TERMIOS | TTY_DRIVER_REAL_RAW;
+ 	pty_driver->other = pty_slave_driver;
+ 	tty_set_operations(pty_driver, &master_pty_ops_bsd);
+ 
+@@ -478,8 +483,6 @@ static void __init legacy_pty_init(void)
+ 	pty_slave_driver->init_termios.c_cflag = B38400 | CS8 | CREAD;
+ 	pty_slave_driver->init_termios.c_ispeed = 38400;
+ 	pty_slave_driver->init_termios.c_ospeed = 38400;
+-	pty_slave_driver->flags = TTY_DRIVER_RESET_TERMIOS |
+-					TTY_DRIVER_REAL_RAW;
+ 	pty_slave_driver->other = pty_driver;
+ 	tty_set_operations(pty_slave_driver, &slave_pty_ops_bsd);
+ 
+@@ -670,10 +673,20 @@ static struct file_operations ptmx_fops;
+ 
+ static void __init unix98_pty_init(void)
+ {
+-	ptm_driver = alloc_tty_driver(NR_UNIX98_PTY_MAX);
++	ptm_driver = tty_alloc_driver(NR_UNIX98_PTY_MAX,
++			TTY_DRIVER_RESET_TERMIOS |
++			TTY_DRIVER_REAL_RAW |
++			TTY_DRIVER_DYNAMIC_DEV |
++			TTY_DRIVER_DEVPTS_MEM |
++			TTY_DRIVER_DYNAMIC_ALLOC);
+ 	if (!ptm_driver)
+ 		panic("Couldn't allocate Unix98 ptm driver");
+-	pts_driver = alloc_tty_driver(NR_UNIX98_PTY_MAX);
++	pts_driver = tty_alloc_driver(NR_UNIX98_PTY_MAX,
++			TTY_DRIVER_RESET_TERMIOS |
++			TTY_DRIVER_REAL_RAW |
++			TTY_DRIVER_DYNAMIC_DEV |
++			TTY_DRIVER_DEVPTS_MEM |
++			TTY_DRIVER_DYNAMIC_ALLOC);
+ 	if (!pts_driver)
+ 		panic("Couldn't allocate Unix98 pts driver");
+ 
+@@ -690,8 +703,6 @@ static void __init unix98_pty_init(void)
+ 	ptm_driver->init_termios.c_lflag = 0;
+ 	ptm_driver->init_termios.c_ispeed = 38400;
+ 	ptm_driver->init_termios.c_ospeed = 38400;
+-	ptm_driver->flags = TTY_DRIVER_RESET_TERMIOS | TTY_DRIVER_REAL_RAW |
+-		TTY_DRIVER_DYNAMIC_DEV | TTY_DRIVER_DEVPTS_MEM;
+ 	ptm_driver->other = pts_driver;
+ 	tty_set_operations(ptm_driver, &ptm_unix98_ops);
+ 
+@@ -705,8 +716,6 @@ static void __init unix98_pty_init(void)
+ 	pts_driver->init_termios.c_cflag = B38400 | CS8 | CREAD;
+ 	pts_driver->init_termios.c_ispeed = 38400;
+ 	pts_driver->init_termios.c_ospeed = 38400;
+-	pts_driver->flags = TTY_DRIVER_RESET_TERMIOS | TTY_DRIVER_REAL_RAW |
+-		TTY_DRIVER_DYNAMIC_DEV | TTY_DRIVER_DEVPTS_MEM;
+ 	pts_driver->other = ptm_driver;
+ 	tty_set_operations(pts_driver, &pty_unix98_ops);
+ 
+diff --git a/include/linux/tty_driver.h b/include/linux/tty_driver.h
+index 3adc362..1a85f00 100644
+--- a/include/linux/tty_driver.h
++++ b/include/linux/tty_driver.h
+@@ -391,6 +391,9 @@ static inline struct tty_driver *tty_driver_kref_get(struct tty_driver *d)
+  *	the requested timeout to the caller instead of using a simple
+  *	on/off interface.
+  *
++ * TTY_DRIVER_DYNAMIC_ALLOC -- do not allocate structures which are
++ *	needed per line for this driver as it would waste memory.
++ *	The driver will take care.
+  */
+ #define TTY_DRIVER_INSTALLED		0x0001
+ #define TTY_DRIVER_RESET_TERMIOS	0x0002
+@@ -398,6 +401,7 @@ static inline struct tty_driver *tty_driver_kref_get(struct tty_driver *d)
+ #define TTY_DRIVER_DYNAMIC_DEV		0x0008
+ #define TTY_DRIVER_DEVPTS_MEM		0x0010
+ #define TTY_DRIVER_HARDWARE_BREAK	0x0020
++#define TTY_DRIVER_DYNAMIC_ALLOC	0x0040
+ 
+ /* tty driver types */
+ #define TTY_DRIVER_TYPE_SYSTEM		0x0001
+-- 
+1.7.10.4
+
+

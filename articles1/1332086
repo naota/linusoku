@@ -1,0 +1,118 @@
+Path: news.gmane.org!not-for-mail
+From: Cyril Chemparathy <cyril@ti.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: [RFC 02/23] ARM: LPAE: use signed arithmetic for mask definitions
+Date: Mon, 23 Jul 2012 21:09:04 -0400
+Lines: 59
+Approved: news@gmane.org
+Message-ID: <1343092165-9470-3-git-send-email-cyril@ti.com>
+References: <1343092165-9470-1-git-send-email-cyril@ti.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1343092521 7568 80.91.229.3 (24 Jul 2012 01:15:21 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 01:15:21 +0000 (UTC)
+Cc: <linux-kernel@vger.kernel.org>, <nico@linaro.org>,
+	<will.deacon@arm.com>, <catalin.marinas@arm.com>,
+	Cyril Chemparathy <cyril@ti.com>,
+	Vitaly Andrianov <vitalya@ti.com>
+To: <linux-arm-kernel@lists.infradead.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 03:15:20 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StTiY-0000gA-8L
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 03:15:18 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755479Ab2GXBJz (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 21:09:55 -0400
+Original-Received: from comal.ext.ti.com ([198.47.26.152]:45805 "EHLO comal.ext.ti.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755259Ab2GXBJx (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 21:09:53 -0400
+Original-Received: from dlelxv30.itg.ti.com ([172.17.2.17])
+	by comal.ext.ti.com (8.13.7/8.13.7) with ESMTP id q6O19cpF022355;
+	Mon, 23 Jul 2012 20:09:38 -0500
+Original-Received: from DFLE72.ent.ti.com (dfle72.ent.ti.com [128.247.5.109])
+	by dlelxv30.itg.ti.com (8.13.8/8.13.8) with ESMTP id q6O19cSY010222;
+	Mon, 23 Jul 2012 20:09:38 -0500
+Original-Received: from dlelxv22.itg.ti.com (172.17.1.197) by dfle72.ent.ti.com
+ (128.247.5.109) with Microsoft SMTP Server id 14.1.323.3; Mon, 23 Jul 2012
+ 20:09:38 -0500
+Original-Received: from ares-ubuntu.am.dhcp.ti.com (ares-ubuntu.am.dhcp.ti.com
+ [158.218.103.17])	by dlelxv22.itg.ti.com (8.13.8/8.13.8) with ESMTP id
+ q6O19cpp024544;	Mon, 23 Jul 2012 20:09:38 -0500
+Original-Received: from a0875269 by ares-ubuntu.am.dhcp.ti.com with local (Exim 4.76)
+	(envelope-from <cyril@ti.com>)	id 1StTd3-0002Tw-RQ; Mon, 23 Jul 2012 21:09:37
+ -0400
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1343092165-9470-1-git-send-email-cyril@ti.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332086 gmane.linux.ports.arm.kernel:178516
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332086>
+
+This patch applies to PAGE_MASK, PMD_MASK, and PGDIR_MASK, where forcing
+unsigned long math truncates the mask at the 32-bits.  This clearly does bad
+things on PAE systems.
+
+This patch fixes this problem by defining these masks as signed quantities.
+We then rely on sign extension to do the right thing.
+
+Signed-off-by: Cyril Chemparathy <cyril@ti.com>
+Signed-off-by: Vitaly Andrianov <vitalya@ti.com>
+---
+ arch/arm/include/asm/page.h           |    7 ++++++-
+ arch/arm/include/asm/pgtable-3level.h |    6 +++---
+ 2 files changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm/include/asm/page.h b/arch/arm/include/asm/page.h
+index ecf9019..1c810d2 100644
+--- a/arch/arm/include/asm/page.h
++++ b/arch/arm/include/asm/page.h
+@@ -13,7 +13,12 @@
+ /* PAGE_SHIFT determines the page size */
+ #define PAGE_SHIFT		12
+ #define PAGE_SIZE		(_AC(1,UL) << PAGE_SHIFT)
+-#define PAGE_MASK		(~(PAGE_SIZE-1))
++
++/*
++ * We do not use PAGE_SIZE in the following because we rely on sign
++ * extension to appropriately extend upper bits for PAE systems
++ */
++#define PAGE_MASK		(~((1 << PAGE_SHIFT) - 1))
+ 
+ #ifndef __ASSEMBLY__
+ 
+diff --git a/arch/arm/include/asm/pgtable-3level.h b/arch/arm/include/asm/pgtable-3level.h
+index b249035..ae39d11 100644
+--- a/arch/arm/include/asm/pgtable-3level.h
++++ b/arch/arm/include/asm/pgtable-3level.h
+@@ -48,16 +48,16 @@
+ #define PMD_SHIFT		21
+ 
+ #define PMD_SIZE		(1UL << PMD_SHIFT)
+-#define PMD_MASK		(~(PMD_SIZE-1))
++#define PMD_MASK		(~((1 << PMD_SHIFT) - 1))
+ #define PGDIR_SIZE		(1UL << PGDIR_SHIFT)
+-#define PGDIR_MASK		(~(PGDIR_SIZE-1))
++#define PGDIR_MASK		(~((1 << PGDIR_SHIFT) - 1))
+ 
+ /*
+  * section address mask and size definitions.
+  */
+ #define SECTION_SHIFT		21
+ #define SECTION_SIZE		(1UL << SECTION_SHIFT)
+-#define SECTION_MASK		(~(SECTION_SIZE-1))
++#define SECTION_MASK		(~((1 << SECTION_SHIFT) - 1))
+ 
+ #define USER_PTRS_PER_PGD	(PAGE_OFFSET / PGDIR_SIZE)
+ 
+-- 
+1.7.9.5
+

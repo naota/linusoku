@@ -1,0 +1,118 @@
+Path: news.gmane.org!not-for-mail
+From: "H. Peter Anvin" <hpa@zytor.com>
+Newsgroups: gmane.linux.kernel.lsm,gmane.linux.kernel
+Subject: Re: [GIT PULL] New TPM driver, hwrng driver and fixes
+Date: Fri, 27 Jul 2012 15:09:17 -0700
+Lines: 63
+Approved: news@gmane.org
+Message-ID: <5013118D.2030601@zytor.com>
+References: <20120727181436.GA6271@linux.vnet.ibm.com> <5012DCF9.7010408@zytor.com> <20120727203000.GA22684@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343426988 12149 80.91.229.3 (27 Jul 2012 22:09:48 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 22:09:48 +0000 (UTC)
+Cc: James Morris <jmorris@namei.org>, linux-kernel@vger.kernel.org,
+	linux-security-module@vger.kernel.org,
+	tpmdd-devel@lists.sourceforge.net,
+	Peter Huewe <peter.huewe@infineon.com>,
+	Bryan Freed <bfreed@chromium.org>,
+	David Safford <safford@linux.vnet.ibm.com>
+To: Kent Yoder <key@linux.vnet.ibm.com>
+Original-X-From: linux-security-module-owner@vger.kernel.org Sat Jul 28 00:09:45 2012
+Return-path: <linux-security-module-owner@vger.kernel.org>
+Envelope-to: glkl-linux-security-module-2@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-security-module-owner@vger.kernel.org>)
+	id 1Susj7-0002AN-6a
+	for glkl-linux-security-module-2@plane.gmane.org; Sat, 28 Jul 2012 00:09:41 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752401Ab2G0WJj (ORCPT
+	<rfc822;glkl-linux-security-module-2@m.gmane.org>);
+	Fri, 27 Jul 2012 18:09:39 -0400
+Original-Received: from terminus.zytor.com ([198.137.202.10]:52523 "EHLO mail.zytor.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752125Ab2G0WJj (ORCPT
+	<rfc822;linux-security-module@vger.kernel.org>);
+	Fri, 27 Jul 2012 18:09:39 -0400
+Original-Received: from anacreon.sc.intel.com (fmdmzpr03-ext.fm.intel.com [192.55.54.38])
+	(authenticated bits=0)
+	by mail.zytor.com (8.14.5/8.14.5) with ESMTP id q6RM9MLF004509
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-CAMELLIA256-SHA bits=256 verify=NO);
+	Fri, 27 Jul 2012 15:09:22 -0700
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120605 Thunderbird/13.0
+In-Reply-To: <20120727203000.GA22684@linux.vnet.ibm.com>
+X-Enigmail-Version: 1.4.3
+Original-Sender: linux-security-module-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-security-module.vger.kernel.org>
+X-Mailing-List: linux-security-module@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel.lsm:16744 gmane.linux.kernel:1334517
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334517>
+
+On 07/27/2012 01:30 PM, Kent Yoder wrote:
+
+> +
+> +	do {
+> +		tpm_cmd.header.in = tpm_getrandom_header;
+> +		tpm_cmd.params.getrandom_in.num_bytes = cpu_to_be32(num_bytes);
+> +
+> +		err = transmit_cmd(chip, &tpm_cmd,
+> +				   TPM_GETRANDOM_RESULT_SIZE + num_bytes,
+> +				   "attempting get random");
+> +		if (err) {
+> +			/* err can be positive if it came from the TPM itself,
+> +			 * so return a negative value here instead. */
+> +			err = -EFAULT;
+
+-EFAULT is definitely wrong (that means a bad pointer was passed), you
+can use -EIO instead.
+
+However, I would suggest:
+
+	err = total ? total : -EIO;
+
+... so you report the number of bytes successfully received if we got
+any.  However, since you *also* do that on the retry line,
+
+> +			goto out_err;
+> +		}
+> +
+> +		recd = be32_to_cpu(tpm_cmd.params.getrandom_out.rng_data_len);
+> +		memcpy(dest, tpm_cmd.params.getrandom_out.rng_data, recd);
+> +
+> +		dest += recd;
+> +		total += recd;
+> +		num_bytes -= recd;
+> +	} while (retries-- && total < max);
+> +
+> +	err = total;
+
+Should we return something other than 0 if we run out of retries here, too?
+
+Perhaps we should just do the same "err = total ? total : -EIO;" here
+and the above statement can just turn into a break;.
+
+> -	ret = my_get_random(hash, SHA1_DIGEST_SIZE);
+> +	ret = tpm_get_random(TPM_ANY_NUM, hash, SHA1_DIGEST_SIZE);
+>  	if (ret < 0)
+>  		return ret;
+
+You are still not checking the return values correctly!
+
+This needs to be something like:
+
+	ret = tpm_get_random(TPM_ANY_NUM, hash, SHA1_DIGEST_SIZE);
+	if (ret != SHA1_DIGEST_SIZE)
+		return -EIO;	/* Or whatever is appropriate here */
+
+
+	-hpa
+--
+To unsubscribe from this list: send the line "unsubscribe linux-security-module" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

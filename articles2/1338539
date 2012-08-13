@@ -1,0 +1,97 @@
+Path: news.gmane.org!not-for-mail
+From: Seth Forshee <seth.forshee@canonical.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.video.dri.devel
+Subject: Re: [RFC PATCH 3/5] drm/i915: register LVDS connector even if we
+ can't get a panel mode
+Date: Mon, 6 Aug 2012 15:16:48 -0500
+Lines: 35
+Approved: news@gmane.org
+Message-ID: <20120806201648.GD28213@thinkpad-t410>
+References: <1344009741-14248-1-git-send-email-seth.forshee@canonical.com>
+ <1344009741-14248-4-git-send-email-seth.forshee@canonical.com>
+ <20120803161416.GA22563@srcf.ucam.org>
+ <20120803162451.GF8165@thinkpad-t410>
+ <20120803162702.GA22896@srcf.ucam.org>
+ <20120804165727.GA4980@thinkpad-t410>
+ <20120805211412.GG12232@phenom.ffwll.local>
+ <20120805211838.GA27188@srcf.ucam.org>
+ <20120805214016.GH12232@phenom.ffwll.local>
+ <20120806122317.GA11339@srcf.ucam.org>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344284231 27204 80.91.229.3 (6 Aug 2012 20:17:11 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 20:17:11 +0000 (UTC)
+Cc: dri-devel@lists.freedesktop.org, David Airlie <airlied@linux.ie>,
+	linux-kernel@vger.kernel.org, Andreas Heider <andreas@meetr.de>
+To: Matthew Garrett <mjg59@srcf.ucam.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Aug 06 22:17:11 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyTje-0000Rp-72
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 06 Aug 2012 22:17:06 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756184Ab2HFUQ6 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 16:16:58 -0400
+Original-Received: from youngberry.canonical.com ([91.189.89.112]:52658 "EHLO
+	youngberry.canonical.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755161Ab2HFUQ4 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 16:16:56 -0400
+Original-Received: from 64-126-113-183.dyn.everestkc.net ([64.126.113.183] helo=canonical.com)
+	by youngberry.canonical.com with esmtpsa (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.71)
+	(envelope-from <seth.forshee@canonical.com>)
+	id 1SyTjS-0000yA-9b; Mon, 06 Aug 2012 20:16:54 +0000
+Mail-Followup-To: Matthew Garrett <mjg59@srcf.ucam.org>,
+	dri-devel@lists.freedesktop.org, David Airlie <airlied@linux.ie>,
+	linux-kernel@vger.kernel.org, Andreas Heider <andreas@meetr.de>
+Content-Disposition: inline
+In-Reply-To: <20120806122317.GA11339@srcf.ucam.org>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338539 gmane.comp.video.dri.devel:72199
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338539>
+
+On Mon, Aug 06, 2012 at 01:23:17PM +0100, Matthew Garrett wrote:
+> On Sun, Aug 05, 2012 at 11:40:16PM +0200, Daniel Vetter wrote:
+> 
+> > As long as it's only apple shipping multi-gpu machines with
+> > broken/non-existing vbt, I'll happily stomach the quirk list entries.
+> > They're bad, but imo the lesser evil.
+> 
+> Doing this via quirks means that we'll always be broken on the hardware 
+> at the point where it ships. Implementing the functionality means we 
+> stand some chance of working out of the box.
+
+I've been thinking some today about how this functionality might be
+implemented.
+
+It looks like the simplest way to let the inactive GPU have the i2c bus
+temporarily is to have drm_get_edid() control the mux and serialize it
+with a mutex. It should be pretty easy to make vga_switcheroo support
+muxing the DDC separately from the display.
+
+There is the problem of vga_switcheroo not really being operational
+until it has two clients and a handler, and the graphics drivers not
+registering clients until they've initialized LVDS. This probably won't
+be too dificult to solve.
+
+The bigger problem is still making sure the switcheroo handler is
+registered, when it's needed, before trying to read the EDID. We could
+potentially delay initializing non-active graphics devices until after a
+switcheroo handler has been registered, but that's a problem if the
+handler is implemented by the driver for the secondary GPU (is this ever
+the case?). Otherwise we seem to be stuck with making i915 able to cope
+with getting modes for LVDS after initialization, which kind of puts us
+back where we started.
+
+Any other ideas?
+

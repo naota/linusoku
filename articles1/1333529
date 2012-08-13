@@ -1,0 +1,115 @@
+Path: news.gmane.org!not-for-mail
+From: Lee Jones <lee.jones@linaro.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel,gmane.linux.alsa.devel
+Subject: [PATCH 07/21] ASoC: io: Prevent use of regmap if request fails
+Date: Thu, 26 Jul 2012 11:28:40 +0100
+Lines: 51
+Approved: news@gmane.org
+Message-ID: <1343298534-13611-8-git-send-email-lee.jones@linaro.org>
+References: <1343298534-13611-1-git-send-email-lee.jones@linaro.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343298881 17972 80.91.229.3 (26 Jul 2012 10:34:41 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 10:34:41 +0000 (UTC)
+Cc: STEricsson_nomadik_linux@list.st.com, linus.walleij@stericsson.com,
+	arnd@arndb.de, broonie@opensource.wolfsonmicro.com,
+	sameo@linux.intel.com, olalilja@yahoo.se,
+	ola.o.lilja@stericsson.com, alsa-devel@alsa-project.org,
+	lrg@ti.com, Lee Jones <lee.jones@linaro.org>
+To: linux-arm-kernel@lists.infradead.org, linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 12:34:37 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuLOu-0000He-C6
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 12:34:36 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752476Ab2GZKe1 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 06:34:27 -0400
+Original-Received: from mail-wg0-f44.google.com ([74.125.82.44]:49118 "EHLO
+	mail-wg0-f44.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752224Ab2GZK3Y (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 06:29:24 -0400
+Original-Received: by mail-wg0-f44.google.com with SMTP id dr13so1669614wgb.1
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 03:29:23 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :x-gm-message-state;
+        bh=vrE+dlSX5E9JWGHKViZLKqRLbPm97cYzt49jreKV0Qc=;
+        b=kp3HsFZ9kpAc3Fb0Xregl/VUvLgfXcs/CXoFpJTsNkIKh/DBZuIQnq8Ximpzf22pdp
+         86kiYmSpUy+D+yzRtDmduvc3bVdPKCLpSU91ChFOsZ8a9Bl5axX/YcjYUFIUAxgt+J5u
+         knDmBAY14fS/QQzlYzJK7Wy2NA63azT9n6s6wtpIaYTjdIjWYRTvLZG/jSZIKZ/uacJo
+         3sLCqot5ZmhdnI2wg7e6mcIPz0nZcwFhdR3se0E1BTTydCZaqWZS5HV0XCXP8tGMFJC9
+         nKKb3KE0ZzsOEcmE0Tj2inu1iSfJa1otj78z2Ky4Xv/sOmb6BMv2TGX6m6ZrnCGjaT9q
+         G9gA==
+Original-Received: by 10.180.100.133 with SMTP id ey5mr12330391wib.4.1343298563452;
+        Thu, 26 Jul 2012 03:29:23 -0700 (PDT)
+Original-Received: from localhost.localdomain (cpc1-aztw13-0-0-cust473.18-1.cable.virginmedia.com. [77.102.241.218])
+        by mx.google.com with ESMTPS id fb20sm11559455wid.1.2012.07.26.03.29.21
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 03:29:22 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1343298534-13611-1-git-send-email-lee.jones@linaro.org>
+X-Gm-Message-State: ALoCoQkx8fD1Gt9pyQwKqO8oEZZr35cyhvS9bdXY2f+s3hqhxVTXBGmmXFtIUyOdGk5vdA5OCND0
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333529 gmane.linux.ports.arm.kernel:178822 gmane.linux.alsa.devel:99284
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333529>
+
+If a sound codec fails to request a regmap, the 'using_regmap' is
+set as true regardless, despite there being no regmap to use. As a
+repercussion, when a latter read function checks to see if we are
+using regmaps, it assumes we are and attempts to. Only the kernel
+oopes, because regmap_* tries to extract information from a NULL
+pointer.
+
+Signed-off-by: Lee Jones <lee.jones@linaro.org>
+---
+ sound/soc/soc-io.c |   14 +++++++++-----
+ 1 file changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/sound/soc/soc-io.c b/sound/soc/soc-io.c
+index 29183ef..601cb7f 100644
+--- a/sound/soc/soc-io.c
++++ b/sound/soc/soc-io.c
+@@ -52,10 +52,13 @@ static unsigned int hw_read(struct snd_soc_codec *codec, unsigned int reg)
+ 		if (codec->cache_only)
+ 			return -1;
+ 
+-		ret = regmap_read(codec->control_data, reg, &val);
+-		if (ret == 0)
+-			return val;
+-		else
++		if (codec->using_regmap) {
++			ret = regmap_read(codec->control_data, reg, &val);
++			if (ret == 0)
++				return val;
++			else
++				return -1;
++		} else
+ 			return -1;
+ 	}
+ 
+@@ -141,11 +144,12 @@ int snd_soc_codec_set_cache_io(struct snd_soc_codec *codec,
+ 
+ 	case SND_SOC_REGMAP:
+ 		/* Device has made its own regmap arrangements */
+-		codec->using_regmap = true;
+ 		if (!codec->control_data)
+ 			codec->control_data = dev_get_regmap(codec->dev, NULL);
+ 
+ 		if (codec->control_data) {
++			codec->using_regmap = true;
++
+ 			ret = regmap_get_val_bytes(codec->control_data);
+ 			/* Errors are legitimate for non-integer byte
+ 			 * multiples */
+-- 
+1.7.9.5
+

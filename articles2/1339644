@@ -1,0 +1,126 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 001/109] target: Add generation of LOGICAL BLOCK ADDRESS OUT OF RANGE
+Date: Tue,  7 Aug 2012 15:34:20 -0700
+Lines: 62
+Approved: news@gmane.org
+Message-ID: <20120807222043.211771124@linuxfoundation.org>
+References: <20120807222043.089735600@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344381702 3683 80.91.229.3 (7 Aug 2012 23:21:42 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 23:21:42 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Roland Dreier <roland@purestorage.com>,
+	Nicholas Bellinger <nab@linux-iscsi.org>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 01:21:41 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Syt5j-0003fq-Ai
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 01:21:35 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757514Ab2HGXV1 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 19:21:27 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:56801 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1757340Ab2HGWgQ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:36:16 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so358011pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:36:15 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=d8yAfJKmt9MsrdMLRSW7dvFyx/5vuD8QD8VSMtMT5qA=;
+        b=iR2efSNwCifSIvy6zh/5PeUK8yLwJTgfJutSAFyeDwcLenTELZwA6tvezqZmcWqFVW
+         0lIpwN/NjbuTiZ3BntHt60VziDOFRimddH0SLPjoAx1Yq3FEkNBRKNjMf0c8wGJRMGU/
+         3WFCrIYcKvt+Ue3+5RgdvzVErZ7TZzpYEL5ff26IJooQuw589pbyEzw2+LtselgIwlTl
+         4RF2+qWPCREcuidyP0JDAaOEQXNlsYKy8ma46z/HOHuCp8iM0jPpzwXVmO1qJZsGUdbw
+         27kMeXCNnOOlgU8YXDcHF+dvLKa02FIKN5OGvbl2qe9BkwuKh5uDsZaXNg9Gq2Lwsjr5
+         X++A==
+Original-Received: by 10.68.136.68 with SMTP id py4mr31498832pbb.151.1344378975883;
+        Tue, 07 Aug 2012 15:36:15 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id pz10sm1911970pbb.60.2012.08.07.15.36.13
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:36:14 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222043.089735600@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQk6bGC2fXZXSEfsEAWbidLK6Z17+JbUEvoRKy+s1Zd/WJ5J/MoFHkouYCHkfsrhOgVABf4A
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339644 gmane.linux.kernel.stable:29473
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339644>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.4-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Roland Dreier <roland@purestorage.com>
+
+commit e2397c704429025bc6b331a970f699e52f34283e upstream.
+
+Many SCSI commands are defined to return a CHECK CONDITION / ILLEGAL
+REQUEST with ASC set to LOGICAL BLOCK ADDRESS OUT OF RANGE if the
+initiator sends a command that accesses a too-big LBA.  Add an enum
+value and case entries so that target code can return this status.
+
+Signed-off-by: Roland Dreier <roland@purestorage.com>
+Signed-off-by: Nicholas Bellinger <nab@linux-iscsi.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ drivers/target/target_core_transport.c |   10 ++++++++++
+ include/target/target_core_base.h      |    1 +
+ 2 files changed, 11 insertions(+)
+
+--- a/drivers/target/target_core_transport.c
++++ b/drivers/target/target_core_transport.c
+@@ -1976,6 +1976,7 @@ void transport_generic_request_failure(s
+ 	case TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE:
+ 	case TCM_UNKNOWN_MODE_PAGE:
+ 	case TCM_WRITE_PROTECTED:
++	case TCM_ADDRESS_OUT_OF_RANGE:
+ 	case TCM_CHECK_CONDITION_ABORT_CMD:
+ 	case TCM_CHECK_CONDITION_UNIT_ATTENTION:
+ 	case TCM_CHECK_CONDITION_NOT_READY:
+@@ -4656,6 +4657,15 @@ int transport_send_check_condition_and_s
+ 		/* WRITE PROTECTED */
+ 		buffer[offset+SPC_ASC_KEY_OFFSET] = 0x27;
+ 		break;
++	case TCM_ADDRESS_OUT_OF_RANGE:
++		/* CURRENT ERROR */
++		buffer[offset] = 0x70;
++		buffer[offset+SPC_ADD_SENSE_LEN_OFFSET] = 10;
++		/* ILLEGAL REQUEST */
++		buffer[offset+SPC_SENSE_KEY_OFFSET] = ILLEGAL_REQUEST;
++		/* LOGICAL BLOCK ADDRESS OUT OF RANGE */
++		buffer[offset+SPC_ASC_KEY_OFFSET] = 0x21;
++		break;
+ 	case TCM_CHECK_CONDITION_UNIT_ATTENTION:
+ 		/* CURRENT ERROR */
+ 		buffer[offset] = 0x70;
+--- a/include/target/target_core_base.h
++++ b/include/target/target_core_base.h
+@@ -229,6 +229,7 @@ enum tcm_sense_reason_table {
+ 	TCM_CHECK_CONDITION_UNIT_ATTENTION	= 0x0e,
+ 	TCM_CHECK_CONDITION_NOT_READY		= 0x0f,
+ 	TCM_RESERVATION_CONFLICT		= 0x10,
++	TCM_ADDRESS_OUT_OF_RANGE		= 0x11,
+ };
+ 
+ enum target_sc_flags_table {
+
+

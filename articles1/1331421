@@ -1,0 +1,118 @@
+Path: news.gmane.org!not-for-mail
+From: Jesper Juhl <jj-IYz4IdjRLj0sV2N9l4h3zg@public.gmane.org>
+Newsgroups: gmane.linux.nfs,gmane.linux.kernel
+Subject: Re: [PATCH] NFS4: Fix NULL deref in nfsd4_lock() by makeing
+ unhash_lockowner() safe to call with NULL arg
+Date: Sun, 22 Jul 2012 23:01:44 +0200 (CEST)
+Lines: 68
+Approved: news@gmane.org
+Message-ID: <alpine.LNX.2.00.1207222300380.31033@swampdragon.chaosbits.net>
+References: <alpine.LNX.2.00.1201292226380.27749@swampdragon.chaosbits.net> <20120130214351.GA1518@fieldses.org>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: TEXT/PLAIN; charset=US-ASCII
+X-Trace: dough.gmane.org 1342990910 9371 80.91.229.3 (22 Jul 2012 21:01:50 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 22 Jul 2012 21:01:50 +0000 (UTC)
+Cc: linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org,
+	Kendrick Smith <kmsmith-63aXycvo3TyHXe+LvDLADg@public.gmane.org>,
+	Andy Adamson <kandros-63aXycvo3TyHXe+LvDLADg@public.gmane.org>,
+	Trond Myklebust <Trond.Myklebust-HgOvQuBEEgTQT0dZR+AlfA@public.gmane.org>
+To: "J. Bruce Fields" <bfields-uC3wQj2KruNg9hUCZPvPmw@public.gmane.org>
+Original-X-From: linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org Sun Jul 22 23:01:49 2012
+Return-path: <linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Envelope-to: glN-linux-nfs-wOFGN7rlS/M9smdsby/KFg@public.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>)
+	id 1St3Hg-0002Ve-JJ
+	for glN-linux-nfs-wOFGN7rlS/M9smdsby/KFg@public.gmane.org; Sun, 22 Jul 2012 23:01:48 +0200
+Original-Received: (majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org) by vger.kernel.org via listexpand
+	id S1752617Ab2GVVBq (ORCPT <rfc822;glN-linux-nfs@m.gmane.org>);
+	Sun, 22 Jul 2012 17:01:46 -0400
+Original-Received: from 1010ds2-suoe.0.fullrate.dk ([90.184.90.115]:27274 "EHLO
+	swampdragon.chaosbits.net" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752602Ab2GVVBq (ORCPT
+	<rfc822;linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>); Sun, 22 Jul 2012 17:01:46 -0400
+Original-Received: by swampdragon.chaosbits.net (Postfix, from userid 1000)
+	id BFAE99403D; Sun, 22 Jul 2012 23:01:44 +0200 (CEST)
+Original-Received: from localhost (localhost [127.0.0.1])
+	by swampdragon.chaosbits.net (Postfix) with ESMTP id B7BB39403B;
+	Sun, 22 Jul 2012 23:01:44 +0200 (CEST)
+In-Reply-To: <20120130214351.GA1518-uC3wQj2KruNg9hUCZPvPmw@public.gmane.org>
+User-Agent: Alpine 2.00 (LNX 1167 2008-08-23)
+Original-Sender: linux-nfs-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Precedence: bulk
+List-ID: <linux-nfs.vger.kernel.org>
+X-Mailing-List: linux-nfs-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Xref: news.gmane.org gmane.linux.nfs:51052 gmane.linux.kernel:1331421
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331421>
+
+On Mon, 30 Jan 2012, J. Bruce Fields wrote:
+
+> On Sun, Jan 29, 2012 at 10:29:24PM +0100, Jesper Juhl wrote:
+> > The Coverity checker noticed a path through nfsd4_lock() where we call
+> > release_lockowner(lock_sop); (at the 'out:' label) where 'lock_sop' is
+> > NULL.
+> > That goes bad since release_lockowner() calls unhash_lockowner() which
+> > dereferences its argument.
+> > release_lockowner() also calls nfs4_free_lockowner(), but that's not a
+> > problem since that function just calls kfree() and kmem_cache_free(),
+> > both of which are safe to call with NULL as argument.
+> > 
+> > There are several ways to fix the bug.
+> >  - rework nfsd4_lock() so the call to release_lockowner(NULL) will never happen.
+> >  - let release_lockowner() test for NULL and return if given one.
+> >  - let unhash_lockowner() test for NULL and return if given one (which makes both it and release_lockowner() safe).
+> > 
+> > I chose the last option for this patch.
+> > 
+> > For information, the path Coverity spotted (in defect report 201504) is this:
+> > 
+> ...
+> 
+> 
+> > [...]
+> > 4098out:
+> > At conditional (12): "status" taking the true branch.
+> > At conditional (13): "new_state" taking the true branch.
+> > 4099        if (status && new_state)
+> 
+> new_state is initialized false, and referenced otherwise only once,
+> when a reference ot is is passed here:
+> 
+> 
+> > 4010                status = lookup_or_create_lock_state(cstate, open_stp, lock,
+> > 4011                                                        &lock_stp, &new_state);
+> 
+> so if new_state is true, then lookup_or_create_lock_state() set it to
+> true.  But it sets that only in one spot, at the end:
+> 
+> 	*new = true;
+> 	return nfs_ok;
+> 
+> Note nfs_ok is zero.  Therefore:
+> 
+> > At conditional (11): "status" taking the true branch.
+> > 4012                if (status)
+> > 4013                        goto out;
+> 
+> this could not have happened.
+> 
+> So it looks like a Coverity bug.
+> 
+Sorry about the late reply, I managed to completely miss this mail until I 
+wen't to check up on some of my old patches.
+
+Thank you for the feedback. I've dropped my local copy of this patch.
+
+-- 
+Jesper Juhl <jj-IYz4IdjRLj0sV2N9l4h3zg@public.gmane.org>       http://www.chaosbits.net/
+Don't top-post http://www.catb.org/jargon/html/T/top-post.html
+Plain text mails only, please.
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-nfs" in
+the body of a message to majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

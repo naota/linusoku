@@ -1,0 +1,129 @@
+Path: news.gmane.org!not-for-mail
+From: Steven Whitehouse <swhiteho@redhat.com>
+Newsgroups: gmane.linux.cluster.redhat.cluster.devel,gmane.linux.kernel
+Subject: [PATCH 03/16] GFS2: Add "top dir" flag support
+Date: Mon, 23 Jul 2012 09:00:53 +0100
+Lines: 76
+Approved: news@gmane.org
+Message-ID: <1343030466-3053-4-git-send-email-swhiteho@redhat.com>
+References: <1343030466-3053-1-git-send-email-swhiteho@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343032042 1264 80.91.229.3 (23 Jul 2012 08:27:22 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 08:27:22 +0000 (UTC)
+Cc: Steven Whitehouse <steve@chygwyn.com>
+To: linux-kernel@vger.kernel.org, cluster-devel@redhat.com
+Original-X-From: cluster-devel-bounces@redhat.com Mon Jul 23 10:27:21 2012
+Return-path: <cluster-devel-bounces@redhat.com>
+Envelope-to: glcrcd-cluster-devel@gmane.org
+Original-Received: from mx4-phx2.redhat.com ([209.132.183.25])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <cluster-devel-bounces@redhat.com>)
+	id 1StDz1-0006hA-F2
+	for glcrcd-cluster-devel@gmane.org; Mon, 23 Jul 2012 10:27:15 +0200
+Original-Received: from lists01.pubmisc.prod.ext.phx2.redhat.com (lists01.pubmisc.prod.ext.phx2.redhat.com [10.5.19.33])
+	by mx4-phx2.redhat.com (8.13.8/8.13.8) with ESMTP id q6N8QOmP020169;
+	Mon, 23 Jul 2012 04:26:25 -0400
+Original-Received: from int-mx01.intmail.prod.int.phx2.redhat.com
+	(int-mx01.intmail.prod.int.phx2.redhat.com [10.5.11.11])
+	by lists01.pubmisc.prod.ext.phx2.redhat.com (8.13.8/8.13.8) with ESMTP
+	id q6N8QEOL029305 for <cluster-devel@listman.util.phx.redhat.com>;
+	Mon, 23 Jul 2012 04:26:14 -0400
+Original-Received: from chywoon.redhat.com (vpn1-5-152.ams2.redhat.com [10.36.5.152])
+	by int-mx01.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with ESMTP
+	id q6N8Px9a016610; Mon, 23 Jul 2012 04:26:07 -0400
+In-Reply-To: <1343030466-3053-1-git-send-email-swhiteho@redhat.com>
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.11
+X-loop: cluster-devel@redhat.com
+X-BeenThere: cluster-devel@redhat.com
+X-Mailman-Version: 2.1.12
+Precedence: junk
+List-Id: "\[Cluster devel\]" <cluster-devel.redhat.com>
+List-Unsubscribe: <https://www.redhat.com/mailman/options/cluster-devel>,
+	<mailto:cluster-devel-request@redhat.com?subject=unsubscribe>
+List-Archive: <https://www.redhat.com/archives/cluster-devel>
+List-Post: <mailto:cluster-devel@redhat.com>
+List-Help: <mailto:cluster-devel-request@redhat.com?subject=help>
+List-Subscribe: <https://www.redhat.com/mailman/listinfo/cluster-devel>,
+	<mailto:cluster-devel-request@redhat.com?subject=subscribe>
+Original-Sender: cluster-devel-bounces@redhat.com
+Errors-To: cluster-devel-bounces@redhat.com
+Xref: news.gmane.org gmane.linux.cluster.redhat.cluster.devel:7193 gmane.linux.kernel:1331663
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331663>
+
+From: Steven Whitehouse <steve@chygwyn.com>
+
+This patch adds support for the "top dir" flag. Currently this is unused
+but a subsequent patch is planned which will add support for the
+Orlov allocation policy when allocating subdirectories in a parent
+with this flag set.
+
+In order to ensure backward compatible behaviour, mkfs.gfs2 does
+not currently tag the root directory with this flag, it must always be
+set manually.
+
+Signed-off-by: Steven Whitehouse <swhiteho@redhat.com>
+
+diff --git a/fs/gfs2/file.c b/fs/gfs2/file.c
+index 26e2905..6fbf3cb 100644
+--- a/fs/gfs2/file.c
++++ b/fs/gfs2/file.c
+@@ -142,6 +142,7 @@ static const u32 fsflags_to_gfs2[32] = {
+ 	[7] = GFS2_DIF_NOATIME,
+ 	[12] = GFS2_DIF_EXHASH,
+ 	[14] = GFS2_DIF_INHERIT_JDATA,
++	[17] = GFS2_DIF_TOPDIR,
+ };
+ 
+ static const u32 gfs2_to_fsflags[32] = {
+@@ -150,6 +151,7 @@ static const u32 gfs2_to_fsflags[32] = {
+ 	[gfs2fl_AppendOnly] = FS_APPEND_FL,
+ 	[gfs2fl_NoAtime] = FS_NOATIME_FL,
+ 	[gfs2fl_ExHash] = FS_INDEX_FL,
++	[gfs2fl_TopLevel] = FS_TOPDIR_FL,
+ 	[gfs2fl_InheritJdata] = FS_JOURNAL_DATA_FL,
+ };
+ 
+@@ -203,6 +205,7 @@ void gfs2_set_inode_flags(struct inode *inode)
+ 			     GFS2_DIF_NOATIME|			\
+ 			     GFS2_DIF_SYNC|			\
+ 			     GFS2_DIF_SYSTEM|			\
++			     GFS2_DIF_TOPDIR|			\
+ 			     GFS2_DIF_INHERIT_JDATA)
+ 
+ /**
+@@ -298,6 +301,7 @@ static int gfs2_set_flags(struct file *filp, u32 __user *ptr)
+ 
+ 	gfsflags = fsflags_cvt(fsflags_to_gfs2, fsflags);
+ 	if (!S_ISDIR(inode->i_mode)) {
++		gfsflags &= ~GFS2_DIF_TOPDIR;
+ 		if (gfsflags & GFS2_DIF_INHERIT_JDATA)
+ 			gfsflags ^= (GFS2_DIF_JDATA | GFS2_DIF_INHERIT_JDATA);
+ 		return do_gfs2_set_flags(filp, gfsflags, ~0);
+diff --git a/include/linux/gfs2_ondisk.h b/include/linux/gfs2_ondisk.h
+index fa98bdb..e8ccf6f 100644
+--- a/include/linux/gfs2_ondisk.h
++++ b/include/linux/gfs2_ondisk.h
+@@ -214,6 +214,7 @@ enum {
+ 	gfs2fl_NoAtime		= 7,
+ 	gfs2fl_Sync		= 8,
+ 	gfs2fl_System		= 9,
++	gfs2fl_TopLevel		= 10,
+ 	gfs2fl_TruncInProg	= 29,
+ 	gfs2fl_InheritDirectio	= 30,
+ 	gfs2fl_InheritJdata	= 31,
+@@ -230,8 +231,9 @@ enum {
+ #define GFS2_DIF_NOATIME		0x00000080
+ #define GFS2_DIF_SYNC			0x00000100
+ #define GFS2_DIF_SYSTEM			0x00000200 /* New in gfs2 */
++#define GFS2_DIF_TOPDIR			0x00000400 /* New in gfs2 */
+ #define GFS2_DIF_TRUNC_IN_PROG		0x20000000 /* New in gfs2 */
+-#define GFS2_DIF_INHERIT_DIRECTIO	0x40000000
++#define GFS2_DIF_INHERIT_DIRECTIO	0x40000000 /* only in gfs1 */
+ #define GFS2_DIF_INHERIT_JDATA		0x80000000
+ 
+ struct gfs2_dinode {
+-- 
+1.7.4
+
+

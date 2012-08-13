@@ -1,0 +1,173 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.file-systems,gmane.linux.nfs
+Subject: [PATCH v5 12/19] vfs: make rmdir retry on ESTALE errors
+Date: Wed,  8 Aug 2012 09:21:35 -0400
+Lines: 111
+Approved: news@gmane.org
+Message-ID: <1344432102-22312-13-git-send-email-jlayton@redhat.com>
+References: <1344432102-22312-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344432147 30860 80.91.229.3 (8 Aug 2012 13:22:27 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 13:22:27 +0000 (UTC)
+Cc: linux-fsdevel@vger.kernel.org, linux-nfs@vger.kernel.org,
+	linux-kernel@vger.kernel.org, michael.brantley@deshaw.com,
+	hch@infradead.org, miklos@szeredi.hu, pstaubach@exagrid.com
+To: viro@ZenIV.linux.org.uk
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 15:22:26 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sz6DO-0005YY-84
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 15:22:22 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1758522Ab2HHNWM (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 09:22:12 -0400
+Original-Received: from mail-gg0-f174.google.com ([209.85.161.174]:43064 "EHLO
+	mail-gg0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1758471Ab2HHNWE (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 09:22:04 -0400
+Original-Received: by mail-gg0-f174.google.com with SMTP id k6so15462ggd.19
+        for <linux-kernel@vger.kernel.org>; Wed, 08 Aug 2012 06:22:04 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:x-gm-message-state;
+        bh=NaYVKCv2YaJ28T/m16w3qbBCxqyDOiVxEqTTnVCbL6A=;
+        b=Q8aS94YvI6LivsbDJWLeLubUsBqelB2Zo7rm5a+dowSHD96j/NUIMqJReB6mhgi2xx
+         SZ4J9abPngQiQPqimCiCSaTkUFBMAzZxN3rUZdoI0kPZGb25/eV0c04OfpedVHACHceD
+         kWuKD/8DxJ0PoNKaZQlK0Jz7N1xBqJaulHnZ02Nb1jd9zfCFF5qCrHloWp6dq/Vciv90
+         Ul4wjotwJ3laB5Vi+JHDrl9ksP4rXcpWrlAUVwNoVQp4SPaD/uskQL/TkleS7p52WPru
+         hZUaUziO1k39/19O71tFAow1V5vXFKcPRGILzpeY0MAVLXH060JK/ZQdz/iuuS33plYQ
+         uILw==
+Original-Received: by 10.236.157.131 with SMTP id o3mr16559971yhk.84.1344432124372;
+        Wed, 08 Aug 2012 06:22:04 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-069-134-145-027.nc.res.rr.com. [69.134.145.27])
+        by mx.google.com with ESMTPS id l1sm24418002yhm.19.2012.08.08.06.22.03
+        (version=SSLv3 cipher=OTHER);
+        Wed, 08 Aug 2012 06:22:03 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1344432102-22312-1-git-send-email-jlayton@redhat.com>
+X-Gm-Message-State: ALoCoQkyzP+bh+zEcdI2JOZDJU7LslmKfck5cnDb7Yd3QON6jCvqPEFKSWXO9VDOLP3vIjHqInTg
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340037 gmane.linux.file-systems:66458 gmane.linux.nfs:51362
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340037>
+
+Signed-off-by: Jeff Layton <jlayton@redhat.com>
+---
+ fs/namei.c | 83 +++++++++++++++++++++++++++++++++++---------------------------
+ 1 file changed, 47 insertions(+), 36 deletions(-)
+
+diff --git a/fs/namei.c b/fs/namei.c
+index d6e9754..7eb59cc 100644
+--- a/fs/namei.c
++++ b/fs/namei.c
+@@ -3282,51 +3282,62 @@ out:
+ static long do_rmdir(int dfd, const char __user *pathname)
+ {
+ 	int error = 0;
+-	char * name;
++	char *name;
+ 	struct dentry *dentry;
+ 	struct nameidata nd;
++	unsigned int try = 0;
++	unsigned int lookup_flags = LOOKUP_PARENT;
+ 
+-	error = user_path_parent(dfd, pathname, &nd, &name);
+-	if (error)
+-		return error;
++	name = getname(pathname);
++	if (IS_ERR(name))
++		return PTR_ERR(name);
+ 
+-	switch(nd.last_type) {
+-	case LAST_DOTDOT:
+-		error = -ENOTEMPTY;
+-		goto exit1;
+-	case LAST_DOT:
+-		error = -EINVAL;
+-		goto exit1;
+-	case LAST_ROOT:
+-		error = -EBUSY;
+-		goto exit1;
+-	}
++	do {
++		error = do_path_lookup(dfd, name, lookup_flags, &nd);
++		if (error)
++			break;
+ 
+-	nd.flags &= ~LOOKUP_PARENT;
+-	error = mnt_want_write(nd.path.mnt);
+-	if (error)
+-		goto exit1;
++		switch (nd.last_type) {
++		case LAST_DOTDOT:
++			error = -ENOTEMPTY;
++			goto exit1;
++		case LAST_DOT:
++			error = -EINVAL;
++			goto exit1;
++		case LAST_ROOT:
++			error = -EBUSY;
++			goto exit1;
++		}
+ 
+-	mutex_lock_nested(&nd.path.dentry->d_inode->i_mutex, I_MUTEX_PARENT);
+-	dentry = lookup_hash(&nd);
+-	error = PTR_ERR(dentry);
+-	if (IS_ERR(dentry))
+-		goto exit2;
+-	if (!dentry->d_inode) {
+-		error = -ENOENT;
+-		goto exit3;
+-	}
+-	error = security_path_rmdir(&nd.path, dentry);
+-	if (error)
+-		goto exit3;
+-	error = vfs_rmdir(nd.path.dentry->d_inode, dentry);
++		nd.flags &= ~LOOKUP_PARENT;
++		error = mnt_want_write(nd.path.mnt);
++		if (error)
++			goto exit1;
++
++		mutex_lock_nested(&nd.path.dentry->d_inode->i_mutex,
++					I_MUTEX_PARENT);
++		dentry = lookup_hash(&nd);
++		if (IS_ERR(dentry)) {
++			error = PTR_ERR(dentry);
++			goto exit2;
++		}
++		if (!dentry->d_inode) {
++			error = -ENOENT;
++			goto exit3;
++		}
++		error = security_path_rmdir(&nd.path, dentry);
++		if (error)
++			goto exit3;
++		error = vfs_rmdir(nd.path.dentry->d_inode, dentry);
+ exit3:
+-	dput(dentry);
++		dput(dentry);
+ exit2:
+-	mutex_unlock(&nd.path.dentry->d_inode->i_mutex);
+-	mnt_drop_write(nd.path.mnt);
++		mutex_unlock(&nd.path.dentry->d_inode->i_mutex);
++		mnt_drop_write(nd.path.mnt);
+ exit1:
+-	path_put(&nd.path);
++		path_put(&nd.path);
++		lookup_flags |= LOOKUP_REVAL;
++	} while (retry_estale(error, try++));
+ 	putname(name);
+ 	return error;
+ }
+-- 
+1.7.11.2
+

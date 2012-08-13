@@ -1,0 +1,244 @@
+Path: news.gmane.org!not-for-mail
+From: Michel Lespinasse <walken@google.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH 4/6] rbtree: faster augmented insert
+Date: Fri, 20 Jul 2012 05:31:05 -0700
+Lines: 152
+Approved: news@gmane.org
+Message-ID: <1342787467-5493-5-git-send-email-walken@google.com>
+References: <1342787467-5493-1-git-send-email-walken@google.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342787508 12210 80.91.229.3 (20 Jul 2012 12:31:48 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 12:31:48 +0000 (UTC)
+Cc: linux-mm@kvack.org,
+	linux-kernel@vger.kernel.org
+To: riel@redhat.com,
+	peterz@infradead.org,
+	daniel.santos@pobox.com,
+	aarcange@redhat.com,
+	dwmw2@infradead.org,
+	akpm@linux-foundation.org
+Original-X-From: owner-linux-mm@kvack.org Fri Jul 20 14:31:46 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SsCMz-0008Ee-Cb
+	for glkm-linux-mm-2@m.gmane.org; Fri, 20 Jul 2012 14:31:45 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 472F86B006C; Fri, 20 Jul 2012 08:31:44 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 307BD6B006E; Fri, 20 Jul 2012 08:31:44 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id E41B56B0070; Fri, 20 Jul 2012 08:31:43 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx173.postini.com [74.125.245.173])
+	by kanga.kvack.org (Postfix) with SMTP id 1ACA26B006C
+	for <linux-mm@kvack.org>; Fri, 20 Jul 2012 08:31:43 -0400 (EDT)
+Original-Received: from mail-pb0-f41.google.com ([209.85.160.41]) (using TLSv1) by na3sys010amx173.postini.com ([74.125.244.10]) with SMTP;
+	Fri, 20 Jul 2012 12:31:43 GMT
+Original-Received: by mail-pb0-f41.google.com with SMTP id rp2so7647111pbb.14
+        for <linux-mm@kvack.org>; Fri, 20 Jul 2012 05:31:42 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=keKDGsrN8onLVQNoqiFmZud3QeE3UWBuSGvnh6abh8k=;
+        b=PeSlw0zIy8fWKJIIsOk28cdIgU0KFnXREt+2JEy6iPWMk5KzpTf8oFcHRFn4UjFais
+         PsVnAqAq9Gwkq6D9kZ66k5VMXu6kMOfMaZRJ8p7VXX8qfDzLiqxdeF9UjnoVOJpnshro
+         3qMKENWLdNNTyXGxVEWETCOExoTUzutdWrvcgdw4hIPLTIAbP16tgDRAFBj9jrqOBfNe
+         lcKBlfoLqPKANy0CShzpZlDBWBQr0n5oqSx0qsI4LaIvwiV16C5BW8e1QP0f61UWm4xs
+         f3Ds0IyFkPqYdF+LiTFfj1bcyMZOg/5xcdI9BP68PfJOnCpPtVhxP2JR1DL19f+2BxQL
+         /tOw==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :x-gm-message-state;
+        bh=keKDGsrN8onLVQNoqiFmZud3QeE3UWBuSGvnh6abh8k=;
+        b=JeB0dloFchn3QfOpzXAuy1glO2iEyOr5pmyDRAIRidL7LAX5u1jzTa+YBNINj4Hkzy
+         NfL+QkcxTR0KnEuz8FAElMQw/jABQJK8HV+UluVHtnQzAohBvtaeLLtgkMYj5GUE/SXv
+         VfGIofQKllP6IrAsG7LnghqxLZJjdXt3S4uP8c1QBuEwE1TEjOwuk6FhgXKjIMdYfX2I
+         KCrASuqg9g2OCTF7X2ONuoaEQUcf0DOc/or1x3QyJUCpw1OcRlUE/vJoJLGtfU57/FGp
+         58v0S4F29b9PRGPwmYfe3zwqY9ywlBjnVCdh1Ti5ORL6JsiMuK03JXdZS54Sln1GYIOO
+         uKKw==
+Original-Received: by 10.68.203.7 with SMTP id km7mr13427447pbc.7.1342787502724;
+        Fri, 20 Jul 2012 05:31:42 -0700 (PDT)
+Original-Received: by 10.68.203.7 with SMTP id km7mr13427429pbc.7.1342787502636;
+        Fri, 20 Jul 2012 05:31:42 -0700 (PDT)
+Original-Received: from studio.mtv.corp.google.com (studio.mtv.corp.google.com [172.18.96.163])
+        by mx.google.com with ESMTPS id wa14sm3906810pbc.10.2012.07.20.05.31.37
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 20 Jul 2012 05:31:39 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7.3
+In-Reply-To: <1342787467-5493-1-git-send-email-walken@google.com>
+X-Gm-Message-State: ALoCoQmT8JMPI0YUw7jMK2RpLS0SSweYSbITqlt3fk9J5Ypaq+KOth8ZavUHxYTyGY/vnKr1xKn+Oxy3y1/gVjMEkMjDtF7an1kgHtBQBkrsF74gPQeXDVEe26DDz3KBKGVY3HUZohGKkg77lPMuNJSSZgVDJEiZyVsiXcKhnZHj2iy7HT+Ik43AV9dJCmOL9yHVB7A/wEnz
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 1 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.1000) s cv GT3 gt2 gt1 r p m c 
+X-pstn-addresses: from <walken@google.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82767 gmane.linux.kernel:1330811
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330811>
+
+Introduce rb_insert_augmented(), which is a version of rb_insert_color()
+with an added callback on tree rotations. This can be used for insertion
+into an augmented tree: the handcoded search phase must be updated to
+maintain the augmented information on insertion, and then the rbtree
+coloring/rebalancing algorithms keep it up to date.
+
+rb_insert_color() is now a special case of rb_insert_augmented() with
+a do-nothing callback. I used inlining to optimize out the callback,
+with the intent that this would generate the same code as previously
+for rb_insert_augmented(). This didn't fully work, as my compiler output
+is now *smaller* than before for that function. Speed wise, they seem
+comparable though.
+
+Signed-off-by: Michel Lespinasse <walken@google.com>
+---
+ include/linux/rbtree.h |    5 +++++
+ lib/rbtree.c           |   14 +++++++++++++-
+ lib/rbtree_test.c      |   31 +++++++++++++++++++++++--------
+ 3 files changed, 41 insertions(+), 9 deletions(-)
+
+diff --git a/include/linux/rbtree.h b/include/linux/rbtree.h
+index bf836a2..1364b81 100644
+--- a/include/linux/rbtree.h
++++ b/include/linux/rbtree.h
+@@ -61,6 +61,11 @@ struct rb_root {
+ extern void rb_insert_color(struct rb_node *, struct rb_root *);
+ extern void rb_erase(struct rb_node *, struct rb_root *);
+ 
++typedef void rb_augment_rotate(struct rb_node *old, struct rb_node *new);
++
++extern void rb_insert_augmented(struct rb_node *node, struct rb_root *root,
++				rb_augment_rotate *augment);
++
+ typedef void (*rb_augment_f)(struct rb_node *node, void *data);
+ 
+ extern void rb_augment_insert(struct rb_node *node,
+diff --git a/lib/rbtree.c b/lib/rbtree.c
+index 8b111cc..a6ae4c5 100644
+--- a/lib/rbtree.c
++++ b/lib/rbtree.c
+@@ -88,7 +88,8 @@ __rb_rotate_set_parents(struct rb_node *old, struct rb_node *new,
+ 		root->rb_node = new;
+ }
+ 
+-void rb_insert_color(struct rb_node *node, struct rb_root *root)
++inline void rb_insert_augmented(struct rb_node *node, struct rb_root *root,
++				rb_augment_rotate *augment)
+ {
+ 	struct rb_node *parent = rb_red_parent(node), *gparent, *tmp;
+ 
+@@ -152,6 +153,7 @@ void rb_insert_color(struct rb_node *node, struct rb_root *root)
+ 					rb_set_parent_color(tmp, parent,
+ 							    RB_BLACK);
+ 				rb_set_parent_color(parent, node, RB_RED);
++				augment(parent, node);
+ 				parent = node;
+ 				tmp = node->rb_right;
+ 			}
+@@ -170,6 +172,7 @@ void rb_insert_color(struct rb_node *node, struct rb_root *root)
+ 			if (tmp)
+ 				rb_set_parent_color(tmp, gparent, RB_BLACK);
+ 			__rb_rotate_set_parents(gparent, parent, root, RB_RED);
++			augment(gparent, parent);
+ 			break;
+ 		} else {
+ 			tmp = gparent->rb_left;
+@@ -192,6 +195,7 @@ void rb_insert_color(struct rb_node *node, struct rb_root *root)
+ 					rb_set_parent_color(tmp, parent,
+ 							    RB_BLACK);
+ 				rb_set_parent_color(parent, node, RB_RED);
++				augment(parent, node);
+ 				parent = node;
+ 				tmp = node->rb_left;
+ 			}
+@@ -202,10 +206,18 @@ void rb_insert_color(struct rb_node *node, struct rb_root *root)
+ 			if (tmp)
+ 				rb_set_parent_color(tmp, gparent, RB_BLACK);
+ 			__rb_rotate_set_parents(gparent, parent, root, RB_RED);
++			augment(gparent, parent);
+ 			break;
+ 		}
+ 	}
+ }
++EXPORT_SYMBOL(rb_insert_augmented);
++
++static inline void dummy(struct rb_node *old, struct rb_node *new) {}
++
++void rb_insert_color(struct rb_node *node, struct rb_root *root) {
++	rb_insert_augmented(node, root, dummy);
++}
+ EXPORT_SYMBOL(rb_insert_color);
+ 
+ static void __rb_erase_color(struct rb_node *node, struct rb_node *parent,
+diff --git a/lib/rbtree_test.c b/lib/rbtree_test.c
+index 2dfafe4..5ace332 100644
+--- a/lib/rbtree_test.c
++++ b/lib/rbtree_test.c
+@@ -67,22 +67,37 @@ static void augment_callback(struct rb_node *rb, void *unused)
+ 	node->augmented = augment_recompute(node);
+ }
+ 
++static void augment_rotate(struct rb_node *rb_old, struct rb_node *rb_new)
++{
++	struct test_node *old = rb_entry(rb_old, struct test_node, rb);
++	struct test_node *new = rb_entry(rb_new, struct test_node, rb);
++
++	/* Rotation doesn't change subtree's augmented value */
++	new->augmented = old->augmented;
++	old->augmented = augment_recompute(old);
++}
++
+ static void insert_augmented(struct test_node *node, struct rb_root *root)
+ {
+-	struct rb_node **new = &root->rb_node, *parent = NULL;
++	struct rb_node **new = &root->rb_node, *rb_parent = NULL;
+ 	u32 key = node->key;
++	u32 val = node->val;
++	struct test_node *parent;
+ 
+ 	while (*new) {
+-		parent = *new;
+-		if (key < rb_entry(parent, struct test_node, rb)->key)
+-			new = &parent->rb_left;
++		rb_parent = *new;
++		parent = rb_entry(rb_parent, struct test_node, rb);
++		if (parent->augmented < val)
++			parent->augmented = val;
++		if (key < parent->key)
++			new = &parent->rb.rb_left;
+ 		else
+-			new = &parent->rb_right;
++			new = &parent->rb.rb_right;
+ 	}
+ 
+-	rb_link_node(&node->rb, parent, new);
+-	rb_insert_color(&node->rb, root);
+-	rb_augment_insert(&node->rb, augment_callback, NULL);
++	node->augmented = val;
++	rb_link_node(&node->rb, rb_parent, new);
++	rb_insert_augmented(&node->rb, root, augment_rotate);
+ }
+ 
+ static void erase_augmented(struct test_node *node, struct rb_root *root)
+-- 
+1.7.7.3
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

@@ -1,0 +1,148 @@
+Path: news.gmane.org!not-for-mail
+From: Feng Tang <feng.tang@intel.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH RFC] tick: Emphasize tck_broadcast_on_off could only be called for host cpu
+Date: Tue, 31 Jul 2012 15:57:21 +0800
+Lines: 101
+Approved: news@gmane.org
+Message-ID: <1343721441-28148-1-git-send-email-feng.tang@intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343721753 4027 80.91.229.3 (31 Jul 2012 08:02:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 08:02:33 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, Feng Tang <feng.tang@intel.com>,
+	Suresh Siddha <suresh.b.siddha@intel.com>,
+	Thomas Gleixner <tglx@linutronix.de>
+To: Thomas Gleixner <tglx@linutronix.de>,
+	Suresh Siddha <suresh.b.siddha@intel.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 10:02:32 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sw7PU-0002UV-Dt
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 10:02:32 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755759Ab2GaICX (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 04:02:23 -0400
+Original-Received: from mga03.intel.com ([143.182.124.21]:29767 "EHLO mga03.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754786Ab2GaICT (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 04:02:19 -0400
+Original-Received: from azsmga001.ch.intel.com ([10.2.17.19])
+  by azsmga101.ch.intel.com with ESMTP; 31 Jul 2012 01:02:18 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="175173547"
+Original-Received: from feng-i7.sh.intel.com ([10.239.14.125])
+  by azsmga001.ch.intel.com with ESMTP; 31 Jul 2012 01:02:17 -0700
+X-Mailer: git-send-email 1.7.1
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335546
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335546>
+
+With current tick_do_broadcast_on_off() and tick_broadcast_on_off(),
+it only cares host cpu, and doesn't really support to make the on/off
+for another target CPU as it seems to be. So remove the unneeded
+online check and add a WARN to notify user who doesn't know this
+new usage model.
+
+Next step should be to remove those cases that sends the BROADCAST
+ON/OFF/FORCE msg on one cpu for another CPU, if this patch is reviewed
+to be ok.
+
+Signed-off-by: Feng Tang <feng.tang@intel.com>
+Cc: Suresh Siddha <suresh.b.siddha@intel.com>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+---
+ kernel/time/tick-broadcast.c |   15 +--------------
+ kernel/time/tick-common.c    |    6 +++++-
+ kernel/time/tick-internal.h  |    4 ++--
+ 3 files changed, 8 insertions(+), 17 deletions(-)
+
+diff --git a/kernel/time/tick-broadcast.c b/kernel/time/tick-broadcast.c
+index f113755..0433274 100644
+--- a/kernel/time/tick-broadcast.c
++++ b/kernel/time/tick-broadcast.c
+@@ -204,7 +204,7 @@ static void tick_handle_periodic_broadcast(struct clock_event_device *dev)
+  * Powerstate information: The system enters/leaves a state, where
+  * affected devices might stop
+  */
+-static void tick_do_broadcast_on_off(unsigned long *reason)
++void tick_broadcast_on_off(unsigned long *reason)
+ {
+ 	struct clock_event_device *bc, *dev;
+ 	struct tick_device *td;
+@@ -266,19 +266,6 @@ out:
+ }
+ 
+ /*
+- * Powerstate information: The system enters/leaves a state, where
+- * affected devices might stop.
+- */
+-void tick_broadcast_on_off(unsigned long reason, int *oncpu)
+-{
+-	if (!cpumask_test_cpu(*oncpu, cpu_online_mask))
+-		printk(KERN_ERR "tick-broadcast: ignoring broadcast for "
+-		       "offline CPU #%d\n", *oncpu);
+-	else
+-		tick_do_broadcast_on_off(&reason);
+-}
+-
+-/*
+  * Set the periodic handler depending on broadcast on/off
+  */
+ void tick_set_periodic_handler(struct clock_event_device *dev, int broadcast)
+diff --git a/kernel/time/tick-common.c b/kernel/time/tick-common.c
+index da6c9ec..950c635 100644
+--- a/kernel/time/tick-common.c
++++ b/kernel/time/tick-common.c
+@@ -362,6 +362,8 @@ static void tick_resume(void)
+ static int tick_notify(struct notifier_block *nb, unsigned long reason,
+ 			       void *dev)
+ {
++	int *cpu = dev;
++
+ 	switch (reason) {
+ 
+ 	case CLOCK_EVT_NOTIFY_ADD:
+@@ -370,7 +372,9 @@ static int tick_notify(struct notifier_block *nb, unsigned long reason,
+ 	case CLOCK_EVT_NOTIFY_BROADCAST_ON:
+ 	case CLOCK_EVT_NOTIFY_BROADCAST_OFF:
+ 	case CLOCK_EVT_NOTIFY_BROADCAST_FORCE:
+-		tick_broadcast_on_off(reason, dev);
++		WARN((*cpu != smp_processor_id()),
++			"BROADCAST ON/OFF/FORCE should only be fired for host CPU\n");
++		tick_broadcast_on_off(&reason);
+ 		break;
+ 
+ 	case CLOCK_EVT_NOTIFY_BROADCAST_ENTER:
+diff --git a/kernel/time/tick-internal.h b/kernel/time/tick-internal.h
+index 4e265b9..40e4a8b 100644
+--- a/kernel/time/tick-internal.h
++++ b/kernel/time/tick-internal.h
+@@ -90,7 +90,7 @@ static inline bool tick_broadcast_oneshot_available(void) { return false; }
+ extern int tick_device_uses_broadcast(struct clock_event_device *dev, int cpu);
+ extern int tick_check_broadcast_device(struct clock_event_device *dev);
+ extern int tick_is_broadcast_device(struct clock_event_device *dev);
+-extern void tick_broadcast_on_off(unsigned long reason, int *oncpu);
++extern void tick_broadcast_on_off(unsigned long *reason);
+ extern void tick_shutdown_broadcast(unsigned int *cpup);
+ extern void tick_suspend_broadcast(void);
+ extern int tick_resume_broadcast(void);
+@@ -115,7 +115,7 @@ static inline int tick_device_uses_broadcast(struct clock_event_device *dev,
+ 	return 0;
+ }
+ static inline void tick_do_periodic_broadcast(struct clock_event_device *d) { }
+-static inline void tick_broadcast_on_off(unsigned long reason, int *oncpu) { }
++static inline void tick_broadcast_on_off(unsigned long *reason) { }
+ static inline void tick_shutdown_broadcast(unsigned int *cpup) { }
+ static inline void tick_suspend_broadcast(void) { }
+ static inline int tick_resume_broadcast(void) { return 0; }
+-- 
+1.7.1
+

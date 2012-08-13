@@ -1,0 +1,142 @@
+Path: news.gmane.org!not-for-mail
+From: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [NEW DRIVER V1 7/7] DA9058 REGULATOR driver
+Date: Thu, 2 Aug 2012 11:30:05 +0100
+Lines: 92
+Approved: news@gmane.org
+Message-ID: <20120802103005.GH29157@opensource.wolfsonmicro.com>
+References: <201208020849.q728nio0007834@latitude.olech.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343903429 23826 80.91.229.3 (2 Aug 2012 10:30:29 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 2 Aug 2012 10:30:29 +0000 (UTC)
+Cc: LKML <linux-kernel@vger.kernel.org>
+To: Anthony Olech <anthony.olech.opensource@diasemi.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 02 12:30:29 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Swsfj-0005gY-4f
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 02 Aug 2012 12:30:27 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754408Ab2HBKaM (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 2 Aug 2012 06:30:12 -0400
+Original-Received: from opensource.wolfsonmicro.com ([80.75.67.52]:50402 "EHLO
+	opensource.wolfsonmicro.com" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1754161Ab2HBKaI (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 2 Aug 2012 06:30:08 -0400
+Original-Received: from finisterre.wolfsonmicro.main (cpc1-sgyl4-0-0-cust247.18-2.cable.virginmedia.com [82.41.24.248])
+	by opensource.wolfsonmicro.com (Postfix) with ESMTPSA id D61871103E0;
+	Thu,  2 Aug 2012 11:30:06 +0100 (BST)
+Original-Received: from broonie by finisterre.wolfsonmicro.main with local (Exim 4.80)
+	(envelope-from <broonie@opensource.wolfsonmicro.com>)
+	id 1SwsfN-0007y4-Um; Thu, 02 Aug 2012 11:30:06 +0100
+Content-Disposition: inline
+In-Reply-To: <201208020849.q728nio0007834@latitude.olech.com>
+X-Cookie: Your step will soil many countries.
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336778
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336778>
+
+On Thu, Aug 02, 2012 at 09:48:58AM +0100, Anthony Olech wrote:
+
+Overall the big issue here is that the driver isn't making much use of
+framework features, there should be a *lot* less code here.
+
+> +static unsigned int da9058_regulator_val_to_mvolts(unsigned int val,
+> +						struct regulator_dev *rdev)
+
+regualtor_map_voltage_linear()
+
+> +	ret = da9058_reg_read(da9058, regulator->control_register, &val);
+> +	if (ret)
+> +		return ret;
+> +
+> +	if (regulator->control_enable_mask&val)
+> +		return true;
+> +	else
+> +		return false;
+
+regulator_is_enabled_regmap().
+
+> +static int da9058_regulator_set_voltage(struct regulator_dev *rdev,
+> +					int min_uV, int max_uV,
+> +					unsigned *selector)
+
+Should be set_voltage_sel().
+
+> +	if (regulator->ramp_register && regulator->ramp_enable_mask)
+> +		ret =
+> +			da9058_set_bits(da9058, regulator->ramp_register,
+> +					regulator->ramp_enable_mask);
+
+What is this doing?
+
+> +	if (regulator->control_voltage_step == 0) {
+> +		if (da9058_regulator_is_enabled(rdev))
+> +			return regulator->fixed_voltage;
+> +		else
+> +			return 0;
+> +	}
+
+No, don't do stuff like this - implement a separate op (or just use the
+standard ops in this case).
+
+> +
+> +	ret = da9058_reg_read(da9058, regulator->control_register, &val);
+> +	if (ret)
+> +		return ret;
+
+This should just be regulator_get_voltage_sel_regmap().
+
+> +static int da9058_regulator_enable(struct regulator_dev *rdev)
+> +{
+
+regulator_enable_regmap() and similarly for all the others.
+
+> +static unsigned int da9058_regulator_get_mode(struct regulator_dev *rdev)
+> +{
+> +	return REGULATOR_MODE_NORMAL;
+> +}
+
+If you don't support modes don't implement the op.
+
+> +	regulator_pdata = cell->platform_data;
+
+> +	if (regulator_pdata == NULL) {
+> +		ret = -EINVAL;
+> +		goto exit;
+> +	}
+
+The driver should be able to start without any platform data.
+
+> +	dev_info(&pdev->dev, "Starting REGULATOR %d = %s\n",
+> +					regulator_pdata->regulator_id,
+> +					regulator_pdata->regulator_name);
+
+There's a couple of issues here.  One is that you shouldn't be logging
+anything here, log messages on driver load are only useful if you're
+saying something you've identified from the hardware - for example,
+logging the device revision on startup is very helpful.  The other is
+that you shouldn't need to supply a name and ID as platform data since
+that's exactly how the platform bus binds drivers.
+
+> +	regulator->control_voltage_step = regulator_pdata->control_voltage_step;
+> +	regulator->control_register = regulator_pdata->control_register;
+> +	regulator->control_enable_mask = regulator_pdata->control_enable_mask;
+> +	regulator->ramp_register = regulator_pdata->ramp_register;
+> +	regulator->ramp_enable_mask = regulator_pdata->ramp_enable_mask;
+> +	regulator->fixed_voltage = regulator_pdata->fixed_voltage;
+
+Your MFD didn't visibly provide any of this stuff, though I may have
+missed it, and honestly I'd expect most of this to be in the driver.

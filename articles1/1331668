@@ -1,0 +1,100 @@
+Path: news.gmane.org!not-for-mail
+From: Steven Whitehouse <swhiteho@redhat.com>
+Newsgroups: gmane.linux.cluster.redhat.cluster.devel,gmane.linux.kernel
+Subject: [PATCH 10/16] GFS2: Size seq_file buffer more
+	carefully
+Date: Mon, 23 Jul 2012 09:01:00 +0100
+Lines: 47
+Approved: news@gmane.org
+Message-ID: <1343030466-3053-11-git-send-email-swhiteho@redhat.com>
+References: <1343030466-3053-1-git-send-email-swhiteho@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343032052 1407 80.91.229.3 (23 Jul 2012 08:27:32 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 08:27:32 +0000 (UTC)
+To: linux-kernel@vger.kernel.org, cluster-devel@redhat.com
+Original-X-From: cluster-devel-bounces@redhat.com Mon Jul 23 10:27:32 2012
+Return-path: <cluster-devel-bounces@redhat.com>
+Envelope-to: glcrcd-cluster-devel@gmane.org
+Original-Received: from mx3-phx2.redhat.com ([209.132.183.24])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <cluster-devel-bounces@redhat.com>)
+	id 1StDzH-0006sk-3N
+	for glcrcd-cluster-devel@gmane.org; Mon, 23 Jul 2012 10:27:31 +0200
+Original-Received: from lists01.pubmisc.prod.ext.phx2.redhat.com (lists01.pubmisc.prod.ext.phx2.redhat.com [10.5.19.33])
+	by mx3-phx2.redhat.com (8.13.8/8.13.8) with ESMTP id q6N8QjVY011824;
+	Mon, 23 Jul 2012 04:26:45 -0400
+Original-Received: from int-mx01.intmail.prod.int.phx2.redhat.com
+	(int-mx01.intmail.prod.int.phx2.redhat.com [10.5.11.11])
+	by lists01.pubmisc.prod.ext.phx2.redhat.com (8.13.8/8.13.8) with ESMTP
+	id q6N8QOsq029440 for <cluster-devel@listman.util.phx.redhat.com>;
+	Mon, 23 Jul 2012 04:26:24 -0400
+Original-Received: from chywoon.redhat.com (vpn1-5-152.ams2.redhat.com [10.36.5.152])
+	by int-mx01.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with ESMTP
+	id q6N8Px9h016610; Mon, 23 Jul 2012 04:26:18 -0400
+In-Reply-To: <1343030466-3053-1-git-send-email-swhiteho@redhat.com>
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.11
+X-loop: cluster-devel@redhat.com
+X-BeenThere: cluster-devel@redhat.com
+X-Mailman-Version: 2.1.12
+Precedence: junk
+List-Id: "\[Cluster devel\]" <cluster-devel.redhat.com>
+List-Unsubscribe: <https://www.redhat.com/mailman/options/cluster-devel>,
+	<mailto:cluster-devel-request@redhat.com?subject=unsubscribe>
+List-Archive: <https://www.redhat.com/archives/cluster-devel>
+List-Post: <mailto:cluster-devel@redhat.com>
+List-Help: <mailto:cluster-devel-request@redhat.com?subject=help>
+List-Subscribe: <https://www.redhat.com/mailman/listinfo/cluster-devel>,
+	<mailto:cluster-devel-request@redhat.com?subject=subscribe>
+Original-Sender: cluster-devel-bounces@redhat.com
+Errors-To: cluster-devel-bounces@redhat.com
+Xref: news.gmane.org gmane.linux.cluster.redhat.cluster.devel:7198 gmane.linux.kernel:1331668
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331668>
+
+This places a limit on the buffer size for archs with larger
+PAGE_SIZE.
+
+Signed-off-by: Steven Whitehouse <swhiteho@redhat.com>
+Reported-by: Eric Dumazet <eric.dumazet@gmail.com>
+
+diff --git a/fs/gfs2/glock.c b/fs/gfs2/glock.c
+index 4d5d63d..1ed81f4 100644
+--- a/fs/gfs2/glock.c
++++ b/fs/gfs2/glock.c
+@@ -1977,6 +1977,8 @@ static const struct seq_operations gfs2_sbstats_seq_ops = {
+ 	.show  = gfs2_sbstats_seq_show,
+ };
+ 
++#define GFS2_SEQ_GOODSIZE min(PAGE_SIZE << PAGE_ALLOC_COSTLY_ORDER, 65536UL)
++
+ static int gfs2_glocks_open(struct inode *inode, struct file *file)
+ {
+ 	int ret = seq_open_private(file, &gfs2_glock_seq_ops,
+@@ -1985,9 +1987,9 @@ static int gfs2_glocks_open(struct inode *inode, struct file *file)
+ 		struct seq_file *seq = file->private_data;
+ 		struct gfs2_glock_iter *gi = seq->private;
+ 		gi->sdp = inode->i_private;
+-		seq->buf = kmalloc(8*PAGE_SIZE, GFP_KERNEL | __GFP_NOWARN);
++		seq->buf = kmalloc(GFS2_SEQ_GOODSIZE, GFP_KERNEL | __GFP_NOWARN);
+ 		if (seq->buf)
+-			seq->size = 8*PAGE_SIZE;
++			seq->size = GFS2_SEQ_GOODSIZE;
+ 	}
+ 	return ret;
+ }
+@@ -2000,9 +2002,9 @@ static int gfs2_glstats_open(struct inode *inode, struct file *file)
+ 		struct seq_file *seq = file->private_data;
+ 		struct gfs2_glock_iter *gi = seq->private;
+ 		gi->sdp = inode->i_private;
+-		seq->buf = kmalloc(8*PAGE_SIZE, GFP_KERNEL | __GFP_NOWARN);
++		seq->buf = kmalloc(GFS2_SEQ_GOODSIZE, GFP_KERNEL | __GFP_NOWARN);
+ 		if (seq->buf)
+-			seq->size = 8*PAGE_SIZE;
++			seq->size = GFS2_SEQ_GOODSIZE;
+ 	}
+ 	return ret;
+ }
+-- 
+1.7.4
+
+

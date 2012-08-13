@@ -1,0 +1,94 @@
+Path: news.gmane.org!not-for-mail
+From: Chanho Min <chanho0207@gmail.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.scsi
+Subject: Re: [PATCH] fix NULL-pointer dereference on scsi_run_queue
+Date: Tue, 7 Aug 2012 17:53:49 +0900
+Lines: 29
+Approved: news@gmane.org
+Message-ID: <CAOAMb1BWWzYPSode-6Y9+O5eNhMc-bYofCNwMRmzeC9-nhRb4g@mail.gmail.com>
+References: <CAOAMb1D+g0zzKGKjMPPp7V-XEwKB5AYGMDvUUbXNaHaz8ieTVg@mail.gmail.com>
+	<501CE4E5.20604@acm.org>
+	<501D51D1.2010806@cs.wisc.edu>
+	<501D83A1.7040900@acm.org>
+	<501DA3F0.4090009@cs.wisc.edu>
+	<50200561.4020100@acm.org>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1344329649 16965 80.91.229.3 (7 Aug 2012 08:54:09 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 08:54:09 +0000 (UTC)
+Cc: Mike Christie <michaelc@cs.wisc.edu>,
+	James Bottomley <JBottomley@parallels.com>,
+	linux-scsi@vger.kernel.org, linux-kernel@vger.kernel.org,
+	Jens Axboe <axboe@kernel.dk>, Tejun Heo <tj@kernel.org>
+To: Bart Van Assche <bvanassche@acm.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 10:54:07 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyfY9-0000kq-2u
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 10:54:01 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753180Ab2HGIxx (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 04:53:53 -0400
+Original-Received: from mail-wg0-f44.google.com ([74.125.82.44]:39603 "EHLO
+	mail-wg0-f44.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751621Ab2HGIxv (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 04:53:51 -0400
+Original-Received: by wgbdr13 with SMTP id dr13so3638904wgb.1
+        for <multiple recipients>; Tue, 07 Aug 2012 01:53:49 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=mime-version:in-reply-to:references:date:message-id:subject:from:to
+         :cc:content-type;
+        bh=CakoYqbhGq8A4upp+XyjmnxMSZlTWhxzZ82vDDHctBI=;
+        b=0H3uEP+YAf/OFVCcsf8p3B/owNU10yyyykiSlzVj7HebnwekiwT6dl8mQo17avPb9y
+         1agxKyA82zLG8fdtyvgiAjOj2SYIDtEvsU3a3uLKbSv/rh/cx6Mqk/82f6IngwClqVDv
+         JQ0O1P4yMdbMYLQBNUr0utEuDvLBCoEmGW/ieX3HlHBbiPYJsw/rqlN04VYzD+8sIL8K
+         2UOeKxPcpAvSMcnIMuvGBKsc135MBS+UUBctUzCF2igQHD9bYbi8oNtqdgwtb6JOQjIY
+         8dH5R5edXUEg5txnXtPqQgSaODyis4Hc5YIDzZlkMRE+wSYTS/zkKPILwUvjw78tiSxE
+         B4JQ==
+Original-Received: by 10.216.181.67 with SMTP id k45mr6611440wem.17.1344329629662; Tue,
+ 07 Aug 2012 01:53:49 -0700 (PDT)
+Original-Received: by 10.194.31.198 with HTTP; Tue, 7 Aug 2012 01:53:49 -0700 (PDT)
+In-Reply-To: <50200561.4020100@acm.org>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338872 gmane.linux.scsi:76786
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338872>
+
+On Tue, Aug 7, 2012 at 2:56 AM, Bart Van Assche <bvanassche@acm.org> wrote:
+> Indeed. How about the patch below ? Scsi devices are removed from
+> starved_list after blk_cleanup_queue() and before put_device(). That
+> guarantees that inside scsi_run_queue() get_device() under host lock
+> will succeed.
+Thanks, IMHO, it's harmless and the simple way to solve this issue.
+But, I think the second half of your patches are not required, extra
+referecne is might suffice?
+
+In addition, Is it ironic that we are careful to use put_device at
+scsi_request_fn?. If we trigger the ->remove(),
+It occur a oops. What about the removal of unlock/lock as patch bellow?
+
+diff --git a/drivers/scsi/scsi_lib.c b/drivers/scsi/scsi_lib.c
+index 4037fd5..8d9eccd 100644
+--- a/drivers/scsi/scsi_lib.c
++++ b/drivers/scsi/scsi_lib.c
+@@ -1608,11 +1608,7 @@ out_delay:
+        if (sdev->device_busy == 0)
+                blk_delay_queue(q, SCSI_QUEUE_DELAY);
+ out:
+-       /* must be careful here...if we trigger the ->remove() function
+-        * we cannot be holding the q lock */
+-       spin_unlock_irq(q->queue_lock);
+        put_device(&sdev->sdev_gendev);
+-       spin_lock_irq(q->queue_lock);
+ }
+
+ u64 scsi_calculate_bounce_limit(struct Scsi_Host *shost)

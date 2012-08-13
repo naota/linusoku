@@ -1,0 +1,118 @@
+Path: news.gmane.org!not-for-mail
+From: Michal Hocko <mhocko@suse.cz>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [PATCH] Cgroup: Fix memory accounting scalability in
+ shrink_page_list
+Date: Fri, 20 Jul 2012 15:53:29 +0200
+Lines: 48
+Approved: news@gmane.org
+Message-ID: <20120720135329.GA12440@tiehlicka.suse.cz>
+References: <1342740866.13492.50.camel@schen9-DESK>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1342792423 20697 80.91.229.3 (20 Jul 2012 13:53:43 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 13:53:43 +0000 (UTC)
+Cc: Andrew Morton <akpm@linux-foundation.org>,
+	Mel Gorman <mel@csn.ul.ie>,
+	KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>,
+	Minchan Kim <minchan@kernel.org>,
+	Johannes Weiner <hannes@cmpxchg.org>,
+	"Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>,
+	"andi.kleen" <andi.kleen@intel.com>, linux-mm <linux-mm@kvack.org>,
+	linux-kernel@vger.kernel.org
+To: Tim Chen <tim.c.chen@linux.intel.com>
+Original-X-From: owner-linux-mm@kvack.org Fri Jul 20 15:53:39 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SsDeE-0006e0-5t
+	for glkm-linux-mm-2@m.gmane.org; Fri, 20 Jul 2012 15:53:38 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id C43216B004D; Fri, 20 Jul 2012 09:53:36 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id B0AA46B005D; Fri, 20 Jul 2012 09:53:36 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 7B9B56B0068; Fri, 20 Jul 2012 09:53:36 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx177.postini.com [74.125.245.177])
+	by kanga.kvack.org (Postfix) with SMTP id BC6106B004D
+	for <linux-mm@kvack.org>; Fri, 20 Jul 2012 09:53:35 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx177.postini.com ([74.125.244.10]) with SMTP;
+	Fri, 20 Jul 2012 13:53:35 GMT
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id A32CB9A78E;
+	Fri, 20 Jul 2012 15:53:32 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <1342740866.13492.50.camel@schen9-DESK>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mhocko@suse.cz> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82780 gmane.linux.kernel:1330869
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330869>
+
+On Thu 19-07-12 16:34:26, Tim Chen wrote:
+[...]
+> diff --git a/mm/vmscan.c b/mm/vmscan.c
+> index 33dc256..aac5672 100644
+> --- a/mm/vmscan.c
+> +++ b/mm/vmscan.c
+> @@ -779,6 +779,7 @@ static unsigned long shrink_page_list(struct list_head *page_list,
+>  
+>  	cond_resched();
+>  
+> +	mem_cgroup_uncharge_start();
+>  	while (!list_empty(page_list)) {
+>  		enum page_references references;
+>  		struct address_space *mapping;
+
+Is this safe? We have a scheduling point few lines below. What prevents
+from task move while we are in the middle of the batch?
+
+> @@ -1026,6 +1027,7 @@ keep_lumpy:
+>  
+>  	list_splice(&ret_pages, page_list);
+>  	count_vm_events(PGACTIVATE, pgactivate);
+> +	mem_cgroup_uncharge_end();
+>  	*ret_nr_dirty += nr_dirty;
+>  	*ret_nr_writeback += nr_writeback;
+>  	return nr_reclaimed;
+> 
+> 
+> --
+> To unsubscribe, send a message with 'unsubscribe linux-mm' in
+> the body to majordomo@kvack.org.  For more info on Linux MM,
+> see: http://www.linux-mm.org/ .
+> Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+
+-- 
+Michal Hocko
+SUSE Labs
+SUSE LINUX s.r.o.
+Lihovarska 1060/12
+190 00 Praha 9    
+Czech Republic
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

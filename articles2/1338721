@@ -1,0 +1,114 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 49/70] ARM: 7477/1: vfp: Always save VFP state in vfp_pm_suspend on UP
+Date: Tue, 07 Aug 2012 04:28:44 +0100
+Lines: 57
+Approved: news@gmane.org
+Message-ID: <20120807032803.199659142@decadent.org.uk>
+References: <20120807032755.803571133@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344310762 18300 80.91.229.3 (7 Aug 2012 03:39:22 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 03:39:22 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Colin Cross <ccross@android.com>,
+	Barry Song <bs14@csr.com>,
+	Catalin Marinas <catalin.marinas@arm.com>,
+	Ido Yariv <ido@wizery.com>, Daniel Drake <dsd@laptop.org>,
+	Will Deacon <will.deacon@arm.com>,
+	Russell King <rmk+kernel@arm.linux.org.uk>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 05:39:19 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyadW-000319-1I
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 05:39:14 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S964802Ab2HGDiw (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 23:38:52 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:59813 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1757341Ab2HGDir (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 23:38:47 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Syacq-00081f-0b; Tue, 07 Aug 2012 04:38:32 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Syac5-0002qF-D1; Tue, 07 Aug 2012 04:37:45 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120807032755.803571133@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338721 gmane.linux.kernel.stable:29163
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338721>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Colin Cross <ccross@android.com>
+
+commit 24b35521b8ddf088531258f06f681bb7b227bf47 upstream.
+
+vfp_pm_suspend should save the VFP state in suspend after
+any lazy context switch.  If it only saves when the VFP is enabled,
+the state can get lost when, on a UP system:
+  Thread 1 uses the VFP
+  Context switch occurs to thread 2, VFP is disabled but the
+     VFP context is not saved
+  Thread 2 initiates suspend
+  vfp_pm_suspend is called with the VFP disabled, and the unsaved
+     VFP context of Thread 1 in the registers
+
+Modify vfp_pm_suspend to save the VFP context whenever
+vfp_current_hw_state is not NULL.
+
+Includes a fix from Ido Yariv <ido@wizery.com>, who pointed out that on
+SMP systems, the state pointer can be pointing to a freed task struct if
+a task exited on another cpu, fixed by using #ifndef CONFIG_SMP in the
+new if clause.
+
+Cc: Barry Song <bs14@csr.com>
+Cc: Catalin Marinas <catalin.marinas@arm.com>
+Cc: Ido Yariv <ido@wizery.com>
+Cc: Daniel Drake <dsd@laptop.org>
+Cc: Will Deacon <will.deacon@arm.com>
+Signed-off-by: Colin Cross <ccross@android.com>
+Signed-off-by: Russell King <rmk+kernel@arm.linux.org.uk>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ arch/arm/vfp/vfpmodule.c |    6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/arch/arm/vfp/vfpmodule.c b/arch/arm/vfp/vfpmodule.c
+index 9428006..fb849d0 100644
+--- a/arch/arm/vfp/vfpmodule.c
++++ b/arch/arm/vfp/vfpmodule.c
+@@ -457,6 +457,12 @@ static int vfp_pm_suspend(void)
+ 
+ 		/* disable, just in case */
+ 		fmxr(FPEXC, fmrx(FPEXC) & ~FPEXC_EN);
++	} else if (vfp_current_hw_state[ti->cpu]) {
++#ifndef CONFIG_SMP
++		fmxr(FPEXC, fpexc | FPEXC_EN);
++		vfp_save_state(vfp_current_hw_state[ti->cpu], fpexc);
++		fmxr(FPEXC, fpexc);
++#endif
+ 	}
+ 
+ 	/* clear any information we had about last context state */
+
+

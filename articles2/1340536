@@ -1,0 +1,165 @@
+Path: news.gmane.org!not-for-mail
+From: Mel Gorman <mgorman@suse.de>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [PATCH 5/5] mm: have order > 0 compaction start near a pageblock
+ with free pages
+Date: Thu, 9 Aug 2012 09:23:28 +0100
+Lines: 99
+Approved: news@gmane.org
+Message-ID: <20120809082328.GC12690@suse.de>
+References: <1344452924-24438-1-git-send-email-mgorman@suse.de>
+ <1344452924-24438-6-git-send-email-mgorman@suse.de>
+ <20120809001212.GB17835@bbox>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=iso-8859-15
+X-Trace: dough.gmane.org 1344500617 25074 80.91.229.3 (9 Aug 2012 08:23:37 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 08:23:37 +0000 (UTC)
+Cc: Linux-MM <linux-mm@kvack.org>, Rik van Riel <riel@redhat.com>,
+	Jim Schutt <jaschut@sandia.gov>, LKML <linux-kernel@vger.kernel.org>
+To: Minchan Kim <minchan@kernel.org>
+Original-X-From: owner-linux-mm@kvack.org Thu Aug 09 10:23:37 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SzO1o-0000qd-BX
+	for glkm-linux-mm-2@m.gmane.org; Thu, 09 Aug 2012 10:23:36 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id C1AB76B0044; Thu,  9 Aug 2012 04:23:34 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id AF02B6B005A; Thu,  9 Aug 2012 04:23:34 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 7EED26B005D; Thu,  9 Aug 2012 04:23:34 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx151.postini.com [74.125.245.151])
+	by kanga.kvack.org (Postfix) with SMTP id 731D86B0044
+	for <linux-mm@kvack.org>; Thu,  9 Aug 2012 04:23:33 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx151.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 09 Aug 2012 08:23:33 GMT
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id B6F07A2111;
+	Thu,  9 Aug 2012 10:23:31 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <20120809001212.GB17835@bbox>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mgorman@suse.de> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83876 gmane.linux.kernel:1340536
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340536>
+
+On Thu, Aug 09, 2012 at 09:12:12AM +0900, Minchan Kim wrote:
+> > <SNIP>
+> > 
+> > Second, it updates compact_cached_free_pfn in a more limited set of
+> > circumstances.
+> > 
+> > If a scanner has wrapped, it updates compact_cached_free_pfn to the end
+> > 	of the zone. When a wrapped scanner isolates a page, it updates
+> > 	compact_cached_free_pfn to point to the highest pageblock it
+> > 	can isolate pages from.
+> 
+> Okay until here.
+> 
+
+Great.
+
+> > 
+> > If a scanner has not wrapped when it has finished isolated pages it
+> > 	checks if compact_cached_free_pfn is pointing to the end of the
+> > 	zone. If so, the value is updated to point to the highest
+> > 	pageblock that pages were isolated from. This value will not
+> > 	be updated again until a free page scanner wraps and resets
+> > 	compact_cached_free_pfn.
+> 
+> I tried to understand your intention of this part but unfortunately failed.
+> By this part, the problem you mentioned could happen again?
+> 
+
+Potentially yes, I did say it still races in the changelog.
+
+>  				    			C
+>  Process A		M     S     			F
+>  		|---------------------------------------|
+>  Process B		M 	FS
+>  
+>  C is zone->compact_cached_free_pfn
+>  S is cc->start_pfree_pfn
+>  M is cc->migrate_pfn
+>  F is cc->free_pfn
+> 
+> In this diagram, Process A has just reached its migrate scanner, wrapped
+> around and updated compact_cached_free_pfn to end of the zone accordingly.
+> 
+
+Yes. Now that it has wrapped it updates the compact_cached_free_pfn
+every loop of isolate_freepages here.
+
+                if (isolated) {
+                        high_pfn = max(high_pfn, pfn);
+
+                        /*
+                         * If the free scanner has wrapped, update
+                         * compact_cached_free_pfn to point to the highest
+                         * pageblock with free pages. This reduces excessive
+                         * scanning of full pageblocks near the end of the
+                         * zone
+                         */
+                        if (cc->order > 0 && cc->wrapped)
+                                zone->compact_cached_free_pfn = high_pfn;
+                }
+
+
+
+> Simultaneously, Process B finishes isolating in a block and peek 
+> compact_cached_free_pfn position and know it's end of the zone so
+> update compact_cached_free_pfn to highest pageblock that pages were
+> isolated from.
+> 
+
+Yes, they race at this point. One of two things happen here and I agree
+that this is racy
+
+1. Process A does another iteration of its loop and sets it back
+2. Process A does not do another iteration of the loop, the cached_pfn
+   is further along that it should. The next compacting process will
+   wrap early and reset cached_pfn again but continue to scan the zone.
+
+Either option is relatively harmless because in both cases the zone gets
+scanned. In patch 4 it was possible that large portions of the zone were
+frequently missed.
+
+> Process A updates compact_cached_free_pfn to the highest pageblock which
+> was set by process B because process A has wrapped. It ends up big jump
+> without any scanning in process A.
+> 
+
+It recovers quickly and is nowhere near as severe as what patch 4
+suffers from.
+
+-- 
+Mel Gorman
+SUSE Labs
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

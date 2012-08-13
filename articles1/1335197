@@ -1,0 +1,152 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 09/41] mm: reduce the amount of work done when updating min_free_kbytes
+Date: Mon, 30 Jul 2012 10:31:08 -0700
+Lines: 89
+Approved: news@gmane.org
+Message-ID: <20120730172902.043408198@linuxfoundation.org>
+References: <20120730172901.306897424@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343669593 24808 80.91.229.3 (30 Jul 2012 17:33:13 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 17:33:13 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Mel Gorman <mgorman@suse.de>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 30 19:33:10 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Svtq3-0002Oh-AG
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 30 Jul 2012 19:33:03 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754822Ab2G3Rcj (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 30 Jul 2012 13:32:39 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:38517 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754748Ab2G3Rcf (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 30 Jul 2012 13:32:35 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so10147880pbb.19
+        for <linux-kernel@vger.kernel.org>; Mon, 30 Jul 2012 10:32:35 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=PREbpa3LGSFsQeViOwOxIFy57rfMlYlB/5W55be/PyU=;
+        b=QYCMG13k7HmUvkDo7xVyy7lki1PI9cMbq3b3/c7AQVQ6zvdhY9J4/3ilC29wuwbfYe
+         eoV8/jAOnm6w1vgZSK9UQhZOWiQlU3c2DYNGkytRaYkeKodu2FXKqmLVRE8twBfc5TXS
+         m7CO74/723qZ7jRRF0YQ6d2OcuFmTJXsd52H7yTM4KisSyAyadDwQjG3Ecs8wqaGQoLu
+         7T+4mH4cAaV+fiXXCIs6jYe4QAVvIYRtlWIrDE8m29GO0GUoj4BvRoRRUDlTEdlPT7Q0
+         fQG9mdZMvcgPn05yKVKowB3y/n2gMmd3T9FyHb59lrhvW71tPxMQRN29WPhkdCRdI0UW
+         3ujw==
+Original-Received: by 10.68.233.134 with SMTP id tw6mr35666967pbc.111.1343669555210;
+        Mon, 30 Jul 2012 10:32:35 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id of1sm8300309pbb.15.2012.07.30.10.32.33
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 30 Jul 2012 10:32:34 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120730172901.306897424@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQmG0DBm84o6JizqmaOvbw288n6cMW06a+C2yXjT8OCBWov142+BiDQK/07DPeZQxGebTzp3
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335197 gmane.linux.kernel.stable:28942
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335197>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Mel Gorman <mgorman@suse.de>
+
+commit 938929f14cb595f43cd1a4e63e22d36cab1e4a1f upstream.
+
+Stable note: Fixes https://bugzilla.novell.com/show_bug.cgi?id=726210 .
+        Large machines with 1TB or more of RAM take a long time to boot
+        without this patch and may spew out soft lockup warnings.
+
+When min_free_kbytes is updated, some pageblocks are marked
+MIGRATE_RESERVE.  Ordinarily, this work is unnoticable as it happens early
+in boot but on large machines with 1TB of memory, this has been reported
+to delay boot times, probably due to the NUMA distances involved.
+
+The bulk of the work is due to calling calling pageblock_is_reserved() an
+unnecessary amount of times and accessing far more struct page metadata
+than is necessary.  This patch significantly reduces the amount of work
+done by setup_zone_migrate_reserve() improving boot times on 1TB machines.
+
+[akpm@linux-foundation.org: coding-style fixes]
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ mm/page_alloc.c |   40 ++++++++++++++++++++++++----------------
+ 1 file changed, 24 insertions(+), 16 deletions(-)
+
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -3418,25 +3418,33 @@ static void setup_zone_migrate_reserve(s
+ 		if (page_to_nid(page) != zone_to_nid(zone))
+ 			continue;
+ 
+-		/* Blocks with reserved pages will never free, skip them. */
+-		block_end_pfn = min(pfn + pageblock_nr_pages, end_pfn);
+-		if (pageblock_is_reserved(pfn, block_end_pfn))
+-			continue;
+-
+ 		block_migratetype = get_pageblock_migratetype(page);
+ 
+-		/* If this block is reserved, account for it */
+-		if (reserve > 0 && block_migratetype == MIGRATE_RESERVE) {
+-			reserve--;
+-			continue;
+-		}
++		/* Only test what is necessary when the reserves are not met */
++		if (reserve > 0) {
++			/*
++			 * Blocks with reserved pages will never free, skip
++			 * them.
++			 */
++			block_end_pfn = min(pfn + pageblock_nr_pages, end_pfn);
++			if (pageblock_is_reserved(pfn, block_end_pfn))
++				continue;
+ 
+-		/* Suitable for reserving if this block is movable */
+-		if (reserve > 0 && block_migratetype == MIGRATE_MOVABLE) {
+-			set_pageblock_migratetype(page, MIGRATE_RESERVE);
+-			move_freepages_block(zone, page, MIGRATE_RESERVE);
+-			reserve--;
+-			continue;
++			/* If this block is reserved, account for it */
++			if (block_migratetype == MIGRATE_RESERVE) {
++				reserve--;
++				continue;
++			}
++
++			/* Suitable for reserving if this block is movable */
++			if (block_migratetype == MIGRATE_MOVABLE) {
++				set_pageblock_migratetype(page,
++							MIGRATE_RESERVE);
++				move_freepages_block(zone, page,
++							MIGRATE_RESERVE);
++				reserve--;
++				continue;
++			}
+ 		}
+ 
+ 		/*
+
+

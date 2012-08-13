@@ -1,0 +1,91 @@
+Path: news.gmane.org!not-for-mail
+From: Joonsoo Kim <js1304@gmail.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.mm
+Subject: [RESEND PATCH] slub: reduce failure of this_cpu_cmpxchg in put_cpu_partial() after unfreezing
+Date: Sat, 28 Jul 2012 04:20:29 +0900
+Lines: 32
+Approved: news@gmane.org
+Message-ID: <1343416829-3496-1-git-send-email-js1304@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343416916 2034 80.91.229.3 (27 Jul 2012 19:21:56 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 19:21:56 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, linux-mm@kvack.org,
+	Joonsoo Kim <js1304@gmail.com>,
+	Christoph Lameter <cl@linux.com>,
+	David Rientjes <rientjes@google.com>
+To: Pekka Enberg <penberg@kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 21:21:56 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Suq6k-0008Rb-Vx
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 21:21:55 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752642Ab2G0TVs (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 15:21:48 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:34733 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752237Ab2G0TVr (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 15:21:47 -0400
+Original-Received: by pbbrp8 with SMTP id rp8so5448771pbb.19
+        for <linux-kernel@vger.kernel.org>; Fri, 27 Jul 2012 12:21:46 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer;
+        bh=lu+HFqfqVzwMgJYxGpeWetPreZEfEhsFELsKEJFnYy8=;
+        b=re8br1MdM63iesMjJPmJYRUa2RBbdEeTyDWMdQshkWMVecocmy6XSF5b0hpo83GuS6
+         n1ha6lzTgqRAYWbRday9QwJqhv+epJLB5gTq2kgqx2Q2IjB0pIAJV58ZS5YRrPHSL6XL
+         2yU4+xXjQrQKBjoLpTpPMww/LG3zsnw7bLKjGi3cortccrEznE+6sc0yQMyeP9pNYUs1
+         pwOW0VSMYzJGSRSYAnhoJzX7w94eKQ5L1t/hLtF+PHkYu+KtrlYrBE1NVzMlADEfB3fZ
+         EPtBrJzy/jrFwd3q9RhirgTtWWf5Co7uADPunBkoqBQ/A8cvZetUbX5f0EDVh4UDqUsh
+         G4oA==
+Original-Received: by 10.68.192.40 with SMTP id hd8mr2032648pbc.125.1343416906629;
+        Fri, 27 Jul 2012 12:21:46 -0700 (PDT)
+Original-Received: from localhost.localdomain ([119.69.155.222])
+        by mx.google.com with ESMTPS id pq5sm2432249pbb.30.2012.07.27.12.21.43
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 27 Jul 2012 12:21:45 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9.5
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334466 gmane.linux.kernel.mm:83116
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334466>
+
+In current implementation, after unfreezing, we doesn't touch oldpage,
+so it remain 'NOT NULL'. When we call this_cpu_cmpxchg()
+with this old oldpage, this_cpu_cmpxchg() is mostly be failed.
+
+We can change value of oldpage to NULL after unfreezing,
+because unfreeze_partial() ensure that all the cpu partial slabs is removed
+from cpu partial list. In this time, we could expect that
+this_cpu_cmpxchg is mostly succeed.
+
+Signed-off-by: Joonsoo Kim <js1304@gmail.com>
+Cc: Christoph Lameter <cl@linux.com>
+Cc: David Rientjes <rientjes@google.com>
+Acked-by: Christoph Lameter <cl@linux.com>
+---
+Change log: Just add "Acked-by: Christoph Lameter <cl@linux.com>"
+Resend as ping for Penberg
+
+diff --git a/mm/slub.c b/mm/slub.c
+index e517d43..ca778e5 100644
+--- a/mm/slub.c
++++ b/mm/slub.c
+@@ -1952,6 +1952,7 @@ int put_cpu_partial(struct kmem_cache *s, struct page *page, int drain)
+ 				local_irq_save(flags);
+ 				unfreeze_partials(s);
+ 				local_irq_restore(flags);
++				oldpage = NULL;
+ 				pobjects = 0;
+ 				pages = 0;
+ 				stat(s, CPU_PARTIAL_DRAIN);
+-- 
+1.7.9.5
+

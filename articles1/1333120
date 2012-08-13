@@ -1,0 +1,129 @@
+Path: news.gmane.org!not-for-mail
+From: Masatake YAMATO <yamato@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.bluez.kernel
+Subject: [PATCH v5 3/8] Bluetooth: Added /proc/net/cmtp via bt_procfs_init()
+Date: Thu, 26 Jul 2012 01:28:07 +0900 (JST)
+Organization: Red Hat Japan, Inc.
+Lines: 76
+Approved: news@gmane.org
+Message-ID: <20120726.012807.860837428214880801.yamato@redhat.com>
+References: <20120716.222018.2029110835026223294.yamato@redhat.com>
+	<20120725001214.GP20029@joana>
+	<20120725003507.GR20029@joana>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343233701 4924 80.91.229.3 (25 Jul 2012 16:28:21 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 16:28:21 +0000 (UTC)
+Cc: andrei.emeltchenko.news@gmail.com, linux-kernel@vger.kernel.org,
+	linux-bluetooth@vger.kernel.org
+To: gustavo@padovan.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 18:28:21 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su4Rg-0007gW-K2
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 18:28:20 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756400Ab2GYQ2O (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 12:28:14 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:65406 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754886Ab2GYQ2M (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 12:28:12 -0400
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6PGSAd3012816
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Wed, 25 Jul 2012 12:28:10 -0400
+Original-Received: from localhost (vpn-237-27.phx2.redhat.com [10.3.237.27])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6PGS8SC000540;
+	Wed, 25 Jul 2012 12:28:09 -0400
+In-Reply-To: <20120725003507.GR20029@joana>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333120 gmane.linux.bluez.kernel:27760
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333120>
+
+Added /proc/net/cmtp via bt_procfs_init().
+
+Signed-off-by: Masatake YAMATO <yamato@redhat.com>
+---
+ net/bluetooth/cmtp/sock.c |   23 +++++++++++++++++++++--
+ 1 file changed, 21 insertions(+), 2 deletions(-)
+
+diff --git a/net/bluetooth/cmtp/sock.c b/net/bluetooth/cmtp/sock.c
+index 311668d..d5cacef 100644
+--- a/net/bluetooth/cmtp/sock.c
++++ b/net/bluetooth/cmtp/sock.c
+@@ -42,6 +42,10 @@
+ 
+ #include "cmtp.h"
+ 
++static struct bt_sock_list cmtp_sk_list = {
++	.lock = __RW_LOCK_UNLOCKED(cmtp_sk_list.lock)
++};
++
+ static int cmtp_sock_release(struct socket *sock)
+ {
+ 	struct sock *sk = sock->sk;
+@@ -51,6 +55,8 @@ static int cmtp_sock_release(struct socket *sock)
+ 	if (!sk)
+ 		return 0;
+ 
++	bt_sock_unlink(&cmtp_sk_list, sk);
++
+ 	sock_orphan(sk);
+ 	sock_put(sk);
+ 
+@@ -214,6 +220,8 @@ static int cmtp_sock_create(struct net *net, struct socket *sock, int protocol,
+ 	sk->sk_protocol = protocol;
+ 	sk->sk_state    = BT_OPEN;
+ 
++	bt_sock_link(&cmtp_sk_list, sk);
++
+ 	return 0;
+ }
+ 
+@@ -232,19 +240,30 @@ int cmtp_init_sockets(void)
+ 		return err;
+ 
+ 	err = bt_sock_register(BTPROTO_CMTP, &cmtp_sock_family_ops);
+-	if (err < 0)
++	if (err < 0) {
++		BT_ERR("Can't register CMTP socket");
+ 		goto error;
++	}
++
++	err = bt_procfs_init(THIS_MODULE, &init_net, "cmtp", &cmtp_sk_list, NULL);
++	if (err < 0) {
++		BT_ERR("Failed to create CMTP proc file");
++		bt_sock_unregister(BTPROTO_HIDP);
++		goto error;
++	}
++
++	BT_INFO("CMTP socket layer initialized");
+ 
+ 	return 0;
+ 
+ error:
+-	BT_ERR("Can't register CMTP socket");
+ 	proto_unregister(&cmtp_proto);
+ 	return err;
+ }
+ 
+ void cmtp_cleanup_sockets(void)
+ {
++	bt_procfs_cleanup(&init_net, "cmtp");
+ 	if (bt_sock_unregister(BTPROTO_CMTP) < 0)
+ 		BT_ERR("Can't unregister CMTP socket");
+ 
+-- 
+1.7.10.4
+

@@ -1,0 +1,89 @@
+Path: news.gmane.org!not-for-mail
+From: Jesper Juhl <jj@chaosbits.net>
+Newsgroups: gmane.linux.kernel,gmane.comp.video.dri.devel
+Subject: [PATCH] drm, ast_fb: Fix a small leak in astfb_create()
+Date: Fri, 20 Jul 2012 20:46:31 +0200 (CEST)
+Lines: 43
+Approved: news@gmane.org
+Message-ID: <alpine.LNX.2.00.1207202045020.23164@swampdragon.chaosbits.net>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: TEXT/PLAIN; charset=US-ASCII
+X-Trace: dough.gmane.org 1342810006 8707 80.91.229.3 (20 Jul 2012 18:46:46 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 18:46:46 +0000 (UTC)
+Cc: Dave Airlie <airlied@redhat.com>, dri-devel@lists.freedesktop.org,
+	linux-kernel@vger.kernel.org
+To: David Airlie <airlied@linux.ie>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 20:46:46 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsIDr-0008Rw-2g
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 20:46:43 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752234Ab2GTSqe (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 14:46:34 -0400
+Original-Received: from 1010ds2-suoe.0.fullrate.dk ([90.184.90.115]:24839 "EHLO
+	swampdragon.chaosbits.net" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751439Ab2GTSqd (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 14:46:33 -0400
+Original-Received: by swampdragon.chaosbits.net (Postfix, from userid 1000)
+	id 7C8999403D; Fri, 20 Jul 2012 20:46:31 +0200 (CEST)
+Original-Received: from localhost (localhost [127.0.0.1])
+	by swampdragon.chaosbits.net (Postfix) with ESMTP id 74D1C9403B;
+	Fri, 20 Jul 2012 20:46:31 +0200 (CEST)
+User-Agent: Alpine 2.00 (LNX 1167 2008-08-23)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331005 gmane.comp.video.dri.devel:71587
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331005>
+
+We have this code:
+
+...
+	sysram = vmalloc(size);
+	if (!sysram)
+		return -ENOMEM;
+
+	info = framebuffer_alloc(0, device);
+	if (!info) {
+		ret = -ENOMEM;
+		goto out;
+	}
+...
+
+We'll leak the memory allocated to 'sysram' if the framebuffer_alloc()
+call fails and the variable goes out of scope.
+
+Signed-off-by: Jesper Juhl <jj@chaosbits.net>
+---
+ drivers/gpu/drm/ast/ast_fb.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/gpu/drm/ast/ast_fb.c b/drivers/gpu/drm/ast/ast_fb.c
+index 2fc8e9e..260a760 100644
+--- a/drivers/gpu/drm/ast/ast_fb.c
++++ b/drivers/gpu/drm/ast/ast_fb.c
+@@ -180,6 +180,7 @@ static int astfb_create(struct ast_fbdev *afbdev,
+ 
+ 	info = framebuffer_alloc(0, device);
+ 	if (!info) {
++		vfree(sysram);
+ 		ret = -ENOMEM;
+ 		goto out;
+ 	}
+-- 
+1.7.11.2
+
+
+-- 
+Jesper Juhl <jj@chaosbits.net>       http://www.chaosbits.net/
+Don't top-post http://www.catb.org/jargon/html/T/top-post.html
+Plain text mails only, please.
+

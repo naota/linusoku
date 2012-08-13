@@ -1,0 +1,199 @@
+Path: news.gmane.org!not-for-mail
+From: Sha Zhengju <handai.szj@gmail.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel.cgroups,gmane.linux.kernel,gmane.linux.file-systems,gmane.comp.file-systems.ceph.devel
+Subject: [PATCH V2 3/6] Use vfs __set_page_dirty interface instead of doing it inside filesystem
+Date: Fri, 27 Jul 2012 18:27:05 +0800
+Lines: 114
+Approved: news@gmane.org
+Message-ID: <1343384825-20127-1-git-send-email-handai.szj@taobao.com>
+References: <1343384432-19903-1-git-send-email-handai.szj@taobao.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343384847 21344 80.91.229.3 (27 Jul 2012 10:27:27 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 10:27:27 +0000 (UTC)
+Cc: fengguang.wu@intel.com,
+	gthelen@google.com,
+	akpm@linux-foundation.org,
+	yinghan@google.com,
+	mhocko@suse.cz,
+	linux-kernel@vger.kernel.org,
+	hannes@cmpxchg.org,
+	torvalds@linux-foundation.org,
+	viro@zeniv.linux.org.uk,
+	linux-fsdevel@vger.kernel.org,
+	sage@newdream.net,
+	ceph-devel@vger.kernel.org,
+	Sha Zhengju <handai.szj@taobao.com>
+To: linux-mm@kvack.org,
+	cgroups@vger.kernel.org
+Original-X-From: owner-linux-mm@kvack.org Fri Jul 27 12:27:23 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SuhlS-0006bZ-BM
+	for glkm-linux-mm-2@m.gmane.org; Fri, 27 Jul 2012 12:27:22 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id B31416B0085; Fri, 27 Jul 2012 06:27:20 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id A06586B0088; Fri, 27 Jul 2012 06:27:20 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 447C56B0089; Fri, 27 Jul 2012 06:27:20 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx147.postini.com [74.125.245.147])
+	by kanga.kvack.org (Postfix) with SMTP id 9683C6B0085
+	for <linux-mm@kvack.org>; Fri, 27 Jul 2012 06:27:19 -0400 (EDT)
+Original-Received: from mail-pb0-f41.google.com ([209.85.160.41]) (using TLSv1) by na3sys010amx147.postini.com ([74.125.244.10]) with SMTP;
+	Fri, 27 Jul 2012 10:27:19 GMT
+Original-Received: by pbbrp2 with SMTP id rp2so5512884pbb.14
+        for <linux-mm@kvack.org>; Fri, 27 Jul 2012 03:27:18 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=8ewitbPAtxx4ugzRXe4kW86VkqIXb61Mb4SsJwKH6HA=;
+        b=XWHTpHTkjQKcqoZ9kOtV46kWzhYxrzLscIq7W/AX+MrZVQCHb+kxgFkfMs2Wha2oPR
+         oNnWMPsHWi+eFUvtEn8RK9cKD9UUGzdS5pSx+wXNdV7V64+Ra8P9UJ5unFmWQTz5FE+2
+         WAzHInlyyXW1d5aTRLugsecy+ZZUtJyiv9ZZ37j0zkj2EdTi1n2DaS/Nv4Y1cZMTXVt1
+         gUlNPztwUXqiMx3/la3sXCFZa0qZ782hGgAl8pt5+aEcWimQaKdWoD1wuSvEtLQzxofn
+         xCelh6AsFUeYdf6MLgBbi0ybe1qHnsTmtmm1WnUjm5Kp5hrd3ey1F8rKmOm+/s+2aydk
+         Q6Ug==
+Original-Received: by 10.68.192.40 with SMTP id hd8mr12842624pbc.125.1343384838764;
+        Fri, 27 Jul 2012 03:27:18 -0700 (PDT)
+Original-Received: from localhost.localdomain ([182.92.247.2])
+        by mx.google.com with ESMTPS id kh1sm1666927pbc.23.2012.07.27.03.27.14
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 27 Jul 2012 03:27:18 -0700 (PDT)
+X-Mailer: git-send-email 1.7.4.1
+In-Reply-To: <1343384432-19903-1-git-send-email-handai.szj@taobao.com>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:91.71554/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 1 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:0.0100) s cv GT3 gt2 gt1 r p m c 
+X-pstn-addresses: from <handai.szj@gmail.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83076 gmane.linux.kernel.cgroups:3472 gmane.linux.kernel:1334202 gmane.linux.file-systems:66293 gmane.comp.file-systems.ceph.devel:8176
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334202>
+
+From: Sha Zhengju <handai.szj@taobao.com>
+
+Following we will treat SetPageDirty and dirty page accounting as an integrated
+operation. Filesystems had better use vfs interface directly to avoid those details.
+
+Signed-off-by: Sha Zhengju <handai.szj@taobao.com>
+Acked-by: Sage Weil <sage@inktank.com>
+---
+ fs/buffer.c                 |    3 ++-
+ fs/ceph/addr.c              |   20 ++------------------
+ include/linux/buffer_head.h |    2 ++
+ 3 files changed, 6 insertions(+), 19 deletions(-)
+
+diff --git a/fs/buffer.c b/fs/buffer.c
+index 5e0b0d2..ffcfb87 100644
+--- a/fs/buffer.c
++++ b/fs/buffer.c
+@@ -610,7 +610,7 @@ EXPORT_SYMBOL(mark_buffer_dirty_inode);
+  * If warn is true, then emit a warning if the page is not uptodate and has
+  * not been truncated.
+  */
+-static int __set_page_dirty(struct page *page,
++int __set_page_dirty(struct page *page,
+ 		struct address_space *mapping, int warn)
+ {
+ 	if (unlikely(!mapping))
+@@ -631,6 +631,7 @@ static int __set_page_dirty(struct page *page,
+ 
+ 	return 1;
+ }
++EXPORT_SYMBOL(__set_page_dirty);
+ 
+ /*
+  * Add a page to the dirty page list.
+diff --git a/fs/ceph/addr.c b/fs/ceph/addr.c
+index 8b67304..d028fbe 100644
+--- a/fs/ceph/addr.c
++++ b/fs/ceph/addr.c
+@@ -5,6 +5,7 @@
+ #include <linux/mm.h>
+ #include <linux/pagemap.h>
+ #include <linux/writeback.h>	/* generic_writepages */
++#include <linux/buffer_head.h>
+ #include <linux/slab.h>
+ #include <linux/pagevec.h>
+ #include <linux/task_io_accounting_ops.h>
+@@ -73,14 +74,8 @@ static int ceph_set_page_dirty(struct page *page)
+ 	int undo = 0;
+ 	struct ceph_snap_context *snapc;
+ 
+-	if (unlikely(!mapping))
+-		return !TestSetPageDirty(page);
+-
+-	if (TestSetPageDirty(page)) {
+-		dout("%p set_page_dirty %p idx %lu -- already dirty\n",
+-		     mapping->host, page, page->index);
++	if (!__set_page_dirty(page, mapping, 1))
+ 		return 0;
+-	}
+ 
+ 	inode = mapping->host;
+ 	ci = ceph_inode(inode);
+@@ -107,14 +102,7 @@ static int ceph_set_page_dirty(struct page *page)
+ 	     snapc, snapc->seq, snapc->num_snaps);
+ 	spin_unlock(&ci->i_ceph_lock);
+ 
+-	/* now adjust page */
+-	spin_lock_irq(&mapping->tree_lock);
+ 	if (page->mapping) {	/* Race with truncate? */
+-		WARN_ON_ONCE(!PageUptodate(page));
+-		account_page_dirtied(page, page->mapping);
+-		radix_tree_tag_set(&mapping->page_tree,
+-				page_index(page), PAGECACHE_TAG_DIRTY);
+-
+ 		/*
+ 		 * Reference snap context in page->private.  Also set
+ 		 * PagePrivate so that we get invalidatepage callback.
+@@ -126,14 +114,10 @@ static int ceph_set_page_dirty(struct page *page)
+ 		undo = 1;
+ 	}
+ 
+-	spin_unlock_irq(&mapping->tree_lock);
+-
+ 	if (undo)
+ 		/* whoops, we failed to dirty the page */
+ 		ceph_put_wrbuffer_cap_refs(ci, 1, snapc);
+ 
+-	__mark_inode_dirty(mapping->host, I_DIRTY_PAGES);
+-
+ 	BUG_ON(!PageDirty(page));
+ 	return 1;
+ }
+diff --git a/include/linux/buffer_head.h b/include/linux/buffer_head.h
+index 458f497..0a331a8 100644
+--- a/include/linux/buffer_head.h
++++ b/include/linux/buffer_head.h
+@@ -336,6 +336,8 @@ static inline void lock_buffer(struct buffer_head *bh)
+ }
+ 
+ extern int __set_page_dirty_buffers(struct page *page);
++extern int __set_page_dirty(struct page *page,
++		struct address_space *mapping, int warn);
+ 
+ #else /* CONFIG_BLOCK */
+ 
+-- 
+1.7.1
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

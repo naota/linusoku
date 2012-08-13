@@ -1,0 +1,115 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 58/73] [SCSI] fix eh wakeup (scsi_schedule_eh vs scsi_restart_operations)
+Date: Tue, 31 Jul 2012 05:44:08 +0100
+Lines: 61
+Approved: news@gmane.org
+Message-ID: <20120731044320.598387954@decadent.org.uk>
+References: <20120731044310.013763753@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343710235 21268 80.91.229.3 (31 Jul 2012 04:50:35 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 04:50:35 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Dan Williams <dan.j.williams@intel.com>,
+	Tom Jackson <thomas.p.jackson@intel.com>,
+	James Bottomley <JBottomley@Parallels.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 06:50:34 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sw4Pg-0007kW-LL
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 06:50:32 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755422Ab2GaEu3 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 00:50:29 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:48664 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1755499Ab2GaEu0 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 00:50:26 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Sw4PQ-0003QS-Lc; Tue, 31 Jul 2012 05:50:16 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Sw4Or-0000Ci-T6; Tue, 31 Jul 2012 05:49:41 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120731044310.013763753@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335409 gmane.linux.kernel.stable:28980
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335409>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Dan Williams <dan.j.williams@intel.com>
+
+commit 57fc2e335fd3c2f898ee73570dc81426c28dc7b4 upstream.
+
+Rapid ata hotplug on a libsas controller results in cases where libsas
+is waiting indefinitely on eh to perform an ata probe.
+
+A race exists between scsi_schedule_eh() and scsi_restart_operations()
+in the case when scsi_restart_operations() issues i/o to other devices
+in the sas domain.  When this happens the host state transitions from
+SHOST_RECOVERY (set by scsi_schedule_eh) back to SHOST_RUNNING and
+->host_busy is non-zero so we put the eh thread to sleep even though
+->host_eh_scheduled is active.
+
+Before putting the error handler to sleep we need to check if the
+host_state needs to return to SHOST_RECOVERY for another trip through
+eh.  Since i/o that is released by scsi_restart_operations has been
+blocked for at least one eh cycle, this implementation allows those
+i/o's to run before another eh cycle starts to discourage hung task
+timeouts.
+
+Reported-by: Tom Jackson <thomas.p.jackson@intel.com>
+Tested-by: Tom Jackson <thomas.p.jackson@intel.com>
+Signed-off-by: Dan Williams <dan.j.williams@intel.com>
+Signed-off-by: James Bottomley <JBottomley@Parallels.com>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ drivers/scsi/scsi_error.c |   14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/drivers/scsi/scsi_error.c b/drivers/scsi/scsi_error.c
+index d0f71e5..804f632 100644
+--- a/drivers/scsi/scsi_error.c
++++ b/drivers/scsi/scsi_error.c
+@@ -1687,6 +1687,20 @@ static void scsi_restart_operations(struct Scsi_Host *shost)
+ 	 * requests are started.
+ 	 */
+ 	scsi_run_host_queues(shost);
++
++	/*
++	 * if eh is active and host_eh_scheduled is pending we need to re-run
++	 * recovery.  we do this check after scsi_run_host_queues() to allow
++	 * everything pent up since the last eh run a chance to make forward
++	 * progress before we sync again.  Either we'll immediately re-run
++	 * recovery or scsi_device_unbusy() will wake us again when these
++	 * pending commands complete.
++	 */
++	spin_lock_irqsave(shost->host_lock, flags);
++	if (shost->host_eh_scheduled)
++		if (scsi_host_set_state(shost, SHOST_RECOVERY))
++			WARN_ON(scsi_host_set_state(shost, SHOST_CANCEL_RECOVERY));
++	spin_unlock_irqrestore(shost->host_lock, flags);
+ }
+ 
+ /**
+
+

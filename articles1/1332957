@@ -1,0 +1,133 @@
+Path: news.gmane.org!not-for-mail
+From: Stanislav Kinsbursky <skinsbursky@parallels.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.nfs,gmane.linux.openvz.devel
+Subject: [PATCH v2 04/15] LockD: manage used host count per networks namespace
+Date: Wed, 25 Jul 2012 16:56:19 +0400
+Lines: 87
+Approved: news@gmane.org
+Message-ID: <20120725125619.24376.71289.stgit@localhost.localdomain>
+References: <20120725125258.24376.82525.stgit@localhost.localdomain>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343221074 20834 80.91.229.3 (25 Jul 2012 12:57:54 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 12:57:54 +0000 (UTC)
+Cc: linux-nfs@vger.kernel.org, Trond.Myklebust@netapp.com,
+	linux-kernel@vger.kernel.org, devel@openvz.org
+To: bfields@fieldses.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 14:57:53 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su19z-000385-BR
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 14:57:51 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756772Ab2GYM5r (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 08:57:47 -0400
+Original-Received: from mailhub.sw.ru ([195.214.232.25]:3010 "EHLO relay.sw.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1756366Ab2GYM5o (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 08:57:44 -0400
+Original-Received: from localhost.localdomain ([10.30.21.131])
+	by relay.sw.ru (8.13.4/8.13.4) with ESMTP id q6PCvWRn005821;
+	Wed, 25 Jul 2012 16:57:33 +0400 (MSK)
+In-Reply-To: <20120725125258.24376.82525.stgit@localhost.localdomain>
+User-Agent: StGit/0.16
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332957 gmane.linux.nfs:51104 gmane.linux.openvz.devel:1888
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332957>
+
+This patch introduces moves nrhosts in per-net data.
+It also adds kernel warning to nlm_shutdown_hosts_net() about remaining hosts
+in specified network namespace context.
+
+Signed-off-by: Stanislav Kinsbursky <skinsbursky@parallels.com>
+---
+ fs/lockd/host.c  |   18 ++++++++++++++++++
+ fs/lockd/netns.h |    1 +
+ 2 files changed, 19 insertions(+), 0 deletions(-)
+
+diff --git a/fs/lockd/host.c b/fs/lockd/host.c
+index 3636734..6c56090 100644
+--- a/fs/lockd/host.c
++++ b/fs/lockd/host.c
+@@ -173,6 +173,7 @@ out:
+ static void nlm_destroy_host_locked(struct nlm_host *host)
+ {
+ 	struct rpc_clnt	*clnt;
++	struct lockd_net *ln = net_generic(host->net, lockd_net_id);
+ 
+ 	dprintk("lockd: destroy host %s\n", host->h_name);
+ 
+@@ -189,6 +190,7 @@ static void nlm_destroy_host_locked(struct nlm_host *host)
+ 		rpc_shutdown_client(clnt);
+ 	kfree(host);
+ 
++	ln->nrhosts--;
+ 	nrhosts--;
+ }
+ 
+@@ -229,6 +231,7 @@ struct nlm_host *nlmclnt_lookup_host(const struct sockaddr *sap,
+ 	struct hlist_node *pos;
+ 	struct nlm_host	*host;
+ 	struct nsm_handle *nsm = NULL;
++	struct lockd_net *ln = net_generic(net, lockd_net_id);
+ 
+ 	dprintk("lockd: %s(host='%s', vers=%u, proto=%s)\n", __func__,
+ 			(hostname ? hostname : "<none>"), version,
+@@ -263,6 +266,7 @@ struct nlm_host *nlmclnt_lookup_host(const struct sockaddr *sap,
+ 		goto out;
+ 
+ 	hlist_add_head(&host->h_hash, chain);
++	ln->nrhosts++;
+ 	nrhosts++;
+ 
+ 	dprintk("lockd: %s created host %s (%s)\n", __func__,
+@@ -384,6 +388,7 @@ struct nlm_host *nlmsvc_lookup_host(const struct svc_rqst *rqstp,
+ 	memcpy(nlm_srcaddr(host), src_sap, src_len);
+ 	host->h_srcaddrlen = src_len;
+ 	hlist_add_head(&host->h_hash, chain);
++	ln->nrhosts++;
+ 	nrhosts++;
+ 
+ 	dprintk("lockd: %s created host %s (%s)\n",
+@@ -592,6 +597,19 @@ nlm_shutdown_hosts_net(struct net *net)
+ 	/* Then, perform a garbage collection pass */
+ 	nlm_gc_hosts(net);
+ 	mutex_unlock(&nlm_host_mutex);
++
++	/* complain if any hosts are left */
++	if (net) {
++		struct lockd_net *ln = net_generic(net, lockd_net_id);
++
++		printk(KERN_WARNING "lockd: couldn't shutdown host module for net %p!\n", net);
++		dprintk("lockd: %lu hosts left in net %p:\n", ln->nrhosts, net);
++		for_each_host(host, pos, chain, nlm_server_hosts) {
++			dprintk("       %s (cnt %d use %d exp %ld net %p)\n",
++				host->h_name, atomic_read(&host->h_count),
++				host->h_inuse, host->h_expires, host->net);
++		}
++	}
+ }
+ 
+ /*
+diff --git a/fs/lockd/netns.h b/fs/lockd/netns.h
+index 97c6c77..44c8f0b 100644
+--- a/fs/lockd/netns.h
++++ b/fs/lockd/netns.h
+@@ -6,6 +6,7 @@
+ struct lockd_net {
+ 	unsigned int nlmsvc_users;
+ 	unsigned long next_gc;
++	unsigned long nrhosts;
+ };
+ 
+ extern int lockd_net_id;
+

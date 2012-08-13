@@ -1,0 +1,90 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Mahoney <jeffm@suse.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [PATCH] printk: Fix calculation of length used to discard records
+Date: Fri, 10 Aug 2012 15:07:09 -0400
+Lines: 42
+Approved: news@gmane.org
+Message-ID: <50255BDD.2070508@suse.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344625662 27020 80.91.229.3 (10 Aug 2012 19:07:42 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 19:07:42 +0000 (UTC)
+Cc: stable@kernel.org,
+	Linux Kernel Maling List <linux-kernel@vger.kernel.org>
+To: Linus Torvalds <torvalds@linux-foundation.org>,
+	Kay Sievers <kay@vrfy.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 10 21:07:41 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzuYZ-0004Rd-Jf
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 10 Aug 2012 21:07:35 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932234Ab2HJTHY (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 10 Aug 2012 15:07:24 -0400
+Original-Received: from cantor2.suse.de ([195.135.220.15]:34001 "EHLO mx2.suse.de"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754870Ab2HJTHT (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 10 Aug 2012 15:07:19 -0400
+Original-Received: from relay1.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 0DB38A341E;
+	Fri, 10 Aug 2012 21:07:16 +0200 (CEST)
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.8; rv:14.0) Gecko/20120713 Thunderbird/14.0
+X-Enigmail-Version: 1.4.3
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341405 gmane.linux.kernel.stable:29574
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341405>
+
+While tracking down a weird buffer overflow issue in a program that
+looked to be sane, I started double checking the length returned
+by syslog(SYSLOG_ACTION_READ_ALL, ...) to make sure it wasn't overflowing
+the buffer. Sure enough, it was.  I saw this in strace:
+
+11339 syslog(SYSLOG_ACTION_READ_ALL, "<5>[244017.708129] REISERFS (dev"..., 8192) = 8279
+
+It turns out that the loops that calculate how much space the entries
+will take when they're copied don't include the newlines and
+prefixes that will be included in the final output since prev flags
+is passed as 0. 
+
+This patch properly accounts for it and fixes the overflow.
+
+CC: stable@kernel.org
+Signed-off-by: Jeff Mahoney <jeffm@suse.com>
+---
+ kernel/printk.c |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/kernel/printk.c
++++ b/kernel/printk.c
+@@ -1034,6 +1034,7 @@ static int syslog_print_all(char __user
+ 			struct log *msg = log_from_idx(idx);
+ 
+ 			len += msg_print_text(msg, prev, true, NULL, 0);
++			prev = msg->flags;
+ 			idx = log_next(idx);
+ 			seq++;
+ 		}
+@@ -1046,6 +1047,7 @@ static int syslog_print_all(char __user
+ 			struct log *msg = log_from_idx(idx);
+ 
+ 			len -= msg_print_text(msg, prev, true, NULL, 0);
++			prev = msg->flags;
+ 			idx = log_next(idx);
+ 			seq++;
+ 		}
+
+-- 
+Jeff Mahoney
+SUSE Labs

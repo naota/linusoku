@@ -1,0 +1,136 @@
+Path: news.gmane.org!not-for-mail
+From: Ian Kent <ikent@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.file-systems,gmane.linux.kernel.autofs
+Subject: [PATCH] autofs4 - fix get_next_positive_subdir()
+Date: Mon, 06 Aug 2012 09:37:47 +0800
+Lines: 82
+Approved: news@gmane.org
+Message-ID: <20120806013747.2915.64344.stgit@perseus.themaw.net>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344217090 1514 80.91.229.3 (6 Aug 2012 01:38:10 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 01:38:10 +0000 (UTC)
+Cc: Kernel Mailing List <linux-kernel@vger.kernel.org>,
+	linux-fsdevel <linux-fsdevel@vger.kernel.org>,
+	autofs mailing list <autofs@vger.kernel.org>,
+	Jan Sanislo <oystr@cs.washington.edu>
+To: Linus Torvalds <torvalds@linux-foundation.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Aug 06 03:38:10 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyCGm-0007Oa-2J
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 06 Aug 2012 03:38:08 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755450Ab2HFBh6 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 5 Aug 2012 21:37:58 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:31773 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755168Ab2HFBh4 (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 5 Aug 2012 21:37:56 -0400
+Original-Received: from int-mx10.intmail.prod.int.phx2.redhat.com (int-mx10.intmail.prod.int.phx2.redhat.com [10.5.11.23])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q761boo9000607
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Sun, 5 Aug 2012 21:37:50 -0400
+Original-Received: from perseus.themaw.net (ovpn-113-47.phx2.redhat.com [10.3.113.47])
+	by int-mx10.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q761bm5G026146;
+	Sun, 5 Aug 2012 21:37:49 -0400
+Original-Received: from perseus.themaw.net (localhost [127.0.0.1])
+	by perseus.themaw.net (Postfix) with ESMTP id BDDB4E348A;
+	Mon,  6 Aug 2012 09:37:47 +0800 (WST)
+User-Agent: StGIT/0.14.3
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.23
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337977 gmane.linux.file-systems:66434 gmane.linux.kernel.autofs:6414
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337977>
+
+From: Ian Kent <raven@themaw.net>
+
+Following a report of a crash during an automount expire I found that
+the locking in fs/autofs4/expire.c:get_next_positive_subdir() was wrong.
+Not only is the locking wrong but the function is more complex than it
+needs to be.
+
+The function is meant to calculate (and dget) the next entry in the list
+of directories contained in the root of an autofs mount point (an autofs
+indirect mount to be precise). The main problem was that the d_lock of
+the owner of the list was not being taken when walking the list, which
+lead to list corruption under load. The only other lock that needs to
+be taken is against the next dentry candidate so it can be checked for
+usability.
+
+Signed-off-by: Ian Kent <raven@themaw.net>
+---
+
+ fs/autofs4/expire.c |   31 +++++++++++++------------------
+ 1 files changed, 13 insertions(+), 18 deletions(-)
+
+diff --git a/fs/autofs4/expire.c b/fs/autofs4/expire.c
+index 1feb68e..8c0e56d 100644
+--- a/fs/autofs4/expire.c
++++ b/fs/autofs4/expire.c
+@@ -94,25 +94,21 @@ static struct dentry *get_next_positive_subdir(struct dentry *prev,
+ {
+ 	struct autofs_sb_info *sbi = autofs4_sbi(root->d_sb);
+ 	struct list_head *next;
+-	struct dentry *p, *q;
++	struct dentry *q;
+ 
+ 	spin_lock(&sbi->lookup_lock);
++	spin_lock(&root->d_lock);
+ 
+-	if (prev == NULL) {
+-		spin_lock(&root->d_lock);
++	if (prev)
++		next = prev->d_u.d_child.next;
++	else {
+ 		prev = dget_dlock(root);
+ 		next = prev->d_subdirs.next;
+-		p = prev;
+-		goto start;
+ 	}
+ 
+-	p = prev;
+-	spin_lock(&p->d_lock);
+-again:
+-	next = p->d_u.d_child.next;
+-start:
++cont:
+ 	if (next == &root->d_subdirs) {
+-		spin_unlock(&p->d_lock);
++		spin_unlock(&root->d_lock);
+ 		spin_unlock(&sbi->lookup_lock);
+ 		dput(prev);
+ 		return NULL;
+@@ -121,16 +117,15 @@ start:
+ 	q = list_entry(next, struct dentry, d_u.d_child);
+ 
+ 	spin_lock_nested(&q->d_lock, DENTRY_D_LOCK_NESTED);
+-	/* Negative dentry - try next */
+-	if (!simple_positive(q)) {
+-		spin_unlock(&p->d_lock);
+-		lock_set_subclass(&q->d_lock.dep_map, 0, _RET_IP_);
+-		p = q;
+-		goto again;
++	/* Already gone or negative dentry (under construction) - try next */
++	if (q->d_count == 0 || !simple_positive(q)) {
++		spin_unlock(&q->d_lock);
++		next = q->d_u.d_child.next;
++		goto cont;
+ 	}
+ 	dget_dlock(q);
+ 	spin_unlock(&q->d_lock);
+-	spin_unlock(&p->d_lock);
++	spin_unlock(&root->d_lock);
+ 	spin_unlock(&sbi->lookup_lock);
+ 
+ 	dput(prev);
+

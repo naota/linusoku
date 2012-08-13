@@ -1,0 +1,106 @@
+Path: news.gmane.org!not-for-mail
+From: Josh Boyer <jwboyer@gmail.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH 0/2][RFC] Better handling of insane CMOS values
+Date: Tue, 31 Jul 2012 07:31:00 -0400
+Lines: 44
+Approved: news@gmane.org
+Message-ID: <CA+5PVA47uHmxYh9V5A8ZTLW5yEpCYpYYe0Q=TRoj4A-9jGH0zA@mail.gmail.com>
+References: <1343716548-38742-1-git-send-email-john.stultz@linaro.org>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1343734285 3460 80.91.229.3 (31 Jul 2012 11:31:25 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 11:31:25 +0000 (UTC)
+Cc: linux-kernel <linux-kernel@vger.kernel.org>,
+	Ingo Molnar <mingo@kernel.org>,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Prarit Bhargava <prarit@redhat.com>,
+	Thomas Gleixner <tglx@linutronix.de>,
+	Zhouping Liu <zliu@redhat.com>, CAI Qian <caiqian@redhat.com>
+To: John Stultz <john.stultz@linaro.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 13:31:24 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwAfY-0000EN-VT
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 13:31:21 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755999Ab2GaLbD (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 07:31:03 -0400
+Original-Received: from mail-qc0-f174.google.com ([209.85.216.174]:46975 "EHLO
+	mail-qc0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755715Ab2GaLbA (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 07:31:00 -0400
+Original-Received: by qcro28 with SMTP id o28so3576745qcr.19
+        for <linux-kernel@vger.kernel.org>; Tue, 31 Jul 2012 04:31:00 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=mime-version:in-reply-to:references:date:message-id:subject:from:to
+         :cc:content-type;
+        bh=EBsMLLUe7l1EL3MnasAkM11G5THAePNoclp09JRi5Ak=;
+        b=yuvgW+CPlXCTTQ1mH8L4jVYqNnTKCXI/Rrg5KNltVhqOYe0tEP8r9DZiKFtqr9GfCk
+         5gWJ3lCDtkG1r0VEphqYtZGjSWrKkgBtWSRFSStHOdFOcZyhjCmkofWvr+8F7K6pIWpF
+         o6nFGxpS+FELS/PT1s21+pUrAFrBKOm+pnPQKFrvczGvtfSJabZ5VjNqaaGwx1OCqngX
+         vgpnx6srWwKhMXspBkaUefO8HMajI02SsvB2Q+SMgSB8g1FjQ1bV/QEE7e5qOaJJ9e/f
+         uXdyX2uHhVx9fJ2tJsjgby97bkBGrfepD+vFwsw3qw0V05yrg445NEqQASf7sO4++rtB
+         WI3A==
+Original-Received: by 10.229.137.9 with SMTP id u9mr7180746qct.107.1343734260108; Tue,
+ 31 Jul 2012 04:31:00 -0700 (PDT)
+Original-Received: by 10.229.27.83 with HTTP; Tue, 31 Jul 2012 04:31:00 -0700 (PDT)
+In-Reply-To: <1343716548-38742-1-git-send-email-john.stultz@linaro.org>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335637
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335637>
+
+On Tue, Jul 31, 2012 at 2:35 AM, John Stultz <john.stultz@linaro.org> wrote:
+> So CAI Qian noticed recent boot trouble on a machine that had its CMOS
+> clock configured for the year 8200.
+> See: http://lkml.org/lkml/2012/7/29/188
+>
+> While running with a crazy CMOS clock isn't advised, and a simple
+> "don't do that" might be reasonable, the behavior has in effect
+> regressed recently due to changes in the hrtimer/timekeeping
+> interactions.
+>
+> This patchset tries to resolve this issue in two ways:
+> 1) Change ktime_get_update_offsets to match ktime_get and avoid
+> possible precision loss with extremely large timespecs.
+>
+> 2) Catch any stop attempt to set the time to a value (circa the
+> year 2264) large enough to overflow ktime_t.
+>
+> The end fix here might be an either/or/both combination of these
+> two changes, so I wanted to send them out for comment. I'm also
+> looking at further ways to test and improve robustness around
+> these more extreme time values.
+>
+> I've also only been able to lightly test. If you want to try this out
+> you can add the following to timekeeping_init after the
+> read_persistent_clock() call:
+>
+>         now.tv_sec = 196469280000LL;
+>
+> thanks
+> -john
+>
+>
+> Cc: Ingo Molnar <mingo@kernel.org>
+> Cc: Peter Zijlstra <a.p.zijlstra@chello.nl>
+> Cc: Prarit Bhargava <prarit@redhat.com>
+> Cc: Thomas Gleixner <tglx@linutronix.de>
+> Cc: Zhouping Liu <zliu@redhat.com>
+> Cc: CAI Qian <caiqian@redhat.com>
+
+These should be CC'd to stable, right?  CAI hit this with a 3.5-rcX
+kernel, and the hrtimer stuff was backported to 3.4 and before I
+thought.
+
+josh

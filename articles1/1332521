@@ -1,0 +1,78 @@
+Path: news.gmane.org!not-for-mail
+From: Zach Brown <zab@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.file-systems.fuse.devel
+Subject: [PATCH] fuse: verify all ioctl retry iov elements
+Date: Tue, 24 Jul 2012 12:10:11 -0700
+Lines: 36
+Approved: news@gmane.org
+Message-ID: <10c600c845bf89db85c5126c49e78cfee8909b1d.1343157011.git.zab@zabbo.net>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343157411 12380 80.91.229.3 (24 Jul 2012 19:16:51 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 19:16:51 +0000 (UTC)
+Cc: fuse-devel@lists.sourceforge.net, linux-kernel@vger.kernel.org
+To: Miklos Szeredi <miklos@szeredi.hu>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 21:16:51 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StkbC-0000si-9D
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 21:16:50 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756060Ab2GXTQl (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 15:16:41 -0400
+Original-Received: from 50-193-208-193-static.hfc.comcastbusiness.net ([50.193.208.193]:54559
+	"EHLO tetsuo.zabbo.net" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753724Ab2GXTQk (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 15:16:40 -0400
+X-Greylist: delayed 383 seconds by postgrey-1.27 at vger.kernel.org; Tue, 24 Jul 2012 15:16:40 EDT
+Original-Received: from lenny.home.zabbo.net (lenny.home.zabbo.net [192.168.242.10])
+	by tetsuo.zabbo.net (Postfix) with ESMTP id 2C2B4720019C;
+	Tue, 24 Jul 2012 12:10:17 -0700 (PDT)
+X-Mailer: git-send-email 1.7.6.5
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332521 gmane.comp.file-systems.fuse.devel:11861
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332521>
+
+Commit 7572777eef78ebdee1ecb7c258c0ef94d35bad16 attempted to verify that
+the total iovec from the client doesn't overflow iov_length() but it
+only checked the first element.  The iovec could still overflow by
+starting with a small element.  The obvious fix is to check all the
+elements.
+
+The overflow case doesn't look dangerous to the kernel as the copy is
+limited by the length after the overflow.  This fix restores the
+intention of returning an error instead of successfully copying less
+than the iovec represented.
+
+I found this by code inspection.  I built it but don't have a test case.
+I'm cc:ing stable because the initial commit did as well.
+
+Signed-off-by: Zach Brown <zab@redhat.com>
+CC: <stable@kernel.org>         [2.6.37+]
+---
+ fs/fuse/file.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/fs/fuse/file.c b/fs/fuse/file.c
+index b321a68..514f12a 100644
+--- a/fs/fuse/file.c
++++ b/fs/fuse/file.c
+@@ -1700,7 +1700,7 @@ static int fuse_verify_ioctl_iov(struct iovec *iov, size_t count)
+ 	size_t n;
+ 	u32 max = FUSE_MAX_PAGES_PER_REQ << PAGE_SHIFT;
+ 
+-	for (n = 0; n < count; n++) {
++	for (n = 0; n < count; n++, iov++) {
+ 		if (iov->iov_len > (size_t) max)
+ 			return -ENOMEM;
+ 		max -= iov->iov_len;
+-- 
+1.7.6.5
+

@@ -1,0 +1,136 @@
+Path: news.gmane.org!not-for-mail
+From: Michal Hocko <mhocko@suse.cz>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [RFC PATCH] mm: hugetlbfs: Close race during teardown of
+ hugetlbfs shared page tables
+Date: Thu, 19 Jul 2012 16:42:13 +0200
+Lines: 70
+Approved: news@gmane.org
+Message-ID: <20120719144213.GJ2864@tiehlicka.suse.cz>
+References: <20120718104220.GR9222@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1342708945 15136 80.91.229.3 (19 Jul 2012 14:42:25 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 14:42:25 +0000 (UTC)
+Cc: Linux-MM <linux-mm@kvack.org>, Hugh Dickins <hughd@google.com>,
+	David Gibson <david@gibson.dropbear.id.au>,
+	Kenneth W Chen <kenneth.w.chen@intel.com>,
+	LKML <linux-kernel@vger.kernel.org>
+To: Mel Gorman <mgorman@suse.de>
+Original-X-From: owner-linux-mm@kvack.org Thu Jul 19 16:42:24 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Srrvn-00049j-4A
+	for glkm-linux-mm-2@m.gmane.org; Thu, 19 Jul 2012 16:42:19 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 886406B00B9; Thu, 19 Jul 2012 10:42:17 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 5F6F46B00BA; Thu, 19 Jul 2012 10:42:17 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 328BD6B00BB; Thu, 19 Jul 2012 10:42:17 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx116.postini.com [74.125.245.116])
+	by kanga.kvack.org (Postfix) with SMTP id 2FF476B00B9
+	for <linux-mm@kvack.org>; Thu, 19 Jul 2012 10:42:16 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx116.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 19 Jul 2012 14:42:16 GMT
+Original-Received: from relay1.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 8288AA2FD6;
+	Thu, 19 Jul 2012 16:42:14 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <20120718104220.GR9222@suse.de>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mhocko@suse.cz> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82727 gmane.linux.kernel:1330401
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330401>
+
+[/me puts the patch destroyer glasses on]
+
+On Wed 18-07-12 11:43:09, Mel Gorman wrote:
+[...]
+> diff --git a/arch/x86/mm/hugetlbpage.c b/arch/x86/mm/hugetlbpage.c
+> index f6679a7..0524556 100644
+> --- a/arch/x86/mm/hugetlbpage.c
+> +++ b/arch/x86/mm/hugetlbpage.c
+> @@ -68,14 +68,37 @@ static void huge_pmd_share(struct mm_struct *mm, unsigned long addr, pud_t *pud)
+>  	struct vm_area_struct *svma;
+>  	unsigned long saddr;
+>  	pte_t *spte = NULL;
+> +	spinlock_t *spage_table_lock = NULL;
+> +	struct rw_semaphore *smmap_sem = NULL;
+>  
+>  	if (!vma_shareable(vma, addr))
+>  		return;
+>  
+> +retry:
+>  	mutex_lock(&mapping->i_mmap_mutex);
+>  	vma_prio_tree_foreach(svma, &iter, &mapping->i_mmap, idx, idx) {
+>  		if (svma == vma)
+>  			continue;
+> +		if (svma->vm_mm == vma->vm_mm)
+> +			continue;
+> +
+> +		/*
+> +		 * The target mm could be in the process of tearing down
+> +		 * its page tables and the i_mmap_mutex on its own is
+> +		 * not sufficient. To prevent races against teardown and
+> +		 * pagetable updates, we acquire the mmap_sem and pagetable
+> +		 * lock of the remote address space. down_read_trylock()
+> +		 * is necessary as the other process could also be trying
+> +		 * to share pagetables with the current mm.
+> +		 */
+> +		if (!down_read_trylock(&svma->vm_mm->mmap_sem)) {
+> +			mutex_unlock(&mapping->i_mmap_mutex);
+> +			goto retry;
+> +		}
+> +
+
+I am afraid this can easily cause a dead lock. Consider
+fork
+  dup_mmap
+    down_write(&oldmm->mmap_sem)
+    copy_page_range
+      copy_hugetlb_page_range
+        huge_pte_alloc
+
+svma could belong to oldmm and then we would loop for ever. 
+svma->vm_mm == vma->vm_mm doesn't help because vma is child's one and mm
+differ in that case. I am wondering you didn't hit this while testing.
+It would suggest that the ptes are not populated yet because we didn't
+let parent play and then other children could place its vma in the list
+before parent?
+
+-- 
+Michal Hocko
+SUSE Labs
+SUSE LINUX s.r.o.
+Lihovarska 1060/12
+190 00 Praha 9    
+Czech Republic
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

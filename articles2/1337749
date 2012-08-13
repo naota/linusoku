@@ -1,0 +1,238 @@
+Path: news.gmane.org!not-for-mail
+From: Jan Ariyasu <jan.ariyasu@gmail.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.network
+Subject: [PATCH 12/13] SCTP: Enable chunk-auth verification (RFC4895).
+Date: Sat,  4 Aug 2012 15:34:32 -0600
+Lines: 178
+Approved: news@gmane.org
+Message-ID: <1344116072-6563-1-git-send-email-jan.ariyasu@hp.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344116124 24975 80.91.229.3 (4 Aug 2012 21:35:24 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 4 Aug 2012 21:35:24 +0000 (UTC)
+Cc: Jan Ariyasu <jan.ariyasu@hp.com>
+To: Vlad Yasevich <vyasevich@gmail.com>,
+	"David S. Miller" <davem@davemloft.net>,
+	linux-sctp@vger.kernel.org, netdev@vger.kernel.org,
+	linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Aug 04 23:35:23 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sxm0D-0005LZ-MS
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 04 Aug 2012 23:35:18 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754339Ab2HDVep (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 4 Aug 2012 17:34:45 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:59425 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754257Ab2HDVel (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 4 Aug 2012 17:34:41 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so346150pbb.19
+        for <multiple recipients>; Sat, 04 Aug 2012 14:34:41 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer;
+        bh=u/qttuaQS/at9giX9xL1rvVZddmRdUrSF5/SM6DVsSE=;
+        b=CXmeq7xXkCJLrIt6YWkutnGncr9HDXARMDh3IjTGQiKUmLOJamY85Qf9MStek0ussq
+         Y9ErSQzK4wPGPjRiF7XKAz40qAH/IZw1BTM/C3SvcHDvLLX+FkiEfR3qjiiJ8gJKQoiB
+         pXO5oXK+rzCTKwhbNegK4zYZ8nxQSrue17qUhgtziXf2zv5+2Yd8+51WRy/eLOhriZkf
+         7eU9hRY4vNm3+lM8yrg8f+coLLaVjsOYRVN62QB9uMcONmmhFgQoHz2RD/SIpJfwRLF5
+         1Ch1k5h9TXTvFyp+mA7HwkXVSxFzGZOqYFJvhBqunL/dpTDeR+Z9o8TnKssSWIL9Ov+N
+         kEuQ==
+Original-Received: by 10.66.80.165 with SMTP id s5mr7752173pax.41.1344116081418;
+        Sat, 04 Aug 2012 14:34:41 -0700 (PDT)
+Original-Received: from localhost.localdomain (121.sub-70-196-192.myvzw.com. [70.196.192.121])
+        by mx.google.com with ESMTPS id px1sm5611747pbb.49.2012.08.04.14.34.37
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Sat, 04 Aug 2012 14:34:40 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9.5
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337749 gmane.linux.network:239161
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337749>
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337749>
+
+This patch replaces the global parameter sctp_auth_enable with
+the per-namespace parameter stored in struct net.
+
+Signed-off-by: Jan Ariyasu <jan.ariyasu@hp.com>
+---
+ net/sctp/endpointola.c   |    4 +++-
+ net/sctp/sm_statetable.c |   11 +++++++----
+ net/sctp/socket.c        |   32 ++++++++++++++++++++++++--------
+ 3 files changed, 34 insertions(+), 13 deletions(-)
+
+diff --git a/net/sctp/endpointola.c b/net/sctp/endpointola.c
+index 750df47..5fa20a1 100644
+--- a/net/sctp/endpointola.c
++++ b/net/sctp/endpointola.c
+@@ -70,12 +70,14 @@ static struct sctp_endpoint *sctp_endpoint_init(struct sctp_endpoint *ep,
+ 	struct sctp_shared_key *null_key;
+ 	int err;
+ 	struct net *net = sock_net(sk);
++	struct sctp_net_params *net_params =
++		sctp_get_params(net);
+ 
+ 	ep->digest = kzalloc(SCTP_SIGNATURE_SIZE, gfp);
+ 	if (!ep->digest)
+ 		return NULL;
+ 
+-	if (sctp_auth_enable) {
++	if (net_params->auth_enable) {
+ 		/* Allocate space for HMACS and CHUNKS authentication
+ 		 * variables.  There are arrays that we encode directly
+ 		 * into parameters to make the rest of the operations easier.
+diff --git a/net/sctp/sm_statetable.c b/net/sctp/sm_statetable.c
+index c249e59..5177130 100644
+--- a/net/sctp/sm_statetable.c
++++ b/net/sctp/sm_statetable.c
+@@ -59,7 +59,8 @@ other_event_table[SCTP_NUM_OTHER_TYPES][SCTP_STATE_NUM_STATES];
+ static const sctp_sm_table_entry_t
+ timeout_event_table[SCTP_NUM_TIMEOUT_TYPES][SCTP_STATE_NUM_STATES];
+ 
+-static const sctp_sm_table_entry_t *sctp_chunk_event_lookup(sctp_cid_t cid,
++static const sctp_sm_table_entry_t *sctp_chunk_event_lookup(struct net *net,
++							    sctp_cid_t cid,
+ 							    sctp_state_t state);
+ 
+ 
+@@ -89,7 +90,7 @@ const sctp_sm_table_entry_t *sctp_sm_lookup_event(struct net *net,
+ {
+ 	switch (event_type) {
+ 	case SCTP_EVENT_T_CHUNK:
+-		return sctp_chunk_event_lookup(event_subtype.chunk, state);
++		return sctp_chunk_event_lookup(net, event_subtype.chunk, state);
+ 	case SCTP_EVENT_T_TIMEOUT:
+ 		return DO_LOOKUP(SCTP_EVENT_TIMEOUT_MAX, timeout,
+ 				 timeout_event_table);
+@@ -907,9 +908,11 @@ static const sctp_sm_table_entry_t timeout_event_table[SCTP_NUM_TIMEOUT_TYPES][S
+ 	TYPE_SCTP_EVENT_TIMEOUT_AUTOCLOSE,
+ };
+ 
+-static const sctp_sm_table_entry_t *sctp_chunk_event_lookup(sctp_cid_t cid,
++static const sctp_sm_table_entry_t *sctp_chunk_event_lookup(struct net *net,
++							    sctp_cid_t cid,
+ 							    sctp_state_t state)
+ {
++	struct sctp_net_params *net_params = sctp_get_params(net);
+ 	if (state > SCTP_STATE_MAX)
+ 		return &bug;
+ 
+@@ -929,7 +932,7 @@ static const sctp_sm_table_entry_t *sctp_chunk_event_lookup(sctp_cid_t cid,
+ 			return &addip_chunk_event_table[1][state];
+ 	}
+ 
+-	if (sctp_auth_enable) {
++	if (net_params->auth_enable) {
+ 		if (cid == SCTP_CID_AUTH)
+ 			return &auth_chunk_event_table[0][state];
+ 	}
+diff --git a/net/sctp/socket.c b/net/sctp/socket.c
+index 9712ea5..e8148a0 100644
+--- a/net/sctp/socket.c
++++ b/net/sctp/socket.c
+@@ -3300,8 +3300,10 @@ static int sctp_setsockopt_auth_chunk(struct sock *sk,
+ 				      unsigned int optlen)
+ {
+ 	struct sctp_authchunk val;
++	struct sctp_net_params *net_params =
++		sctp_get_params(sock_net(sk));
+ 
+-	if (!sctp_auth_enable)
++	if (!net_params->auth_enable)
+ 		return -EACCES;
+ 
+ 	if (optlen != sizeof(struct sctp_authchunk))
+@@ -3334,8 +3336,10 @@ static int sctp_setsockopt_hmac_ident(struct sock *sk,
+ 	struct sctp_hmacalgo *hmacs;
+ 	u32 idents;
+ 	int err;
++	struct sctp_net_params *net_params =
++		sctp_get_params(sock_net(sk));
+ 
+-	if (!sctp_auth_enable)
++	if (!net_params->auth_enable)
+ 		return -EACCES;
+ 
+ 	if (optlen < sizeof(struct sctp_hmacalgo))
+@@ -3371,8 +3375,10 @@ static int sctp_setsockopt_auth_key(struct sock *sk,
+ 	struct sctp_authkey *authkey;
+ 	struct sctp_association *asoc;
+ 	int ret;
++	struct sctp_net_params *net_params =
++		sctp_get_params(sock_net(sk));
+ 
+-	if (!sctp_auth_enable)
++	if (!net_params->auth_enable)
+ 		return -EACCES;
+ 
+ 	if (optlen <= sizeof(struct sctp_authkey))
+@@ -3442,8 +3448,10 @@ static int sctp_setsockopt_del_key(struct sock *sk,
+ {
+ 	struct sctp_authkeyid val;
+ 	struct sctp_association *asoc;
++	struct sctp_net_params *net_params =
++		sctp_get_params(sock_net(sk));
+ 
+-	if (!sctp_auth_enable)
++	if (!net_params->auth_enable)
+ 		return -EACCES;
+ 
+ 	if (optlen != sizeof(struct sctp_authkeyid))
+@@ -5326,8 +5334,10 @@ static int sctp_getsockopt_hmac_ident(struct sock *sk, int len,
+ 	struct sctp_hmac_algo_param *hmacs;
+ 	__u16 data_len = 0;
+ 	u32 num_idents;
++	struct sctp_net_params *net_params =
++		sctp_get_params(sock_net(sk));
+ 
+-	if (!sctp_auth_enable)
++	if (!net_params->auth_enable)
+ 		return -EACCES;
+ 
+ 	hmacs = sctp_sk(sk)->ep->auth_hmacs_list;
+@@ -5353,8 +5363,10 @@ static int sctp_getsockopt_active_key(struct sock *sk, int len,
+ {
+ 	struct sctp_authkeyid val;
+ 	struct sctp_association *asoc;
++	struct sctp_net_params *net_params =
++		sctp_get_params(sock_net(sk));
+ 
+-	if (!sctp_auth_enable)
++	if (!net_params->auth_enable)
+ 		return -EACCES;
+ 
+ 	if (len < sizeof(struct sctp_authkeyid))
+@@ -5389,8 +5401,10 @@ static int sctp_getsockopt_peer_auth_chunks(struct sock *sk, int len,
+ 	struct sctp_chunks_param *ch;
+ 	u32    num_chunks = 0;
+ 	char __user *to;
++	struct sctp_net_params *net_params =
++		sctp_get_params(sock_net(sk));
+ 
+-	if (!sctp_auth_enable)
++	if (!net_params->auth_enable)
+ 		return -EACCES;
+ 
+ 	if (len < sizeof(struct sctp_authchunks))
+@@ -5432,8 +5446,10 @@ static int sctp_getsockopt_local_auth_chunks(struct sock *sk, int len,
+ 	struct sctp_chunks_param *ch;
+ 	u32    num_chunks = 0;
+ 	char __user *to;
++	struct sctp_net_params *net_params =
++		sctp_get_params(sock_net(sk));
+ 
+-	if (!sctp_auth_enable)
++	if (!net_params->auth_enable)
+ 		return -EACCES;
+ 
+ 	if (len < sizeof(struct sctp_authchunks))
+-- 
+1.7.9.5
+

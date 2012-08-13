@@ -1,0 +1,206 @@
+Path: news.gmane.org!not-for-mail
+From: Julia Lawall <Julia.Lawall@lip6.fr>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.janitors,gmane.linux.usb.general
+Subject: [PATCH 8/9] drivers/usb/host/ehci-mv.c: use devm_ functions
+Date: Sun, 29 Jul 2012 21:46:12 +0200
+Lines: 160
+Approved: news@gmane.org
+Message-ID: <1343591173-2819-9-git-send-email-Julia.Lawall@lip6.fr>
+References: <1343591173-2819-1-git-send-email-Julia.Lawall@lip6.fr>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343591312 2699 80.91.229.3 (29 Jul 2012 19:48:32 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 29 Jul 2012 19:48:32 +0000 (UTC)
+Cc: kernel-janitors@vger.kernel.org,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	linux-usb@vger.kernel.org, linux-kernel@vger.kernel.org
+To: Alan Stern <stern@rowland.harvard.edu>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 29 21:48:31 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvZTa-0000Z9-Sp
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 29 Jul 2012 21:48:31 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753629Ab2G2TrY (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 29 Jul 2012 15:47:24 -0400
+Original-Received: from mail1-relais-roc.national.inria.fr ([192.134.164.82]:32582 "EHLO
+	mail1-relais-roc.national.inria.fr" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1753491Ab2G2Tq2 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 29 Jul 2012 15:46:28 -0400
+X-IronPort-AV: E=Sophos;i="4.77,675,1336341600"; 
+   d="scan'208";a="168487768"
+Original-Received: from palace.lip6.fr (HELO localhost.localdomain) ([132.227.105.202])
+  by mail1-relais-roc.national.inria.fr with ESMTP/TLS/DHE-RSA-AES256-SHA; 29 Jul 2012 21:46:21 +0200
+X-Mailer: git-send-email 1.7.8.6
+In-Reply-To: <1343591173-2819-1-git-send-email-Julia.Lawall@lip6.fr>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334792 gmane.linux.kernel.janitors:25229 gmane.linux.usb.general:68471
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334792>
+
+From: Julia Lawall <Julia.Lawall@lip6.fr>
+
+The various devm_ functions allocate memory that is released when a driver
+detaches.  This patch uses these functions for data that is allocated in
+the probe function of a platform device and is only freed in the remove
+function.
+
+A new label name is created in one case to better reflect the contents of
+the error-handling code.
+
+Signed-off-by: Julia Lawall <Julia.Lawall@lip6.fr>
+
+---
+Not compiled.
+
+ drivers/usb/host/ehci-mv.c |   51 ++++++++++++++-------------------------------
+ 1 file changed, 16 insertions(+), 35 deletions(-)
+
+diff --git a/drivers/usb/host/ehci-mv.c b/drivers/usb/host/ehci-mv.c
+index f6df1cc..f7bfc0b 100644
+--- a/drivers/usb/host/ehci-mv.c
++++ b/drivers/usb/host/ehci-mv.c
+@@ -161,7 +161,7 @@ static int mv_ehci_probe(struct platform_device *pdev)
+ 		return -ENOMEM;
+ 
+ 	size = sizeof(*ehci_mv) + sizeof(struct clk *) * pdata->clknum;
+-	ehci_mv = kzalloc(size, GFP_KERNEL);
++	ehci_mv = devm_kzalloc(&pdev->dev, size, GFP_KERNEL);
+ 	if (ehci_mv == NULL) {
+ 		dev_err(&pdev->dev, "cannot allocate ehci_hcd_mv\n");
+ 		retval = -ENOMEM;
+@@ -175,12 +175,12 @@ static int mv_ehci_probe(struct platform_device *pdev)
+ 	ehci_mv->clknum = pdata->clknum;
+ 	for (clk_i = 0; clk_i < ehci_mv->clknum; clk_i++) {
+ 		ehci_mv->clk[clk_i] =
+-		    clk_get(&pdev->dev, pdata->clkname[clk_i]);
++		    devm_clk_get(&pdev->dev, pdata->clkname[clk_i]);
+ 		if (IS_ERR(ehci_mv->clk[clk_i])) {
+ 			dev_err(&pdev->dev, "error get clck \"%s\"\n",
+ 				pdata->clkname[clk_i]);
+ 			retval = PTR_ERR(ehci_mv->clk[clk_i]);
+-			goto err_put_clk;
++			goto err_clear_drvdata;
+ 		}
+ 	}
+ 
+@@ -188,34 +188,36 @@ static int mv_ehci_probe(struct platform_device *pdev)
+ 	if (r == NULL) {
+ 		dev_err(&pdev->dev, "no phy I/O memory resource defined\n");
+ 		retval = -ENODEV;
+-		goto err_put_clk;
++		goto err_clear_drvdata;
+ 	}
+ 
+-	ehci_mv->phy_regs = ioremap(r->start, resource_size(r));
++	ehci_mv->phy_regs = devm_ioremap(&pdev->dev, r->start,
++					 resource_size(r));
+ 	if (ehci_mv->phy_regs == 0) {
+ 		dev_err(&pdev->dev, "failed to map phy I/O memory\n");
+ 		retval = -EFAULT;
+-		goto err_put_clk;
++		goto err_clear_drvdata;
+ 	}
+ 
+ 	r = platform_get_resource_byname(pdev, IORESOURCE_MEM, "capregs");
+ 	if (!r) {
+ 		dev_err(&pdev->dev, "no I/O memory resource defined\n");
+ 		retval = -ENODEV;
+-		goto err_iounmap_phyreg;
++		goto err_clear_drvdata;
+ 	}
+ 
+-	ehci_mv->cap_regs = ioremap(r->start, resource_size(r));
++	ehci_mv->cap_regs = devm_ioremap(&pdev->dev, r->start,
++					 resource_size(r));
+ 	if (ehci_mv->cap_regs == NULL) {
+ 		dev_err(&pdev->dev, "failed to map I/O memory\n");
+ 		retval = -EFAULT;
+-		goto err_iounmap_phyreg;
++		goto err_clear_drvdata;
+ 	}
+ 
+ 	retval = mv_ehci_enable(ehci_mv);
+ 	if (retval) {
+ 		dev_err(&pdev->dev, "init phy error %d\n", retval);
+-		goto err_iounmap_capreg;
++		goto err_clear_drvdata;
+ 	}
+ 
+ 	offset = readl(ehci_mv->cap_regs) & CAPLENGTH_MASK;
+@@ -239,7 +241,7 @@ static int mv_ehci_probe(struct platform_device *pdev)
+ 	ehci_mv->mode = pdata->mode;
+ 	if (ehci_mv->mode == MV_USB_MODE_OTG) {
+ #ifdef CONFIG_USB_OTG_UTILS
+-		ehci_mv->otg = usb_get_phy(USB_PHY_TYPE_USB2);
++		ehci_mv->otg = devm_usb_get_phy(&pdev->dev, USB_PHY_TYPE_USB2);
+ 		if (IS_ERR_OR_NULL(ehci_mv->otg)) {
+ 			dev_err(&pdev->dev,
+ 				"unable to find transceiver\n");
+@@ -252,7 +254,7 @@ static int mv_ehci_probe(struct platform_device *pdev)
+ 			dev_err(&pdev->dev,
+ 				"unable to register with transceiver\n");
+ 			retval = -ENODEV;
+-			goto err_put_transceiver;
++			goto err_disable_clk;
+ 		}
+ 		/* otg will enable clock before use as host */
+ 		mv_ehci_disable(ehci_mv);
+@@ -286,22 +288,10 @@ static int mv_ehci_probe(struct platform_device *pdev)
+ err_set_vbus:
+ 	if (pdata->set_vbus)
+ 		pdata->set_vbus(0);
+-#ifdef CONFIG_USB_OTG_UTILS
+-err_put_transceiver:
+-	if (!IS_ERR_OR_NULL(ehci_mv->otg))
+-		usb_put_phy(ehci_mv->otg);
+-#endif
+ err_disable_clk:
+ 	mv_ehci_disable(ehci_mv);
+-err_iounmap_capreg:
+-	iounmap(ehci_mv->cap_regs);
+-err_iounmap_phyreg:
+-	iounmap(ehci_mv->phy_regs);
+-err_put_clk:
+-	for (clk_i--; clk_i >= 0; clk_i--)
+-		clk_put(ehci_mv->clk[clk_i]);
++err_clear_drvdata:
+ 	platform_set_drvdata(pdev, NULL);
+-	kfree(ehci_mv);
+ err_put_hcd:
+ 	usb_put_hcd(hcd);
+ 
+@@ -317,10 +307,8 @@ static int mv_ehci_remove(struct platform_device *pdev)
+ 	if (hcd->rh_registered)
+ 		usb_remove_hcd(hcd);
+ 
+-	if (!IS_ERR_OR_NULL(ehci_mv->otg)) {
++	if (!IS_ERR_OR_NULL(ehci_mv->otg))
+ 		otg_set_host(ehci_mv->otg->otg, NULL);
+-		usb_put_phy(ehci_mv->otg);
+-	}
+ 
+ 	if (ehci_mv->mode == MV_USB_MODE_HOST) {
+ 		if (ehci_mv->pdata->set_vbus)
+@@ -329,15 +317,8 @@ static int mv_ehci_remove(struct platform_device *pdev)
+ 		mv_ehci_disable(ehci_mv);
+ 	}
+ 
+-	iounmap(ehci_mv->cap_regs);
+-	iounmap(ehci_mv->phy_regs);
+-
+-	for (clk_i = 0; clk_i < ehci_mv->clknum; clk_i++)
+-		clk_put(ehci_mv->clk[clk_i]);
+-
+ 	platform_set_drvdata(pdev, NULL);
+ 
+-	kfree(ehci_mv);
+ 	usb_put_hcd(hcd);
+ 
+ 	return 0;

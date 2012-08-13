@@ -1,0 +1,222 @@
+Path: news.gmane.org!not-for-mail
+From: Namhyung Kim <namhyung@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 06/12] perf header: Reconstruct group relationship by parsing cmdline
+Date: Tue, 24 Jul 2012 18:01:27 +0900
+Lines: 171
+Approved: news@gmane.org
+Message-ID: <1343120493-23059-7-git-send-email-namhyung@kernel.org>
+References: <1343120493-23059-1-git-send-email-namhyung@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343121004 29338 80.91.229.3 (24 Jul 2012 09:10:04 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 09:10:04 +0000 (UTC)
+Cc: Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Paul Mackerras <paulus@samba.org>,
+	Ingo Molnar <mingo@kernel.org>,
+	LKML <linux-kernel@vger.kernel.org>,
+	Stephane Eranian <eranian@google.com>,
+	Jiri Olsa <jolsa@redhat.com>,
+	Ulrich Drepper <drepper@gmail.com>,
+	Andi Kleen <andi@firstfloor.org>
+To: Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 11:09:58 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Stb7f-0003qX-Bt
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 11:09:43 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753438Ab2GXJJg (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 05:09:36 -0400
+Original-Received: from LGEMRELSE6Q.lge.com ([156.147.1.121]:53057 "EHLO
+	LGEMRELSE6Q.lge.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752961Ab2GXJHB (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 05:07:01 -0400
+X-AuditID: 9c930179-b7bdcae000003d91-03-500e65b22181
+Original-Received: from sejong.aot.lge.com ( [10.177.220.181])
+	by LGEMRELSE6Q.lge.com (Symantec Brightmail Gateway) with SMTP id 7B.33.15761.2B56E005; Tue, 24 Jul 2012 18:06:58 +0900 (KST)
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1343120493-23059-1-git-send-email-namhyung@kernel.org>
+X-Brightmail-Tracker: AAAAAA==
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332218
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332218>
+
+In order to support the event group viewer, their group relationship
+is needed. Since it's not recorded explicitly anywhere in the perf.data
+we should parse saved cmdline and apply the result to the evlist. It is
+assumed that parsed entries are in a same order with the originals.
+
+I know it's fragile but hard to find other way to do it in the current
+condition. :(
+
+Cc: Stephane Eranian <eranian@google.com>
+Cc: Jiri Olsa <jolsa@redhat.com>
+Signed-off-by: Namhyung Kim <namhyung@kernel.org>
+---
+ tools/perf/util/header.c |  110 ++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 110 insertions(+)
+
+diff --git a/tools/perf/util/header.c b/tools/perf/util/header.c
+index 0efbaa3c5a6b..9d9553fed8a6 100644
+--- a/tools/perf/util/header.c
++++ b/tools/perf/util/header.c
+@@ -1404,6 +1404,40 @@ static int process_version(struct perf_file_section *section __used,
+ 	return ph->version ? 0 : -ENOMEM;
+ }
+ 
++/*
++ * Reconstruct group relationship using parsed entries. It's assumed that
++ * the parsed entries are in a same order with the original entries.
++ */
++static void reconstruct_group_relation(struct list_head *parsed_head,
++				       struct list_head *orig_head)
++{
++	struct perf_evsel *pos, *orig;
++	struct perf_evsel *leader = NULL;
++
++	/* Fake first entry to use list_for_each_entry_continue */
++	orig = container_of(orig_head, struct perf_evsel, node);
++
++	list_for_each_entry(pos, parsed_head, node) {
++		list_for_each_entry_continue(orig, orig_head, node) {
++			BUG_ON(pos->attr.type != orig->attr.type);
++			BUG_ON(pos->attr.config != orig->attr.config);
++
++			if (pos->leader == NULL) {
++				orig->leader = NULL;
++				if (pos->group_name)
++					orig->group_name = strdup(pos->group_name);
++				orig->nr_children = pos->nr_children;
++
++				leader = orig;
++			} else {
++				orig->leader = leader;
++				orig->group_idx = pos->group_idx;
++			}
++			break;
++		}
++	}
++}
++
+ /* Each argv would be separated by a NULL character */
+ static int process_cmdline(struct perf_file_section *section __used,
+ 			   struct perf_header *ph, int fd, void *data __used)
+@@ -1413,6 +1447,11 @@ static int process_cmdline(struct perf_file_section *section __used,
+ 	u32 nr, i;
+ 	char *cmdline = NULL;
+ 	size_t len = 0;
++	LIST_HEAD(head);
++	struct perf_evlist *evlist = NULL;
++	int nr_entries = 0;
++	bool found = false;
++	bool regenerated = false;
+ 
+ 	ret = read(fd, &nr, sizeof(nr));
+ 	if (ret != (ssize_t)sizeof(nr))
+@@ -1421,6 +1460,25 @@ static int process_cmdline(struct perf_file_section *section __used,
+ 	if (ph->needs_swap)
+ 		nr = bswap_32(nr);
+ 
++	if (symbol_conf.report_group) {
++		struct perf_session *session;
++
++		session = container_of(ph, struct perf_session, header);
++		evlist = session->evlist;
++
++		/*
++		 * The evlist->entries will be regenerated by parsing cmdline
++		 * to track grouping information. However we cannot use the
++		 * generated entries since they lack sample id information.
++		 *
++		 * Save the original entries to 'head' and reconstruct group
++		 * information using parse entries.
++		 */
++		list_splice_init(&evlist->entries, &head);
++		nr_entries = evlist->nr_entries;
++		evlist->nr_entries = 0;
++	}
++
+ 	ph->cmdline_argc = nr;
+ 
+ 	for (i = 0; i < nr; i++) {
+@@ -1428,6 +1486,19 @@ static int process_cmdline(struct perf_file_section *section __used,
+ 		if (!str)
+ 			goto error;
+ 
++		if (symbol_conf.report_group) {
++			if (found) {
++				/* Regenerate evlist */
++				if (!parse_events(evlist, str, 0))
++					regenerated = true;
++			}
++
++			if (!strcmp(str, "-e"))
++				found = true;
++			else
++				found = false;
++		}
++
+ 		tmp = realloc(cmdline, len + strlen(str) + 1);
+ 		if (!tmp)
+ 			goto error;
+@@ -1439,10 +1510,49 @@ static int process_cmdline(struct perf_file_section *section __used,
+ 		len += strlen(str) + 1;
+ 		free(str);
+ 	}
++
++	if (symbol_conf.report_group) {
++		struct perf_evsel *pos, *orig;
++
++		if (regenerated) {
++			BUG_ON(evlist->nr_entries != nr_entries);
++
++			reconstruct_group_relation(&evlist->entries, &head);
++
++			/* Parsed entries are not needed anymore */
++			list_for_each_entry_safe(pos, orig, &evlist->entries, node) {
++				list_del_init(&pos->node);
++				perf_evsel__delete(pos);
++			}
++
++			/* Restore the original entries */
++			list_splice(&head, &evlist->entries);
++		} else {
++			/*
++			 * Indirect record command doesn't contain events on
++			 * the cmdline. Restore original entries.
++			 */
++			list_splice(&head, &evlist->entries);
++			evlist->nr_entries = nr_entries;
++		}
++	}
+ 	ph->cmdline = cmdline;
+ 	return 0;
+ 
+ error:
++	if (symbol_conf.report_group) {
++		struct perf_evsel *pos, *n;
++
++		/* Delete intermediate entries */
++		list_for_each_entry_safe(pos, n, &evlist->entries, node) {
++			list_del_init(&pos->node);
++			perf_evsel__delete(pos);
++		}
++
++		/* Restore original entries */
++		list_splice(&head, &evlist->entries);
++		evlist->nr_entries = nr_entries;
++	}
+ 	free(cmdline);
+ 	free(str);
+ 	return -1;
+-- 
+1.7.10.4
+

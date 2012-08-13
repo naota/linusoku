@@ -1,0 +1,106 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 39/49] net/tun: fix ioctl() based info leaks
+Date: Tue,  7 Aug 2012 15:44:57 -0700
+Lines: 42
+Approved: news@gmane.org
+Message-ID: <20120807222030.374267580@linuxfoundation.org>
+References: <20120807222026.848194739@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344379878 23187 80.91.229.3 (7 Aug 2012 22:51:18 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:51:18 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Mathias Krause <minipli@googlemail.com>,
+	"David S. Miller" <davem@davemloft.net>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:51:16 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyscK-0000sd-QC
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:51:13 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1031357Ab2HGWvD (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:51:03 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:42489 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1031257Ab2HGWrZ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:47:25 -0400
+Original-Received: by mail-gh0-f174.google.com with SMTP id r11so171516ghr.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:47:25 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=Ti1Sfz7eP+Sg2r+PMBouXi+MmQgkFUtT+PCAjRySCsQ=;
+        b=gD8yFH9+yLJi9C/g8/g2vEEbhgSfIRkFZSnLlZn4/vdB6eeOVLsKxHnbT5Jmtaeq2T
+         5UMC0scdaX6O5WAHa46bSXU+Dt8JlCSWaxYbUcaoGeF0beTSRZPh4uLcEWlb+kNBvqgS
+         SqHZhyAbg13edflzLPFVsueM+YAialcjGQQgykKqYNbl3FuScvg2PALQrLmtPmwQ5+cJ
+         M1erWY2xWyr8iu9bkvHzLQ4HB9OKTmJ/n/X+UScU81PN2MohAecUK8akRs/MheGO/2UO
+         /gjdvTVoBgYCejZNrjUn47oMNoV4OxSzsRJO6Qkn9WDzt12kAGubGu77/cX2vp721UIT
+         kcWg==
+Original-Received: by 10.66.75.74 with SMTP id a10mr29321502paw.46.1344379645166;
+        Tue, 07 Aug 2012 15:47:25 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id vc5sm8562966pbc.2.2012.08.07.15.47.23
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:47:24 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222026.848194739@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQlAwBUEfLObJhg/UyhPUuzocDE5kLuxJcKyQ0HKVI47DERqdqsRqDfGPNgt1emmVXXlyH6B
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339566 gmane.linux.kernel.stable:29400
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339566>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+
+From: Mathias Krause <minipli@googlemail.com>
+
+[ Upstream commits a117dacde0288f3ec60b6e5bcedae8fa37ee0dfc
+  and 8bbb181308bc348e02bfdbebdedd4e4ec9d452ce ]
+
+The tun module leaks up to 36 bytes of memory by not fully initializing
+a structure located on the stack that gets copied to user memory by the
+TUNGETIFF and SIOCGIFHWADDR ioctl()s.
+
+Signed-off-by: Mathias Krause <minipli@googlemail.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/net/tun.c |    6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+--- a/drivers/net/tun.c
++++ b/drivers/net/tun.c
+@@ -1239,10 +1239,12 @@ static long __tun_chr_ioctl(struct file
+ 	int vnet_hdr_sz;
+ 	int ret;
+ 
+-	if (cmd == TUNSETIFF || _IOC_TYPE(cmd) == 0x89)
++	if (cmd == TUNSETIFF || _IOC_TYPE(cmd) == 0x89) {
+ 		if (copy_from_user(&ifr, argp, ifreq_len))
+ 			return -EFAULT;
+-
++	} else {
++		memset(&ifr, 0, sizeof(ifr));
++	}
+ 	if (cmd == TUNGETFEATURES) {
+ 		/* Currently this just means: "what IFF flags are valid?".
+ 		 * This is needed because we never checked for invalid flags on
+
+

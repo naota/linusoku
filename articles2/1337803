@@ -1,0 +1,95 @@
+Path: news.gmane.org!not-for-mail
+From: Julia Lawall <Julia.Lawall@lip6.fr>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.janitors
+Subject: [PATCH 0/6] fix error return code
+Date: Sun,  5 Aug 2012 11:52:30 +0200
+Lines: 53
+Approved: news@gmane.org
+Message-ID: <1344160356-387-1-git-send-email-Julia.Lawall@lip6.fr>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344160454 20644 80.91.229.3 (5 Aug 2012 09:54:14 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 5 Aug 2012 09:54:14 +0000 (UTC)
+Cc: kernel-janitors@vger.kernel.org
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Aug 05 11:54:14 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxxXI-0007jR-TH
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 05 Aug 2012 11:54:13 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754265Ab2HEJwp (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 5 Aug 2012 05:52:45 -0400
+Original-Received: from mail4-relais-sop.national.inria.fr ([192.134.164.105]:9379 "EHLO
+	mail4-relais-sop.national.inria.fr" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1754193Ab2HEJwo (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 5 Aug 2012 05:52:44 -0400
+X-IronPort-AV: E=Sophos;i="4.77,715,1336341600"; 
+   d="scan'208";a="152465602"
+Original-Received: from palace.lip6.fr (HELO localhost.localdomain) ([132.227.105.202])
+  by mail4-relais-sop.national.inria.fr with ESMTP/TLS/DHE-RSA-AES256-SHA; 05 Aug 2012 11:52:42 +0200
+X-Mailer: git-send-email 1.7.8.6
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337803 gmane.linux.kernel.janitors:25343
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337803>
+
+These patches fix cases where the return code appears to be unintentially 0.
+
+The complete semantic match that finds the problem is as follows:
+(http://coccinelle.lip6.fr/)
+
+// <smpl>
+@r@
+identifier f;
+expression ret,e;
+constant C;
+@@
+
+f(...) { <+...
+(
+return -C;
+|
+ret = -C
+... when != ret = e
+return ret;
+|
+if (ret < 0) { ... return ret; }
+)
+...+> }
+
+@s@
+identifier r.f,ret;
+@@
+
+f(...) { <+... return ret; ...+> }
+
+@@
+identifier r.f,s.ret;
+expression e,e1,e2,e3,e4,x;
+@@
+
+f(...) { <+...
+(
+if (\(ret != 0\|ret < 0\) || ...) { ... return ...; }
+|
+ret = 0
+)
+... when != ret = e1
+*x = \(kmalloc\|kzalloc\|kcalloc\|devm_kzalloc\|ioremap\|ioremap_nocache\|devm_ioremap\|devm_ioremap_nocache\)(...);
+... when != x = e2
+    when != ret = e3
+*if (x == NULL || ...)
+{
+  ... when != ret = e4
+*  return ret;
+}
+...+> }
+// </smpl>
+

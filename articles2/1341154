@@ -1,0 +1,90 @@
+Path: news.gmane.org!not-for-mail
+From: Venu Byravarasu <vbyravarasu@nvidia.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.usb.general
+Subject: [PATCH] usb: host: tegra: fix warning messages in ehci_remove
+Date: Fri, 10 Aug 2012 11:42:43 +0530
+Lines: 38
+Approved: news@gmane.org
+Message-ID: <1344579163-10190-1-git-send-email-vbyravarasu@nvidia.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1344579628 13125 80.91.229.3 (10 Aug 2012 06:20:28 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 06:20:28 +0000 (UTC)
+Cc: <linux-kernel@vger.kernel.org>, <linux-usb@vger.kernel.org>,
+	Venu Byravarasu <vbyravarasu@nvidia.com>
+To: <stern@rowland.harvard.edu>, <gregkh@linuxfoundation.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 10 08:20:28 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SziaA-0005mE-CK
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 10 Aug 2012 08:20:26 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754677Ab2HJGUW (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 10 Aug 2012 02:20:22 -0400
+Original-Received: from hqemgate04.nvidia.com ([216.228.121.35]:3186 "EHLO
+	hqemgate04.nvidia.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754458Ab2HJGUS (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 10 Aug 2012 02:20:18 -0400
+Original-Received: from hqnvupgp07.nvidia.com (Not Verified[216.228.121.13]) by hqemgate04.nvidia.com
+	id <B5024a7f90000>; Thu, 09 Aug 2012 23:19:37 -0700
+Original-Received: from hqemhub03.nvidia.com ([172.17.108.22])
+  by hqnvupgp07.nvidia.com (PGP Universal service);
+  Thu, 09 Aug 2012 23:15:02 -0700
+X-PGP-Universal: processed;
+	by hqnvupgp07.nvidia.com on Thu, 09 Aug 2012 23:15:02 -0700
+Original-Received: from localhost.localdomain (172.20.144.16) by hqemhub03.nvidia.com
+ (172.20.150.15) with Microsoft SMTP Server (TLS) id 8.3.264.0; Thu, 9 Aug
+ 2012 23:20:16 -0700
+X-Mailer: git-send-email 1.7.1.1
+X-NVConfidentiality: public
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341154 gmane.linux.usb.general:69241
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341154>
+
+Existing implementation of tegra_ehci_remove() calls
+usb_put_hcd(hcd) first and then iounmap(hcd->regs).
+
+usb_put_hcd() implementation calls hcd_release()
+which frees up memory allocated for hcd.
+
+As iounmap is trying to unmap hcd->regs, after hcd
+getting freed up, warning messages were observed during
+unload of USB.
+
+Hence fixing it.
+
+Signed-off-by: Venu Byravarasu <vbyravarasu@nvidia.com>
+---
+ drivers/usb/host/ehci-tegra.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/usb/host/ehci-tegra.c b/drivers/usb/host/ehci-tegra.c
+index 950e95e..26dedb3 100644
+--- a/drivers/usb/host/ehci-tegra.c
++++ b/drivers/usb/host/ehci-tegra.c
+@@ -799,11 +799,12 @@ static int tegra_ehci_remove(struct platform_device *pdev)
+ #endif
+ 
+ 	usb_remove_hcd(hcd);
+-	usb_put_hcd(hcd);
+ 
+ 	tegra_usb_phy_close(tegra->phy);
+ 	iounmap(hcd->regs);
+ 
++	usb_put_hcd(hcd);
++
+ 	clk_disable_unprepare(tegra->clk);
+ 	clk_put(tegra->clk);
+ 
+-- 
+1.7.1.1
+

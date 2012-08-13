@@ -1,0 +1,122 @@
+Path: news.gmane.org!not-for-mail
+From: Len Brown <lenb@kernel.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.acpi.devel,gmane.linux.power-management.general
+Subject: [PATCH 13/52] cpuidle: add checks to avoid NULL pointer dereference
+Date: Tue, 24 Jul 2012 23:41:09 -0400
+Organization: Intel Open Source Technology Center
+Lines: 56
+Approved: news@gmane.org
+Message-ID: <1b0a0e9a15b976d91f3b5ae619c6a8964c2818eb.1343187617.git.len.brown@intel.com>
+References: <1343187708-19532-1-git-send-email-lenb@kernel.org>
+Reply-To: Len Brown <lenb@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343187758 28300 80.91.229.3 (25 Jul 2012 03:42:38 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 03:42:38 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org,
+	"Srivatsa S. Bhat" <srivatsa.bhat@linux.vnet.ibm.com>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Len Brown <len.brown@intel.com>
+To: linux-acpi@vger.kernel.org, linux-pm@lists.linux-foundation.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 05:42:36 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StsUe-0001CI-1S
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 05:42:36 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932819Ab2GYDma (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 23:42:30 -0400
+Original-Received: from mail-qc0-f174.google.com ([209.85.216.174]:46154 "EHLO
+	mail-qc0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S932714Ab2GYDm0 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 23:42:26 -0400
+Original-Received: by mail-qc0-f174.google.com with SMTP id o28so169000qcr.19
+        for <multiple recipients>; Tue, 24 Jul 2012 20:42:26 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:in-reply-to:references:reply-to:organization;
+        bh=AqAqDZ37TLscIHXsr/91lXw42QkMThHMtpiDG8JZP9M=;
+        b=uQzYgPmwOaO8YatY8hsIjOQVUu+fIBkqweyd9m8Y6ZgWI1KaoXF+2RkGDJ9ut+ndzi
+         k+2fsj89gJo3S914So7Syd218v1Vybb2bhF5y9V0JfmyPuRweyc0z+QBJjDNkvOk3sBM
+         NVgaLgmUOI7l6X1xx7QnftqcYJQ2JCd25z29u3tcZzDGcdCrSWm8N+eD392bYu1VpCSP
+         Yb/vSBZ1e5uTH7EDLa+JRhTpsDO8rm524RACSWakkgCHPtovwvt6bJ0w/wDKXGNxyViW
+         awovBGX3aGQ6ebaRDcKSbKEfmp01uknpHuLdYZ4CoCbQaYlJtlBIMvl8xN5vpae5mQiJ
+         HyaQ==
+Original-Received: by 10.229.135.203 with SMTP id o11mr10317753qct.90.1343187746023;
+        Tue, 24 Jul 2012 20:42:26 -0700 (PDT)
+Original-Received: from x980.localdomain6 (h184-61-125-197.altnnh.dsl.dynamic.tds.net. [184.61.125.197])
+        by mx.google.com with ESMTPS id et6sm15489186qab.8.2012.07.24.20.42.24
+        (version=SSLv3 cipher=OTHER);
+        Tue, 24 Jul 2012 20:42:25 -0700 (PDT)
+X-Mailer: git-send-email 1.7.12.rc0
+In-Reply-To: <1343187708-19532-1-git-send-email-lenb@kernel.org>
+In-Reply-To: <6af1c4fc5227af65092ebc848989693562bfa3e8.1343187617.git.len.brown@intel.com>
+Original-References: <6af1c4fc5227af65092ebc848989693562bfa3e8.1343187617.git.len.brown@intel.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332679 gmane.linux.acpi.devel:54466 gmane.linux.power-management.general:27880
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332679>
+
+From: "Srivatsa S. Bhat" <srivatsa.bhat@linux.vnet.ibm.com>
+
+The existing check for dev == NULL in __cpuidle_register_device() is
+rendered useless because dev is dereferenced before the check itself.
+Moreover, correctly speaking, it is the job of the callers of this
+function, i.e., cpuidle_register_device() & cpuidle_enable_device() (which
+also happen to be exported functions) to ensure that
+__cpuidle_register_device() is called with a non-NULL dev.
+
+So add the necessary dev == NULL checks in the two callers and remove the
+(useless) check from __cpuidle_register_device().
+
+Signed-off-by: Srivatsa S. Bhat <srivatsa.bhat@linux.vnet.ibm.com>
+Acked-by: Daniel Lezcano <daniel.lezcano@linaro.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Len Brown <len.brown@intel.com>
+---
+ drivers/cpuidle/cpuidle.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/cpuidle/cpuidle.c b/drivers/cpuidle/cpuidle.c
+index 588b44a..8ffef26 100644
+--- a/drivers/cpuidle/cpuidle.c
++++ b/drivers/cpuidle/cpuidle.c
+@@ -285,6 +285,9 @@ int cpuidle_enable_device(struct cpuidle_device *dev)
+ 	int ret, i;
+ 	struct cpuidle_driver *drv = cpuidle_get_driver();
+ 
++	if (!dev)
++		return -EINVAL;
++
+ 	if (dev->enabled)
+ 		return 0;
+ 	if (!drv || !cpuidle_curr_governor)
+@@ -369,8 +372,6 @@ static int __cpuidle_register_device(struct cpuidle_device *dev)
+ 	struct device *cpu_dev = get_cpu_device((unsigned long)dev->cpu);
+ 	struct cpuidle_driver *cpuidle_driver = cpuidle_get_driver();
+ 
+-	if (!dev)
+-		return -EINVAL;
+ 	if (!try_module_get(cpuidle_driver->owner))
+ 		return -EINVAL;
+ 
+@@ -395,6 +396,9 @@ int cpuidle_register_device(struct cpuidle_device *dev)
+ {
+ 	int ret;
+ 
++	if (!dev)
++		return -EINVAL;
++
+ 	mutex_lock(&cpuidle_lock);
+ 
+ 	if ((ret = __cpuidle_register_device(dev))) {
+-- 
+1.7.12.rc0
+

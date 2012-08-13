@@ -1,0 +1,101 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 065/109] dm thin: reduce endio_hook pool size
+Date: Tue,  7 Aug 2012 15:35:24 -0700
+Lines: 38
+Approved: news@gmane.org
+Message-ID: <20120807222048.811945757@linuxfoundation.org>
+References: <20120807222043.089735600@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344379255 18273 80.91.229.3 (7 Aug 2012 22:40:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:40:55 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Alasdair G Kergon <agk@redhat.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:40:54 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysSL-0005CG-Ni
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:40:54 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030631Ab2HGWjm (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:39:42 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:56573 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030612Ab2HGWjf (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:39:35 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so359594pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:39:34 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=GF8M+upTHKFf29QoRAC/kZLpFcK8J8D8Kua3rO3h2ps=;
+        b=gzCloe4E8eVqv+4Frttd0WcYen5FpV2w3FqKGUay9L67Ez1o9S4CoaGx9np/hczLLE
+         HqKvp1JT+F/EjMti1Q9kwf5GmS36r20CCTV6uy1zMZa7NoAzgpsM/BaFib6newGJFv3h
+         +vtl1nHZhySDhS6WMYDJjX+58g4fypULwhVIRUe6lviQmWWadUiedzH3tytyoWBXUpYo
+         ERZF0LGPt9+QuY17q4TKqIfjlco6NMR/kYbUkgV/8Y77N9BbNjFM4TzIc/16tB2N+EOD
+         THGgN0vKmhZo/LOObxl+w+Oz1IZCgRJK38z+2rSgPTrTkzOKNsbRggShZCBWPldO8mi5
+         GPIQ==
+Original-Received: by 10.68.221.106 with SMTP id qd10mr31650589pbc.42.1344379174885;
+        Tue, 07 Aug 2012 15:39:34 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id hr9sm1294518pbc.36.2012.08.07.15.39.32
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:39:33 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222043.089735600@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQlVlOnd9NvkwD1xVof9ykAcUdPGa1AYzVw4MH2nOs0h+Z6iZHdY+UqltiEcbNwAqdVUR035
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339500 gmane.linux.kernel.stable:29339
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339500>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.4-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Alasdair G Kergon <agk@redhat.com>
+
+commit 7768ed33ccdc02801c4483fc5682dc66ace14aea upstream.
+
+Reduce the slab size used for the dm_thin_endio_hook mempool.
+
+Allocation has been seen to fail on machines with smaller amounts
+of memory due to fragmentation.
+
+  lvm: page allocation failure. order:5, mode:0xd0
+  device-mapper: table: 253:38: thin-pool: Error creating pool's endio_hook mempool
+
+Signed-off-by: Alasdair G Kergon <agk@redhat.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ drivers/md/dm-thin.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/md/dm-thin.c
++++ b/drivers/md/dm-thin.c
+@@ -19,7 +19,7 @@
+ /*
+  * Tunable constants
+  */
+-#define ENDIO_HOOK_POOL_SIZE 10240
++#define ENDIO_HOOK_POOL_SIZE 1024
+ #define DEFERRED_SET_SIZE 64
+ #define MAPPING_POOL_SIZE 1024
+ #define PRISON_CELLS 1024
+
+

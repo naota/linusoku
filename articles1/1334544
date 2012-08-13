@@ -1,0 +1,130 @@
+Path: news.gmane.org!not-for-mail
+From: Russell King - ARM Linux <linux@arm.linux.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: Re: [RFC v2] ARM: sched_clock: update epoch_cyc on resume
+Date: Sat, 28 Jul 2012 00:38:29 +0100
+Lines: 69
+Approved: news@gmane.org
+Message-ID: <20120727233829.GB14835@n2100.arm.linux.org.uk>
+References: <1343184588-20239-1-git-send-email-ccross@android.com> <CACRpkdZv4p+QT3Y+=-xh5iJ=sr1_aahroxQ535QpzVD9e_ESJA@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343432386 15822 80.91.229.3 (27 Jul 2012 23:39:46 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 23:39:46 +0000 (UTC)
+Cc: Colin Cross <ccross@android.com>,
+	linux-arm-kernel@lists.infradead.org,
+	Barry Song <21cnbao@gmail.com>,
+	Vaibhav Bedia <vaibhav.bedia@ti.com>,
+	Krzysztof Halasa <khc@pm.waw.pl>,
+	Nicolas Pitre <nico@linaro.org>,
+	Marc Zyngier <marc.zyngier@arm.com>,
+	linux-kernel@vger.kernel.org
+To: Linus Walleij <linus.walleij@linaro.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Jul 28 01:39:43 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Suu8E-00082t-JJ
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 28 Jul 2012 01:39:42 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752557Ab2G0XjA (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 19:39:00 -0400
+Original-Received: from caramon.arm.linux.org.uk ([78.32.30.218]:50727 "EHLO
+	caramon.arm.linux.org.uk" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752381Ab2G0Xi7 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 19:38:59 -0400
+DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; c=relaxed/relaxed; d=arm.linux.org.uk; s=caramon;
+	h=Sender:In-Reply-To:Content-Type:MIME-Version:References:Message-ID:Subject:Cc:To:From:Date; bh=Qb5d9dQbwiFPNQ2O/MzmKf+al77o0G/hOFJ+RauRMZI=;
+	b=gSXUNeU83a5xTHIRU2XkPe4OhHvevt6FXjxhNsHxfEcw4LOWE45FkorYwBvkkVKPPF8qEHiPdHdaIQfBV01RuqxFhGrfCCdjP/2mJzMvWPBmIUlmf+mdTHtx4eO/jGqdzysrixEyn+E/9HMXdy19v5z1jVBPNEnXz01iAe9Xd0s=;
+Original-Received: from n2100.arm.linux.org.uk ([2002:4e20:1eda:1:214:fdff:fe10:4f86]:54485)
+	by caramon.arm.linux.org.uk with esmtpsa (TLSv1:AES256-SHA:256)
+	(Exim 4.76)
+	(envelope-from <linux@arm.linux.org.uk>)
+	id 1Suu74-0003QK-Ow; Sat, 28 Jul 2012 00:38:31 +0100
+Original-Received: from linux by n2100.arm.linux.org.uk with local (Exim 4.76)
+	(envelope-from <linux@n2100.arm.linux.org.uk>)
+	id 1Suu73-0005Dp-Mu; Sat, 28 Jul 2012 00:38:29 +0100
+Content-Disposition: inline
+In-Reply-To: <CACRpkdZv4p+QT3Y+=-xh5iJ=sr1_aahroxQ535QpzVD9e_ESJA@mail.gmail.com>
+User-Agent: Mutt/1.5.19 (2009-01-05)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334544 gmane.linux.ports.arm.kernel:179149
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334544>
+
+On Sat, Jul 28, 2012 at 01:32:50AM +0200, Linus Walleij wrote:
+> On Wed, Jul 25, 2012 at 4:49 AM, Colin Cross <ccross@android.com> wrote:
+> 
+> > Many clocks that are used to provide sched_clock will reset during
+> > suspend.  If read_sched_clock returns 0 after suspend, sched_clock will
+> > appear to jump forward.  This patch resets cd.epoch_cyc to the current
+> > value of read_sched_clock during resume, which causes sched_clock() just
+> > after suspend to return the same value as sched_clock() just before
+> > suspend.
+> >
+> > In addition, during the window where epoch_ns has been updated before
+> > suspend, but epoch_cyc has not been updated after suspend, it is unknown
+> > whether the clock has reset or not, and sched_clock() could return a
+> > bogus value.  Add a suspended flag, and return the pre-suspend epoch_ns
+> > value during this period.
+> >
+> > The new behavior is triggered by calling setup_sched_clock_needs_suspend
+> > instead of setup_sched_clock.
+> >
+> > Signed-off-by: Colin Cross <ccross@android.com>
+> 
+> Sweet!
+> Reviewed-by: Linus Walleij <linus.walleij@linaro.org>
+
+Have any of you looked at the patch I originally posted for doing this?
+It needs updating but shows the overall principle - which is to ensure
+that the epoch is up to date before suspending.
+
+It doesn't deal with resume, because different timers behave differently,
+and there's no real way to deal with that properly.  The important thing
+that this patch does is to ensure sched_clock() doesn't ever go backwards.
+
+ arch/arm/kernel/sched_clock.c |   18 ++++++++++++++++++
+ 1 files changed, 18 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/kernel/sched_clock.c b/arch/arm/kernel/sched_clock.c
+index 9a46370..4be4019 100644
+--- a/arch/arm/kernel/sched_clock.c
++++ b/arch/arm/kernel/sched_clock.c
+@@ -10,6 +10,7 @@
+ #include <linux/jiffies.h>
+ #include <linux/kernel.h>
+ #include <linux/sched.h>
++#include <linux/syscore_ops.h>
+ #include <linux/timer.h>
+ 
+ #include <asm/sched_clock.h>
+@@ -72,3 +73,20 @@ void __init sched_clock_postinit(void)
+ {
+ 	sched_clock_poll(sched_clock_timer.data);
+ }
++
++static int sched_clock_suspend(void)
++{
++	sched_clock_poll(sched_clock_timer.data);
++	return 0;
++}
++
++static struct syscore_ops sched_clock_ops = {
++	.suspend	= sched_clock_suspend,
++};
++
++static int __init sched_clock_syscore_init(void)
++{
++	register_syscore_ops(&sched_clock_ops);
++	return 0;
++}
++device_initcall(sched_clock_syscore_init);
+

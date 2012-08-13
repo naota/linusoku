@@ -1,0 +1,134 @@
+Path: news.gmane.org!not-for-mail
+From: Cyril Chemparathy <cyril@ti.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: Re: [PATCH 01/22] ARM: add mechanism for late code patching
+Date: Tue, 7 Aug 2012 18:52:53 -0400
+Lines: 77
+Approved: news@gmane.org
+Message-ID: <50219C45.7030601@ti.com>
+References: <1343775898-28345-1-git-send-email-cyril@ti.com> <1343775898-28345-2-git-send-email-cyril@ti.com> <alpine.LFD.2.02.1208040045360.5231@xanadu.home>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="ISO-8859-1"; format=flowed
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344380009 24168 80.91.229.3 (7 Aug 2012 22:53:29 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:53:29 +0000 (UTC)
+Cc: <linux-arm-kernel@lists.infradead.org>,
+	<linux-kernel@vger.kernel.org>, <arnd@arndb.de>,
+	<catalin.marinas@arm.com>, <linux@arm.linux.org.uk>,
+	<will.deacon@arm.com>
+To: Nicolas Pitre <nicolas.pitre@linaro.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:53:28 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyseW-0003O2-Ck
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:53:28 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1031307Ab2HGWxT (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:53:19 -0400
+Original-Received: from bear.ext.ti.com ([192.94.94.41]:55610 "EHLO bear.ext.ti.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1031207Ab2HGWxL (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:53:11 -0400
+Original-Received: from dlelxv30.itg.ti.com ([172.17.2.17])
+	by bear.ext.ti.com (8.13.7/8.13.7) with ESMTP id q77MqtY8002532;
+	Tue, 7 Aug 2012 17:52:55 -0500
+Original-Received: from DFLE73.ent.ti.com (dfle73.ent.ti.com [128.247.5.110])
+	by dlelxv30.itg.ti.com (8.13.8/8.13.8) with ESMTP id q77Mqt5J021846;
+	Tue, 7 Aug 2012 17:52:55 -0500
+Original-Received: from dlelxv22.itg.ti.com (172.17.1.197) by dfle73.ent.ti.com
+ (128.247.5.110) with Microsoft SMTP Server id 14.1.323.3; Tue, 7 Aug 2012
+ 17:52:55 -0500
+Original-Received: from [158.218.103.130] (gtla0875269.am.dhcp.ti.com
+ [158.218.103.130])	by dlelxv22.itg.ti.com (8.13.8/8.13.8) with ESMTP id
+ q77MqsMY020632;	Tue, 7 Aug 2012 17:52:54 -0500
+User-Agent: Mozilla/5.0 (Windows NT 5.1; rv:14.0) Gecko/20120713 Thunderbird/14.0
+In-Reply-To: <alpine.LFD.2.02.1208040045360.5231@xanadu.home>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339572 gmane.linux.ports.arm.kernel:180776
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339572>
+
+Hi Nicolas,
+
+On 8/4/2012 1:38 AM, Nicolas Pitre wrote:
+[...]
+>> extern unsigned __patch_table_begin, __patch_table_end;
+>
+> You could use "exttern void __patch_table_begin" so those symbols don't
+> get any type that could be misused by mistake, while you still can take
+> their addresses.
+>
+
+Looks like we'll have to stick with a non-void type here.  The compiler 
+throws a warning when we try to take the address of a void.
+
+[...]
+> Did you verify with some test program that your patching routines do
+> produce the same opcodes as the assembled equivalent for all possible
+> shift values?  Especially for Thumb2 code which isn't as trivial to get
+> right as the ARM one.
+>
+
+We've refactored the patching code into separate functions as:
+
+static int do_patch_imm8_arm(u32 insn, u32 imm, u32 *ninsn);
+static int do_patch_imm8_thumb(u32 insn, u32 imm, u32 *ninsn);
+
+
+With this, the following test code has been used to verify the generated 
+instruction encoding:
+
+u32 arm_check[] = {
+	0xe2810041, 0xe2810082, 0xe2810f41, 0xe2810f82, 0xe2810e41,
+	0xe2810e82, 0xe2810d41, 0xe2810d82, 0xe2810c41, 0xe2810c82,
+	0xe2810b41, 0xe2810b82, 0xe2810a41, 0xe2810a82, 0xe2810941,
+	0xe2810982, 0xe2810841, 0xe2810882, 0xe2810741, 0xe2810782,
+	0xe2810641, 0xe2810682, 0xe2810541, 0xe2810582, 0xe2810441,
+};
+
+u32 thumb_check[] = {
+	0xf1010081, 0xf5017081, 0xf5017001, 0xf5016081, 0xf5016001,
+	0xf5015081, 0xf5015001, 0xf5014081, 0xf5014001, 0xf5013081,
+	0xf5013001, 0xf5012081, 0xf5012001, 0xf5011081, 0xf5011001,
+	0xf5010081, 0xf5010001, 0xf1017081, 0xf1017001, 0xf1016081,
+	0xf1016001, 0xf1015081, 0xf1015001, 0xf1014081, 0xf1014001,
+};
+
+int do_test(void)
+{
+	int i, ret;
+	u32 ninsn, insn;
+	
+	insn = arm_check[0];
+	for (i = 0; i < ARRAY_SIZE(arm_check); i++) {
+		ret = do_patch_imm8_arm(insn, 0x41 << i, &ninsn);
+		if (ret < 0)
+			pr_err("patch failed at shift %d\n", i);
+		if (ninsn != arm_check[i])
+			pr_err("mismatch at %d, expect %x, got %x\n",
+			       i, arm_check[i], ninsn);
+	}
+
+	insn = thumb_check[0];
+	for (i = 0; i < ARRAY_SIZE(thumb_check); i++) {
+		ret = do_patch_imm8_thumb(insn, 0x81 << i, &ninsn);
+		if (ret < 0)
+			pr_err("patch failed at shift %d\n", i);
+		if (ninsn != thumb_check[i])
+			pr_err("mismatch at %d, expect %x, got %x\n",
+			       i, thumb_check[i], ninsn);
+	}
+}
+
+Any ideas on improving these tests?
+
+-- 
+Thanks
+- Cyril

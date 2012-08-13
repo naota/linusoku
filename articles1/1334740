@@ -1,0 +1,117 @@
+Path: news.gmane.org!not-for-mail
+From: "Rafael J. Wysocki" <rjw@sisk.pl>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.sh.devel
+Subject: [RFC][PATCH 6/6] sh: MTU2: Introduce clock events suspend/resume routines
+Date: Sun, 29 Jul 2012 16:17:35 +0200
+Lines: 58
+Approved: news@gmane.org
+Message-ID: <201207291617.35447.rjw@sisk.pl>
+References: <201207291612.43138.rjw@sisk.pl>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain;
+  charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343571160 2300 80.91.229.3 (29 Jul 2012 14:12:40 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 29 Jul 2012 14:12:40 +0000 (UTC)
+Cc: "Linux-sh list" <linux-sh@vger.kernel.org>,
+	Linux PM list <linux-pm@vger.kernel.org>,
+	Magnus Damm <magnus.damm@gmail.com>,
+	Paul Mundt <lethal@linux-sh.org>,
+	Thomas Gleixner <tglx@linutronix.de>
+To: LKML <linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 29 16:12:40 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvUEY-0001if-Vt
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 29 Jul 2012 16:12:39 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753310Ab2G2OMX (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 29 Jul 2012 10:12:23 -0400
+Original-Received: from ogre.sisk.pl ([193.178.161.156]:33628 "EHLO ogre.sisk.pl"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753265Ab2G2OMS (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 29 Jul 2012 10:12:18 -0400
+Original-Received: from localhost (localhost.localdomain [127.0.0.1])
+	by ogre.sisk.pl (Postfix) with ESMTP id B0C231DAD7A;
+	Sun, 29 Jul 2012 16:05:04 +0200 (CEST)
+Original-Received: from ogre.sisk.pl ([127.0.0.1])
+ by localhost (ogre.sisk.pl [127.0.0.1]) (amavisd-new, port 10024) with ESMTP
+ id 18991-10; Sun, 29 Jul 2012 16:04:52 +0200 (CEST)
+Original-Received: from ferrari.rjw.lan (62-121-64-87.home.aster.pl [62.121.64.87])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by ogre.sisk.pl (Postfix) with ESMTP id 6BDB31DAFD5;
+	Sun, 29 Jul 2012 16:04:31 +0200 (CEST)
+User-Agent: KMail/1.13.6 (Linux/3.5.0+; KDE/4.6.0; x86_64; ; )
+In-Reply-To: <201207291612.43138.rjw@sisk.pl>
+X-Virus-Scanned: amavisd-new at ogre.sisk.pl using MkS_Vir for Linux
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334740 gmane.linux.ports.sh.devel:16058
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334740>
+
+
+Introduce suspend/resume routines for SH MTU2 clock event devices
+such that if those devices belong to a PM domain, the generic PM
+domains framework will be notified that the given domain may be
+turned off (during system suspend) or that it has to be turned on
+(during system resume).
+
+Signed-off-by: Rafael J. Wysocki <rjw@sisk.pl>
+---
+ drivers/clocksource/sh_mtu2.c |   20 ++++++++++++++++++--
+ 1 file changed, 18 insertions(+), 2 deletions(-)
+
+Index: linux/drivers/clocksource/sh_mtu2.c
+===================================================================
+--- linux.orig/drivers/clocksource/sh_mtu2.c
++++ linux/drivers/clocksource/sh_mtu2.c
+@@ -208,6 +208,16 @@ static void sh_mtu2_clock_event_mode(enu
+ 	}
+ }
+ 
++static void sh_mtu2_clock_event_suspend(struct clock_event_device *ced)
++{
++	pm_genpd_syscore_poweroff(&ced_to_sh_mtu2(ced)->pdev->dev);
++}
++
++static void sh_mtu2_clock_event_resume(struct clock_event_device *ced)
++{
++	pm_genpd_syscore_poweron(&ced_to_sh_mtu2(ced)->pdev->dev);
++}
++
+ static void sh_mtu2_register_clockevent(struct sh_mtu2_priv *p,
+ 				       char *name, unsigned long rating)
+ {
+@@ -221,6 +231,8 @@ static void sh_mtu2_register_clockevent(
+ 	ced->rating = rating;
+ 	ced->cpumask = cpumask_of(0);
+ 	ced->set_mode = sh_mtu2_clock_event_mode;
++	ced->suspend = sh_mtu2_clock_event_suspend;
++	ced->resume = sh_mtu2_clock_event_resume;
+ 
+ 	dev_info(&p->pdev->dev, "used for clock events\n");
+ 	clockevents_register_device(ced);
+@@ -307,8 +319,12 @@ static int __devinit sh_mtu2_probe(struc
+ 	struct sh_mtu2_priv *p = platform_get_drvdata(pdev);
+ 	int ret;
+ 
+-	if (!is_early_platform_device(pdev))
+-		pm_genpd_dev_always_on(&pdev->dev, true);
++	if (!is_early_platform_device(pdev)) {
++		struct sh_timer_config *cfg = pdev->dev.platform_data;
++
++		if (cfg->clockevent_rating)
++			pm_genpd_dev_always_on(&pdev->dev, true);
++	}
+ 
+ 	if (p) {
+ 		dev_info(&pdev->dev, "kept as earlytimer\n");
+

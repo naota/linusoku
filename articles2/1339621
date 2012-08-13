@@ -1,0 +1,197 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 040/109] s390/mm: downgrade page table after fork of a 31 bit process
+Date: Tue,  7 Aug 2012 15:34:59 -0700
+Lines: 133
+Approved: news@gmane.org
+Message-ID: <20120807222046.628273608@linuxfoundation.org>
+References: <20120807222043.089735600@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344381164 32523 80.91.229.3 (7 Aug 2012 23:12:44 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 23:12:44 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	Martin Schwidefsky <schwidefsky@de.ibm.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 01:12:44 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sysx9-0001Vv-3R
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 01:12:43 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S933090Ab2HGXMf (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 19:12:35 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:56573 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030426Ab2HGWiQ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:38:16 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so359594pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:38:16 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=sgTNAsFFL2YGx7QIgYJ6RN8Xp+LipPmY301InuFgsi8=;
+        b=OaTJs23qxgpOK+2htx4VVS7fYqAVnSIUknEEUxtdA1th9FVqFoQSoMeNKfvIgwMNTa
+         9xqzyqF0pvE7xff6nZG1DMcGr39xJz4peRRTIifNEJQRBfl0NHIm6jYn9GcwmAjU9oTp
+         i/E5dU7/g6IRH2uKR06BQaCj8MDFZ9DG5G76XfwqLeAxB6dvNe2wkmvqG4bDqZf3G9qr
+         mn86rNMF00AqCuJhpEwcBgBzBIXy7YqOq7utbcJIbxDZUxHAk149XC3PcddGw6XVwPPC
+         1H/sPiJI0NT/10Cmzq252u63K/NcbLzTrTT+AE9XkgHEoirF120thb26uhcWD+9tMrLb
+         eXmA==
+Original-Received: by 10.68.223.198 with SMTP id qw6mr31174521pbc.94.1344379096688;
+        Tue, 07 Aug 2012 15:38:16 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id ru4sm8549408pbc.66.2012.08.07.15.38.14
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:38:15 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222043.089735600@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQn0URkWnSuKjCD/OrBHI7YPglM75KHJPAgZCMZsgZZoVgbtUlKoMjCq656AcpV2ffTSpjcs
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339621 gmane.linux.kernel.stable:29453
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339621>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.4-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Martin Schwidefsky <schwidefsky@de.ibm.com>
+
+commit 0f6f281b731d20bfe75c13f85d33f3f05b440222 upstream.
+
+The downgrade of the 4 level page table created by init_new_context is
+currently done only in start_thread31. If a 31 bit process forks the
+new mm uses a 4 level page table, including the task size of 2<<42
+that goes along with it. This is incorrect as now a 31 bit process
+can map memory beyond 2GB. Define arch_dup_mmap to do the downgrade
+after fork.
+
+Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ arch/s390/include/asm/mmu_context.h |   14 +++++++++++++-
+ arch/s390/include/asm/processor.h   |    2 ++
+ arch/s390/mm/mmap.c                 |   12 ++++++++++--
+ arch/s390/mm/pgtable.c              |    5 -----
+ 4 files changed, 25 insertions(+), 8 deletions(-)
+
+--- a/arch/s390/include/asm/mmu_context.h
++++ b/arch/s390/include/asm/mmu_context.h
+@@ -13,7 +13,6 @@
+ #include <asm/uaccess.h>
+ #include <asm/tlbflush.h>
+ #include <asm/ctl_reg.h>
+-#include <asm-generic/mm_hooks.h>
+ 
+ static inline int init_new_context(struct task_struct *tsk,
+ 				   struct mm_struct *mm)
+@@ -93,4 +92,17 @@ static inline void activate_mm(struct mm
+         switch_mm(prev, next, current);
+ }
+ 
++static inline void arch_dup_mmap(struct mm_struct *oldmm,
++				 struct mm_struct *mm)
++{
++#ifdef CONFIG_64BIT
++	if (oldmm->context.asce_limit < mm->context.asce_limit)
++		crst_table_downgrade(mm, oldmm->context.asce_limit);
++#endif
++}
++
++static inline void arch_exit_mmap(struct mm_struct *mm)
++{
++}
++
+ #endif /* __S390_MMU_CONTEXT_H */
+--- a/arch/s390/include/asm/processor.h
++++ b/arch/s390/include/asm/processor.h
+@@ -129,7 +129,9 @@ struct stack_frame {
+ 	regs->psw.mask	= psw_user_bits | PSW_MASK_BA;			\
+ 	regs->psw.addr	= new_psw | PSW_ADDR_AMODE;			\
+ 	regs->gprs[15]	= new_stackp;					\
++	__tlb_flush_mm(current->mm);					\
+ 	crst_table_downgrade(current->mm, 1UL << 31);			\
++	update_mm(current->mm, current);				\
+ } while (0)
+ 
+ /* Forward declaration, a strange C thing */
+--- a/arch/s390/mm/mmap.c
++++ b/arch/s390/mm/mmap.c
+@@ -105,9 +105,15 @@ void arch_pick_mmap_layout(struct mm_str
+ 
+ int s390_mmap_check(unsigned long addr, unsigned long len)
+ {
++	int rc;
++
+ 	if (!is_compat_task() &&
+-	    len >= TASK_SIZE && TASK_SIZE < (1UL << 53))
+-		return crst_table_upgrade(current->mm, 1UL << 53);
++	    len >= TASK_SIZE && TASK_SIZE < (1UL << 53)) {
++		rc = crst_table_upgrade(current->mm, 1UL << 53);
++		if (rc)
++			return rc;
++		update_mm(current->mm, current);
++	}
+ 	return 0;
+ }
+ 
+@@ -127,6 +133,7 @@ s390_get_unmapped_area(struct file *filp
+ 		rc = crst_table_upgrade(mm, 1UL << 53);
+ 		if (rc)
+ 			return (unsigned long) rc;
++		update_mm(mm, current);
+ 		area = arch_get_unmapped_area(filp, addr, len, pgoff, flags);
+ 	}
+ 	return area;
+@@ -149,6 +156,7 @@ s390_get_unmapped_area_topdown(struct fi
+ 		rc = crst_table_upgrade(mm, 1UL << 53);
+ 		if (rc)
+ 			return (unsigned long) rc;
++		update_mm(mm, current);
+ 		area = arch_get_unmapped_area_topdown(filp, addr, len,
+ 						      pgoff, flags);
+ 	}
+--- a/arch/s390/mm/pgtable.c
++++ b/arch/s390/mm/pgtable.c
+@@ -85,7 +85,6 @@ repeat:
+ 		crst_table_free(mm, table);
+ 	if (mm->context.asce_limit < limit)
+ 		goto repeat;
+-	update_mm(mm, current);
+ 	return 0;
+ }
+ 
+@@ -93,9 +92,6 @@ void crst_table_downgrade(struct mm_stru
+ {
+ 	pgd_t *pgd;
+ 
+-	if (mm->context.asce_limit <= limit)
+-		return;
+-	__tlb_flush_mm(mm);
+ 	while (mm->context.asce_limit > limit) {
+ 		pgd = mm->pgd;
+ 		switch (pgd_val(*pgd) & _REGION_ENTRY_TYPE_MASK) {
+@@ -118,7 +114,6 @@ void crst_table_downgrade(struct mm_stru
+ 		mm->task_size = mm->context.asce_limit;
+ 		crst_table_free(mm, (unsigned long *) pgd);
+ 	}
+-	update_mm(mm, current);
+ }
+ #endif
+ 
+
+

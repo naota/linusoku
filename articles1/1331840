@@ -1,0 +1,119 @@
+Path: news.gmane.org!not-for-mail
+From: Oleg Nesterov <oleg@redhat.com>
+Newsgroups: gmane.linux.kernel.hardened.devel,gmane.linux.kernel
+Subject: Re: [PATCH] proc: do not allow negative offsets on
+	/proc/<pid>/environ
+Date: Mon, 23 Jul 2012 17:49:27 +0200
+Lines: 71
+Approved: news@gmane.org
+Message-ID: <20120723154927.GA17439@redhat.com>
+References: <1342974959-2748-1-git-send-email-tixxdz@opendz.org> <20120722200049.GA29222@redhat.com> <20120723010447.GA23410@dztty>
+Reply-To: kernel-hardening@lists.openwall.com
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343058757 26004 80.91.229.3 (23 Jul 2012 15:52:37 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 15:52:37 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, kernel-hardening@lists.openwall.com,
+        Al Viro <viro@zeniv.linux.org.uk>,
+        Andrew Morton <akpm@linux-foundation.org>,
+        Vasiliy Kulikov <segoon@openwall.com>,
+        WANG Cong <xiyou.wangcong@gmail.com>,
+        Solar Designer <solar@openwall.com>, Kees Cook <keescook@chromium.org>
+To: Djalal Harouni <tixxdz@opendz.org>
+Original-X-From: kernel-hardening-return-1338-glkh-kernel-hardening=m.gmane.org@lists.openwall.com Mon Jul 23 17:52:35 2012
+Return-path: <kernel-hardening-return-1338-glkh-kernel-hardening=m.gmane.org@lists.openwall.com>
+Envelope-to: glkh-kernel-hardening@plane.gmane.org
+Original-Received: from mother.openwall.net ([195.42.179.200])
+	by plane.gmane.org with smtp (Exim 4.69)
+	(envelope-from <kernel-hardening-return-1338-glkh-kernel-hardening=m.gmane.org@lists.openwall.com>)
+	id 1StKvv-0005uB-9l
+	for glkh-kernel-hardening@plane.gmane.org; Mon, 23 Jul 2012 17:52:31 +0200
+Original-Received: (qmail 9407 invoked by uid 550); 23 Jul 2012 15:52:30 -0000
+Mailing-List: contact kernel-hardening-help@lists.openwall.com; run by ezmlm
+Precedence: bulk
+List-Post: <mailto:kernel-hardening@lists.openwall.com>
+List-Help: <mailto:kernel-hardening-help@lists.openwall.com>
+List-Unsubscribe: <mailto:kernel-hardening-unsubscribe@lists.openwall.com>
+List-Subscribe: <mailto:kernel-hardening-subscribe@lists.openwall.com>
+Delivered-To: mailing list kernel-hardening@lists.openwall.com
+Original-Received: (qmail 9399 invoked from network); 23 Jul 2012 15:52:29 -0000
+Content-Disposition: inline
+In-Reply-To: <20120723010447.GA23410@dztty>
+User-Agent: Mutt/1.5.18 (2008-05-17)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.24
+Xref: news.gmane.org gmane.linux.kernel.hardened.devel:475 gmane.linux.kernel:1331840
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331840>
+
+Hi Djalal,
+
+On 07/23, Djalal Harouni wrote:
+>
+> Hi Oleg,
+>
+> On Sun, Jul 22, 2012 at 10:00:49PM +0200, Oleg Nesterov wrote:
+> >
+> > Probablt the patch makes sense, but I can't understand the changelog...
+> >
+> > > Allowing negative offsets on /proc/<pid>/environ can turn it to act like
+> > > /proc/<pid>/mem. A negative offset will pass the
+> > > fs/read_write.c:lseek_execute() and the environ_read() checks and will
+> > > point to another VMA.
+> >
+> > which VMA?
+> It depends on the offset. Please see below.
+>
+> > environ_read() can only read the memory from [env_start, env_end], and
+> > it should check *ppos anyway to ensure it doesn't read something else.
+> Yes I agree, but currently that's not the case, there are no checks on *ppos.
+                                                  ^^^^^^^^^^^^^^^^^^^
+There is, unless I missed something, just it is buggy, no?
+
+> So if you pass a negative offset you will be able to read from an arbitrary
+> address.
+>
+> [...snip...]
+>
+>   inside environ_read() there is only a one check:
+>
+>   int this_len = mm->env_end - (mm->env_start + src);
+>
+>   if (this_len <= 0)
+>     break;
+>
+>
+>   Here 'src' is 'src = *ppos' the negative offset converted to unsigned long
+>   and (mm->env_start + src) can overflow and point to another VMA.
+>
+>   int this_len = mm->env_end - (mm->env_start + src)
+>
+>   'this_len' will be positive and we pass that check.
+
+OK, thanks, but doesn't this mean that this check should be fixed
+to avoid the overflow, no matter what *ppos is?
+
+With or without FMODE_UNSIGNED_OFFSET change. And perhaps it is
+possible to trigger the overflow even with the positive *ppos,
+because:
+
+> I also don't like the truncation of the result to 'int this_len'
+
+Yes.
+
+> BTW should I resend the patch with a better changelog entry ?
+
+Up to you, but I think this makes sense ;)
+
+> I'll also add another patch to check the offsets inside environ_read().
+
+Yes, agreed, but please see above.
+
+Please correct me, but afaics this patch should come 1st and fix the bug.
+FMODE_UNSIGNED_OFFSET change can be considered as a cleanup after that.
+
+What do you think?
+
+Oleg.
+
+

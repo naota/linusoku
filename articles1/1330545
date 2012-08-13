@@ -1,0 +1,187 @@
+Path: news.gmane.org!not-for-mail
+From: Tejun Heo <tj-DgEjT+Ai2ygdnm+yROfE0A@public.gmane.org>
+Newsgroups: gmane.linux.kernel.spi.devel,gmane.linux.kernel,gmane.comp.emulators.kvm.devel,gmane.linux.drivers.video-input-infrastructure
+Subject: [PATCH 1/2] kthread_worker: reorganize to prepare for
+	flush_kthread_work() reimplementation
+Date: Thu, 19 Jul 2012 14:15:41 -0700
+Lines: 98
+Approved: news@gmane.org
+Message-ID: <20120719211541.GB32763@google.com>
+References: <20120719211510.GA32763@google.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342732559 19262 80.91.229.3 (19 Jul 2012 21:15:59 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 21:15:59 +0000 (UTC)
+Cc: Andy Walls <awalls-Xoej9cPu4Z+RGvkDC/A1pg@public.gmane.org>, kvm-u79uwXL29TY76Z2rM5mHXA@public.gmane.org,
+	ivtv-devel-jGorlIydJmRM656bX5wj8A@public.gmane.org, Avi Kivity <avi-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org>,
+	spi-devel-general-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org,
+	Andrew Morton <akpm-de/tnXTf+JLsfHDXvbKv3WD2FQJk+8+b@public.gmane.org>,
+	Linus Torvalds <torvalds-de/tnXTf+JLsfHDXvbKv3WD2FQJk+8+b@public.gmane.org>, linux-media-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+To: linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Original-X-From: spi-devel-general-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org Thu Jul 19 23:15:57 2012
+Return-path: <spi-devel-general-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>
+Envelope-to: glks-spi-devel-general@m.gmane.org
+Original-Received: from lists.sourceforge.net ([216.34.181.88])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <spi-devel-general-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>)
+	id 1Sry4g-00028X-Az
+	for glks-spi-devel-general@m.gmane.org; Thu, 19 Jul 2012 23:15:54 +0200
+Original-Received: from localhost ([127.0.0.1] helo=sfs-ml-3.v29.ch3.sourceforge.com)
+	by sfs-ml-3.v29.ch3.sourceforge.com with esmtp (Exim 4.76)
+	(envelope-from <spi-devel-general-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>)
+	id 1Sry4e-0008Ca-J2; Thu, 19 Jul 2012 21:15:52 +0000
+Original-Received: from sog-mx-1.v43.ch3.sourceforge.com ([172.29.43.191]
+	helo=mx.sourceforge.net)
+	by sfs-ml-3.v29.ch3.sourceforge.com with esmtp (Exim 4.76)
+	(envelope-from <htejun-Re5JQEeQqe8AvxtiuMwx3w@public.gmane.org>) id 1Sry4d-0008CU-Mh
+	for spi-devel-general-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org;
+	Thu, 19 Jul 2012 21:15:51 +0000
+Received-SPF: pass (sog-mx-1.v43.ch3.sourceforge.com: domain of gmail.com
+	designates 209.85.213.47 as permitted sender)
+	client-ip=209.85.213.47; envelope-from=htejun-Re5JQEeQqe8AvxtiuMwx3w@public.gmane.org;
+	helo=mail-yw0-f47.google.com; 
+Original-Received: from mail-yw0-f47.google.com ([209.85.213.47])
+	by sog-mx-1.v43.ch3.sourceforge.com with esmtps (TLSv1:RC4-SHA:128)
+	(Exim 4.76) id 1Sry4c-0001SM-WE
+	for spi-devel-general-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org;
+	Thu, 19 Jul 2012 21:15:51 +0000
+Original-Received: by yhjj56 with SMTP id j56so3452923yhj.34
+	for <spi-devel-general-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>;
+	Thu, 19 Jul 2012 14:15:45 -0700 (PDT)
+Original-Received: by 10.68.209.197 with SMTP id mo5mr8243166pbc.72.1342732545126;
+	Thu, 19 Jul 2012 14:15:45 -0700 (PDT)
+Original-Received: from google.com (wtj.mtv.corp.google.com [172.18.110.84])
+	by mx.google.com with ESMTPS id nh8sm2456553pbc.60.2012.07.19.14.15.43
+	(version=SSLv3 cipher=OTHER); Thu, 19 Jul 2012 14:15:44 -0700 (PDT)
+Content-Disposition: inline
+In-Reply-To: <20120719211510.GA32763-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>
+User-Agent: Mutt/1.5.20 (2009-06-14)
+X-Spam-Score: -1.5 (-)
+X-Spam-Report: Spam Filtering performed by mx.sourceforge.net.
+	See http://spamassassin.org/tag/ for more details.
+	-1.5 SPF_CHECK_PASS SPF reports sender host as permitted sender for
+	sender-domain
+	0.0 FREEMAIL_FROM Sender email is commonly abused enduser mail provider
+	(htejun[at]gmail.com)
+	-0.0 SPF_PASS               SPF: sender matches SPF record
+	0.1 DKIM_SIGNED            Message has a DKIM or DK signature,
+	not necessarily valid
+	-0.1 DKIM_VALID Message has at least one valid DKIM or DK signature
+X-Headers-End: 1Sry4c-0001SM-WE
+X-BeenThere: spi-devel-general-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org
+X-Mailman-Version: 2.1.9
+Precedence: list
+List-Id: Linux SPI core/device drivers discussion
+	<spi-devel-general.lists.sourceforge.net>
+List-Unsubscribe: <https://lists.sourceforge.net/lists/listinfo/spi-devel-general>,
+	<mailto:spi-devel-general-request-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org?subject=unsubscribe>
+List-Archive: <http://sourceforge.net/mailarchive/forum.php?forum_name=spi-devel-general>
+List-Post: <mailto:spi-devel-general-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>
+List-Help: <mailto:spi-devel-general-request-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org?subject=help>
+List-Subscribe: <https://lists.sourceforge.net/lists/listinfo/spi-devel-general>,
+	<mailto:spi-devel-general-request-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org?subject=subscribe>
+Errors-To: spi-devel-general-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org
+Xref: news.gmane.org gmane.linux.kernel.spi.devel:10735 gmane.linux.kernel:1330545 gmane.comp.emulators.kvm.devel:94743 gmane.linux.drivers.video-input-infrastructure:51112
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330545>
+
+>From c9bba34243a86fb3ac82d1bdd0ce4bf796b79559 Mon Sep 17 00:00:00 2001
+From: Tejun Heo <tj-DgEjT+Ai2ygdnm+yROfE0A@public.gmane.org>
+Date: Thu, 19 Jul 2012 13:52:53 -0700
+
+Make the following two non-functional changes.
+
+* Separate out insert_kthread_work() from queue_kthread_work().
+
+* Relocate struct kthread_flush_work and kthread_flush_work_fn()
+  definitions above flush_kthread_work().
+
+Signed-off-by: Tejun Heo <tj-DgEjT+Ai2ygdnm+yROfE0A@public.gmane.org>
+---
+ kernel/kthread.c |   40 ++++++++++++++++++++++++----------------
+ 1 files changed, 24 insertions(+), 16 deletions(-)
+
+diff --git a/kernel/kthread.c b/kernel/kthread.c
+index 3d3de63..7b8a678 100644
+--- a/kernel/kthread.c
++++ b/kernel/kthread.c
+@@ -378,6 +378,17 @@ repeat:
+ }
+ EXPORT_SYMBOL_GPL(kthread_worker_fn);
+ 
++/* insert @work before @pos in @worker */
++static void insert_kthread_work(struct kthread_worker *worker,
++			       struct kthread_work *work,
++			       struct list_head *pos)
++{
++	list_add_tail(&work->node, pos);
++	work->queue_seq++;
++	if (likely(worker->task))
++		wake_up_process(worker->task);
++}
++
+ /**
+  * queue_kthread_work - queue a kthread_work
+  * @worker: target kthread_worker
+@@ -395,10 +406,7 @@ bool queue_kthread_work(struct kthread_worker *worker,
+ 
+ 	spin_lock_irqsave(&worker->lock, flags);
+ 	if (list_empty(&work->node)) {
+-		list_add_tail(&work->node, &worker->work_list);
+-		work->queue_seq++;
+-		if (likely(worker->task))
+-			wake_up_process(worker->task);
++		insert_kthread_work(worker, work, &worker->work_list);
+ 		ret = true;
+ 	}
+ 	spin_unlock_irqrestore(&worker->lock, flags);
+@@ -406,6 +414,18 @@ bool queue_kthread_work(struct kthread_worker *worker,
+ }
+ EXPORT_SYMBOL_GPL(queue_kthread_work);
+ 
++struct kthread_flush_work {
++	struct kthread_work	work;
++	struct completion	done;
++};
++
++static void kthread_flush_work_fn(struct kthread_work *work)
++{
++	struct kthread_flush_work *fwork =
++		container_of(work, struct kthread_flush_work, work);
++	complete(&fwork->done);
++}
++
+ /**
+  * flush_kthread_work - flush a kthread_work
+  * @work: work to flush
+@@ -436,18 +456,6 @@ void flush_kthread_work(struct kthread_work *work)
+ }
+ EXPORT_SYMBOL_GPL(flush_kthread_work);
+ 
+-struct kthread_flush_work {
+-	struct kthread_work	work;
+-	struct completion	done;
+-};
+-
+-static void kthread_flush_work_fn(struct kthread_work *work)
+-{
+-	struct kthread_flush_work *fwork =
+-		container_of(work, struct kthread_flush_work, work);
+-	complete(&fwork->done);
+-}
+-
+ /**
+  * flush_kthread_worker - flush all current works on a kthread_worker
+  * @worker: worker to flush
+-- 
+1.7.7.3
+
+
+------------------------------------------------------------------------------
+Live Security Virtual Conference
+Exclusive live event will cover all the ways today's security and 
+threat landscape has changed and how IT managers can respond. Discussions 
+will include endpoint security, mobile security and the latest in malware 
+threats. http://www.accelacomm.com/jaw/sfrnl04242012/114/50122263/

@@ -1,0 +1,128 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 21/70] rtc: wm831x: Feed the write counter into device_add_randomness()
+Date: Tue, 07 Aug 2012 04:28:16 +0100
+Lines: 74
+Approved: news@gmane.org
+Message-ID: <20120807032759.091883912@decadent.org.uk>
+References: <20120807032755.803571133@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344310792 18438 80.91.229.3 (7 Aug 2012 03:39:52 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 03:39:52 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	Mark Brown <broonie@opensource.wolfsonmicro.com>,
+	Theodore Tso <tytso@mit.edu>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 05:39:51 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Syae6-0003Rn-0G
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 05:39:50 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S964932Ab2HGDje (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 23:39:34 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:59930 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S964866Ab2HGDjD (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 23:39:03 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1SyadI-00081u-R4; Tue, 07 Aug 2012 04:39:00 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Syabz-0002nt-1E; Tue, 07 Aug 2012 04:37:39 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120807032755.803571133@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338723 gmane.linux.kernel.stable:29165
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338723>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Mark Brown <broonie@opensource.wolfsonmicro.com>
+
+commit 9dccf55f4cb011a7552a8a2749a580662f5ed8ed upstream.
+
+The tamper evident features of the RTC include the "write counter" which
+is a pseudo-random number regenerated whenever we set the RTC. Since this
+value is unpredictable it should provide some useful seeding to the random
+number generator.
+
+Only do this on boot since the goal is to seed the pool rather than add
+useful entropy.
+
+Signed-off-by: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Signed-off-by: Theodore Ts'o <tytso@mit.edu>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ drivers/rtc/rtc-wm831x.c |   24 +++++++++++++++++++++++-
+ 1 file changed, 23 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/rtc/rtc-wm831x.c b/drivers/rtc/rtc-wm831x.c
+index 59c6245..ea5c6f8 100644
+--- a/drivers/rtc/rtc-wm831x.c
++++ b/drivers/rtc/rtc-wm831x.c
+@@ -24,7 +24,7 @@
+ #include <linux/mfd/wm831x/core.h>
+ #include <linux/delay.h>
+ #include <linux/platform_device.h>
+-
++#include <linux/random.h>
+ 
+ /*
+  * R16416 (0x4020) - RTC Write Counter
+@@ -96,6 +96,26 @@ struct wm831x_rtc {
+ 	unsigned int alarm_enabled:1;
+ };
+ 
++static void wm831x_rtc_add_randomness(struct wm831x *wm831x)
++{
++	int ret;
++	u16 reg;
++
++	/*
++	 * The write counter contains a pseudo-random number which is
++	 * regenerated every time we set the RTC so it should be a
++	 * useful per-system source of entropy.
++	 */
++	ret = wm831x_reg_read(wm831x, WM831X_RTC_WRITE_COUNTER);
++	if (ret >= 0) {
++		reg = ret;
++		add_device_randomness(&reg, sizeof(reg));
++	} else {
++		dev_warn(wm831x->dev, "Failed to read RTC write counter: %d\n",
++			 ret);
++	}
++}
++
+ /*
+  * Read current time and date in RTC
+  */
+@@ -431,6 +451,8 @@ static int wm831x_rtc_probe(struct platform_device *pdev)
+ 			alm_irq, ret);
+ 	}
+ 
++	wm831x_rtc_add_randomness(wm831x);
++
+ 	return 0;
+ 
+ err:
+
+

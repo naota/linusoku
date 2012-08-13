@@ -1,0 +1,119 @@
+Path: news.gmane.org!not-for-mail
+From: "Rafael J. Wysocki" <rjw@sisk.pl>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.sh.devel
+Subject: [PATCH 2/4] PM / shmobile: Allow device latencies to be specified directly
+Date: Wed, 8 Aug 2012 00:27:52 +0200
+Lines: 62
+Approved: news@gmane.org
+Message-ID: <201208080027.52891.rjw@sisk.pl>
+References: <201207212349.18294.rjw@sisk.pl> <201208080026.01738.rjw@sisk.pl>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain;
+  charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344416508 3108 80.91.229.3 (8 Aug 2012 09:01:48 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 09:01:48 +0000 (UTC)
+Cc: Linux PM list <linux-pm@vger.kernel.org>,
+	LKML <linux-kernel@vger.kernel.org>,
+	Magnus Damm <magnus.damm@gmail.com>
+To: "Linux-sh list" <linux-sh@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 11:01:45 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sz293-0002Mj-Mh
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 11:01:38 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S964813Ab2HHJBQ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 05:01:16 -0400
+Original-Received: from ogre.sisk.pl ([193.178.161.156]:48324 "EHLO ogre.sisk.pl"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1757891Ab2HHJBJ (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 05:01:09 -0400
+Original-Received: from localhost (localhost.localdomain [127.0.0.1])
+	by ogre.sisk.pl (Postfix) with ESMTP id 494341DB903;
+	Wed,  8 Aug 2012 10:50:44 +0200 (CEST)
+Original-Received: from ogre.sisk.pl ([127.0.0.1])
+ by localhost (ogre.sisk.pl [127.0.0.1]) (amavisd-new, port 10024) with ESMTP
+ id 13774-09; Wed,  8 Aug 2012 10:50:25 +0200 (CEST)
+Original-Received: from ferrari.rjw.lan (62-121-64-87.home.aster.pl [62.121.64.87])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by ogre.sisk.pl (Postfix) with ESMTP id 07C901DB9D5;
+	Wed,  8 Aug 2012 10:50:25 +0200 (CEST)
+User-Agent: KMail/1.13.6 (Linux/3.5.0+; KDE/4.6.0; x86_64; ; )
+In-Reply-To: <201208080026.01738.rjw@sisk.pl>
+X-Virus-Scanned: amavisd-new at ogre.sisk.pl using MkS_Vir for Linux
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339906 gmane.linux.ports.sh.devel:16172
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339906>
+
+
+Make it possible to specify device start/stop and save/restore
+state latencies directy when adding devices to PM domains.  For
+this purpose, introduce rmobile_add_device_to_domain_td() whose
+third argument is a pointer to a struct gpd_timing_data object
+containing device latency data.
+
+Signed-off-by: Rafael J. Wysocki <rjw@sisk.pl>
+---
+ arch/arm/mach-shmobile/include/mach/pm-rmobile.h |   14 ++++++++++++--
+ arch/arm/mach-shmobile/pm-rmobile.c              |    7 ++++---
+ 2 files changed, 16 insertions(+), 5 deletions(-)
+
+Index: linux/arch/arm/mach-shmobile/pm-rmobile.c
+===================================================================
+--- linux.orig/arch/arm/mach-shmobile/pm-rmobile.c
++++ linux/arch/arm/mach-shmobile/pm-rmobile.c
+@@ -157,12 +157,13 @@ void rmobile_init_domains(struct rmobile
+ 		rmobile_init_pm_domain(&domains[j]);
+ }
+ 
+-void rmobile_add_device_to_domain(const char *domain_name,
+-				 struct platform_device *pdev)
++void rmobile_add_device_to_domain_td(const char *domain_name,
++				     struct platform_device *pdev,
++				     struct gpd_timing_data *td)
+ {
+ 	struct device *dev = &pdev->dev;
+ 
+-	pm_genpd_name_add_device(domain_name, dev);
++	__pm_genpd_name_add_device(domain_name, dev, td);
+ 	if (pm_clk_no_clocks(dev))
+ 		pm_clk_add(dev, NULL);
+ }
+Index: linux/arch/arm/mach-shmobile/include/mach/pm-rmobile.h
+===================================================================
+--- linux.orig/arch/arm/mach-shmobile/include/mach/pm-rmobile.h
++++ linux/arch/arm/mach-shmobile/include/mach/pm-rmobile.h
+@@ -31,10 +31,20 @@ struct rmobile_pm_domain *to_rmobile_pd(
+ 
+ #ifdef CONFIG_PM
+ extern void rmobile_init_domains(struct rmobile_pm_domain domains[], int num);
+-extern void rmobile_add_device_to_domain(const char *domain_name,
+-					struct platform_device *pdev);
++extern void rmobile_add_device_to_domain_td(const char *domain_name,
++					    struct platform_device *pdev,
++					    struct gpd_timing_data *td);
++
++static inline void rmobile_add_device_to_domain(const char *domain_name,
++						struct platform_device *pdev)
++{
++	rmobile_add_device_to_domain_td(domain_name, pdev, NULL);
++}
++
+ #else
++
+ #define rmobile_init_domains(domains, num) do { } while (0)
++#define rmobile_add_device_to_domain_td(name, pdev, td) do { } while (0)
+ #define rmobile_add_device_to_domain(name, pdev) do { } while (0)
+ #endif /* CONFIG_PM */
+ 
+

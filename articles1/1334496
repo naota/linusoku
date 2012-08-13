@@ -1,0 +1,109 @@
+Path: news.gmane.org!not-for-mail
+From: Christoph Lameter <cl@linux.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [PATCH] slub: remove one code path and reduce lock contention
+ in __slab_free()
+Date: Fri, 27 Jul 2012 15:46:24 -0500 (CDT)
+Lines: 32
+Approved: news@gmane.org
+Message-ID: <alpine.DEB.2.00.1207271538250.25434@router.home>
+References: <1343420271-3825-1-git-send-email-js1304@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: TEXT/PLAIN; charset=US-ASCII
+X-Trace: dough.gmane.org 1343421995 8673 80.91.229.3 (27 Jul 2012 20:46:35 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 20:46:35 +0000 (UTC)
+Cc: Pekka Enberg <penberg@kernel.org>, linux-kernel@vger.kernel.org,
+  linux-mm@kvack.org
+To: Joonsoo Kim <js1304@gmail.com>
+Original-X-From: owner-linux-mm@kvack.org Fri Jul 27 22:46:35 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SurQd-0007yZ-8H
+	for glkm-linux-mm-2@m.gmane.org; Fri, 27 Jul 2012 22:46:31 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 886176B004D; Fri, 27 Jul 2012 16:46:28 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 7868C6B005A; Fri, 27 Jul 2012 16:46:28 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 32A256B005D; Fri, 27 Jul 2012 16:46:28 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx126.postini.com [74.125.245.126])
+	by kanga.kvack.org (Postfix) with SMTP id 534086B004D
+	for <linux-mm@kvack.org>; Fri, 27 Jul 2012 16:46:27 -0400 (EDT)
+Original-Received: from smtp103.prem.mail.ac4.yahoo.com ([76.13.13.42]) by na3sys010amx126.postini.com ([74.125.244.10]) with SMTP;
+	Fri, 27 Jul 2012 20:46:27 GMT
+Original-Received: (qmail 45602 invoked from network); 27 Jul 2012 20:46:26 -0000
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=yahoo.com; s=s1024; t=1343421986; bh=KQRHay2Gyc3lzU4oJC060HRu2UQDPGJh6qIUr2WqzjI=; h=X-Yahoo-Newman-Property:X-YMail-OSG:X-Yahoo-SMTP:Received:Received:Date:From:X-X-Sender:To:cc:Subject:In-Reply-To:Message-ID:References:User-Agent:MIME-Version:Content-Type; b=wonLPTbMqY0lpUk+O+wFMqVLlAQT81qAB0yPe335TRVKa4F0JN6zOE9TyqRDv2wE+0aQw6v2v7X2PuV6diPsq0cFVuEXBsQs6y8jAkouYfYvMhXKxE91ZJv6qKUDjT3FNIjg9dpUi6am4u65a8brsdDe5EjTNnn8JdCJgdGIiOw=
+X-Yahoo-Newman-Property: ymail-3
+X-YMail-OSG: TqKV36IVM1mwkjdRWDib8sSCIRzQF7QDtY8P7ryAggRNxnH
+ ObeJeCLfTUJXdC64UEN9UMcXJttFDI.bs8MJLBZz3QIKL.c3SH.OmbyzlGMM
+ uQd7dK402scNl4hTYbsXh8X756WkWey2zly2.MAHHi3ngMaIYnJMpOspunlH
+ WLm2WB9Xe05bWZWQlySt2.S5gidn4LzKUGcCGu40VCcBddVbQam8ftQyT94X
+ 5QseAMcRIV9H6QQOSSUnfim1EiMvdxd2i_n9UkeDrMfTwe77e.B7kbWAaAMt
+ x.vHwTYer5Mm8eKJSSbJoadgBn.3DVYfac9D8uwObd_UsA7o58bWi53HK9Cs
+ E4pDQt6ZsEvQ6T9yxFaaVV7mMafdpI2IuHFe1oC63XFOfgURPc9IkvBsBD8T
+ FJjGcaUhw4ZMAR.Ogj8PyyIgzlbtkHc7NZNuyRZ.7DyU5mXJe2Tw-
+X-Yahoo-SMTP: _Dag8S.swBC1p4FJKLCXbs8NQzyse1SYSgnAbY0-
+Original-Received: from router.home (cl@99.30.10.212 with plain)
+        by smtp103.prem.mail.ac4.yahoo.com with SMTP; 27 Jul 2012 13:46:26 -0700 PDT
+Original-Received: from cl (helo=localhost)
+	by router.home with local-esmtp (Exim 4.71)
+	(envelope-from <cl@linux.com>)
+	id 1SurQY-0006hG-1Q; Fri, 27 Jul 2012 15:46:26 -0500
+X-X-Sender: cl@router.home
+In-Reply-To: <1343420271-3825-1-git-send-email-js1304@gmail.com>
+User-Agent: Alpine 2.00 (DEB 1167 2008-08-23)
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 1 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <cl@linux.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83127 gmane.linux.kernel:1334496
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334496>
+
+On Sat, 28 Jul 2012, Joonsoo Kim wrote:
+
+> Subject and commit log are changed from v1.
+
+That looks a bit better. But the changelog could use more cleanup and
+clearer expression.
+
+> @@ -2490,25 +2492,17 @@ static void __slab_free(struct kmem_cache *s, struct page *page,
+>                  return;
+>          }
+>
+> +	if (unlikely(!new.inuse && n->nr_partial > s->min_partial))
+> +		goto slab_empty;
+> +
+
+So we can never encounter a empty slab that was frozen before? Really?
+
+Remote frees can decrement inuse again. All objects of a slab frozen on
+one cpu could be allocated while the slab is still frozen. The
+unfreezing requires slab_alloc to encounter a NULL pointer after all.
+
+A remote processor could obtain a pointer to all these objects and free
+them. The code here would cause an unfreeze action. Another alloc on the
+first processor would cause a *second* unfreeze action on a page that was
+freed.
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

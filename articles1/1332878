@@ -1,0 +1,103 @@
+Path: news.gmane.org!not-for-mail
+From: Ramakrishna Pallala <ramakrishna.pallala@intel.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] power_supply: API to return the power supply object from supplied to list
+Date: Wed, 25 Jul 2012 15:20:18 +0530
+Lines: 57
+Approved: news@gmane.org
+Message-ID: <1343209818-14232-1-git-send-email-ramakrishna.pallala@intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343214806 32207 80.91.229.3 (25 Jul 2012 11:13:26 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 11:13:26 +0000 (UTC)
+Cc: Anton Vorontsov <cbouatmailru@gmail.com>,
+	Anton Vorontsov <anton.vorontsov@linaro.org>,
+	Ramakrishna Pallala <ramakrishna.pallala@intel.com>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 13:13:25 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StzWr-0004b3-Ky
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 13:13:21 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756507Ab2GYLNN (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 07:13:13 -0400
+Original-Received: from mga14.intel.com ([143.182.124.37]:9146 "EHLO mga14.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755506Ab2GYLNM (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 07:13:12 -0400
+Original-Received: from azsmga001.ch.intel.com ([10.2.17.19])
+  by azsmga102.ch.intel.com with ESMTP; 25 Jul 2012 04:13:11 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="172975079"
+Original-Received: from rpallala-desktop.iind.intel.com (HELO localhost.localdomain) ([10.223.107.57])
+  by azsmga001.ch.intel.com with ESMTP; 25 Jul 2012 04:13:09 -0700
+X-Mailer: git-send-email 1.7.0.4
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332878
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332878>
+
+This patch adds an API in the power supply core to get the
+power supply object from supplied_to list based on power
+supply attribute(present/online).
+
+Signed-off-by: Ramakrishna Pallala <ramakrishna.pallala@intel.com>
+---
+ drivers/power/power_supply_core.c |   19 +++++++++++++++++++
+ include/linux/power_supply.h      |    3 +++
+ 2 files changed, 22 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/power/power_supply_core.c b/drivers/power/power_supply_core.c
+index ff990d2..8ef1d8b 100644
+--- a/drivers/power/power_supply_core.c
++++ b/drivers/power/power_supply_core.c
+@@ -158,6 +158,25 @@ struct power_supply *power_supply_get_by_name(char *name)
+ }
+ EXPORT_SYMBOL_GPL(power_supply_get_by_name);
+ 
++struct power_supply *power_supply_get_by_suppliedto(struct power_supply *psy,
++						enum power_supply_property psp)
++{
++	union power_supply_propval ret = {0,};
++	struct power_supply *pst;
++	int i;
++
++	for (i = 0; i < psy->num_supplicants; i++) {
++		pst = power_supply_get_by_name(psy->supplied_to[i]);
++		if (!pst || pst->get_property(pst, psp, &ret))
++			continue;
++		if (ret.intval)
++			return pst;
++	}
++
++	return NULL;
++}
++EXPORT_SYMBOL_GPL(power_supply_get_by_suppliedto);
++
+ int power_supply_powers(struct power_supply *psy, struct device *dev)
+ {
+ 	return sysfs_create_link(&psy->dev->kobj, &dev->kobj, "powers");
+diff --git a/include/linux/power_supply.h b/include/linux/power_supply.h
+index 0bafbb1..2fdcf77 100644
+--- a/include/linux/power_supply.h
++++ b/include/linux/power_supply.h
+@@ -219,6 +219,9 @@ struct power_supply_info {
+ };
+ 
+ extern struct power_supply *power_supply_get_by_name(char *name);
++extern struct power_supply *power_supply_get_by_suppliedto(
++					struct power_supply *psy,
++					enum power_supply_property psp);
+ extern void power_supply_changed(struct power_supply *psy);
+ extern int power_supply_am_i_supplied(struct power_supply *psy);
+ extern int power_supply_set_battery_charged(struct power_supply *psy);
+-- 
+1.7.0.4
+

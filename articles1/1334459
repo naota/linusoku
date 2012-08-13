@@ -1,0 +1,297 @@
+Path: news.gmane.org!not-for-mail
+From: Stephen Warren <swarren@wwwdotorg.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] mfd: arizona: convert to regmap_add_irq_chips
+Date: Fri, 27 Jul 2012 13:02:56 -0600
+Lines: 245
+Approved: news@gmane.org
+Message-ID: <1343415776-27176-1-git-send-email-swarren@wwwdotorg.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343415795 24170 80.91.229.3 (27 Jul 2012 19:03:15 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 19:03:15 +0000 (UTC)
+Cc: Mark Brown <broonie@opensource.wolfsonmicro.com>,
+	linux-kernel@vger.kernel.org, Stephen Warren <swarren@nvidia.com>
+To: Samuel Ortiz <sameo@linux.intel.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 21:03:15 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Supof-0003Mm-BM
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 21:03:13 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752626Ab2G0TDF (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 15:03:05 -0400
+Original-Received: from avon.wwwdotorg.org ([70.85.31.133]:38947 "EHLO
+	avon.wwwdotorg.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752246Ab2G0TDD (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 15:03:03 -0400
+Original-Received: from severn.wwwdotorg.org (unknown [192.168.65.5])
+	(using TLSv1 with cipher ADH-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by avon.wwwdotorg.org (Postfix) with ESMTPS id 408996255;
+	Fri, 27 Jul 2012 13:08:45 -0600 (MDT)
+Original-Received: from localhost.localdomain (searspoint.nvidia.com [216.228.112.21])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by severn.wwwdotorg.org (Postfix) with ESMTPSA id 9243DE40FA;
+	Fri, 27 Jul 2012 13:03:01 -0600 (MDT)
+X-Mailer: git-send-email 1.7.0.4
+X-NVConfidentiality: public
+X-Virus-Scanned: clamav-milter 0.96.5 at avon.wwwdotorg.org
+X-Virus-Status: Clean
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334459
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334459>
+
+From: Stephen Warren <swarren@nvidia.com>
+
+The Arizona chip contains a single interrupt that represents the unified
+output of multiple internal interrupt controllers. This pattern has been
+factored out into regmap-irq, so convert the Arizona driver to use the
+new regmap-irq code.
+
+This introduces some hopefully minor functional changes:
+
+1) regmap_add_irq_chips() calls regmap_add_irq_chip() with irq==0 rather
+   than -1, so in turn irq_domain_add_linear() is called rather than
+   irq_domain_add_legacy(). This change could be avoided by providing an
+   irq_bases array to regmap_add_irq_chips().
+
+2) regmap_add_irq_chips() requests the top-level interrupt itself, so this
+   happens before the Arizona driver hooks the child BOOT_DONE and
+   CTRLIF_ERR interrupts. In the original, all the IRQ chips were created
+   first, and then the top-level IRQ was requested. This may cause a
+   functional difference if those interrupts are pending at probe() time.
+
+3) The top-level interrupt domain set up by regmap_add_irq_chips() does
+   not have a .xlate op, whereas the removed domain in the Arizona driver
+   did. However, I don't think this is an issue, since the original code
+   simply used the default irq_domain_xlate_twocell, which didn't handle
+   mapping the IRQ numbers to the child interrupt controllers anyway, and
+   hence probably wasn't that useful. regmap-irq could easily be extended
+   to provide a useful xlate function if required.
+
+Signed-off-by: Stephen Warren <swarren@nvidia.com>
+---
+Note, this depends on the regmap series I just posted to compile.
+---
+ drivers/mfd/arizona-irq.c        |  132 ++++++--------------------------------
+ include/linux/mfd/arizona/core.h |    4 +-
+ 2 files changed, 20 insertions(+), 116 deletions(-)
+
+diff --git a/drivers/mfd/arizona-irq.c b/drivers/mfd/arizona-irq.c
+index 98ac345..f693f85 100644
+--- a/drivers/mfd/arizona-irq.c
++++ b/drivers/mfd/arizona-irq.c
+@@ -28,11 +28,15 @@
+ 
+ static int arizona_map_irq(struct arizona *arizona, int irq)
+ {
++	struct regmap_irq_chip_data *irq_chip;
+ 	int ret;
+ 
+-	ret = regmap_irq_get_virq(arizona->aod_irq_chip, irq);
+-	if (ret < 0)
+-		ret = regmap_irq_get_virq(arizona->irq_chip, irq);
++	irq_chip = regmap_irq_chips_get_chip(arizona->irq_chips, 0);
++	ret = regmap_irq_get_virq(irq_chip, irq);
++	if (ret < 0) {
++		irq_chip = regmap_irq_chips_get_chip(arizona->irq_chips, 1);
++		ret = regmap_irq_get_virq(irq_chip, irq);
++	}
+ 
+ 	return ret;
+ }
+@@ -91,83 +95,24 @@ static irqreturn_t arizona_ctrlif_err(int irq, void *data)
+ 	return IRQ_HANDLED;
+ }
+ 
+-static irqreturn_t arizona_irq_thread(int irq, void *data)
+-{
+-	struct arizona *arizona = data;
+-	int i, ret;
+-
+-	ret = pm_runtime_get_sync(arizona->dev);
+-	if (ret < 0) {
+-		dev_err(arizona->dev, "Failed to resume device: %d\n", ret);
+-		return IRQ_NONE;
+-	}
+-
+-	/* Check both domains */
+-	for (i = 0; i < 2; i++)
+-		handle_nested_irq(irq_find_mapping(arizona->virq, i));
+-
+-	pm_runtime_mark_last_busy(arizona->dev);
+-	pm_runtime_put_autosuspend(arizona->dev);
+-
+-	return IRQ_HANDLED;
+-}
+-
+-static void arizona_irq_enable(struct irq_data *data)
+-{
+-}
+-
+-static void arizona_irq_disable(struct irq_data *data)
+-{
+-}
+-
+-static struct irq_chip arizona_irq_chip = {
+-	.name			= "arizona",
+-	.irq_disable		= arizona_irq_disable,
+-	.irq_enable		= arizona_irq_enable,
+-};
+-
+-static int arizona_irq_map(struct irq_domain *h, unsigned int virq,
+-			      irq_hw_number_t hw)
+-{
+-	struct regmap_irq_chip_data *data = h->host_data;
+-
+-	irq_set_chip_data(virq, data);
+-	irq_set_chip_and_handler(virq, &arizona_irq_chip, handle_edge_irq);
+-	irq_set_nested_thread(virq, 1);
+-
+-	/* ARM needs us to explicitly flag the IRQ as valid
+-	 * and will set them noprobe when we do so. */
+-#ifdef CONFIG_ARM
+-	set_irq_flags(virq, IRQF_VALID);
+-#else
+-	irq_set_noprobe(virq);
+-#endif
+-
+-	return 0;
+-}
+-
+-static struct irq_domain_ops arizona_domain_ops = {
+-	.map	= arizona_irq_map,
+-	.xlate	= irq_domain_xlate_twocell,
+-};
+-
+ int arizona_irq_init(struct arizona *arizona)
+ {
+ 	int flags = IRQF_ONESHOT;
+ 	int ret, i;
+-	const struct regmap_irq_chip *aod, *irq;
++	struct regmap *maps[2] = { arizona->regmap, arizona->regmap };
++	const struct regmap_irq_chip *chips[2];
+ 
+ 	switch (arizona->type) {
+ #ifdef CONFIG_MFD_WM5102
+ 	case WM5102:
+-		aod = &wm5102_aod;
+-		irq = &wm5102_irq;
++		chips[0] = &wm5102_aod;
++		chips[1] = &wm5102_irq;
+ 		break;
+ #endif
+ #ifdef CONFIG_MFD_WM5110
+ 	case WM5110:
+-		aod = &wm5110_aod;
+-		irq = &wm5110_irq;
++		chips[0] = &wm5110_aod;
++		chips[1] = &wm5110_irq;
+ 		break;
+ #endif
+ 	default:
+@@ -189,30 +134,11 @@ int arizona_irq_init(struct arizona *arizona)
+ 		flags |= IRQF_TRIGGER_LOW;
+ 	}
+ 
+-	/* Allocate a virtual IRQ domain to distribute to the regmap domains */
+-	arizona->virq = irq_domain_add_linear(NULL, 2, &arizona_domain_ops,
+-					      arizona);
+-	if (!arizona->virq) {
+-		ret = -EINVAL;
+-		goto err;
+-	}
+-
+-	ret = regmap_add_irq_chip(arizona->regmap,
+-				  irq_create_mapping(arizona->virq, 0),
+-				  IRQF_ONESHOT, -1, aod,
+-				  &arizona->aod_irq_chip);
++	ret = regmap_add_irq_chips(arizona->irq, flags, 2, maps, NULL, chips,
++				   &arizona->irq_chips);
+ 	if (ret != 0) {
+-		dev_err(arizona->dev, "Failed to add AOD IRQs: %d\n", ret);
+-		goto err_domain;
+-	}
+-
+-	ret = regmap_add_irq_chip(arizona->regmap,
+-				  irq_create_mapping(arizona->virq, 1),
+-				  IRQF_ONESHOT, -1, irq,
+-				  &arizona->irq_chip);
+-	if (ret != 0) {
+-		dev_err(arizona->dev, "Failed to add AOD IRQs: %d\n", ret);
+-		goto err_aod;
++		dev_err(arizona->dev, "Failed to add IRQs: %d\n", ret);
++		goto err;
+ 	}
+ 
+ 	/* Make sure the boot done IRQ is unmasked for resumes */
+@@ -235,28 +161,12 @@ int arizona_irq_init(struct arizona *arizona)
+ 		goto err_ctrlif;
+ 	}
+ 
+-	ret = request_threaded_irq(arizona->irq, NULL, arizona_irq_thread,
+-				   flags, "arizona", arizona);
+-
+-	if (ret != 0) {
+-		dev_err(arizona->dev, "Failed to request IRQ %d: %d\n",
+-			arizona->irq, ret);
+-		goto err_main_irq;
+-	}
+-
+ 	return 0;
+ 
+-err_main_irq:
+-	free_irq(arizona_map_irq(arizona, ARIZONA_IRQ_CTRLIF_ERR), arizona);
+ err_ctrlif:
+ 	free_irq(arizona_map_irq(arizona, ARIZONA_IRQ_BOOT_DONE), arizona);
+ err_boot_done:
+-	regmap_del_irq_chip(irq_create_mapping(arizona->virq, 1),
+-			    arizona->irq_chip);
+-err_aod:
+-	regmap_del_irq_chip(irq_create_mapping(arizona->virq, 0),
+-			    arizona->aod_irq_chip);
+-err_domain:
++	regmap_del_irq_chips(arizona->irq_chips);
+ err:
+ 	return ret;
+ }
+@@ -265,11 +175,7 @@ int arizona_irq_exit(struct arizona *arizona)
+ {
+ 	free_irq(arizona_map_irq(arizona, ARIZONA_IRQ_CTRLIF_ERR), arizona);
+ 	free_irq(arizona_map_irq(arizona, ARIZONA_IRQ_BOOT_DONE), arizona);
+-	regmap_del_irq_chip(irq_create_mapping(arizona->virq, 1),
+-			    arizona->irq_chip);
+-	regmap_del_irq_chip(irq_create_mapping(arizona->virq, 0),
+-			    arizona->aod_irq_chip);
+-	free_irq(arizona->irq, arizona);
++	regmap_del_irq_chips(arizona->irq_chips);
+ 
+ 	return 0;
+ }
+diff --git a/include/linux/mfd/arizona/core.h b/include/linux/mfd/arizona/core.h
+index dd231ac..769b3a0 100644
+--- a/include/linux/mfd/arizona/core.h
++++ b/include/linux/mfd/arizona/core.h
+@@ -92,9 +92,7 @@ struct arizona {
+ 	struct arizona_pdata pdata;
+ 
+ 	int irq;
+-	struct irq_domain *virq;
+-	struct regmap_irq_chip_data *aod_irq_chip;
+-	struct regmap_irq_chip_data *irq_chip;
++	struct regmap_irq_chips_data *irq_chips;
+ 
+ 	struct mutex clk_lock;
+ 	int clk32k_ref;
+-- 
+1.7.0.4
+

@@ -1,0 +1,106 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 035/122] USB: Fix LPM disable count mismatch on driver unbind.
+Date: Tue,  7 Aug 2012 15:25:23 -0700
+Lines: 42
+Approved: news@gmane.org
+Message-ID: <20120807221951.387855906@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344382690 10114 80.91.229.3 (7 Aug 2012 23:38:10 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 23:38:10 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	Sarah Sharp <sarah.a.sharp@linux.intel.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 01:38:09 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SytLj-00068r-7T
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 01:38:07 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757608Ab2HGXh7 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 19:37:59 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:54583 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S932465Ab2HGW2u (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:28:50 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so346924pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:28:50 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=xmk9xzqKTGWyAGu55oFdNoZN8D4Mbvd+fRt4Kh92RBQ=;
+        b=Z7lsIWc98SZxAljnJrYSgYqGUCAwHFKl5Hd38R6e9IF1nqx4u08t6pPmA4rIrR2TkY
+         9+EHe1yD9RPMvhKZHSJP+an8G1HR8jKtyrqa1x3V4PZScTmzZDpoX8Leoz21byFqdiuq
+         2Y0Y7/6iaFKnugMzv0f2sBmWiz602a89JhUeD+y82wKf63lS9IpkOwFczx3sWDJpuXP3
+         Hb+AWK/RlwsPQu2yOSXS2GYrWTNkTjPVmrLCDP51xzrYXoQMHftjgbfAVf4xHri9S4ST
+         kxQses7ohTOdb50Zrloll9npXBCcZIG9l91/8aF4ZLHkVrdYs4ZKCbS3wtpQOzI6LfMM
+         UH3Q==
+Original-Received: by 10.68.138.170 with SMTP id qr10mr31072551pbb.120.1344378530634;
+        Tue, 07 Aug 2012 15:28:50 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id kh1sm11960755pbc.23.2012.08.07.15.28.48
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:28:49 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQkClzlsMkfrKFtqpu9y7HwE1MUd3f7QzWWBS5XZF5A6TieQDA7sl+Se8PYEqUf6RmSGIRBn
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339687 gmane.linux.kernel.stable:29512
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339687>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Sarah Sharp <sarah.a.sharp@linux.intel.com>
+
+commit 249719121bc2b841bdfcab5eb21b10d8b871743b upstream.
+
+When a user runs `echo 0 > bConfigurationValue` for a USB 3.0 device,
+usb_disable_device() is called.  This function disables all drivers,
+deallocates interfaces, and sets the device configuration value to 0
+(unconfigured).
+
+With the new scheme to ensure that unconfigured devices have LPM
+disabled, usb_disable_device() must call usb_unlocked_disable_lpm() once
+it unconfigures the device.
+
+This commit should be backported to kernels as old as 3.5, that contain
+the commit 8306095fd2c1100e8244c09bf560f97aca5a311d "USB: Disable USB
+3.0 LPM in critical sections."
+
+Signed-off-by: Sarah Sharp <sarah.a.sharp@linux.intel.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ drivers/usb/core/message.c |    1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/drivers/usb/core/message.c
++++ b/drivers/usb/core/message.c
+@@ -1174,6 +1174,7 @@ void usb_disable_device(struct usb_devic
+ 			put_device(&dev->actconfig->interface[i]->dev);
+ 			dev->actconfig->interface[i] = NULL;
+ 		}
++		usb_unlocked_disable_lpm(dev);
+ 		dev->actconfig = NULL;
+ 		if (dev->state == USB_STATE_CONFIGURED)
+ 			usb_set_device_state(dev, USB_STATE_ADDRESS);
+
+

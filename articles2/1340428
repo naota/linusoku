@@ -1,0 +1,180 @@
+Path: news.gmane.org!not-for-mail
+From: Kent Overstreet <koverstreet-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>
+Newsgroups: gmane.linux.kernel.bcache.devel,gmane.linux.kernel,gmane.linux.kernel.device-mapper.devel,gmane.linux.kernel.drbd.devel
+Subject: [PATCH] Consolidate bio_clone_bioset(), bio_kmalloc()
+Date: Wed, 8 Aug 2012 19:38:11 -0700
+Lines: 98
+Approved: news@gmane.org
+Message-ID: <20120809023811.GJ7262@moria.home.lan>
+References: <1344290921-25154-1-git-send-email-koverstreet@google.com>
+ <1344290921-25154-11-git-send-email-koverstreet@google.com>
+ <20120808231552.GJ6983@dhcp-172-17-108-109.mtv.corp.google.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344479934 16953 80.91.229.3 (9 Aug 2012 02:38:54 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 02:38:54 +0000 (UTC)
+Cc: linux-bcache-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org,
+	dm-devel-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org, axboe-tSWWG44O7X1aa/9Udqfwiw@public.gmane.org, agk-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org,
+	neilb-l3A5Bk7waGM@public.gmane.org, drbd-dev-cunTk1MwBs8qoQakbn7OcQ@public.gmane.org, vgoyal-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org,
+	mpatocka-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org, sage-BnTBU8nroG7k1uMJSBkQmQ@public.gmane.org, yehuda-L5o5AL9CYN0tUFlbccrkMA@public.gmane.org
+To: Tejun Heo <tj-DgEjT+Ai2ygdnm+yROfE0A@public.gmane.org>
+Original-X-From: linux-bcache-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org Thu Aug 09 04:38:52 2012
+Return-path: <linux-bcache-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Envelope-to: glbd-linux-bcache-wOFGN7rlS/M9smdsby/KFg@public.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-bcache-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>)
+	id 1SzIe7-0005UN-QP
+	for glbd-linux-bcache-wOFGN7rlS/M9smdsby/KFg@public.gmane.org; Thu, 09 Aug 2012 04:38:48 +0200
+Original-Received: (majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org) by vger.kernel.org via listexpand
+	id S1751512Ab2HICiq (ORCPT <rfc822;glbd-linux-bcache@m.gmane.org>);
+	Wed, 8 Aug 2012 22:38:46 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:49988 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751315Ab2HICip (ORCPT
+	<rfc822;linux-bcache-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>);
+	Wed, 8 Aug 2012 22:38:45 -0400
+Original-Received: by pbbrr13 with SMTP id rr13so100751pbb.19
+        for <linux-bcache-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>; Wed, 08 Aug 2012 19:38:45 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=date:from:to:cc:subject:message-id:references:mime-version
+         :content-type:content-disposition:in-reply-to:user-agent;
+        bh=C8swC7Ex6TfHNti6e1Kw4goZlOzP3ROGH9871JRJiLA=;
+        b=VcooXYFm4hBoGJNXHjofHydPPlpbXuX8GDhPTpFO1h38jEVj1cnxerpcQGLDcfPY/L
+         RdG2D0xbPKzJZtTT9eK+M8Jo0NX9lacHT2hsfp02N3NW8f6iDGRFmrn0Uyij7yfwVVSE
+         v0/WJiZc9UO5DkcF0MIorpEclsDITujV2//lSSaBZsztSK09aWxnytuQXXws2ngfabRD
+         rtI9uiDb9JUEiSP3BEdqOqgtCjjQd8x6v4CcDjogqzEcjaiJn2LJwxteBD6ohNlqYUpy
+         EXvkMgs/LP6b5E5nI5ZjcMIPFHEHn7PC+RrsrQpmJ0AKmSFUcwSi0bWkHcBTr+ey1/wi
+         8vgA==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=date:from:to:cc:subject:message-id:references:mime-version
+         :content-type:content-disposition:in-reply-to:user-agent
+         :x-gm-message-state;
+        bh=C8swC7Ex6TfHNti6e1Kw4goZlOzP3ROGH9871JRJiLA=;
+        b=cRaU4aqHahhWjoVHW7fogOmyjnYxRfid/wXlUCdQKCLZUvI/3jayZEu4524zWLl5hI
+         zjHjvT2RCN8PiqUymVS4fsYnFpvtMeWpXnxJodi/9+Z93nU0MlaW8hdOe+MoxQgH5+ZD
+         RPjvETxrTAuWEXC6cQZRoh6fWq2O+a3jPITWTbIYxTXuJM1ZOvjAoVvUDQmIoqPyRflL
+         ZMmlyQ5SIaop85o7vHhrEk4qEqBzRaYJkOwpCQZbfdU4KD7VH7tg03qDQjswTb98SIio
+         Be41tCC+dcafMC2e0LMfbhoay+iRyunFB58m33DNvZYepQK7hQzIzLCDGQn11SA7yaOf
+         h0cg==
+Original-Received: by 10.68.231.67 with SMTP id te3mr155562pbc.134.1344479925013;
+        Wed, 08 Aug 2012 19:38:45 -0700 (PDT)
+Original-Received: by 10.68.231.67 with SMTP id te3mr155531pbc.134.1344479924829;
+        Wed, 08 Aug 2012 19:38:44 -0700 (PDT)
+Original-Received: from moria.home.lan (c-67-188-232-164.hsd1.ca.comcast.net. [67.188.232.164])
+        by mx.google.com with ESMTPS id pz10sm121011pbb.60.2012.08.08.19.38.43
+        (version=SSLv3 cipher=OTHER);
+        Wed, 08 Aug 2012 19:38:44 -0700 (PDT)
+Content-Disposition: inline
+In-Reply-To: <20120808231552.GJ6983-RcKxWJ4Cfj1J2suj2OqeGauc2jM2gXBXkQQo+JxHRPFibQn6LdNjmg@public.gmane.org>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Gm-Message-State: ALoCoQlU6KqrTiyTKyAUCfw7J+Atay2dg1LBXwEjY+pp/LNofL+eWLxRzFz2obAQSF8BeFiSXxKgCgq5D+ToRoPa1r8gdsuzM53ofG5iogQtmancKwTI2tJbHLqxMdSbjKYXoq9MOuggu7fzxrg9FRMIl8amV8G4Kpl1ndcusagOuj1Sq40UXT29Yp533LsGbIySeUcJoGZS3yaB/VixPj4fIrp54GMUew==
+Original-Sender: linux-bcache-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Precedence: bulk
+List-ID: <linux-bcache.vger.kernel.org>
+X-Mailing-List: linux-bcache-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Xref: news.gmane.org gmane.linux.kernel.bcache.devel:711 gmane.linux.kernel:1340428 gmane.linux.kernel.device-mapper.devel:16527 gmane.linux.kernel.drbd.devel:2092
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340428>
+
+On Wed, Aug 08, 2012 at 04:15:52PM -0700, Tejun Heo wrote:
+> > +struct bio *bio_clone_kmalloc(struct bio *bio, gfp_t gfp_mask)
+> > +{
+> > +	struct bio *b = bio_kmalloc(gfp_mask, bio->bi_max_vecs);
+> 
+> Can't we use %NULL bioset as an indication to allocate from kmalloc
+> instead of duping interfaces like this?
+
+So, if bio_clone_bioset(gfp, nr_iovecs, BIO_KMALLOC_POOL) just does
+bio_kmalloc(), the rest just falls out naturally.
+
+We could do this by either just having bio_clone_bioset() call
+bio_kmalloc(), or consolidate them both into a single function.
+
+I'm leaning towards the latter, because while looking at it I noticed a
+couple subtle behavioural differences.
+
+ * bio_kmalloc(GFP_KERNEL, 0) sets bi_io_vec = bi_inline_vecs,
+bio_alloc_bioset sets it to NULL. This is a bug waiting to happen, if it
+isn't one already - bi_io_vec != NULL is exactly what bio_has_data()
+checks.
+
+ * bio_alloc_bioset() could return a bio with bi_max_vecs greater than
+requested if you asked for a bio with fewer than BIO_INLINE_VECS.
+Unlikely to ever be a real problem, but subtle enough that I wouldn't
+bet too much against it.
+
+ * bio_kmalloc() fails if asked for more than UIO_MAXIOV bvecs (wtf!?),
+which is 1024; bio_alloc_bioset fails if asked for more than
+BIO_MAX_PAGES (which is 256, and it'd probably take you a bit to see
+where/why it fails).
+
+So here's my initial stab at it. Tell me if you think this is too
+contorted:
+
+
+diff --git a/fs/bio.c b/fs/bio.c
+index 22596af..c852665 100644
+--- a/fs/bio.c
++++ b/fs/bio.c
+@@ -295,34 +295,45 @@ EXPORT_SYMBOL(bio_reset);
+  **/
+ struct bio *bio_alloc_bioset(gfp_t gfp_mask, int nr_iovecs, struct bio_set *bs)
+ {
++	unsigned front_pad;
++	unsigned inline_vecs;
+ 	unsigned long idx = BIO_POOL_NONE;
+ 	struct bio_vec *bvl = NULL;
+ 	struct bio *bio;
+ 	void *p;
+ 
+-	p = mempool_alloc(bs->bio_pool, gfp_mask);
++	if (nr_iovecs > UIO_MAXIOV)
++		return NULL;
++
++	if (bs == BIO_KMALLOC_POOL) {
++		p = kmalloc(sizeof(struct bio) +
++			    nr_iovecs * sizeof(struct bio_vec),
++			    gfp_mask);
++		front_pad = 0;
++		inline_vecs = nr_iovecs;
++	} else {
++		p = mempool_alloc(bs->bio_pool, gfp_mask);
++		front_pad = bs->front_pad;
++		inline_vecs = BIO_INLINE_VECS;
++	}
++
+ 	if (unlikely(!p))
+ 		return NULL;
+-	bio = p + bs->front_pad;
+ 
++	bio = p + front_pad;
+ 	bio_init(bio);
+-	bio->bi_pool = bs;
+-
+-	if (unlikely(!nr_iovecs))
+-		goto out_set;
+ 
+-	if (nr_iovecs <= BIO_INLINE_VECS) {
+-		bvl = bio->bi_inline_vecs;
+-		nr_iovecs = BIO_INLINE_VECS;
+-	} else {
++	if (nr_iovecs > inline_vecs) {
+ 		bvl = bvec_alloc_bs(gfp_mask, nr_iovecs, &idx, bs);
+ 		if (unlikely(!bvl))
+ 			goto err_free;
+ 
+-		nr_iovecs = bvec_nr_vecs(idx);
+ 		bio->bi_flags |= 1 << BIO_OWNS_VEC;
++	} else if (nr_iovecs) {
++		bvl = bio->bi_inline_vecs;
+ 	}
+-out_set:
++
++	bio->bi_pool = bs;
+ 	bio->bi_flags |= idx << BIO_POOL_OFFSET;
+ 	bio->bi_max_vecs = nr_iovecs;
+ 	bio->bi_io_vec = bvl;

@@ -1,0 +1,158 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 14/40] vmscan: reduce wind up shrinker->nr when shrinker cant do work
+Date: Thu, 26 Jul 2012 14:29:32 -0700
+Lines: 93
+Approved: news@gmane.org
+Message-ID: <20120726211412.376866987@linuxfoundation.org>
+References: <20120726211424.GA7709@kroah.com>
+ <20120726211411.164006056@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343338743 13932 80.91.229.3 (26 Jul 2012 21:39:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 21:39:03 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Dave Chinner <dchinner@redhat.com>,
+	Al Viro <viro@zeniv.linux.org.uk>, Mel Gorman <mgorman@suse.de>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 23:39:01 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuVls-0003Ij-Ey
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 23:39:00 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752955Ab2GZVim (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 17:38:42 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:35774 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753346Ab2GZVam (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 17:30:42 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so3820542pbb.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 14:30:42 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=pyYGbJxNhJuDlGZpNwpxhyIuFic1RHql3hPTLLqnwaQ=;
+        b=dvfpqgDMqRqukcbzOnOqjngk4ohU7lI7IAuCq2Du3K44e1hv8+48ZNlMkXasd7RpKB
+         3ahTRmWLo5PceQa4d9U4tz/yWekbLZDEYBC1asNNEFPcnQTbDo39iZHZMx7xn47O9Hm7
+         gxEGvmOExJHlhNAaW4t9aSOsIA/c60hISv028iACuYVESsOQ+bQrN4jhz+fBf1pqgKTe
+         /G/tVYIql9PaoV33urVVae+2GrXBgbefTD6kIHFA4s5WjLfMzRj8eS3IUcTodtR5UwAf
+         l3X6nSC2GeuZ6svb4PH+BjFzXsIP+7Yo9EqtODTUOjlkBULuQ5GpaoR57XiqQV2cSFIb
+         v1/A==
+Original-Received: by 10.68.220.104 with SMTP id pv8mr1455038pbc.119.1343338241994;
+        Thu, 26 Jul 2012 14:30:41 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id jy7sm425389pbc.71.2012.07.26.14.30.39
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 14:30:41 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120726211411.164006056@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQmcuT20FovX6GMj75+ffh75g4WG7PmQNqtqwon3xBHXwga3rS+q8f6FMKgwSg4ZkMNFtl6W
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333961 gmane.linux.kernel.stable:28897
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333961>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Dave Chinner <dchinner@redhat.com>
+
+commit 3567b59aa80ac4417002bf58e35dce5c777d4164 upstream.
+
+Stable note: Not tracked in Bugzilla. This patch reduces excessive
+	reclaim of slab objects reducing the amount of information that
+	has to be brought back in from disk. The third and fourth paragram
+	in the series describes the impact.
+
+When a shrinker returns -1 to shrink_slab() to indicate it cannot do
+any work given the current memory reclaim requirements, it adds the
+entire total_scan count to shrinker->nr. The idea ehind this is that
+whenteh shrinker is next called and can do work, it will do the work
+of the previously aborted shrinker call as well.
+
+However, if a filesystem is doing lots of allocation with GFP_NOFS
+set, then we get many, many more aborts from the shrinkers than we
+do successful calls. The result is that shrinker->nr winds up to
+it's maximum permissible value (twice the current cache size) and
+then when the next shrinker call that can do work is issued, it
+has enough scan count built up to free the entire cache twice over.
+
+This manifests itself in the cache going from full to empty in a
+matter of seconds, even when only a small part of the cache is
+needed to be emptied to free sufficient memory.
+
+Under metadata intensive workloads on ext4 and XFS, I'm seeing the
+VFS caches increase memory consumption up to 75% of memory (no page
+cache pressure) over a period of 30-60s, and then the shrinker
+empties them down to zero in the space of 2-3s. This cycle repeats
+over and over again, with the shrinker completely trashing the inode
+and dentry caches every minute or so the workload continues.
+
+This behaviour was made obvious by the shrink_slab tracepoints added
+earlier in the series, and made worse by the patch that corrected
+the concurrent accounting of shrinker->nr.
+
+To avoid this problem, stop repeated small increments of the total
+scan value from winding shrinker->nr up to a value that can cause
+the entire cache to be freed. We still need to allow it to wind up,
+so use the delta as the "large scan" threshold check - if the delta
+is more than a quarter of the entire cache size, then it is a large
+scan and allowed to cause lots of windup because we are clearly
+needing to free lots of memory.
+
+If it isn't a large scan then limit the total scan to half the size
+of the cache so that windup never increases to consume the whole
+cache. Reducing the total scan limit further does not allow enough
+wind-up to maintain the current levels of performance, whilst a
+higher threshold does not prevent the windup from freeing the entire
+cache under sustained workloads.
+
+Signed-off-by: Dave Chinner <dchinner@redhat.com>
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ mm/vmscan.c |   15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -277,6 +277,21 @@ unsigned long shrink_slab(struct shrink_
+ 		}
+ 
+ 		/*
++		 * We need to avoid excessive windup on filesystem shrinkers
++		 * due to large numbers of GFP_NOFS allocations causing the
++		 * shrinkers to return -1 all the time. This results in a large
++		 * nr being built up so when a shrink that can do some work
++		 * comes along it empties the entire cache due to nr >>>
++		 * max_pass.  This is bad for sustaining a working set in
++		 * memory.
++		 *
++		 * Hence only allow the shrinker to scan the entire cache when
++		 * a large delta change is calculated directly.
++		 */
++		if (delta < max_pass / 4)
++			total_scan = min(total_scan, max_pass / 2);
++
++		/*
+ 		 * Avoid risking looping forever due to too large nr value:
+ 		 * never try to free more than twice the estimate number of
+ 		 * freeable entries.
+
+

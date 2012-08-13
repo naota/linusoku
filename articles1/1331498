@@ -1,0 +1,96 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 045/108] ARM: SAMSUNG: fix race in s3c_adc_start for ADC
+Date: Mon, 23 Jul 2012 02:07:36 +0100
+Lines: 42
+Approved: news@gmane.org
+Message-ID: <20120723010658.288545679@decadent.org.uk>
+References: <20120723010651.408577075@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343008182 15013 80.91.229.3 (23 Jul 2012 01:49:42 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 01:49:42 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Todd Poynor <toddpoynor@google.com>,
+	Ben Dooks <ben-linux@fluff.org>,
+	Kukjin Kim <kgene.kim@samsung.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 03:49:41 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1St7mH-0006fY-12
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 03:49:41 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753845Ab2GWBtd (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 21:49:33 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:54424 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1753546Ab2GWBng (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 21:43:36 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7gG-0008Rg-CO; Mon, 23 Jul 2012 02:43:28 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7eb-0008Bc-F0; Mon, 23 Jul 2012 02:41:45 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120723010651.408577075@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331498 gmane.linux.kernel.stable:28650
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331498>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Todd Poynor <toddpoynor@google.com>
+
+commit 8265981bb439f3ecc5356fb877a6c2a6636ac88a upstream.
+
+Checking for adc->ts_pend already claimed should be done with the
+lock held.
+
+Signed-off-by: Todd Poynor <toddpoynor@google.com>
+Acked-by: Ben Dooks <ben-linux@fluff.org>
+Signed-off-by: Kukjin Kim <kgene.kim@samsung.com>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ arch/arm/plat-samsung/adc.c |    8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/plat-samsung/adc.c b/arch/arm/plat-samsung/adc.c
+index 33ecd0c..b1e05cc 100644
+--- a/arch/arm/plat-samsung/adc.c
++++ b/arch/arm/plat-samsung/adc.c
+@@ -157,11 +157,13 @@ int s3c_adc_start(struct s3c_adc_client *client,
+ 		return -EINVAL;
+ 	}
+ 
+-	if (client->is_ts && adc->ts_pend)
+-		return -EAGAIN;
+-
+ 	spin_lock_irqsave(&adc->lock, flags);
+ 
++	if (client->is_ts && adc->ts_pend) {
++		spin_unlock_irqrestore(&adc->lock, flags);
++		return -EAGAIN;
++	}
++
+ 	client->channel = channel;
+ 	client->nr_samples = nr_samples;
+ 
+
+

@@ -1,0 +1,163 @@
+Path: news.gmane.org!not-for-mail
+From: Catalin Marinas <catalin.marinas@arm.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [09/36] AArch64: Exception handling
+Date: Thu, 9 Aug 2012 18:23:15 +0100
+Lines: 114
+Approved: news@gmane.org
+Message-ID: <20120809172315.GA12325@arm.com>
+References: <1341608777-12982-10-git-send-email-catalin.marinas@arm.com>
+ <5023EDE0.3070506@codeaurora.org>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344533040 9515 80.91.229.3 (9 Aug 2012 17:24:00 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 17:24:00 +0000 (UTC)
+Cc: Will Deacon <Will.Deacon@arm.com>,
+	"linux-kernel@vger.kernel.org" <linux-kernel@vger.kernel.org>,
+	Arnd Bergmann <arnd@arndb.de>
+To: Christopher Covington <cov@codeaurora.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 09 19:24:00 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzWSl-0001dD-Qg
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 09 Aug 2012 19:24:00 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755125Ab2HIRXo (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 13:23:44 -0400
+Original-Received: from cam-admin0.cambridge.arm.com ([217.140.96.50]:41791 "EHLO
+	cam-admin0.cambridge.arm.com" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1752634Ab2HIRXm (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 13:23:42 -0400
+Original-Received: from arm.com (e102109-lin.cambridge.arm.com [10.1.69.68])
+	by cam-admin0.cambridge.arm.com (8.12.6/8.12.6) with ESMTP id q79HNbOK005561;
+	Thu, 9 Aug 2012 18:23:37 +0100 (BST)
+Content-Disposition: inline
+In-Reply-To: <5023EDE0.3070506@codeaurora.org>
+User-Agent: Mutt/1.5.20 (2009-06-14)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340887
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340887>
+
+Hi Christopher,
+
+On Thu, Aug 09, 2012 at 06:05:36PM +0100, Christopher Covington wrote:
+> On 01/-10/-28163 02:59 PM, Catalin Marinas wrote:
+> > +/*
+> > + * Exception vectors.
+> > + */
+> > +	.macro	ventry	label
+> > +	.align	7
+> > +	b	\label
+> > +	.endm
+> > +
+> > +	.align	11
+> > +ENTRY(vectors)
+> > +	ventry	el1_sync_invalid		// Synchronous EL1t
+> > +	ventry	el1_irq_invalid			// IRQ EL1t
+> > +	ventry	el1_fiq_invalid			// FIQ EL1t
+> > +	ventry	el1_error_invalid		// Error EL1t
+> > +
+> > +	ventry	el1_sync			// Synchronous EL1h
+> > +	ventry	el1_irq				// IRQ EL1h
+> > +	ventry	el1_fiq_invalid			// FIQ EL1h
+> > +	ventry	el1_error_invalid		// Error EL1h
+> > +
+> > +	ventry	el0_sync			// Synchronous 64-bit EL0
+> > +	ventry	el0_irq				// IRQ 64-bit EL0
+> > +	ventry	el0_fiq_invalid			// FIQ 64-bit EL0
+> > +	ventry	el0_error_invalid		// Error 64-bit EL0
+> > +
+> > +#ifdef CONFIG_AARCH32_EMULATION
+> > +	ventry	el0_sync_compat			// Synchronous 32-bit EL0
+> > +	ventry	el0_irq_compat			// IRQ 32-bit EL0
+> > +	ventry	el0_fiq_invalid_compat		// FIQ 32-bit EL0
+> > +	ventry	el0_error_invalid_compat	// Error 32-bit EL0
+> > +#else
+> > +	ventry	el0_sync_invalid		// Synchronous 32-bit EL0
+> > +	ventry	el0_irq_invalid			// IRQ 32-bit EL0
+> > +	ventry	el0_fiq_invalid			// FIQ 32-bit EL0
+> > +	ventry	el0_error_invalid		// Error 32-bit EL0
+> > +#endif
+> > +END(vectors)
+> > +
+> > +/*
+> > + * Invalid mode handlers
+> > + */
+> > +	.macro	inv_entry, el, reason, regsize = 64
+> > +	kernel_entry el, \regsize
+> > +	mov	x0, sp
+> > +	mov	x1, #\reason
+> > +	mrs	x2, esr_el1
+> > +	b	bad_mode
+> > +	.endm
+> 
+> The code seems to indicate that the invalid mode handlers have
+> different alignment requirements than the valid mode handlers, which
+> puzzles me.
+
+I don't see any difference. The whole vector must be 2K aligned while
+each individual entry is found every 128 bytes (to allow for more
+instructions, though we only use a branch).
+
+The inv_entry macro (as the kernel_entry one) is used in code being
+branched to from the vector and not inside the vector.
+
+> > +el0_sync_invalid:
+> > +	inv_entry 0, BAD_SYNC
+> > +ENDPROC(el0_sync_invalid)
+> 
+> Plain labels, the ENTRY macro, the END macro and the ENDPROC macro are
+> used variously throughout this file, and I wonder if a greater amount
+> of consistency might be attainable. The description of the ENDPROC
+> macro in include/linux/linkage.h makes me think its use might not be
+> completely warranted in blocks of assembly that don't end with a
+> return instruction.
+
+We use ENTRY only when we want to export the symbol as it contains the
+.globl directive. The ENDPROC is used to mark a function and it's in
+general useful for debugging information it generates.
+
+> > +	.align	6
+> > +el0_irq:
+> > +	kernel_entry 0
+> > +el0_irq_naked:
+> > +	disable_step x1
+> > +	isb
+> > +	enable_dbg
+> > +#ifdef CONFIG_TRACE_IRQFLAGS
+> > +	bl	trace_hardirqs_off
+> > +#endif
+> > +	get_thread_info tsk
+> > +#ifdef CONFIG_PREEMPT
+> > +	ldr	x24, [tsk, #TI_PREEMPT]		// get preempt count
+> > +	add	x23, x24, #1			// increment it
+> > +	str	x23, [tsk, #TI_PREEMPT]
+> > +#endif
+> > +	irq_handler
+> > +#ifdef CONFIG_PREEMPT
+> > +	ldr	x0, [tsk, #TI_PREEMPT]
+> > +	str	x24, [tsk, #TI_PREEMPT]
+> > +	cmp	x0, x23
+> > +	b.eq	1f
+> > +	mov	x1, #0
+> > +	str	x1, [x1]			// BUG
+> 
+> It looks like the error handling here isn't quite complete.
+
+We trigger a bug by storing to 0 and the kernel will panic, giving the
+full trace. I don't think we can do more in terms of error handling
+here.
+
+Regards.
+
+-- 
+Catalin

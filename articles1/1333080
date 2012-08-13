@@ -1,0 +1,137 @@
+Path: news.gmane.org!not-for-mail
+From: Toshi Kani <toshi.kani@hp.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.acpi.devel
+Subject: Re: [PATCH 0/4] ACPI: hotplug messages improvement
+Date: Wed, 25 Jul 2012 09:26:29 -0600
+Lines: 83
+Approved: news@gmane.org
+Message-ID: <1343229989.3010.383.camel@misato.fc.hp.com>
+References: <1342644027-19559-1-git-send-email-toshi.kani@hp.com>
+	 <500F6BE3.8060508@jp.fujitsu.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343230295 7287 80.91.229.3 (25 Jul 2012 15:31:35 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 15:31:35 +0000 (UTC)
+Cc: lenb@kernel.org, linux-acpi@vger.kernel.org,
+	linux-kernel@vger.kernel.org, bhelgaas@google.com,
+	liuj97@gmail.com, srivatsa.bhat@linux.vnet.ibm.com,
+	prarit@redhat.com, imammedo@redhat.com,
+	vijaymohan.pandarathil@hp.com
+To: Yasuaki Ishimatsu <isimatu.yasuaki@jp.fujitsu.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 17:31:31 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su3Yd-0004MS-44
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 17:31:27 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030288Ab2GYPbY (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 11:31:24 -0400
+Original-Received: from g4t0017.houston.hp.com ([15.201.24.20]:13763 "EHLO
+	g4t0017.houston.hp.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030232Ab2GYPbV (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 11:31:21 -0400
+Original-Received: from g4t0018.houston.hp.com (g4t0018.houston.hp.com [16.234.32.27])
+	by g4t0017.houston.hp.com (Postfix) with ESMTP id 0016D384E9;
+	Wed, 25 Jul 2012 15:31:20 +0000 (UTC)
+Original-Received: from [16.71.12.41] (misato.fc.hp.com [16.71.12.41])
+	by g4t0018.houston.hp.com (Postfix) with ESMTP id 6E39310046;
+	Wed, 25 Jul 2012 15:31:18 +0000 (UTC)
+In-Reply-To: <500F6BE3.8060508@jp.fujitsu.com>
+X-Mailer: Evolution 3.2.3 (3.2.3-1.fc16) 
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333080 gmane.linux.acpi.devel:54528
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333080>
+
+On Wed, 2012-07-25 at 12:45 +0900, Yasuaki Ishimatsu wrote:
+> Hi Toshi,
+> 
+> 2012/07/19 5:40, Toshi Kani wrote:
+> > This patchset improves logging messages for ACPI CPU, Memory, and
+> > Container hotplug notify handlers.  The patchset introduces a set of
+> > new macro interfaces, acpi_pr_<level>(), and updates the notify
+> > handlers to use them.  acpi_pr_<level>() appends "ACPI" prefix and
+> > ACPI object path to the messages.  This improves diagnostics in
+> > hotplug operations since it identifies an object that caused an
+> > issue in a log file.
+> >
+> 
+> The log message looks good to me.
+
+Hi Yasuaki,
+
+Thanks for reviewing!
+
+> But I could not understand when to use it instead of pr_{warn, info, ...}
+> or ACPI_{WARNING, INFO, ...}. Do you have the policy?
+
+acpi_pr_<level>() is used when ACPI device path is used to identify an
+ACPI object for the message, such as error message to the object.  The
+usage model is similar to dev_<level>(), which appends device object to
+the message.  acpi_pr_<level>() is intended for ACPI drivers, and can be
+used when device object is not created / valid, such as the case for
+ACPI hotplug handlers.
+
+pr_<level>() is the regular printk() interfaces with message level, and
+continues to be used when ACPI device path does not have to be appended
+to the message.  I expect non-error messages (such as boot-up messages)
+continue to use pr_<level>().
+
+ACPI_[WARNING|INFO|ERROR]() are ACPICA internal interfaces, and are not
+intended for ACPI drivers.
+
+Additionally, ACPI drivers can also use dev_<level>() when device object
+is valid.  You find such examples in patch 2/4.
+
+I will add more descriptions to the patchset.
+
+
+> > ---
+> > This patchset applies on top of the patch below.
+> > 
+> > [PATCH] ACPI: Add ACPI CPU hot-remove support
+> > http://marc.info/?l=linux-acpi&m=134098193327362&w=2
+> > 
+> > ---
+> > Toshi Kani (4):
+> >   ACPI: Add acpi_pr_<level>() interfaces
+> >   ACPI: Update CPU hotplug messages
+> >   ACPI: Update Memory hotplug messages
+> >   ACPI: Update Container hotplug messages
+> 
+> I think you need update other component, which are driver/acpi/{acpi_pad.c,
+> battery.c, button.c}. Do you have the plan to update them?
+
+I won't be ready to include them in this round, but will look at them
+and change them later as necessary.  I need to make sure that I can test
+these drivers when making such changes.
+
+Thanks,
+-Toshi
+
+
+> 
+> Thanks,
+> Yasuaki Ishimatsu
+> 
+> > ---
+> >   drivers/acpi/acpi_memhotplug.c  |   24 ++++++++++++------------
+> >   drivers/acpi/container.c        |    6 +++---
+> >   drivers/acpi/processor_driver.c |   36 +++++++++++++++++++++---------------
+> >   drivers/acpi/utils.c            |   32 ++++++++++++++++++++++++++++++++
+> >   include/acpi/acpi_bus.h         |   18 ++++++++++++++++++
+> >   5 files changed, 86 insertions(+), 30 deletions(-)
+> > 
+> 
+> 
+
+

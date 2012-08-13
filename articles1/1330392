@@ -1,0 +1,112 @@
+Path: news.gmane.org!not-for-mail
+From: Mel Gorman <mgorman@suse.de>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel.stable,gmane.linux.kernel
+Subject: [PATCH 28/34] mm/vmscan.c: consider swap space when deciding whether to continue reclaim
+Date: Thu, 19 Jul 2012 15:36:38 +0100
+Lines: 52
+Approved: news@gmane.org
+Message-ID: <1342708604-26540-29-git-send-email-mgorman@suse.de>
+References: <1342708604-26540-1-git-send-email-mgorman@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342708705 12781 80.91.229.3 (19 Jul 2012 14:38:25 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 14:38:25 +0000 (UTC)
+Cc: "Linux-MM <linux-mm"@kvack.org,
+	LKML <linux-kernel@vger.kernel.org>, Mel Gorman <mgorman@suse.de>
+To: Stable <stable@vger.kernel.org>
+Original-X-From: owner-linux-mm@kvack.org Thu Jul 19 16:38:25 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Srrry-0006v8-6h
+	for glkm-linux-mm-2@m.gmane.org; Thu, 19 Jul 2012 16:38:22 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 216406B008C; Thu, 19 Jul 2012 10:37:20 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 168676B009F; Thu, 19 Jul 2012 10:37:17 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id D15426B0096; Thu, 19 Jul 2012 10:37:14 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx133.postini.com [74.125.245.133])
+	by kanga.kvack.org (Postfix) with SMTP id 17C4D6B009B
+	for <linux-mm@kvack.org>; Thu, 19 Jul 2012 10:37:05 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx133.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 19 Jul 2012 14:37:05 GMT
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 6FAA4A341E;
+	Thu, 19 Jul 2012 16:37:03 +0200 (CEST)
+X-Mailer: git-send-email 1.7.9.2
+In-Reply-To: <1342708604-26540-1-git-send-email-mgorman@suse.de>
+X-pstn-neptune: 1/1/1.00/100
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mgorman@suse.de> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82719 gmane.linux.kernel.stable:28559 gmane.linux.kernel:1330392
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330392>
+
+From: Minchan Kim <minchan@kernel.org>
+
+commit 86cfd3a45042ab242d47f3935a02811a402beab6 upstream.
+
+Stable note: Not tracked in Bugzilla. This patch reduces kswapd CPU
+	usage on swapless systems with high anonymous memory usage.
+
+It's pointless to continue reclaiming when we have no swap space and lots
+of anon pages in the inactive list.
+
+Without this patch, it is possible when swap is disabled to continue
+trying to reclaim when there are only anonymous pages in the system even
+though that will not make any progress.
+
+Signed-off-by: Minchan Kim <minchan@kernel.org>
+Acked-by: Mel Gorman <mgorman@suse.de>
+Reviewed-by: Rik van Riel <riel@redhat.com>
+Cc: KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>
+Cc: Johannes Weiner <jweiner@redhat.com>
+Cc: Andrea Arcangeli <aarcange@redhat.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+---
+ mm/vmscan.c |    5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/mm/vmscan.c b/mm/vmscan.c
+index 8b98a75..da195c2 100644
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -2008,8 +2008,9 @@ static inline bool should_continue_reclaim(struct zone *zone,
+ 	 * inactive lists are large enough, continue reclaiming
+ 	 */
+ 	pages_for_compaction = (2UL << sc->order);
+-	inactive_lru_pages = zone_nr_lru_pages(zone, sc, LRU_INACTIVE_ANON) +
+-				zone_nr_lru_pages(zone, sc, LRU_INACTIVE_FILE);
++	inactive_lru_pages = zone_nr_lru_pages(zone, sc, LRU_INACTIVE_FILE);
++	if (nr_swap_pages > 0)
++		inactive_lru_pages += zone_nr_lru_pages(zone, sc, LRU_INACTIVE_ANON);
+ 	if (sc->nr_reclaimed < pages_for_compaction &&
+ 			inactive_lru_pages > pages_for_compaction)
+ 		return true;
+-- 
+1.7.9.2
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

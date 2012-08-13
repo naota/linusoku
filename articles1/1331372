@@ -1,0 +1,98 @@
+Path: news.gmane.org!not-for-mail
+From: Djalal Harouni <tixxdz@opendz.org>
+Newsgroups: gmane.linux.kernel.hardened.devel,gmane.linux.kernel
+Subject: [PATCH] proc: do not allow negative offsets on /proc/<pid>/environ
+Date: Sun, 22 Jul 2012 17:35:58 +0100
+Lines: 54
+Approved: news@gmane.org
+Message-ID: <1342974959-2748-1-git-send-email-tixxdz@opendz.org>
+Reply-To: kernel-hardening@lists.openwall.com
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342975033 30048 80.91.229.3 (22 Jul 2012 16:37:13 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 22 Jul 2012 16:37:13 +0000 (UTC)
+Cc: Djalal Harouni <tixxdz@opendz.org>
+To: linux-kernel@vger.kernel.org,
+	kernel-hardening@lists.openwall.com,
+	Al Viro <viro@zeniv.linux.org.uk>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Vasiliy Kulikov <segoon@openwall.com>,
+	WANG Cong <xiyou.wangcong@gmail.com>,
+	Oleg Nesterov <oleg@redhat.com>,
+	Solar Designer <solar@openwall.com>,
+	Kees Cook <keescook@chromium.org>
+Original-X-From: kernel-hardening-return-1335-glkh-kernel-hardening=m.gmane.org@lists.openwall.com Sun Jul 22 18:37:10 2012
+Return-path: <kernel-hardening-return-1335-glkh-kernel-hardening=m.gmane.org@lists.openwall.com>
+Envelope-to: glkh-kernel-hardening@plane.gmane.org
+Original-Received: from mother.openwall.net ([195.42.179.200])
+	by plane.gmane.org with smtp (Exim 4.69)
+	(envelope-from <kernel-hardening-return-1335-glkh-kernel-hardening=m.gmane.org@lists.openwall.com>)
+	id 1Ssz9Z-0002r7-Nk
+	for glkh-kernel-hardening@plane.gmane.org; Sun, 22 Jul 2012 18:37:09 +0200
+Original-Received: (qmail 5454 invoked by uid 550); 22 Jul 2012 16:37:08 -0000
+Mailing-List: contact kernel-hardening-help@lists.openwall.com; run by ezmlm
+Precedence: bulk
+List-Post: <mailto:kernel-hardening@lists.openwall.com>
+List-Help: <mailto:kernel-hardening-help@lists.openwall.com>
+List-Unsubscribe: <mailto:kernel-hardening-unsubscribe@lists.openwall.com>
+List-Subscribe: <mailto:kernel-hardening-subscribe@lists.openwall.com>
+Delivered-To: mailing list kernel-hardening@lists.openwall.com
+Original-Received: (qmail 5442 invoked from network); 22 Jul 2012 16:37:08 -0000
+X-Mailer: git-send-email 1.7.1
+Xref: news.gmane.org gmane.linux.kernel.hardened.devel:472 gmane.linux.kernel:1331372
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331372>
+
+__mem_open() which is called by both /proc/<pid>/environ and
+/proc/<pid>/mem ->open() handlers will allow the use of negative offsets.
+/proc/<pid>/mem has negative offsets but not /proc/<pid>/environ.
+
+Allowing negative offsets on /proc/<pid>/environ can turn it to act like
+/proc/<pid>/mem. A negative offset will pass the
+fs/read_write.c:lseek_execute() and the environ_read() checks and will
+point to another VMA.
+
+Fix this by moving the 'force FMODE_UNSIGNED_OFFSET flag' to mem_open()
+to allow negative offsets only on /proc/<pid>/mem.
+
+You must be able to ptrace the target to open /proc/<pid>/environ ,so
+this is not a security issue, but we should not be able to abuse it.
+
+Signed-off-by: Djalal Harouni <tixxdz@opendz.org>
+---
+New kernels include mm->env_start in /proc/<pid>/stat
+To dump .text area: lseek() to 0x00400000 - mm->env_start
+
+ fs/proc/base.c |    9 ++++++---
+ 1 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/fs/proc/base.c b/fs/proc/base.c
+index 2772208..9623a18 100644
+--- a/fs/proc/base.c
++++ b/fs/proc/base.c
+@@ -695,8 +695,6 @@ static int __mem_open(struct inode *inode, struct file *file, unsigned int mode)
+ 		mmput(mm);
+ 	}
+ 
+-	/* OK to pass negative loff_t, we can catch out-of-range */
+-	file->f_mode |= FMODE_UNSIGNED_OFFSET;
+ 	file->private_data = mm;
+ 
+ 	return 0;
+@@ -704,7 +702,12 @@ static int __mem_open(struct inode *inode, struct file *file, unsigned int mode)
+ 
+ static int mem_open(struct inode *inode, struct file *file)
+ {
+-	return __mem_open(inode, file, PTRACE_MODE_ATTACH);
++	int ret = __mem_open(inode, file, PTRACE_MODE_ATTACH);
++	if (!ret)
++		/* OK to pass negative loff_t, we can catch out-of-range */
++		file->f_mode |= FMODE_UNSIGNED_OFFSET;
++
++	return ret;
+ }
+ 
+ static ssize_t mem_rw(struct file *file, char __user *buf,
+-- 
+1.7.1
+
+

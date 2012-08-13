@@ -1,0 +1,107 @@
+Path: news.gmane.org!not-for-mail
+From: Damien Cassou <damien.cassou@lifl.fr>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.janitors
+Subject: [PATCH 1/5] drivers/video/epson1355fb.c: use devm_ functions
+Date: Fri,  3 Aug 2012 17:40:10 +0200
+Lines: 61
+Approved: news@gmane.org
+Message-ID: <1344008414-2894-2-git-send-email-damien.cassou@lifl.fr>
+References: <1344008414-2894-1-git-send-email-damien.cassou@lifl.fr>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344008441 21407 80.91.229.3 (3 Aug 2012 15:40:41 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 15:40:41 +0000 (UTC)
+Cc: kernel-janitors@vger.kernel.org,
+	Florian Tobias Schandinat <FlorianSchandinat@gmx.de>,
+	linux-fbdev@vger.kernel.org, linux-kernel@vger.kernel.org
+To: Christopher Hoover <ch@murgatroid.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 17:40:40 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxJzR-00074N-LW
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 17:40:37 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753857Ab2HCPk3 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 11:40:29 -0400
+Original-Received: from mail1-relais-roc.national.inria.fr ([192.134.164.82]:32801 "EHLO
+	mail1-relais-roc.national.inria.fr" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1753334Ab2HCPk0 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 11:40:26 -0400
+X-IronPort-AV: E=Sophos;i="4.77,706,1336341600"; 
+   d="scan'208";a="169023105"
+Original-Received: from tytso.inria.fr (HELO localhost.localdomain) ([128.93.60.73])
+  by mail1-relais-roc.national.inria.fr with ESMTP/TLS/DHE-RSA-AES256-SHA; 03 Aug 2012 17:40:24 +0200
+X-Mailer: git-send-email 1.7.2.5
+In-Reply-To: <1344008414-2894-1-git-send-email-damien.cassou@lifl.fr>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337375 gmane.linux.kernel.janitors:25318
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337375>
+
+From: Damien Cassou <damien.cassou@lifl.fr>
+
+The various devm_ functions allocate memory that is released when a driver
+detaches. This patch uses these functions for data that is allocated in the
+probe function of a platform device and is only freed in the remove function.
+
+Signed-off-by: Damien Cassou <damien.cassou@lifl.fr>
+
+---
+ drivers/video/epson1355fb.c |   16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/video/epson1355fb.c b/drivers/video/epson1355fb.c
+index 68b9b51..246da1e 100644
+--- a/drivers/video/epson1355fb.c
++++ b/drivers/video/epson1355fb.c
+@@ -592,12 +592,8 @@ static int epson1355fb_remove(struct platform_device *dev)
+
+ 	if (info) {
+ 		fb_dealloc_cmap(&info->cmap);
+-		if (info->screen_base)
+-			iounmap(info->screen_base);
+ 		framebuffer_release(info);
+ 	}
+-	release_mem_region(EPSON1355FB_FB_PHYS, EPSON1355FB_FB_LEN);
+-	release_mem_region(EPSON1355FB_REGS_PHYS, EPSON1355FB_REGS_LEN);
+ 	return 0;
+ }
+
+@@ -608,15 +604,18 @@ static int __devinit epson1355fb_probe(struct platform_device *dev)
+ 	u8 revision;
+ 	int rc = 0;
+
+-	if (!request_mem_region(EPSON1355FB_REGS_PHYS, EPSON1355FB_REGS_LEN, "S1D13505 registers")) {
++	if (!devm_request_mem_region(&dev->dev, EPSON1355FB_REGS_PHYS,
++				     EPSON1355FB_REGS_LEN,
++				     "S1D13505 registers")) {
+ 		printk(KERN_ERR "epson1355fb: unable to reserve "
+ 		       "registers at 0x%0x\n", EPSON1355FB_REGS_PHYS);
+ 		rc = -EBUSY;
+ 		goto bail;
+ 	}
+
+-	if (!request_mem_region(EPSON1355FB_FB_PHYS, EPSON1355FB_FB_LEN,
+-				"S1D13505 framebuffer")) {
++	if (!devm_request_mem_region(&dev->dev, EPSON1355FB_FB_PHYS,
++				     EPSON1355FB_FB_LEN,
++				     "S1D13505 framebuffer")) {
+ 		printk(KERN_ERR "epson1355fb: unable to reserve "
+ 		       "framebuffer at 0x%0x\n", EPSON1355FB_FB_PHYS);
+ 		rc = -EBUSY;
+@@ -638,7 +637,8 @@ static int __devinit epson1355fb_probe(struct platform_device *dev)
+ 	}
+ 	info->pseudo_palette = default_par->pseudo_palette;
+
+-	info->screen_base = ioremap(EPSON1355FB_FB_PHYS, EPSON1355FB_FB_LEN);
++	info->screen_base = devm_ioremap(&dev->dev, EPSON1355FB_FB_PHYS,
++					 EPSON1355FB_FB_LEN);
+ 	if (!info->screen_base) {
+ 		printk(KERN_ERR "epson1355fb: unable to map framebuffer\n");
+ 		rc = -ENOMEM;

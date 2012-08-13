@@ -1,0 +1,95 @@
+Path: news.gmane.org!not-for-mail
+From: Seiichi Ikarashi <s.ikarashi@jp.fujitsu.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] ipc/sem.c: prevent ENOMEM in semop() w/ SEM_UNDO flag
+Date: Fri, 03 Aug 2012 21:49:02 +0900
+Organization: Fujitsu Limited
+Lines: 33
+Approved: news@gmane.org
+Message-ID: <501BC8BE.6000405@jp.fujitsu.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-2022-JP
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343998158 30226 80.91.229.3 (3 Aug 2012 12:49:18 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 12:49:18 +0000 (UTC)
+To: manfred@colorfullife.com, linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 14:49:17 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxHJc-0003r4-DX
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 14:49:17 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754018Ab2HCMtH (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 08:49:07 -0400
+Original-Received: from fgwmail6.fujitsu.co.jp ([192.51.44.36]:46790 "EHLO
+	fgwmail6.fujitsu.co.jp" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753876Ab2HCMtF (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 08:49:05 -0400
+Original-Received: from m4.gw.fujitsu.co.jp (unknown [10.0.50.74])
+	by fgwmail6.fujitsu.co.jp (Postfix) with ESMTP id 9785D3EE0BC
+	for <linux-kernel@vger.kernel.org>; Fri,  3 Aug 2012 21:49:03 +0900 (JST)
+Original-Received: from smail (m4 [127.0.0.1])
+	by outgoing.m4.gw.fujitsu.co.jp (Postfix) with ESMTP id 80BAC45DE53
+	for <linux-kernel@vger.kernel.org>; Fri,  3 Aug 2012 21:49:03 +0900 (JST)
+Original-Received: from s4.gw.fujitsu.co.jp (s4.gw.fujitsu.co.jp [10.0.50.94])
+	by m4.gw.fujitsu.co.jp (Postfix) with ESMTP id 6732745DE4D
+	for <linux-kernel@vger.kernel.org>; Fri,  3 Aug 2012 21:49:03 +0900 (JST)
+Original-Received: from s4.gw.fujitsu.co.jp (localhost.localdomain [127.0.0.1])
+	by s4.gw.fujitsu.co.jp (Postfix) with ESMTP id 59625E08004
+	for <linux-kernel@vger.kernel.org>; Fri,  3 Aug 2012 21:49:03 +0900 (JST)
+Original-Received: from m1000.s.css.fujitsu.com (m1000.s.css.fujitsu.com [10.240.81.136])
+	by s4.gw.fujitsu.co.jp (Postfix) with ESMTP id 0FC521DB803E
+	for <linux-kernel@vger.kernel.org>; Fri,  3 Aug 2012 21:49:03 +0900 (JST)
+Original-Received: from m1000.css.fujitsu.com (m1000 [127.0.0.1])
+	by m1000.s.css.fujitsu.com (Postfix) with ESMTP id DEECC60CC7;
+	Fri,  3 Aug 2012 21:49:02 +0900 (JST)
+Original-Received: from dune.soft.fujitsu.com (dune.soft.fujitsu.com [10.124.101.23])
+	by m1000.s.css.fujitsu.com (Postfix) with ESMTP id A652B60CB3;
+	Fri,  3 Aug 2012 21:49:02 +0900 (JST)
+User-Agent: Mozilla/5.0 (X11; Linux i686 on x86_64; rv:12.0) Gecko/20120420 Thunderbird/12.0
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337251
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337251>
+
+semop() with SEM_UNDO sem_flg can result in ENOMEM even after
+succeeding semget() with large nsems. This is because
+semop() uses kzalloc() via find_alloc_undo() though
+semget() uses vmalloc() via ipc_rcu_alloc().
+This patch makes semop() be able to use vmalloc() via ipc_alloc().
+
+Signed-off-by: Seiichi Ikarashi <s.ikarashi@jp.fujitsu.com>
+
+--- a/ipc/sem.c	2012-08-03 16:52:01.000000000 +0900
++++ b/ipc/sem.c	2012-08-03 20:40:57.000000000 +0900
+@@ -1258,11 +1258,12 @@ static struct sem_undo *find_alloc_undo(
+ 	sem_getref_and_unlock(sma);
+ 
+ 	/* step 2: allocate new undo structure */
+-	new = kzalloc(sizeof(struct sem_undo) + sizeof(short)*nsems, GFP_KERNEL);
++	new = ipc_alloc(sizeof(struct sem_undo) + sizeof(short)*nsems, GFP_KERNEL);
+ 	if (!new) {
+ 		sem_putref(sma);
+ 		return ERR_PTR(-ENOMEM);
+ 	}
++	memset(new, 0, sizeof(struct sem_undo) + sizeof(short)*nsems);
+ 
+ 	/* step 3: Acquire the lock on semaphore array */
+ 	sem_lock_and_putref(sma);
+@@ -1348,7 +1349,7 @@ SYSCALL_DEFINE4(semtimedop, int, semid, 
+ 	if (nsops > ns->sc_semopm)
+ 		return -E2BIG;
+ 	if(nsops > SEMOPM_FAST) {
+-		sops = kmalloc(sizeof(*sops)*nsops,GFP_KERNEL);
++		sops = ipc_alloc(sizeof(*sops)*nsops,GFP_KERNEL);
+ 		if(sops==NULL)
+ 			return -ENOMEM;
+ 	}

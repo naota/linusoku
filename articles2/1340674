@@ -1,0 +1,214 @@
+Path: news.gmane.org!not-for-mail
+From: Glauber Costa <glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+Newsgroups: gmane.linux.kernel.cgroups,gmane.linux.kernel,gmane.linux.kernel.mm,gmane.linux.openvz.devel
+Subject: [PATCH v2 09/11] memcg: propagate kmem limiting information to children
+Date: Thu,  9 Aug 2012 17:01:17 +0400
+Lines: 163
+Approved: news@gmane.org
+Message-ID: <1344517279-30646-10-git-send-email-glommer@parallels.com>
+References: <1344517279-30646-1-git-send-email-glommer@parallels.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344517293 905 80.91.229.3 (9 Aug 2012 13:01:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 13:01:33 +0000 (UTC)
+Cc: <linux-mm-Bw31MaZKKs3YtjvyW6yDsg@public.gmane.org>, <cgroups-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>,
+	<devel-GEFAQzZX7r8dnm+yROfE0A@public.gmane.org>, Michal Hocko <mhocko-AlSwsSmVLrQ@public.gmane.org>,
+	Johannes Weiner <hannes-druUgvl0LCNAfugRpC6u6w@public.gmane.org>,
+	Andrew Morton <akpm-de/tnXTf+JLsfHDXvbKv3WD2FQJk+8+b@public.gmane.org>,
+	<kamezawa.hiroyu-+CUm20s59erQFUHtdCDX3A@public.gmane.org>, Christoph Lameter <cl-vYTEC60ixJUAvxtiuMwx3w@public.gmane.org>,
+	David Rientjes <rientjes-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>,
+	Pekka Enberg <penberg-DgEjT+Ai2ygdnm+yROfE0A@public.gmane.org>,
+	Glauber Costa <glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>,
+	Pekka Enberg <penberg-bbCR+/B0CizivPeTLB3BmA@public.gmane.org>,
+	Suleiman Souhlal <suleiman-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>
+To: <linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Original-X-From: cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org Thu Aug 09 15:01:31 2012
+Return-path: <cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Envelope-to: glkc-cgroups-wOFGN7rlS/M9smdsby/KFg@public.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>)
+	id 1SzSMk-00075i-MC
+	for glkc-cgroups-wOFGN7rlS/M9smdsby/KFg@public.gmane.org; Thu, 09 Aug 2012 15:01:30 +0200
+Original-Received: (majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org) by vger.kernel.org via listexpand
+	id S1757762Ab2HINB3 (ORCPT <rfc822;glkc-cgroups@m.gmane.org>);
+	Thu, 9 Aug 2012 09:01:29 -0400
+Original-Received: from mailhub.sw.ru ([195.214.232.25]:46401 "EHLO relay.sw.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1758003Ab2HINB0 (ORCPT <rfc822;cgroups-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>);
+	Thu, 9 Aug 2012 09:01:26 -0400
+Original-Received: from straightjacket.localdomain.ru ([10.30.18.238])
+	by relay.sw.ru (8.13.4/8.13.4) with ESMTP id q79D1LIm011706;
+	Thu, 9 Aug 2012 17:01:25 +0400 (MSK)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1344517279-30646-1-git-send-email-glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+Original-Sender: cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Precedence: bulk
+List-ID: <cgroups.vger.kernel.org>
+X-Mailing-List: cgroups-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Xref: news.gmane.org gmane.linux.kernel.cgroups:3548 gmane.linux.kernel:1340674 gmane.linux.kernel.mm:83901 gmane.linux.openvz.devel:1965
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340674>
+
+The current memcg slab cache management fails to present satisfatory
+hierarchical behavior in the following scenario:
+
+-> /cgroups/memory/A/B/C
+
+* kmem limit set at A,
+* A and B have no tasks,
+* span a new task in in C.
+
+Because kmem_accounted is a boolean that was not set for C, no
+accounting would be done. This is, however, not what we expect.
+
+The basic idea, is that when a cgroup is limited, we walk the tree
+upwards (something Kame and I already thought about doing for other
+purposes), and make sure that we store the information about the parent
+being limited in kmem_accounted (that is turned into a bitmap: two
+booleans would not be space efficient). The code for that is taken from
+sched/core.c. My reasons for not putting it into a common place is to
+dodge the type issues that would arise from a common implementation
+between memcg and the scheduler - but I think that it should ultimately
+happen, so if you want me to do it now, let me know.
+
+We do the reverse operation when a formerly limited cgroup becomes
+unlimited.
+
+Signed-off-by: Glauber Costa <glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+CC: Christoph Lameter <cl-vYTEC60ixJUAvxtiuMwx3w@public.gmane.org>
+CC: Pekka Enberg <penberg-bbCR+/B0CizivPeTLB3BmA@public.gmane.org>
+CC: Michal Hocko <mhocko-AlSwsSmVLrQ@public.gmane.org>
+CC: Kamezawa Hiroyuki <kamezawa.hiroyu-+CUm20s59erQFUHtdCDX3A@public.gmane.org>
+CC: Johannes Weiner <hannes-druUgvl0LCNAfugRpC6u6w@public.gmane.org>
+CC: Suleiman Souhlal <suleiman-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>
+---
+ mm/memcontrol.c | 88 +++++++++++++++++++++++++++++++++++++++++++++++++++------
+ 1 file changed, 79 insertions(+), 9 deletions(-)
+
+diff --git a/mm/memcontrol.c b/mm/memcontrol.c
+index 3216292..3d30b79 100644
+--- a/mm/memcontrol.c
++++ b/mm/memcontrol.c
+@@ -295,7 +295,8 @@ struct mem_cgroup {
+ 	 * Should the accounting and control be hierarchical, per subtree?
+ 	 */
+ 	bool use_hierarchy;
+-	bool kmem_accounted;
++
++	unsigned long kmem_accounted; /* See KMEM_ACCOUNTED_*, below */
+ 
+ 	bool		oom_lock;
+ 	atomic_t	under_oom;
+@@ -348,6 +349,38 @@ struct mem_cgroup {
+ #endif
+ };
+ 
++enum {
++	KMEM_ACCOUNTED_THIS, /* accounted by this cgroup itself */
++	KMEM_ACCOUNTED_PARENT, /* accounted by any of its parents. */
++};
++
++#ifdef CONFIG_MEMCG_KMEM
++static bool memcg_kmem_account(struct mem_cgroup *memcg)
++{
++	return !test_and_set_bit(KMEM_ACCOUNTED_THIS, &memcg->kmem_accounted);
++}
++
++static bool memcg_kmem_clear_account(struct mem_cgroup *memcg)
++{
++	return test_and_clear_bit(KMEM_ACCOUNTED_THIS, &memcg->kmem_accounted);
++}
++
++static bool memcg_kmem_is_accounted(struct mem_cgroup *memcg)
++{
++	return test_bit(KMEM_ACCOUNTED_THIS, &memcg->kmem_accounted);
++}
++
++static void memcg_kmem_account_parent(struct mem_cgroup *memcg)
++{
++	set_bit(KMEM_ACCOUNTED_PARENT, &memcg->kmem_accounted);
++}
++
++static void memcg_kmem_clear_account_parent(struct mem_cgroup *memcg)
++{
++	clear_bit(KMEM_ACCOUNTED_PARENT, &memcg->kmem_accounted);
++}
++#endif /* CONFIG_MEMCG_KMEM */
++
+ /* Stuffs for move charges at task migration. */
+ /*
+  * Types of charges to be moved. "move_charge_at_immitgrate" is treated as a
+@@ -614,7 +647,7 @@ EXPORT_SYMBOL(__memcg_kmem_free_page);
+ 
+ static void disarm_kmem_keys(struct mem_cgroup *memcg)
+ {
+-	if (memcg->kmem_accounted)
++	if (test_bit(KMEM_ACCOUNTED_THIS, &memcg->kmem_accounted))
+ 		static_key_slow_dec(&memcg_kmem_enabled_key);
+ }
+ #else
+@@ -4171,17 +4204,54 @@ static ssize_t mem_cgroup_read(struct cgroup *cont, struct cftype *cft,
+ static void memcg_update_kmem_limit(struct mem_cgroup *memcg, u64 val)
+ {
+ #ifdef CONFIG_MEMCG_KMEM
+-	/*
+-	 * Once enabled, can't be disabled. We could in theory disable it if we
+-	 * haven't yet created any caches, or if we can shrink them all to
+-	 * death. But it is not worth the trouble.
+-	 */
++	struct mem_cgroup *iter;
++
+ 	mutex_lock(&set_limit_mutex);
+-	if (!memcg->kmem_accounted && val != RESOURCE_MAX) {
++	if ((val != RESOURCE_MAX) && memcg_kmem_account(memcg)) {
++
++		/*
++		 * Once enabled, can't be disabled. We could in theory disable
++		 * it if we haven't yet created any caches, or if we can shrink
++		 * them all to death. But it is not worth the trouble
++		 */
+ 		static_key_slow_inc(&memcg_kmem_enabled_key);
+-		memcg->kmem_accounted = true;
++
++		if (!memcg->use_hierarchy)
++			goto out;
++
++		for_each_mem_cgroup_tree(iter, memcg) {
++			if (iter == memcg)
++				continue;
++			memcg_kmem_account_parent(iter);
++		}
++	} else if ((val == RESOURCE_MAX) && memcg_kmem_clear_account(memcg)) {
++
++		if (!memcg->use_hierarchy)
++			goto out;
++
++		for_each_mem_cgroup_tree(iter, memcg) {
++			struct mem_cgroup *parent;
++
++			if (iter == memcg)
++				continue;
++			/*
++			 * We should only have our parent bit cleared if none
++			 * of our parents are accounted. The transversal order
++			 * of our iter function forces us to always look at the
++			 * parents.
++			 */
++			parent = parent_mem_cgroup(iter);
++			for (; parent != memcg; parent = parent_mem_cgroup(iter))
++				if (memcg_kmem_is_accounted(parent))
++					goto noclear;
++			memcg_kmem_clear_account_parent(iter);
++noclear:
++			continue;
++		}
+ 	}
++out:
+ 	mutex_unlock(&set_limit_mutex);
++
+ #endif
+ }
+ 
+-- 
+1.7.11.2
+

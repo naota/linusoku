@@ -1,0 +1,115 @@
+Path: news.gmane.org!not-for-mail
+From: =?UTF-8?q?Bj=C3=B8rn=20Mork?= <bjorn@mork.no>
+Newsgroups: gmane.linux.kernel,gmane.linux.drivers.driver-project.devel,gmane.linux.kernel.virtualization
+Subject: [PATCH] drivers: hv: use Linux version in guest ID
+Date: Fri, 20 Jul 2012 10:03:08 +0200
+Lines: 58
+Approved: news@gmane.org
+Message-ID: <1342771388-24389-1-git-send-email-bjorn@mork.no>
+References: <87fw8mlv7e.fsf@nemi.mork.no>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: QUOTED-PRINTABLE
+X-Trace: dough.gmane.org 1342771430 12316 80.91.229.3 (20 Jul 2012 08:03:50 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 08:03:50 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	Paolo Bonzini <pbonzini@redhat.com>,
+	devel@linuxdriverproject.org, linux-kernel@vger.kernel.org,
+	virtualization@lists.osdl.org,
+	=?UTF-8?q?Bj=C3=B8rn=20Mork?= <bjorn@mork.no>
+To: KY Srinivasan <kys@microsoft.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 10:03:47 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Ss8Bf-0004bN-DN
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 10:03:47 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751815Ab2GTIDe convert rfc822-to-quoted-printable (ORCPT
+	<rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 04:03:34 -0400
+Original-Received: from canardo.mork.no ([148.122.252.1]:42586 "EHLO canardo.mork.no"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751060Ab2GTID2 (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 04:03:28 -0400
+Original-Received: from nemi.mork.no (nemi.mork.no [IPv6:2001:4620:9:2:216:eaff:feb3:788])
+	(authenticated bits=0)
+	by canardo.mork.no (8.14.3/8.14.3) with ESMTP id q6K83BDx023619
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES128-SHA bits=128 verify=NOT);
+	Fri, 20 Jul 2012 10:03:11 +0200
+Original-Received: from bjorn by nemi.mork.no with local (Exim 4.80)
+	(envelope-from <bjorn@nemi.mork.no>)
+	id 1Ss8B5-0006Lv-2Z; Fri, 20 Jul 2012 10:03:11 +0200
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <87fw8mlv7e.fsf@nemi.mork.no>
+X-Virus-Scanned: clamav-milter 0.97.3 at canardo
+X-Virus-Status: Clean
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330728 gmane.linux.drivers.driver-project.devel:28856 gmane.linux.kernel.virtualization:16163
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330728>
+
+Use OS version number in the guest ID as recommended by Microsoft
+
+Signed-off-by: Bj=C3=B8rn Mork <bjorn@mork.no>
+---
+So how about something like this?  Yes, I know including
+linux/version.h often is unwanted, but the spec does
+recommend using the actual OS version in the guest ID
+
+Yes, this will be offensive again when Linux is at=20
+version 181.0, but we might have found a better solution by
+then :-)
+
+
+ drivers/hv/hyperv_vmbus.h |   20 ++++++++++++++++----
+ 1 file changed, 16 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/hv/hyperv_vmbus.h b/drivers/hv/hyperv_vmbus.h
+index b9426a6..cc0c3f0 100644
+--- a/drivers/hv/hyperv_vmbus.h
++++ b/drivers/hv/hyperv_vmbus.h
+@@ -29,6 +29,7 @@
+ #include <asm/sync_bitops.h>
+ #include <linux/atomic.h>
+ #include <linux/hyperv.h>
++#include <linux/version.h>
+=20
+ /*
+  * The below CPUID leaves are present if VersionAndFeatures.Hypervisor=
+Present
+@@ -410,10 +411,21 @@ enum {
+=20
+ #define HV_PRESENT_BIT			0x80000000
+=20
+-#define HV_LINUX_GUEST_ID_LO		0x00000000
+-#define HV_LINUX_GUEST_ID_HI		0xB16B00B5
+-#define HV_LINUX_GUEST_ID		(((u64)HV_LINUX_GUEST_ID_HI << 32) | \
+-					   HV_LINUX_GUEST_ID_LO)
++/* Linux vendor ID allocated by Microsoft */
++#define HV_LINUX_GUEST_ID_VENDOR	0xB16B
++
++/* Creating a guest ID conforming to the encoding recommended by
++ * Microsoft, with variant and build fixed to 0
++ *
++ *   63:48 - Vendor ID
++ *   47:40 - OS Variant
++ *   39:32 - Major Version
++ *   31:24 - Minor Version
++ *   23:16 - Service Version
++ *   15:0  - Build Number
++ */
++#define HV_LINUX_GUEST_ID		((u64)HV_LINUX_GUEST_ID_VENDOR << 48 | \
++					 (u64)LINUX_VERSION_CODE << 16)
+=20
+ #define HV_CPU_POWER_MANAGEMENT		(1 << 0)
+ #define HV_RECOMMENDATIONS_MAX		4
+--=20
+1.7.10.4
+

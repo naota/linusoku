@@ -1,0 +1,126 @@
+Path: news.gmane.org!not-for-mail
+From: "Kirill A. Shutemov" <kirill-oKw7cIdHH8eLwutG50LtGA@public.gmane.org>
+Newsgroups: gmane.linux.kernel.cgroups,gmane.linux.kernel,gmane.linux.kernel.mm,gmane.linux.openvz.devel
+Subject: Re: [PATCH 06/10] sl[au]b: Allocate objects from memcg cache
+Date: Mon, 30 Jul 2012 15:58:51 +0300
+Lines: 70
+Approved: news@gmane.org
+Message-ID: <20120730125851.GB27293@shutemov.name>
+References: <1343227101-14217-1-git-send-email-glommer@parallels.com>
+ <1343227101-14217-7-git-send-email-glommer@parallels.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343653074 32635 80.91.229.3 (30 Jul 2012 12:57:54 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 12:57:54 +0000 (UTC)
+Cc: linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, linux-mm-Bw31MaZKKs3YtjvyW6yDsg@public.gmane.org,
+	Andrew Morton <akpm-de/tnXTf+JLsfHDXvbKv3WD2FQJk+8+b@public.gmane.org>,
+	Christoph Lameter <cl-vYTEC60ixJUAvxtiuMwx3w@public.gmane.org>,
+	David Rientjes <rientjes-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>,
+	Pekka Enberg <penberg-DgEjT+Ai2ygdnm+yROfE0A@public.gmane.org>,
+	Greg Thelen <gthelen-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>,
+	Johannes Weiner <hannes-druUgvl0LCNAfugRpC6u6w@public.gmane.org>,
+	Michal Hocko <mhocko-AlSwsSmVLrQ@public.gmane.org>,
+	Frederic Weisbecker <fweisbec-Re5JQEeQqe8AvxtiuMwx3w@public.gmane.org>, devel-GEFAQzZX7r8dnm+yROfE0A@public.gmane.org,
+	cgroups-u79uwXL29TY76Z2rM5mHXA@public.gmane.org, Pekka Enberg <penberg-bbCR+/B0CizivPeTLB3BmA@public.gmane.org>,
+	Kamezawa Hiroyuki <kamezawa.hiroyu-+CUm20s59erQFUHtdCDX3A@public.gmane.org>,
+	Suleiman Souhlal <suleiman-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>
+To: Glauber Costa <glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+Original-X-From: cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org Mon Jul 30 14:57:50 2012
+Return-path: <cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Envelope-to: glkc-cgroups-wOFGN7rlS/M9smdsby/KFg@public.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>)
+	id 1SvpXh-0005qA-01
+	for glkc-cgroups-wOFGN7rlS/M9smdsby/KFg@public.gmane.org; Mon, 30 Jul 2012 14:57:49 +0200
+Original-Received: (majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org) by vger.kernel.org via listexpand
+	id S1753453Ab2G3M5s (ORCPT <rfc822;glkc-cgroups@m.gmane.org>);
+	Mon, 30 Jul 2012 08:57:48 -0400
+Original-Received: from shutemov.name ([176.9.204.213]:44348 "EHLO shutemov.name"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753411Ab2G3M5r (ORCPT <rfc822;cgroups-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>);
+	Mon, 30 Jul 2012 08:57:47 -0400
+Original-Received: by shutemov.name (Postfix, from userid 1000)
+	id 24AD52F09E; Mon, 30 Jul 2012 15:58:52 +0300 (EEST)
+Content-Disposition: inline
+In-Reply-To: <1343227101-14217-7-git-send-email-glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Precedence: bulk
+List-ID: <cgroups.vger.kernel.org>
+X-Mailing-List: cgroups-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Xref: news.gmane.org gmane.linux.kernel.cgroups:3481 gmane.linux.kernel:1335043 gmane.linux.kernel.mm:83168 gmane.linux.openvz.devel:1944
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335043>
+
+On Wed, Jul 25, 2012 at 06:38:17PM +0400, Glauber Costa wrote:
+> We are able to match a cache allocation to a particular memcg.  If the
+> task doesn't change groups during the allocation itself - a rare event,
+> this will give us a good picture about who is the first group to touch a
+> cache page.
+> 
+> This patch uses the now available infrastructure by calling
+> memcg_kmem_get_cache() before all the cache allocations.
+> 
+> Signed-off-by: Glauber Costa <glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+> CC: Christoph Lameter <cl-vYTEC60ixJUAvxtiuMwx3w@public.gmane.org>
+> CC: Pekka Enberg <penberg-bbCR+/B0CizivPeTLB3BmA@public.gmane.org>
+> CC: Michal Hocko <mhocko-AlSwsSmVLrQ@public.gmane.org>
+> CC: Kamezawa Hiroyuki <kamezawa.hiroyu-+CUm20s59erQFUHtdCDX3A@public.gmane.org>
+> CC: Johannes Weiner <hannes-druUgvl0LCNAfugRpC6u6w@public.gmane.org>
+> CC: Suleiman Souhlal <suleiman-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>
+> ---
+>  include/linux/slub_def.h |   18 +++++++++++++-----
+>  mm/memcontrol.c          |    2 ++
+>  mm/slab.c                |    4 ++++
+>  mm/slub.c                |    1 +
+>  4 files changed, 20 insertions(+), 5 deletions(-)
+> 
+> diff --git a/include/linux/slub_def.h b/include/linux/slub_def.h
+> index 8bb8ad2..148000a 100644
+> --- a/include/linux/slub_def.h
+> +++ b/include/linux/slub_def.h
+> @@ -13,6 +13,8 @@
+>  #include <linux/kobject.h>
+>  
+>  #include <linux/kmemleak.h>
+> +#include <linux/memcontrol.h>
+> +#include <linux/mm.h>
+>  
+>  enum stat_item {
+>  	ALLOC_FASTPATH,		/* Allocation from cpu slab */
+> @@ -209,14 +211,14 @@ static __always_inline int kmalloc_index(size_t size)
+>   * This ought to end up with a global pointer to the right cache
+>   * in kmalloc_caches.
+>   */
+> -static __always_inline struct kmem_cache *kmalloc_slab(size_t size)
+> +static __always_inline struct kmem_cache *kmalloc_slab(gfp_t flags, size_t size)
+>  {
+>  	int index = kmalloc_index(size);
+>  
+>  	if (index == 0)
+>  		return NULL;
+>  
+> -	return kmalloc_caches[index];
+> +	return memcg_kmem_get_cache(kmalloc_caches[index], flags);
+>  }
+>  
+>  void *kmem_cache_alloc(struct kmem_cache *, gfp_t);
+> @@ -225,7 +227,13 @@ void *__kmalloc(size_t size, gfp_t flags);
+>  static __always_inline void *
+>  kmalloc_order(size_t size, gfp_t flags, unsigned int order)
+>  {
+> -	void *ret = (void *) __get_free_pages(flags | __GFP_COMP, order);
+> +	void *ret;
+> +
+> +	flags = __GFP_COMP;
+> +#ifdef CONFIG_MEMCG_KMEM
+> +	flags |= __GFP_KMEMCG;
+> +#endif
+
+Em.. I don't see where __GFP_KMEMCG is defined.
+It should be 0 for !CONFIG_MEMCG_KMEM.
+
+-- 
+ Kirill A. Shutemov

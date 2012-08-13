@@ -1,0 +1,106 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 034/108] hwspinlock/core: use global ID to register hwspinlocks on multiple
+ devices
+Date: Mon, 23 Jul 2012 02:07:25 +0100
+Lines: 51
+Approved: news@gmane.org
+Message-ID: <20120723010656.638227018@decadent.org.uk>
+References: <20120723010651.408577075@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343008018 14086 80.91.229.3 (23 Jul 2012 01:46:58 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 01:46:58 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	Shinya Kuribayashi <shinya.kuribayashi.px@renesas.com>,
+	Ohad Ben-Cohen <ohad@wizery.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 03:46:57 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1St7jc-0004cg-FA
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 03:46:56 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753877Ab2GWBqs (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 21:46:48 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:54479 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1753598Ab2GWBnr (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 21:43:47 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7gR-0008Rr-UY; Mon, 23 Jul 2012 02:43:40 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7eZ-0008Ak-CC; Mon, 23 Jul 2012 02:41:43 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120723010651.408577075@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331489 gmane.linux.kernel.stable:28641
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331489>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Shinya Kuribayashi <shinya.kuribayashi.px@renesas.com>
+
+commit 476a7eeb60e70ddab138e7cb4bc44ef5ac20782e upstream.
+
+Commit 300bab9770 (hwspinlock/core: register a bank of hwspinlocks in a
+single API call, 2011-09-06) introduced 'hwspin_lock_register_single()'
+to register numerous (a bank of) hwspinlock instances in a single API,
+'hwspin_lock_register()'.
+
+At which time, 'hwspin_lock_register()' accidentally passes 'local IDs'
+to 'hwspin_lock_register_single()', despite that ..._single() requires
+'global IDs' to register hwspinlocks.
+
+We have to convert into global IDs by supplying the missing 'base_id'.
+
+Signed-off-by: Shinya Kuribayashi <shinya.kuribayashi.px@renesas.com>
+[ohad: fix error path of hwspin_lock_register, too]
+Signed-off-by: Ohad Ben-Cohen <ohad@wizery.com>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ drivers/hwspinlock/hwspinlock_core.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/hwspinlock/hwspinlock_core.c b/drivers/hwspinlock/hwspinlock_core.c
+index 61c9cf1..1201a15 100644
+--- a/drivers/hwspinlock/hwspinlock_core.c
++++ b/drivers/hwspinlock/hwspinlock_core.c
+@@ -345,7 +345,7 @@ int hwspin_lock_register(struct hwspinlock_device *bank, struct device *dev,
+ 		spin_lock_init(&hwlock->lock);
+ 		hwlock->bank = bank;
+ 
+-		ret = hwspin_lock_register_single(hwlock, i);
++		ret = hwspin_lock_register_single(hwlock, base_id + i);
+ 		if (ret)
+ 			goto reg_failed;
+ 	}
+@@ -354,7 +354,7 @@ int hwspin_lock_register(struct hwspinlock_device *bank, struct device *dev,
+ 
+ reg_failed:
+ 	while (--i >= 0)
+-		hwspin_lock_unregister_single(i);
++		hwspin_lock_unregister_single(base_id + i);
+ 	return ret;
+ }
+ EXPORT_SYMBOL_GPL(hwspin_lock_register);
+
+

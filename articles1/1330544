@@ -1,0 +1,134 @@
+Path: news.gmane.org!not-for-mail
+From: Tejun Heo <tj-DgEjT+Ai2ygdnm+yROfE0A@public.gmane.org>
+Newsgroups: gmane.linux.kernel.spi.devel,gmane.linux.kernel,gmane.comp.emulators.kvm.devel,gmane.linux.drivers.video-input-infrastructure
+Subject: [PATCHSET] kthread_worker: reimplement flush_kthread_work() to
+	allow freeing during execution
+Date: Thu, 19 Jul 2012 14:15:10 -0700
+Lines: 47
+Approved: news@gmane.org
+Message-ID: <20120719211510.GA32763@google.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342732534 19093 80.91.229.3 (19 Jul 2012 21:15:34 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 21:15:34 +0000 (UTC)
+Cc: Andy Walls <awalls-Xoej9cPu4Z+RGvkDC/A1pg@public.gmane.org>, kvm-u79uwXL29TY76Z2rM5mHXA@public.gmane.org,
+	ivtv-devel-jGorlIydJmRM656bX5wj8A@public.gmane.org, Avi Kivity <avi-H+wXaHxf7aLQT0dZR+AlfA@public.gmane.org>,
+	spi-devel-general-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org,
+	Andrew Morton <akpm-de/tnXTf+JLsfHDXvbKv3WD2FQJk+8+b@public.gmane.org>,
+	Linus Torvalds <torvalds-de/tnXTf+JLsfHDXvbKv3WD2FQJk+8+b@public.gmane.org>, linux-media-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+To: linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Original-X-From: spi-devel-general-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org Thu Jul 19 23:15:31 2012
+Return-path: <spi-devel-general-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>
+Envelope-to: glks-spi-devel-general@m.gmane.org
+Original-Received: from lists.sourceforge.net ([216.34.181.88])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <spi-devel-general-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>)
+	id 1Sry4D-0001Yc-Ol
+	for glks-spi-devel-general@m.gmane.org; Thu, 19 Jul 2012 23:15:26 +0200
+Original-Received: from localhost ([127.0.0.1] helo=sfs-ml-2.v29.ch3.sourceforge.com)
+	by sfs-ml-2.v29.ch3.sourceforge.com with esmtp (Exim 4.76)
+	(envelope-from <spi-devel-general-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>)
+	id 1Sry4B-0001p2-8K; Thu, 19 Jul 2012 21:15:23 +0000
+Original-Received: from sog-mx-3.v43.ch3.sourceforge.com ([172.29.43.193]
+	helo=mx.sourceforge.net)
+	by sfs-ml-2.v29.ch3.sourceforge.com with esmtp (Exim 4.76)
+	(envelope-from <htejun-Re5JQEeQqe8AvxtiuMwx3w@public.gmane.org>) id 1Sry49-0001os-NU
+	for spi-devel-general-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org;
+	Thu, 19 Jul 2012 21:15:21 +0000
+Received-SPF: pass (sog-mx-3.v43.ch3.sourceforge.com: domain of gmail.com
+	designates 209.85.160.47 as permitted sender)
+	client-ip=209.85.160.47; envelope-from=htejun-Re5JQEeQqe8AvxtiuMwx3w@public.gmane.org;
+	helo=mail-pb0-f47.google.com; 
+Original-Received: from mail-pb0-f47.google.com ([209.85.160.47])
+	by sog-mx-3.v43.ch3.sourceforge.com with esmtps (TLSv1:RC4-SHA:128)
+	(Exim 4.76) id 1Sry48-0003gi-Qm
+	for spi-devel-general-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org;
+	Thu, 19 Jul 2012 21:15:21 +0000
+Original-Received: by pbbrq2 with SMTP id rq2so4741843pbb.34
+	for <spi-devel-general-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>;
+	Thu, 19 Jul 2012 14:15:15 -0700 (PDT)
+Original-Received: by 10.68.203.66 with SMTP id ko2mr8383116pbc.84.1342732514916;
+	Thu, 19 Jul 2012 14:15:14 -0700 (PDT)
+Original-Received: from google.com (wtj.mtv.corp.google.com [172.18.110.84])
+	by mx.google.com with ESMTPS id og4sm2459568pbb.48.2012.07.19.14.15.12
+	(version=SSLv3 cipher=OTHER); Thu, 19 Jul 2012 14:15:13 -0700 (PDT)
+Content-Disposition: inline
+User-Agent: Mutt/1.5.20 (2009-06-14)
+X-Spam-Score: -1.5 (-)
+X-Spam-Report: Spam Filtering performed by mx.sourceforge.net.
+	See http://spamassassin.org/tag/ for more details.
+	-1.5 SPF_CHECK_PASS SPF reports sender host as permitted sender for
+	sender-domain
+	0.0 FREEMAIL_FROM Sender email is commonly abused enduser mail provider
+	(htejun[at]gmail.com)
+	-0.0 SPF_PASS               SPF: sender matches SPF record
+	0.1 DKIM_SIGNED            Message has a DKIM or DK signature,
+	not necessarily valid
+	-0.1 DKIM_VALID Message has at least one valid DKIM or DK signature
+X-Headers-End: 1Sry48-0003gi-Qm
+X-BeenThere: spi-devel-general-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org
+X-Mailman-Version: 2.1.9
+Precedence: list
+List-Id: Linux SPI core/device drivers discussion
+	<spi-devel-general.lists.sourceforge.net>
+List-Unsubscribe: <https://lists.sourceforge.net/lists/listinfo/spi-devel-general>,
+	<mailto:spi-devel-general-request-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org?subject=unsubscribe>
+List-Archive: <http://sourceforge.net/mailarchive/forum.php?forum_name=spi-devel-general>
+List-Post: <mailto:spi-devel-general-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org>
+List-Help: <mailto:spi-devel-general-request-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org?subject=help>
+List-Subscribe: <https://lists.sourceforge.net/lists/listinfo/spi-devel-general>,
+	<mailto:spi-devel-general-request-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org?subject=subscribe>
+Errors-To: spi-devel-general-bounces-5NWGOfrQmneRv+LV9MX5uipxlwaOVQ5f@public.gmane.org
+Xref: news.gmane.org gmane.linux.kernel.spi.devel:10734 gmane.linux.kernel:1330544 gmane.comp.emulators.kvm.devel:94742 gmane.linux.drivers.video-input-infrastructure:51110
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330544>
+
+Hello,
+
+kthread_worker was introduced together with concurrency managed
+workqueue to serve workqueue users which need a special dedicated
+worker - e.g. RT scheduling.  This is minimal queue / flush / flush
+all iterface on top of kthread and each provided interface matches the
+workqueue counterpart so that switching isn't difficult.
+
+However, one noticeable difference was that kthread_worker doesn't
+allow a work item to be freed while being executed.  The intention was
+to keep the code simpler but it didn't really and the restriction is
+subtle and does prevent some valid use cases.
+
+This two-patch series reimplements flush_kthread_work() so that it
+uses an extra work item for flushing.  While this takes a bit more
+lines, this is easier to understand and removes the annoying
+difference.
+
+This patchset contains the following two patches.
+
+ 0001-kthread_worker-reorganize-to-prepare-for-flush_kthre.patch
+ 0002-kthread_worker-reimplement-flush_kthread_work-to-all.patch
+
+The first one is a prep patch which makes no functional changes.  The
+second reimplements flush_kthread_work().
+
+All current kthread_worker users are cc'd.  If no one objects, I'll
+push it through the workqueue branch.  This patchset is also available
+in the following git branch.
+
+ git://git.kernel.org/pub/scm/linux/kernel/git/tj/wq.git review-kthread_worker-flush
+
+diffstat follows.  Thanks.
+
+ include/linux/kthread.h |    8 +---
+ kernel/kthread.c        |   86 +++++++++++++++++++++++++++---------------------
+ 2 files changed, 52 insertions(+), 42 deletions(-)
+
+-- 
+tejun
+
+------------------------------------------------------------------------------
+Live Security Virtual Conference
+Exclusive live event will cover all the ways today's security and 
+threat landscape has changed and how IT managers can respond. Discussions 
+will include endpoint security, mobile security and the latest in malware 
+threats. http://www.accelacomm.com/jaw/sfrnl04242012/114/50122263/

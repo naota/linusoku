@@ -1,0 +1,93 @@
+Path: news.gmane.org!not-for-mail
+From: Alan Stern <stern@rowland.harvard.edu>
+Newsgroups: gmane.linux.kernel,gmane.linux.scsi,gmane.linux.ide
+Subject: Re: [PATCH 2/5] scsi: sr: runtime pm when ODD is open/closed
+Date: Mon, 23 Jul 2012 10:57:28 -0400 (EDT)
+Lines: 45
+Approved: news@gmane.org
+Message-ID: <Pine.LNX.4.44L0.1207231052010.1633-100000@iolanthe.rowland.org>
+References: <1343026180-22236-3-git-send-email-aaron.lu@amd.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: TEXT/PLAIN; charset=US-ASCII
+X-Trace: dough.gmane.org 1343055468 29929 80.91.229.3 (23 Jul 2012 14:57:48 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 14:57:48 +0000 (UTC)
+Cc: Jeff Garzik <jgarzik@pobox.com>, Lin Ming <minggr@gmail.com>,
+	<linux-kernel@vger.kernel.org>, <linux-pm@vger.kernel.org>,
+	<linux-scsi@vger.kernel.org>, <linux-ide@vger.kernel.org>,
+	Aaron Lu <aaron.lwe@gmail.com>
+To: Aaron Lu <aaron.lu@amd.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 16:57:44 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StK4p-0003L7-1q
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 16:57:39 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754023Ab2GWO5a (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 10:57:30 -0400
+Original-Received: from iolanthe.rowland.org ([192.131.102.54]:38367 "HELO
+	iolanthe.rowland.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with SMTP id S1753296Ab2GWO53 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 10:57:29 -0400
+Original-Received: (qmail 1764 invoked by uid 2102); 23 Jul 2012 10:57:28 -0400
+Original-Received: from localhost (sendmail-bs@127.0.0.1)
+  by localhost with SMTP; 23 Jul 2012 10:57:28 -0400
+X-X-Sender: stern@iolanthe.rowland.org
+In-Reply-To: <1343026180-22236-3-git-send-email-aaron.lu@amd.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331812 gmane.linux.scsi:76493 gmane.linux.ide:52430
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331812>
+
+On Mon, 23 Jul 2012, Aaron Lu wrote:
+
+> The ODD can either be runtime resumed by the user or by a software
+> request. And for the latter part, we only support runtime resume the ODD
+> when the eject request is received. We did this in sr's block ioctl
+> function, this looks ugly.
+> 
+> Change this by runtime resuming the ODD in its open function and runtime
+> suspending it in its release function.
+> 
+> The downside of this approach is that in old distros with old udisk
+> daemon, the ODD will be polled by udisk daemon so open/close will
+> constantly be called, which will cause the ODD frequently resume from
+> suspend state, breaking the effect of power saving. User with such a
+> distro is advised to issue a udisk command to inhibit polling of the
+> disk like this:
+> $ udisks --inhibit-polling /dev/sr0
+> And since newer kernel has in kernel polling, there is no problem
+> regarding ODD's event report.
+> 
+> Signed-off-by: Aaron Lu <aaron.lu@amd.com>
+> ---
+>  drivers/scsi/sr.c | 18 +++++++++---------
+>  1 file changed, 9 insertions(+), 9 deletions(-)
+> 
+> diff --git a/drivers/scsi/sr.c b/drivers/scsi/sr.c
+> index 5f4d19a..f7a7635 100644
+> --- a/drivers/scsi/sr.c
+> +++ b/drivers/scsi/sr.c
+> @@ -152,8 +152,15 @@ static inline struct scsi_cd *scsi_cd_get(struct gendisk *disk)
+>  	kref_get(&cd->kref);
+>  	if (scsi_device_get(cd->device))
+>  		goto out_put;
+> +	if (pm_runtime_get_sync(&cd->device->sdev_gendev) < 0) {
+> +		pm_runtime_put_noidle(&cd->device->sdev_gendev);
+> +		goto out_pm;
+> +	}
+
+You should use scsi_autopm_get_device instead of bypassing the SCSI 
+layer.  Similarly for the _put call.
+
+I know the existing calls do this already.  They shouldn't.
+
+Alan Stern
+

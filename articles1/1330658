@@ -1,0 +1,132 @@
+Path: news.gmane.org!not-for-mail
+From: Minchan Kim <minchan@kernel.org>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [PATCH] Cgroup: Fix memory accounting scalability in
+ shrink_page_list
+Date: Fri, 20 Jul 2012 13:25:45 +0900
+Lines: 65
+Approved: news@gmane.org
+Message-ID: <20120720042545.GA24267@bbox>
+References: <1342740866.13492.50.camel@schen9-DESK>
+ <5008CE38.2020300@jp.fujitsu.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1342758354 23490 80.91.229.3 (20 Jul 2012 04:25:54 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 04:25:54 +0000 (UTC)
+Cc: Tim Chen <tim.c.chen@linux.intel.com>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Mel Gorman <mel@csn.ul.ie>, Johannes Weiner <hannes@cmpxchg.org>,
+	"Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>,
+	"andi.kleen" <andi.kleen@intel.com>, linux-mm <linux-mm@kvack.org>,
+	linux-kernel@vger.kernel.org
+To: Kamezawa Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>
+Original-X-From: owner-linux-mm@kvack.org Fri Jul 20 06:25:49 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Ss4mi-000372-In
+	for glkm-linux-mm-2@m.gmane.org; Fri, 20 Jul 2012 06:25:48 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 840DF6B004D; Fri, 20 Jul 2012 00:25:45 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 7157A6B005D; Fri, 20 Jul 2012 00:25:45 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 4048A6B0068; Fri, 20 Jul 2012 00:25:45 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx169.postini.com [74.125.245.169])
+	by kanga.kvack.org (Postfix) with SMTP id CC4016B004D
+	for <linux-mm@kvack.org>; Fri, 20 Jul 2012 00:25:43 -0400 (EDT)
+Original-Received: from LGEMRELSE1Q.lge.com ([156.147.1.111]) by na3sys010amx169.postini.com ([74.125.244.10]) with SMTP;
+	Fri, 20 Jul 2012 04:25:44 GMT
+X-AuditID: 9c93016f-b7b08ae00000790d-1c-5008ddc57889
+Original-Received: from localhost ( [10.177.220.67])
+	by LGEMRELSE1Q.lge.com (Symantec Brightmail Gateway) with SMTP id 8B.28.30989.5CDD8005; Fri, 20 Jul 2012 13:25:42 +0900 (KST)
+Content-Disposition: inline
+In-Reply-To: <5008CE38.2020300@jp.fujitsu.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Brightmail-Tracker: AAAAAA==
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <minchan@kernel.org> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82739 gmane.linux.kernel:1330658
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330658>
+
+On Fri, Jul 20, 2012 at 12:19:20PM +0900, Kamezawa Hiroyuki wrote:
+> (2012/07/20 8:34), Tim Chen wrote:
+> >Hi,
+> >
+> >I noticed in a multi-process parallel files reading benchmark I ran on a
+> >8 socket machine,  throughput slowed down by a factor of 8 when I ran
+> >the benchmark within a cgroup container.  I traced the problem to the
+> >following code path (see below) when we are trying to reclaim memory
+> >from file cache.  The res_counter_uncharge function is called on every
+> >page that's reclaimed and created heavy lock contention.  The patch
+> >below allows the reclaimed pages to be uncharged from the resource
+> >counter in batch and recovered the regression.
+> >
+> >Tim
+> >
+> >      40.67%           usemem  [kernel.kallsyms]                   [k] _raw_spin_lock
+> >                       |
+> >                       --- _raw_spin_lock
+> >                          |
+> >                          |--92.61%-- res_counter_uncharge
+> >                          |          |
+> >                          |          |--100.00%-- __mem_cgroup_uncharge_common
+> >                          |          |          |
+> >                          |          |          |--100.00%-- mem_cgroup_uncharge_cache_page
+> >                          |          |          |          __remove_mapping
+> >                          |          |          |          shrink_page_list
+> >                          |          |          |          shrink_inactive_list
+> >                          |          |          |          shrink_mem_cgroup_zone
+> >                          |          |          |          shrink_zone
+> >                          |          |          |          do_try_to_free_pages
+> >                          |          |          |          try_to_free_pages
+> >                          |          |          |          __alloc_pages_nodemask
+> >                          |          |          |          alloc_pages_current
+> >
+> >
+> 
+> Thank you very much !!
+> 
+> When I added batching, I didn't touch page-reclaim path because it delays
+> res_counter_uncharge() and make more threads run into page reclaim.
+
+Isn't it really problem? It's same as global reclaim.
+In the short term, you might be right but batch free might prevent
+entering more into reclaim path in the long term because we get lots
+of free pages than nenessary one. And we can reduce lock overhead.
+If it is proved as real problem, maybe we need global reclaim, too.
+
+> But, from above score, bactching seems required.
+> 
+> And because of current design of per-zone-per-memcg-LRU, batching
+> works very very well....all lru pages shrink_page_list() scans are on
+> the same memcg.
+
+Yes. It's more effective point!
+
+-- 
+Kind regards,
+Minchan Kim
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

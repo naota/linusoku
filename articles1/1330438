@@ -1,0 +1,316 @@
+Path: news.gmane.org!not-for-mail
+From: Shuah Khan <shuah.khan@hp.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.acpi.devel
+Subject: Re: [PATCH 1/4] ACPI: Add acpi_pr_<level>() interfaces
+Date: Thu, 19 Jul 2012 10:15:15 -0600
+Organization: ISS-Linux
+Lines: 253
+Approved: news@gmane.org
+Message-ID: <1342714515.3100.27.camel@lorien2>
+References: <1342644027-19559-1-git-send-email-toshi.kani@hp.com>
+	 <1342644027-19559-2-git-send-email-toshi.kani@hp.com>
+	 <1342648771.5138.37.camel@lorien2>
+	 <1342650386.3010.55.camel@misato.fc.hp.com>
+	 <1342651257.5138.44.camel@lorien2>
+	 <1342651966.3010.66.camel@misato.fc.hp.com>
+	 <1342653482.5138.56.camel@lorien2>
+	 <1342658296.3010.136.camel@misato.fc.hp.com>
+Reply-To: shuah.khan@hp.com
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342714538 562 80.91.229.3 (19 Jul 2012 16:15:38 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 16:15:38 +0000 (UTC)
+Cc: lenb@kernel.org, linux-acpi@vger.kernel.org,
+	linux-kernel@vger.kernel.org, bhelgaas@google.com,
+	isimatu.yasuaki@jp.fujitsu.com, liuj97@gmail.com,
+	srivatsa.bhat@linux.vnet.ibm.com, prarit@redhat.com,
+	imammedo@redhat.com, vijaymohan.pandarathil@hp.com,
+	shuahkhan@gmail.com
+To: Toshi Kani <toshi.kani@hp.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 18:15:34 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SrtNw-0004Qa-FY
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 18:15:28 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751946Ab2GSQPZ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 19 Jul 2012 12:15:25 -0400
+Original-Received: from g5t0007.atlanta.hp.com ([15.192.0.44]:16365 "EHLO
+	g5t0007.atlanta.hp.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751890Ab2GSQPV (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 19 Jul 2012 12:15:21 -0400
+Original-Received: from g5t0030.atlanta.hp.com (g5t0030.atlanta.hp.com [16.228.8.142])
+	by g5t0007.atlanta.hp.com (Postfix) with ESMTP id F14DC14142;
+	Thu, 19 Jul 2012 16:15:19 +0000 (UTC)
+Original-Received: from [16.78.173.162] (lorien2.americas.hpqcorp.net [16.78.173.162])
+	by g5t0030.atlanta.hp.com (Postfix) with ESMTP id F1EAF140AD;
+	Thu, 19 Jul 2012 16:15:17 +0000 (UTC)
+In-Reply-To: <1342658296.3010.136.camel@misato.fc.hp.com>
+X-Mailer: Evolution 3.2.3-0ubuntu6 
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330438 gmane.linux.acpi.devel:54346
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330438>
+
+On Wed, 2012-07-18 at 18:38 -0600, Toshi Kani wrote:
+
+> 
+> This interface is defined in acpi/acpi_bus.h, which is intended for ACPI
+> drivers which make many ACPI calls to proceed when they are called at
+> run-time today.  This interface does not change that, and I believe
+> acpi_get_name() is much faster compared to ACPI method calls these ACPI
+> drivers make in their normal code path.  The extra work to call
+> acpi_get_name() is simply a noise in this case (if you try to measure),
+> and the use of this interface is limited in error paths of such ACPI
+> drivers.
+
+I understand the scope of the usage of this new interface. I don't think
+I am able to explain the problem I see with this interface as it gets
+used more and more from acpi drivers. Let me try another way.
+
+If understand the this patch set, if and when acpi drivers that
+currently use pr_* interfaces switch to using acpi_pr_*, the execution
+path goes from a what printk() does to the following:
+
+acpi_pr_*
+- setup static buffer
+- calls acpi_get_name()
+- acpi_get_name() calls acpi_ut_validate_buffer() and then calls
+  acpi_ns_handle_to_pathname()
+- acpi_ns_handle_to_pathname() calls acpi_ns_validate_handle() followed
+  by acpi_ns_get_pathname_length() and so on.
+
+I think this should give you a good idea of my concern. I think
+acpi_pr_* full functionality should be enabled under special cases such
+as some acpi_debug level setting or some other way, and not for default
+case. I propose the following:
+
+Make acpi_pr_* versions execute the full path to do acpi_get_name()
+conditionally and not as a default case.
+
+To illustrate my point further, I currently see the following ACPI
+messages in my dmesg buffer on my laptop. I haven't taken the time to
+evaluate how many of them originate from acpi drivers, however I would
+not want to see all of these becoming acpi_pr_* versions that do more
+than what pr_* does today. I hope this explains my concern clearly.
+
+[    0.000000] ACPI: RSDP 00000000000fc600 00024 (v02 HPQOEM)
+[    0.000000] ACPI: XSDT 00000000bb7fe120 00084 (v01 HPQOEM SLIC-MPC
+0000000F      01000013)
+[    0.000000] ACPI: FACP 00000000bb7fc000 000F4 (v03 HPQOEM 172A
+0000000F HP   00000001)
+[    0.000000] ACPI: DSDT 00000000bb7d6000 203A2 (v02 HPQOEM 172A
+00000001 INTL 20060912)
+[    0.000000] ACPI: FACS 00000000bb760000 00040
+[    0.000000] ACPI: HPET 00000000bb7fb000 00038 (v01 HPQOEM 172A
+00000001 HP   00000001)
+[    0.000000] ACPI: APIC 00000000bb7fa000 000BC (v01 HPQOEM 172A
+00000001 HP   00000001)
+[    0.000000] ACPI: MCFG 00000000bb7f9000 0003C (v01 HPQOEM 172A
+00000001 HP   00000001)
+[    0.000000] ACPI: TCPA 00000000bb7f7000 00032 (v02 HPQOEM 172A
+00000000 HP   00000001)
+[    0.000000] ACPI: SSDT 00000000bb7d3000 00135 (v01 HPQOEM SataAhci
+00001000 INTL 20060912)
+[    0.000000] ACPI: SSDT 00000000bb7d2000 00314 (v01 HPQOEM PtidDevc
+00001000 INTL 20060912)
+[    0.000000] ACPI: SLIC 00000000bb7d1000 00176 (v01 HPQOEM SLIC-MPC
+00000001 HP   00000001)
+[    0.000000] ACPI: SSDT 00000000bb7d0000 00A10 (v01  PmRef    CpuPm
+00003000 INTL 20060912)
+[    0.000000] ACPI: SSDT 00000000bb7cf000 00288 (v01  PmRef  Cpu0Tst
+00003000 INTL 20060912)
+[    0.000000] ACPI: SSDT 00000000bb7ce000 00225 (v01  PmRef    ApTst
+00003000 INTL 20060912)
+[    0.000000] ACPI: ASF! 00000000bb7f8000 000A0 (v32 HPQOEM 172A
+00000001 HP   00000001)
+[    0.000000] ACPI: Local APIC address 0xfee00000
+[    0.000000] ACPI: PM-Timer IO Port: 0x408
+[    0.000000] ACPI: Local APIC address 0xfee00000
+[    0.000000] ACPI: LAPIC (acpi_id[0x00] lapic_id[0x00] enabled)
+[    0.000000] ACPI: LAPIC (acpi_id[0x01] lapic_id[0x01] enabled)
+[    0.000000] ACPI: LAPIC (acpi_id[0x02] lapic_id[0x04] enabled)
+[    0.000000] ACPI: LAPIC (acpi_id[0x03] lapic_id[0x05] enabled)
+[    0.000000] ACPI: LAPIC (acpi_id[0x04] lapic_id[0x00] disabled)
+[    0.000000] ACPI: LAPIC (acpi_id[0x05] lapic_id[0x00] disabled)
+[    0.000000] ACPI: LAPIC (acpi_id[0x06] lapic_id[0x00] disabled)
+[    0.000000] ACPI: LAPIC (acpi_id[0x07] lapic_id[0x00] disabled)
+[    0.000000] ACPI: LAPIC_NMI (acpi_id[0x00] high edge lint[0x1])
+[    0.000000] ACPI: LAPIC_NMI (acpi_id[0x01] high edge lint[0x1])
+[    0.000000] ACPI: LAPIC_NMI (acpi_id[0x02] high edge lint[0x1])
+[    0.000000] ACPI: LAPIC_NMI (acpi_id[0x03] high edge lint[0x1])
+[    0.000000] ACPI: LAPIC_NMI (acpi_id[0x04] high edge lint[0x1])
+[    0.000000] ACPI: LAPIC_NMI (acpi_id[0x05] high edge lint[0x1])
+[    0.000000] ACPI: LAPIC_NMI (acpi_id[0x06] high edge lint[0x1])
+[    0.000000] ACPI: LAPIC_NMI (acpi_id[0x07] high edge lint[0x1])
+[    0.000000] ACPI: IOAPIC (id[0x01] address[0xfec00000] gsi_base[0])
+[    0.000000] ACPI: INT_SRC_OVR (bus 0 bus_irq 0 global_irq 2 dfl dfl)
+[    0.000000] ACPI: INT_SRC_OVR (bus 0 bus_irq 9 global_irq 9 high
+level)
+[    0.000000] ACPI: IRQ0 used by override.
+[    0.000000] ACPI: IRQ2 used by override.
+[    0.000000] ACPI: IRQ9 used by override.
+[    0.000000] Using ACPI (MADT) for SMP configuration information
+[    0.000000] ACPI: HPET id: 0x8086a201 base: 0xfed00000
+[    0.003827] ACPI: Core revision 20120320
+[    0.229840] PM: Registering ACPI NVS region [mem
+0xbb6c2000-0xbb7c1fff] (1048576 bytes)
+[    0.230694] ACPI FADT declares the system doesn't support PCIe ASPM,
+so disable it
+[    0.230698] ACPI: bus type pci registered
+[    0.246838] ACPI: Added _OSI(Module Device)
+[    0.246841] ACPI: Added _OSI(Processor Device)
+[    0.246843] ACPI: Added _OSI(3.0 _SCP Extensions)
+[    0.246845] ACPI: Added _OSI(Processor Aggregator Device)
+[    0.248464] ACPI: EC: Look up EC in DSDT
+[    0.250886] ACPI: Executed 1 blocks of module-level executable AML
+code
+[    0.256201] [Firmware Bug]: ACPI: BIOS _OSI(Linux) query ignored
+[    0.264485] ACPI: SSDT 00000000bb6bba18 0047D (v01  PmRef  Cpu0Ist
+00003000 INTL 20060912)
+[    0.264874] ACPI: Dynamic OEM Table Load:
+[    0.264878] ACPI: SSDT           (null) 0047D (v01  PmRef  Cpu0Ist
+00003000 INTL 20060912)
+[    0.264995] ACPI: SSDT 00000000bb6b9018 008AA (v01  PmRef  Cpu0Cst
+00003001 INTL 20060912)
+[    0.265369] ACPI: Dynamic OEM Table Load:
+[    0.265372] ACPI: SSDT           (null) 008AA (v01  PmRef  Cpu0Cst
+00003001 INTL 20060912)
+[    0.265589] ACPI: SSDT 00000000bb6baa98 00303 (v01  PmRef    ApIst
+00003000 INTL 20060912)
+[    0.266008] ACPI: Dynamic OEM Table Load:
+[    0.266012] ACPI: SSDT           (null) 00303 (v01  PmRef    ApIst
+00003000 INTL 20060912)
+[    0.266113] ACPI: SSDT 00000000bb6b8d98 00119 (v01  PmRef    ApCst
+00003000 INTL 20060912)
+[    0.266506] ACPI: Dynamic OEM Table Load:
+[    0.266510] ACPI: SSDT           (null) 00119 (v01  PmRef    ApCst
+00003000 INTL 20060912)
+[    0.698211] ACPI: Interpreter enabled
+[    0.698230] ACPI: (supports S0 S3 S4 S5)
+[    0.698235] ACPI: Using IOAPIC for interrupt routing
+[    0.699577] ACPI: Power Resource [APPR] (off)
+[    0.700772] ACPI: Power Resource [LPP] (on)
+[    0.702856] ACPI: EC: GPE = 0x16, I/O: command/status = 0x66, data =
+0x62
+[    0.703023] ACPI: No dock devices found.
+[    0.703027] PCI: Using host bridge windows from ACPI; if necessary,
+use "pci=nocrs" and report a bug
+[    0.703627] ACPI: PCI Root Bridge [PCI0] (domain 0000 [bus 00-fe])
+[    0.713983] ACPI: PCI Interrupt Routing Table [\_SB_.PCI0._PRT]
+[    0.714162] ACPI: PCI Interrupt Routing Table [\_SB_.PCI0.PCIB._PRT]
+[    0.714203] ACPI: PCI Interrupt Routing Table [\_SB_.PCI0.RP01._PRT]
+[    0.714228] ACPI: PCI Interrupt Routing Table [\_SB_.PCI0.RP02._PRT]
+[    0.714269] ACPI: PCI Interrupt Routing Table [\_SB_.PCI0.RP04._PRT]
+[    0.714608]  pci0000:00: Requesting ACPI _OSC control (0x1d)
+[    0.715476]  pci0000:00: ACPI _OSC control (0x1d) granted
+[    0.719729] ACPI: PCI Root Bridge [CPBG] (domain 0000 [bus ff])
+[    0.719885]  pci0000:ff: Requesting ACPI _OSC control (0x1d)
+[    0.719888]  pci0000:ff: ACPI _OSC request failed (AE_NOT_FOUND),
+returned control mask: 0x1d
+[    0.719891] ACPI _OSC control for PCIe not granted, disabling ASPM
+[    0.720049] ACPI: PCI Interrupt Link [LNKA] (IRQs 1 3 4 5 6 7 *10 12
+14 15)
+[    0.720087] ACPI: PCI Interrupt Link [LNKB] (IRQs 1 3 4 5 6 7 *11 12
+14 15)
+[    0.720124] ACPI: PCI Interrupt Link [LNKC] (IRQs 1 3 4 5 6 7 *10 12
+14 15)
+[    0.720160] ACPI: PCI Interrupt Link [LNKD] (IRQs 1 3 4 *5 6 7 11 12
+14 15)
+[    0.720195] ACPI: PCI Interrupt Link [LNKE] (IRQs 1 3 4 5 6 7 *10 12
+14 15)
+[    0.720230] ACPI: PCI Interrupt Link [LNKF] (IRQs 1 3 4 5 6 7 11 12
+14 15) *10
+[    0.720266] ACPI: PCI Interrupt Link [LNKG] (IRQs 1 3 4 5 6 7 10 12
+14 15) *0, disabled.
+[    0.720301] ACPI: PCI Interrupt Link [LNKH] (IRQs 1 3 4 5 6 7 11 12
+14 15) *0, disabled.
+[    0.720559] ACPI: bus type usb registered
+[    0.720658] PCI: Using ACPI for IRQ routing
+[    0.737801] pnp: PnP ACPI init
+[    0.737817] ACPI: bus type pnp registered
+[    0.738257] pnp 00:00: Plug and Play ACPI device, IDs PNP0a08 PNP0a03
+(active)
+[    0.738500] system 00:01: Plug and Play ACPI device, IDs PNP0c02
+(active)
+[    0.738593] pnp 00:02: Plug and Play ACPI device, IDs PNP0200
+(active)
+[    0.738619] pnp 00:03: Plug and Play ACPI device, IDs INT0800
+(active)
+[    0.738685] pnp 00:04: Plug and Play ACPI device, IDs IFX0102 PNP0c31
+(active)
+[    0.738770] pnp 00:05: Plug and Play ACPI device, IDs PNP0103
+(active)
+[    0.738810] pnp 00:06: Plug and Play ACPI device, IDs PNP0c04
+(active)
+[    0.738895] system 00:07: Plug and Play ACPI device, IDs PNP0c02
+(active)
+[    0.738930] pnp 00:08: Plug and Play ACPI device, IDs PNP0b00
+(active)
+[    0.739325] pnp 00:09: Plug and Play ACPI device, IDs PNP0401
+(active)
+[    0.739361] pnp 00:0a: Plug and Play ACPI device, IDs PNP0303
+(active)
+[    0.739396] pnp 00:0b: Plug and Play ACPI device, IDs SYN0165 SYN0100
+SYN0002 PNP0f13 (active)
+[    0.739602] pnp 00:0c: Plug and Play ACPI device, IDs HPQ0004
+(active)
+[    0.739742] pnp 00:0d: Plug and Play ACPI device, IDs PNP0a03
+(active)
+[    0.739841] pnp: PnP ACPI: found 14 devices
+[    0.739844] ACPI: ACPI bus type pnp unregistered
+[    1.078598] ACPI: Deprecated procfs I/F for AC is loaded, please
+retry with CONFIG_ACPI_PROCFS_POWER cleared
+[    1.078674] ACPI: AC Adapter [AC] (on-line)
+[    1.078843] ACPI: Sleep Button [SLPB]
+[    1.078892] ACPI: Lid Switch [LID]
+[    1.078923] ACPI: Power Button [PWRF]
+[    1.078982] ACPI: Requesting acpi_cpufreq
+[    1.093567] ACPI: Thermal Zone [EXTZ] (0 C)
+[    1.095993] ACPI: Thermal Zone [EX2Z] (26 C)
+[    1.097220] ACPI: Thermal Zone [PWMZ] (0 C)
+[    1.099681] ACPI: Thermal Zone [LOCZ] (25 C)
+[    1.100065] ACPI: Thermal Zone [GFXZ] (0 C)
+[    1.110366] ACPI: Thermal Zone [BATZ] (27 C)
+[    1.120051] ACPI: Thermal Zone [EGXZ] (0 C)
+[    1.120219] ACPI: Thermal Zone [CPUZ] (38 C)
+[    1.120350] ACPI: Thermal Zone [MCHZ] (35 C)
+[    1.120475] ACPI: Thermal Zone [PCHZ] (59 C)
+[    1.165755] ACPI: Deprecated procfs I/F for battery is loaded, please
+retry with CONFIG_ACPI_PROCFS_POWER cleared
+[    1.165764] ACPI: Battery Slot [BAT0] (battery present)
+[    1.165807] ACPI: Deprecated procfs I/F for battery is loaded, please
+retry with CONFIG_ACPI_PROCFS_POWER cleared
+[    1.165813] ACPI: Battery Slot [BAT1] (battery absent)
+[    5.465815] ACPI: Video Device [GFX0] (multi-head: yes  rom: no
+post: no)
+[   43.954919] parport_pc 00:09: reported by Plug and Play ACPI
+[   45.027388] ACPI Warning: 0x0000000000000460-0x000000000000047f
+SystemIO conflicts with Region \PMIO 1 (20120320/utaddress-251)
+[   45.027390] ACPI: If an ACPI driver is available for this device, you
+should use it instead of the native driver
+[   45.027397] ACPI Warning: 0x0000000000000428-0x000000000000042f
+SystemIO conflicts with Region \PMIO 1 (20120320/utaddress-251)
+[   45.027398] ACPI: If an ACPI driver is available for this device, you
+should use it instead of the native driver
+[   45.027404] ACPI Warning: 0x0000000000000500-0x000000000000057f
+SystemIO conflicts with Region \GPIO 1 (20120320/utaddress-251)
+[   45.027405] ACPI: If an ACPI driver is available for this device, you
+should use it instead of the native driver
+[   47.432241] snd_hda_intel 0000:00:1b.0: power state changed by ACPI
+to D0
+[   47.432254] snd_hda_intel 0000:00:1b.0: power state changed by ACPI
+to D0
+
+-- Shuah
+
+

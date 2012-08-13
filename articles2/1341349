@@ -1,0 +1,132 @@
+Path: news.gmane.org!not-for-mail
+From: Vivek Goyal <vgoyal@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH 1/6] floppy: don't call alloc_ordered_workqueue inside
+ the alloc_disk loop
+Date: Fri, 10 Aug 2012 13:11:12 -0400
+Lines: 75
+Approved: news@gmane.org
+Message-ID: <20120810171112.GF5416@redhat.com>
+References: <1344542391-16474-1-git-send-email-herton.krzesinski@canonical.com>
+ <1344542391-16474-2-git-send-email-herton.krzesinski@canonical.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344618703 3750 80.91.229.3 (10 Aug 2012 17:11:43 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 17:11:43 +0000 (UTC)
+Cc: Jiri Kosina <jkosina@suse.cz>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Jens Axboe <axboe@kernel.dk>, Tejun Heo <tj@kernel.org>,
+	linux-kernel@vger.kernel.org, Ben Hutchings <ben@decadent.org.uk>
+To: Herton Ronaldo Krzesinski <herton.krzesinski@canonical.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 10 19:11:42 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzskN-0007ze-45
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 10 Aug 2012 19:11:39 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756368Ab2HJRLe (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 10 Aug 2012 13:11:34 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:60682 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753310Ab2HJRLc (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 10 Aug 2012 13:11:32 -0400
+Original-Received: from int-mx12.intmail.prod.int.phx2.redhat.com (int-mx12.intmail.prod.int.phx2.redhat.com [10.5.11.25])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q7AHBEKR020981
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Fri, 10 Aug 2012 13:11:14 -0400
+Original-Received: from horse.usersys.redhat.com (dhcp-187-179.bos.redhat.com [10.16.187.179])
+	by int-mx12.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q7AHBCJm006179;
+	Fri, 10 Aug 2012 13:11:12 -0400
+Original-Received: by horse.usersys.redhat.com (Postfix, from userid 10451)
+	id 3B29765CE2; Fri, 10 Aug 2012 13:11:12 -0400 (EDT)
+Content-Disposition: inline
+In-Reply-To: <1344542391-16474-2-git-send-email-herton.krzesinski@canonical.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.25
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341349
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341349>
+
+On Thu, Aug 09, 2012 at 04:59:46PM -0300, Herton Ronaldo Krzesinski wrote:
+> Since commit 070ad7e ("floppy: convert to delayed work and single-thread
+> wq"), we end up calling alloc_ordered_workqueue multiple times inside
+> the loop, which shouldn't be intended. Besides the leak, other side
+> effect in the current code is if blk_init_queue fails, we would end up
+> calling unregister_blkdev even if we didn't call yet register_blkdev.
+> 
+> Just moved the allocation of floppy_wq before the loop, and adjusted the
+> code accordingly.
+> 
+> Signed-off-by: Herton Ronaldo Krzesinski <herton.krzesinski@canonical.com>
+> Cc: stable@vger.kernel.org # 3.5+
+
+Looks good to me.
+
+Acked-by: Vivek Goyal <vgoyal@redhat.com>
+
+Vivek
+
+> ---
+>  drivers/block/floppy.c |   15 ++++++---------
+>  1 file changed, 6 insertions(+), 9 deletions(-)
+> 
+> diff --git a/drivers/block/floppy.c b/drivers/block/floppy.c
+> index a7d6347..c8d9e68 100644
+> --- a/drivers/block/floppy.c
+> +++ b/drivers/block/floppy.c
+> @@ -4138,6 +4138,10 @@ static int __init do_floppy_init(void)
+>  
+>  	raw_cmd = NULL;
+>  
+> +	floppy_wq = alloc_ordered_workqueue("floppy", 0);
+> +	if (!floppy_wq)
+> +		return -ENOMEM;
+> +
+>  	for (dr = 0; dr < N_DRIVE; dr++) {
+>  		disks[dr] = alloc_disk(1);
+>  		if (!disks[dr]) {
+> @@ -4145,16 +4149,10 @@ static int __init do_floppy_init(void)
+>  			goto out_put_disk;
+>  		}
+>  
+> -		floppy_wq = alloc_ordered_workqueue("floppy", 0);
+> -		if (!floppy_wq) {
+> -			err = -ENOMEM;
+> -			goto out_put_disk;
+> -		}
+> -
+>  		disks[dr]->queue = blk_init_queue(do_fd_request, &floppy_lock);
+>  		if (!disks[dr]->queue) {
+>  			err = -ENOMEM;
+> -			goto out_destroy_workq;
+> +			goto out_put_disk;
+>  		}
+>  
+>  		blk_queue_max_hw_sectors(disks[dr]->queue, 64);
+> @@ -4318,8 +4316,6 @@ out_release_dma:
+>  out_unreg_region:
+>  	blk_unregister_region(MKDEV(FLOPPY_MAJOR, 0), 256);
+>  	platform_driver_unregister(&floppy_driver);
+> -out_destroy_workq:
+> -	destroy_workqueue(floppy_wq);
+>  out_unreg_blkdev:
+>  	unregister_blkdev(FLOPPY_MAJOR, "fd");
+>  out_put_disk:
+> @@ -4335,6 +4331,7 @@ out_put_disk:
+>  		}
+>  		put_disk(disks[dr]);
+>  	}
+> +	destroy_workqueue(floppy_wq);
+>  	return err;
+>  }
+>  
+> -- 
+> 1.7.9.5

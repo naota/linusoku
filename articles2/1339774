@@ -1,0 +1,201 @@
+Path: news.gmane.org!not-for-mail
+From: Arnaldo Carvalho de Melo <acme@infradead.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 1/8] perf hists browser: Add verbose mode hotkey
+Date: Wed,  8 Aug 2012 00:20:50 -0300
+Lines: 145
+Approved: news@gmane.org
+Message-ID: <1344396057-10540-2-git-send-email-acme@infradead.org>
+References: <1344396057-10540-1-git-send-email-acme@infradead.org>
+NNTP-Posting-Host: plane.gmane.org
+Content-Type: text/plain; charset="UTF-8"
+X-Trace: dough.gmane.org 1344396236 28439 80.91.229.3 (8 Aug 2012 03:23:56 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 03:23:56 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org,
+	Arnaldo Carvalho de Melo <acme@redhat.com>,
+	David Ahern <dsahern@gmail.com>,
+	Frederic Weisbecker <fweisbec@gmail.com>,
+	Jiri Olsa <jolsa@redhat.com>, Mike Galbraith <efault@gmx.de>,
+	Namhyung Kim <namhyung@gmail.com>,
+	Paul Mackerras <paulus@samba.org>,
+	Peter Zijlstra <peterz@infradead.org>,
+	Stephane Eranian <eranian@google.com>
+To: Ingo Molnar <mingo@kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 05:23:54 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SywsC-0008OP-S9
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 05:23:53 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757410Ab2HHDVv (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 23:21:51 -0400
+Original-Received: from casper.infradead.org ([85.118.1.10]:34522 "EHLO
+	casper.infradead.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752229Ab2HHDVK (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 23:21:10 -0400
+Original-Received: from [187.65.5.202] (helo=sandy.ghostprotocols.net)
+	by casper.infradead.org with esmtpsa (Exim 4.76 #1 (Red Hat Linux))
+	id 1SywpU-0004nN-EL; Wed, 08 Aug 2012 03:21:04 +0000
+Original-Received: by sandy.ghostprotocols.net (Postfix, from userid 500)
+	id 7F0692602CA; Wed,  8 Aug 2012 00:20:59 -0300 (BRT)
+X-Mailer: git-send-email 1.7.9.2.358.g22243
+In-Reply-To: <1344396057-10540-1-git-send-email-acme@infradead.org>
+X-SRS-Rewrite: SMTP reverse-path rewritten from <acme@infradead.org> by casper.infradead.org
+	See http://www.infradead.org/rpr.html
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339774
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339774>
+
+From: Arnaldo Carvalho de Melo <acme@redhat.com>
+
+Right now just shows the DSO name in callchain entries, to help debug
+the DWARF CFI post unwind code.
+
+Cc: David Ahern <dsahern@gmail.com>
+Cc: Frederic Weisbecker <fweisbec@gmail.com>
+Cc: Jiri Olsa <jolsa@redhat.com>
+Cc: Mike Galbraith <efault@gmx.de>
+Cc: Namhyung Kim <namhyung@gmail.com>
+Cc: Paul Mackerras <paulus@samba.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Stephane Eranian <eranian@google.com>
+Link: http://lkml.kernel.org/n/tip-54gouunatugtfw92j6gddk45@git.kernel.org
+Signed-off-by: Arnaldo Carvalho de Melo <acme@redhat.com>
+---
+ tools/perf/ui/browsers/hists.c |   37 ++++++++++++++++++++++++++-----------
+ 1 file changed, 26 insertions(+), 11 deletions(-)
+
+diff --git a/tools/perf/ui/browsers/hists.c b/tools/perf/ui/browsers/hists.c
+index 413bd62..b809469 100644
+--- a/tools/perf/ui/browsers/hists.c
++++ b/tools/perf/ui/browsers/hists.c
+@@ -24,6 +24,7 @@ struct hist_browser {
+ 	struct hist_entry   *he_selection;
+ 	struct map_symbol   *selection;
+ 	int		     print_seq;
++	bool		     show_dso;
+ 	bool		     has_symbols;
+ };
+ 
+@@ -376,12 +377,19 @@ out:
+ }
+ 
+ static char *callchain_list__sym_name(struct callchain_list *cl,
+-				      char *bf, size_t bfsize)
++				      char *bf, size_t bfsize, bool show_dso)
+ {
++	int printed;
++
+ 	if (cl->ms.sym)
+-		return cl->ms.sym->name;
++		printed = scnprintf(bf, bfsize, "%s", cl->ms.sym->name);
++	else
++		printed = scnprintf(bf, bfsize, "%#" PRIx64, cl->ip);
++
++	if (show_dso)
++		scnprintf(bf + printed, bfsize - printed, " %s",
++			  cl->ms.map ? cl->ms.map->dso->short_name : "unknown");
+ 
+-	snprintf(bf, bfsize, "%#" PRIx64, cl->ip);
+ 	return bf;
+ }
+ 
+@@ -417,7 +425,7 @@ static int hist_browser__show_callchain_node_rb_tree(struct hist_browser *browse
+ 		remaining -= cumul;
+ 
+ 		list_for_each_entry(chain, &child->val, list) {
+-			char ipstr[BITS_PER_LONG / 4 + 1], *alloc_str;
++			char bf[1024], *alloc_str;
+ 			const char *str;
+ 			int color;
+ 			bool was_first = first;
+@@ -434,7 +442,8 @@ static int hist_browser__show_callchain_node_rb_tree(struct hist_browser *browse
+ 			}
+ 
+ 			alloc_str = NULL;
+-			str = callchain_list__sym_name(chain, ipstr, sizeof(ipstr));
++			str = callchain_list__sym_name(chain, bf, sizeof(bf),
++						       browser->show_dso);
+ 			if (was_first) {
+ 				double percent = cumul * 100.0 / new_total;
+ 
+@@ -493,7 +502,7 @@ static int hist_browser__show_callchain_node(struct hist_browser *browser,
+ 	char folded_sign = ' ';
+ 
+ 	list_for_each_entry(chain, &node->val, list) {
+-		char ipstr[BITS_PER_LONG / 4 + 1], *s;
++		char bf[1024], *s;
+ 		int color;
+ 
+ 		folded_sign = callchain_list__folded(chain);
+@@ -510,7 +519,8 @@ static int hist_browser__show_callchain_node(struct hist_browser *browser,
+ 			*is_current_entry = true;
+ 		}
+ 
+-		s = callchain_list__sym_name(chain, ipstr, sizeof(ipstr));
++		s = callchain_list__sym_name(chain, bf, sizeof(bf),
++					     browser->show_dso);
+ 		ui_browser__gotorc(&browser->b, row, 0);
+ 		ui_browser__set_color(&browser->b, color);
+ 		slsmg_write_nstring(" ", offset);
+@@ -830,7 +840,7 @@ static int hist_browser__fprintf_callchain_node_rb_tree(struct hist_browser *bro
+ 		remaining -= cumul;
+ 
+ 		list_for_each_entry(chain, &child->val, list) {
+-			char ipstr[BITS_PER_LONG / 4 + 1], *alloc_str;
++			char bf[1024], *alloc_str;
+ 			const char *str;
+ 			bool was_first = first;
+ 
+@@ -842,7 +852,8 @@ static int hist_browser__fprintf_callchain_node_rb_tree(struct hist_browser *bro
+ 			folded_sign = callchain_list__folded(chain);
+ 
+ 			alloc_str = NULL;
+-			str = callchain_list__sym_name(chain, ipstr, sizeof(ipstr));
++			str = callchain_list__sym_name(chain, bf, sizeof(bf),
++						       browser->show_dso);
+ 			if (was_first) {
+ 				double percent = cumul * 100.0 / new_total;
+ 
+@@ -880,10 +891,10 @@ static int hist_browser__fprintf_callchain_node(struct hist_browser *browser,
+ 	int printed = 0;
+ 
+ 	list_for_each_entry(chain, &node->val, list) {
+-		char ipstr[BITS_PER_LONG / 4 + 1], *s;
++		char bf[1024], *s;
+ 
+ 		folded_sign = callchain_list__folded(chain);
+-		s = callchain_list__sym_name(chain, ipstr, sizeof(ipstr));
++		s = callchain_list__sym_name(chain, bf, sizeof(bf), browser->show_dso);
+ 		printed += fprintf(fp, "%*s%c %s\n", offset, " ", folded_sign, s);
+ 	}
+ 
+@@ -1133,6 +1144,9 @@ static int perf_evsel__hists_browse(struct perf_evsel *evsel, int nr_events,
+ 			continue;
+ 		case 'd':
+ 			goto zoom_dso;
++		case 'V':
++			browser->show_dso = !browser->show_dso;
++			continue;
+ 		case 't':
+ 			goto zoom_thread;
+ 		case '/':
+@@ -1164,6 +1178,7 @@ static int perf_evsel__hists_browse(struct perf_evsel *evsel, int nr_events,
+ 					"d             Zoom into current DSO\n"
+ 					"t             Zoom into current Thread\n"
+ 					"P             Print histograms to perf.hist.N\n"
++					"V             Verbose (DSO names in callchains, etc)\n"
+ 					"/             Filter symbol by name");
+ 			continue;
+ 		case K_ENTER:
+-- 
+1.7.9.2.358.g22243
+

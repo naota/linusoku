@@ -1,0 +1,827 @@
+Path: news.gmane.org!not-for-mail
+From: Steven Whitehouse <swhiteho@redhat.com>
+Newsgroups: gmane.linux.cluster.redhat.cluster.devel,gmane.linux.kernel
+Subject: [PATCH 02/16] GFS2: Fold quota data into the
+	reservations struct
+Date: Mon, 23 Jul 2012 09:00:52 +0100
+Lines: 774
+Approved: news@gmane.org
+Message-ID: <1343030466-3053-3-git-send-email-swhiteho@redhat.com>
+References: <1343030466-3053-1-git-send-email-swhiteho@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343032029 1186 80.91.229.3 (23 Jul 2012 08:27:09 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 08:27:09 +0000 (UTC)
+To: linux-kernel@vger.kernel.org, cluster-devel@redhat.com
+Original-X-From: cluster-devel-bounces@redhat.com Mon Jul 23 10:27:09 2012
+Return-path: <cluster-devel-bounces@redhat.com>
+Envelope-to: glcrcd-cluster-devel@gmane.org
+Original-Received: from mx3-phx2.redhat.com ([209.132.183.24])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <cluster-devel-bounces@redhat.com>)
+	id 1StDyn-0006XU-SY
+	for glcrcd-cluster-devel@gmane.org; Mon, 23 Jul 2012 10:27:03 +0200
+Original-Received: from lists01.pubmisc.prod.ext.phx2.redhat.com (lists01.pubmisc.prod.ext.phx2.redhat.com [10.5.19.33])
+	by mx3-phx2.redhat.com (8.13.8/8.13.8) with ESMTP id q6N8QDRq011666;
+	Mon, 23 Jul 2012 04:26:13 -0400
+Original-Received: from int-mx01.intmail.prod.int.phx2.redhat.com
+	(int-mx01.intmail.prod.int.phx2.redhat.com [10.5.11.11])
+	by lists01.pubmisc.prod.ext.phx2.redhat.com (8.13.8/8.13.8) with ESMTP
+	id q6N8QCE5029290 for <cluster-devel@listman.util.phx.redhat.com>;
+	Mon, 23 Jul 2012 04:26:12 -0400
+Original-Received: from chywoon.redhat.com (vpn1-5-152.ams2.redhat.com [10.36.5.152])
+	by int-mx01.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with ESMTP
+	id q6N8Px9Z016610; Mon, 23 Jul 2012 04:26:06 -0400
+In-Reply-To: <1343030466-3053-1-git-send-email-swhiteho@redhat.com>
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.11
+X-loop: cluster-devel@redhat.com
+X-BeenThere: cluster-devel@redhat.com
+X-Mailman-Version: 2.1.12
+Precedence: junk
+List-Id: "\[Cluster devel\]" <cluster-devel.redhat.com>
+List-Unsubscribe: <https://www.redhat.com/mailman/options/cluster-devel>,
+	<mailto:cluster-devel-request@redhat.com?subject=unsubscribe>
+List-Archive: <https://www.redhat.com/archives/cluster-devel>
+List-Post: <mailto:cluster-devel@redhat.com>
+List-Help: <mailto:cluster-devel-request@redhat.com?subject=help>
+List-Subscribe: <https://www.redhat.com/mailman/listinfo/cluster-devel>,
+	<mailto:cluster-devel-request@redhat.com?subject=subscribe>
+Original-Sender: cluster-devel-bounces@redhat.com
+Errors-To: cluster-devel-bounces@redhat.com
+Xref: news.gmane.org gmane.linux.cluster.redhat.cluster.devel:7190 gmane.linux.kernel:1331660
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331660>
+
+From: Bob Peterson <rpeterso@redhat.com>
+
+This patch moves the ancillary quota data structures into the
+block reservations structure. This saves GFS2 some time and
+effort in allocating and deallocating the qadata structure.
+
+Signed-off-by: Bob Peterson <rpeterso@redhat.com>
+Signed-off-by: Steven Whitehouse <swhiteho@redhat.com>
+
+diff --git a/fs/gfs2/aops.c b/fs/gfs2/aops.c
+index aba77b5..d652634 100644
+--- a/fs/gfs2/aops.c
++++ b/fs/gfs2/aops.c
+@@ -614,7 +614,6 @@ static int gfs2_write_begin(struct file *file, struct address_space *mapping,
+ 	unsigned int data_blocks = 0, ind_blocks = 0, rblocks;
+ 	int alloc_required;
+ 	int error = 0;
+-	struct gfs2_qadata *qa = NULL;
+ 	pgoff_t index = pos >> PAGE_CACHE_SHIFT;
+ 	unsigned from = pos & (PAGE_CACHE_SIZE - 1);
+ 	struct page *page;
+@@ -638,15 +637,9 @@ static int gfs2_write_begin(struct file *file, struct address_space *mapping,
+ 		gfs2_write_calc_reserv(ip, len, &data_blocks, &ind_blocks);
+ 
+ 	if (alloc_required) {
+-		qa = gfs2_qadata_get(ip);
+-		if (!qa) {
+-			error = -ENOMEM;
+-			goto out_unlock;
+-		}
+-
+ 		error = gfs2_quota_lock_check(ip);
+ 		if (error)
+-			goto out_alloc_put;
++			goto out_unlock;
+ 
+ 		error = gfs2_inplace_reserve(ip, data_blocks + ind_blocks);
+ 		if (error)
+@@ -708,8 +701,6 @@ out_trans_fail:
+ 		gfs2_inplace_release(ip);
+ out_qunlock:
+ 		gfs2_quota_unlock(ip);
+-out_alloc_put:
+-		gfs2_qadata_put(ip);
+ 	}
+ out_unlock:
+ 	if (&ip->i_inode == sdp->sd_rindex) {
+@@ -846,7 +837,6 @@ static int gfs2_write_end(struct file *file, struct address_space *mapping,
+ 	struct gfs2_sbd *sdp = GFS2_SB(inode);
+ 	struct gfs2_inode *m_ip = GFS2_I(sdp->sd_statfs_inode);
+ 	struct buffer_head *dibh;
+-	struct gfs2_qadata *qa = ip->i_qadata;
+ 	unsigned int from = pos & (PAGE_CACHE_SIZE - 1);
+ 	unsigned int to = from + len;
+ 	int ret;
+@@ -880,10 +870,8 @@ failed:
+ 	gfs2_trans_end(sdp);
+ 	if (gfs2_mb_reserved(ip))
+ 		gfs2_inplace_release(ip);
+-	if (qa) {
++	if (ip->i_res->rs_qa_qd_num)
+ 		gfs2_quota_unlock(ip);
+-		gfs2_qadata_put(ip);
+-	}
+ 	if (inode == sdp->sd_rindex) {
+ 		gfs2_glock_dq(&m_ip->i_gh);
+ 		gfs2_holder_uninit(&m_ip->i_gh);
+diff --git a/fs/gfs2/bmap.c b/fs/gfs2/bmap.c
+index dab5409..6d957a8 100644
+--- a/fs/gfs2/bmap.c
++++ b/fs/gfs2/bmap.c
+@@ -1045,12 +1045,13 @@ static int trunc_dealloc(struct gfs2_inode *ip, u64 size)
+ 		lblock = (size - 1) >> sdp->sd_sb.sb_bsize_shift;
+ 
+ 	find_metapath(sdp, lblock, &mp, ip->i_height);
+-	if (!gfs2_qadata_get(ip))
+-		return -ENOMEM;
++	error = gfs2_rindex_update(sdp);
++	if (error)
++		return error;
+ 
+ 	error = gfs2_quota_hold(ip, NO_QUOTA_CHANGE, NO_QUOTA_CHANGE);
+ 	if (error)
+-		goto out;
++		return error;
+ 
+ 	while (height--) {
+ 		struct strip_mine sm;
+@@ -1064,8 +1065,6 @@ static int trunc_dealloc(struct gfs2_inode *ip, u64 size)
+ 
+ 	gfs2_quota_unhold(ip);
+ 
+-out:
+-	gfs2_qadata_put(ip);
+ 	return error;
+ }
+ 
+@@ -1167,19 +1166,14 @@ static int do_grow(struct inode *inode, u64 size)
+ 	struct gfs2_inode *ip = GFS2_I(inode);
+ 	struct gfs2_sbd *sdp = GFS2_SB(inode);
+ 	struct buffer_head *dibh;
+-	struct gfs2_qadata *qa = NULL;
+ 	int error;
+ 	int unstuff = 0;
+ 
+ 	if (gfs2_is_stuffed(ip) &&
+ 	    (size > (sdp->sd_sb.sb_bsize - sizeof(struct gfs2_dinode)))) {
+-		qa = gfs2_qadata_get(ip);
+-		if (qa == NULL)
+-			return -ENOMEM;
+-
+ 		error = gfs2_quota_lock_check(ip);
+ 		if (error)
+-			goto do_grow_alloc_put;
++			return error;
+ 
+ 		error = gfs2_inplace_reserve(ip, 1);
+ 		if (error)
+@@ -1214,8 +1208,6 @@ do_grow_release:
+ 		gfs2_inplace_release(ip);
+ do_grow_qunlock:
+ 		gfs2_quota_unlock(ip);
+-do_grow_alloc_put:
+-		gfs2_qadata_put(ip);
+ 	}
+ 	return error;
+ }
+diff --git a/fs/gfs2/dir.c b/fs/gfs2/dir.c
+index 8aaeb07..259b088 100644
+--- a/fs/gfs2/dir.c
++++ b/fs/gfs2/dir.c
+@@ -1854,14 +1854,9 @@ static int leaf_dealloc(struct gfs2_inode *dip, u32 index, u32 len,
+ 	if (!ht)
+ 		return -ENOMEM;
+ 
+-	if (!gfs2_qadata_get(dip)) {
+-		error = -ENOMEM;
+-		goto out;
+-	}
+-
+ 	error = gfs2_quota_hold(dip, NO_QUOTA_CHANGE, NO_QUOTA_CHANGE);
+ 	if (error)
+-		goto out_put;
++		goto out;
+ 
+ 	/*  Count the number of leaves  */
+ 	bh = leaf_bh;
+@@ -1942,8 +1937,6 @@ out_rg_gunlock:
+ out_rlist:
+ 	gfs2_rlist_free(&rlist);
+ 	gfs2_quota_unhold(dip);
+-out_put:
+-	gfs2_qadata_put(dip);
+ out:
+ 	kfree(ht);
+ 	return error;
+diff --git a/fs/gfs2/file.c b/fs/gfs2/file.c
+index 3790617..26e2905 100644
+--- a/fs/gfs2/file.c
++++ b/fs/gfs2/file.c
+@@ -366,7 +366,6 @@ static int gfs2_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
+ 	u64 pos = page->index << PAGE_CACHE_SHIFT;
+ 	unsigned int data_blocks, ind_blocks, rblocks;
+ 	struct gfs2_holder gh;
+-	struct gfs2_qadata *qa;
+ 	loff_t size;
+ 	int ret;
+ 
+@@ -397,14 +396,13 @@ static int gfs2_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
+ 		goto out_unlock;
+ 	}
+ 
+-	ret = -ENOMEM;
+-	qa = gfs2_qadata_get(ip);
+-	if (qa == NULL)
++	ret = gfs2_rindex_update(sdp);
++	if (ret)
+ 		goto out_unlock;
+ 
+ 	ret = gfs2_quota_lock_check(ip);
+ 	if (ret)
+-		goto out_alloc_put;
++		goto out_unlock;
+ 	gfs2_write_calc_reserv(ip, PAGE_CACHE_SIZE, &data_blocks, &ind_blocks);
+ 	ret = gfs2_inplace_reserve(ip, data_blocks + ind_blocks);
+ 	if (ret)
+@@ -451,8 +449,6 @@ out_trans_fail:
+ 	gfs2_inplace_release(ip);
+ out_quota_unlock:
+ 	gfs2_quota_unlock(ip);
+-out_alloc_put:
+-	gfs2_qadata_put(ip);
+ out_unlock:
+ 	gfs2_glock_dq(&gh);
+ out:
+@@ -764,7 +760,6 @@ static long gfs2_fallocate(struct file *file, int mode, loff_t offset,
+ 	struct gfs2_inode *ip = GFS2_I(inode);
+ 	unsigned int data_blocks = 0, ind_blocks = 0, rblocks;
+ 	loff_t bytes, max_bytes;
+-	struct gfs2_qadata *qa;
+ 	int error;
+ 	const loff_t pos = offset;
+ 	const loff_t count = len;
+@@ -804,15 +799,13 @@ static long gfs2_fallocate(struct file *file, int mode, loff_t offset,
+ 			offset += bytes;
+ 			continue;
+ 		}
+-		qa = gfs2_qadata_get(ip);
+-		if (!qa) {
+-			error = -ENOMEM;
++		error = gfs2_rindex_update(sdp);
++		if (error)
+ 			goto out_unlock;
+-		}
+ 
+ 		error = gfs2_quota_lock_check(ip);
+ 		if (error)
+-			goto out_alloc_put;
++			goto out_unlock;
+ 
+ retry:
+ 		gfs2_write_calc_reserv(ip, bytes, &data_blocks, &ind_blocks);
+@@ -852,7 +845,6 @@ retry:
+ 		offset += max_bytes;
+ 		gfs2_inplace_release(ip);
+ 		gfs2_quota_unlock(ip);
+-		gfs2_qadata_put(ip);
+ 	}
+ 
+ 	if (error == 0)
+@@ -863,8 +855,6 @@ out_trans_fail:
+ 	gfs2_inplace_release(ip);
+ out_qunlock:
+ 	gfs2_quota_unlock(ip);
+-out_alloc_put:
+-	gfs2_qadata_put(ip);
+ out_unlock:
+ 	gfs2_glock_dq(&ip->i_gh);
+ out_uninit:
+diff --git a/fs/gfs2/incore.h b/fs/gfs2/incore.h
+index 67fd6be..5cda51a 100644
+--- a/fs/gfs2/incore.h
++++ b/fs/gfs2/incore.h
+@@ -289,16 +289,14 @@ struct gfs2_glock {
+ 
+ #define GFS2_MIN_LVB_SIZE 32	/* Min size of LVB that gfs2 supports */
+ 
+-struct gfs2_qadata { /* quota allocation data */
+-	/* Quota stuff */
+-	struct gfs2_quota_data *qa_qd[2*MAXQUOTAS];
+-	struct gfs2_holder qa_qd_ghs[2*MAXQUOTAS];
+-	unsigned int qa_qd_num;
+-};
+-
+ struct gfs2_blkreserv {
+ 	u32 rs_requested; /* Filled in by caller of gfs2_inplace_reserve() */
+ 	struct gfs2_holder rs_rgd_gh; /* Filled in by gfs2_inplace_reserve() */
++
++	/* ancillary quota stuff */
++	struct gfs2_quota_data *rs_qa_qd[2 * MAXQUOTAS];
++	struct gfs2_holder rs_qa_qd_ghs[2 * MAXQUOTAS];
++	unsigned int rs_qa_qd_num;
+ };
+ 
+ enum {
+@@ -319,7 +317,6 @@ struct gfs2_inode {
+ 	struct gfs2_glock *i_gl; /* Move into i_gh? */
+ 	struct gfs2_holder i_iopen_gh;
+ 	struct gfs2_holder i_gh; /* for prepare/commit_write only */
+-	struct gfs2_qadata *i_qadata; /* quota allocation data */
+ 	struct gfs2_blkreserv *i_res; /* resource group block reservation */
+ 	struct gfs2_rgrpd *i_rgd;
+ 	u64 i_goal;	/* goal block for allocations */
+diff --git a/fs/gfs2/inode.c b/fs/gfs2/inode.c
+index 2a1b4b5..2b035e0 100644
+--- a/fs/gfs2/inode.c
++++ b/fs/gfs2/inode.c
+@@ -521,12 +521,10 @@ static int make_dinode(struct gfs2_inode *dip, struct gfs2_glock *gl,
+ 	int error;
+ 
+ 	munge_mode_uid_gid(dip, &mode, &uid, &gid);
+-	if (!gfs2_qadata_get(dip))
+-		return -ENOMEM;
+ 
+ 	error = gfs2_quota_lock(dip, uid, gid);
+ 	if (error)
+-		goto out;
++		return error;
+ 
+ 	error = gfs2_quota_check(dip, uid, gid);
+ 	if (error)
+@@ -542,8 +540,6 @@ static int make_dinode(struct gfs2_inode *dip, struct gfs2_glock *gl,
+ 
+ out_quota:
+ 	gfs2_quota_unlock(dip);
+-out:
+-	gfs2_qadata_put(dip);
+ 	return error;
+ }
+ 
+@@ -551,15 +547,10 @@ static int link_dinode(struct gfs2_inode *dip, const struct qstr *name,
+ 		       struct gfs2_inode *ip)
+ {
+ 	struct gfs2_sbd *sdp = GFS2_SB(&dip->i_inode);
+-	struct gfs2_qadata *qa;
+ 	int alloc_required;
+ 	struct buffer_head *dibh;
+ 	int error;
+ 
+-	qa = gfs2_qadata_get(dip);
+-	if (!qa)
+-		return -ENOMEM;
+-
+ 	error = gfs2_quota_lock(dip, NO_QUOTA_CHANGE, NO_QUOTA_CHANGE);
+ 	if (error)
+ 		goto fail;
+@@ -611,7 +602,6 @@ fail_quota_locks:
+ 	gfs2_quota_unlock(dip);
+ 
+ fail:
+-	gfs2_qadata_put(dip);
+ 	return error;
+ }
+ 
+@@ -734,7 +724,6 @@ static int gfs2_create_inode(struct inode *dir, struct dentry *dentry,
+ 	if (gfs2_mb_reserved(dip))
+ 		gfs2_inplace_release(dip);
+ 	gfs2_quota_unlock(dip);
+-	gfs2_qadata_put(dip);
+ 	mark_inode_dirty(inode);
+ 	gfs2_glock_dq_uninit_m(2, ghs);
+ 	d_instantiate(dentry, inode);
+@@ -883,16 +872,9 @@ static int gfs2_link(struct dentry *old_dentry, struct inode *dir,
+ 	error = 0;
+ 
+ 	if (alloc_required) {
+-		struct gfs2_qadata *qa = gfs2_qadata_get(dip);
+-
+-		if (!qa) {
+-			error = -ENOMEM;
+-			goto out_gunlock;
+-		}
+-
+ 		error = gfs2_quota_lock_check(dip);
+ 		if (error)
+-			goto out_alloc;
++			goto out_gunlock;
+ 
+ 		error = gfs2_inplace_reserve(dip, sdp->sd_max_dirres);
+ 		if (error)
+@@ -935,9 +917,6 @@ out_ipres:
+ out_gunlock_q:
+ 	if (alloc_required)
+ 		gfs2_quota_unlock(dip);
+-out_alloc:
+-	if (alloc_required)
+-		gfs2_qadata_put(dip);
+ out_gunlock:
+ 	gfs2_glock_dq(ghs + 1);
+ out_child:
+@@ -1374,16 +1353,9 @@ static int gfs2_rename(struct inode *odir, struct dentry *odentry,
+ 		goto out_gunlock;
+ 
+ 	if (alloc_required) {
+-		struct gfs2_qadata *qa = gfs2_qadata_get(ndip);
+-
+-		if (!qa) {
+-			error = -ENOMEM;
+-			goto out_gunlock;
+-		}
+-
+ 		error = gfs2_quota_lock_check(ndip);
+ 		if (error)
+-			goto out_alloc;
++			goto out_gunlock;
+ 
+ 		error = gfs2_inplace_reserve(ndip, sdp->sd_max_dirres);
+ 		if (error)
+@@ -1444,9 +1416,6 @@ out_ipreserv:
+ out_gunlock_q:
+ 	if (alloc_required)
+ 		gfs2_quota_unlock(ndip);
+-out_alloc:
+-	if (alloc_required)
+-		gfs2_qadata_put(ndip);
+ out_gunlock:
+ 	while (x--) {
+ 		gfs2_glock_dq(ghs + x);
+@@ -1607,12 +1576,9 @@ static int setattr_chown(struct inode *inode, struct iattr *attr)
+ 	if (!(attr->ia_valid & ATTR_GID) || ogid == ngid)
+ 		ogid = ngid = NO_QUOTA_CHANGE;
+ 
+-	if (!gfs2_qadata_get(ip))
+-		return -ENOMEM;
+-
+ 	error = gfs2_quota_lock(ip, nuid, ngid);
+ 	if (error)
+-		goto out_alloc;
++		return error;
+ 
+ 	if (ouid != NO_QUOTA_CHANGE || ogid != NO_QUOTA_CHANGE) {
+ 		error = gfs2_quota_check(ip, nuid, ngid);
+@@ -1638,8 +1604,6 @@ out_end_trans:
+ 	gfs2_trans_end(sdp);
+ out_gunlock_q:
+ 	gfs2_quota_unlock(ip);
+-out_alloc:
+-	gfs2_qadata_put(ip);
+ 	return error;
+ }
+ 
+diff --git a/fs/gfs2/main.c b/fs/gfs2/main.c
+index 6cdb0f2..e04d0e0 100644
+--- a/fs/gfs2/main.c
++++ b/fs/gfs2/main.c
+@@ -43,7 +43,6 @@ static void gfs2_init_inode_once(void *foo)
+ 	inode_init_once(&ip->i_inode);
+ 	init_rwsem(&ip->i_rw_mutex);
+ 	INIT_LIST_HEAD(&ip->i_trunc_list);
+-	ip->i_qadata = NULL;
+ 	ip->i_res = NULL;
+ 	ip->i_hash_cache = NULL;
+ }
+diff --git a/fs/gfs2/quota.c b/fs/gfs2/quota.c
+index 197cc2d..7d1ede7 100644
+--- a/fs/gfs2/quota.c
++++ b/fs/gfs2/quota.c
+@@ -494,11 +494,15 @@ static void qdsb_put(struct gfs2_quota_data *qd)
+ int gfs2_quota_hold(struct gfs2_inode *ip, u32 uid, u32 gid)
+ {
+ 	struct gfs2_sbd *sdp = GFS2_SB(&ip->i_inode);
+-	struct gfs2_qadata *qa = ip->i_qadata;
+-	struct gfs2_quota_data **qd = qa->qa_qd;
++	struct gfs2_quota_data **qd;
+ 	int error;
+ 
+-	if (gfs2_assert_warn(sdp, !qa->qa_qd_num) ||
++	if (ip->i_res == NULL)
++		gfs2_rs_alloc(ip);
++
++	qd = ip->i_res->rs_qa_qd;
++
++	if (gfs2_assert_warn(sdp, !ip->i_res->rs_qa_qd_num) ||
+ 	    gfs2_assert_warn(sdp, !test_bit(GIF_QD_LOCKED, &ip->i_flags)))
+ 		return -EIO;
+ 
+@@ -508,20 +512,20 @@ int gfs2_quota_hold(struct gfs2_inode *ip, u32 uid, u32 gid)
+ 	error = qdsb_get(sdp, QUOTA_USER, ip->i_inode.i_uid, qd);
+ 	if (error)
+ 		goto out;
+-	qa->qa_qd_num++;
++	ip->i_res->rs_qa_qd_num++;
+ 	qd++;
+ 
+ 	error = qdsb_get(sdp, QUOTA_GROUP, ip->i_inode.i_gid, qd);
+ 	if (error)
+ 		goto out;
+-	qa->qa_qd_num++;
++	ip->i_res->rs_qa_qd_num++;
+ 	qd++;
+ 
+ 	if (uid != NO_QUOTA_CHANGE && uid != ip->i_inode.i_uid) {
+ 		error = qdsb_get(sdp, QUOTA_USER, uid, qd);
+ 		if (error)
+ 			goto out;
+-		qa->qa_qd_num++;
++		ip->i_res->rs_qa_qd_num++;
+ 		qd++;
+ 	}
+ 
+@@ -529,7 +533,7 @@ int gfs2_quota_hold(struct gfs2_inode *ip, u32 uid, u32 gid)
+ 		error = qdsb_get(sdp, QUOTA_GROUP, gid, qd);
+ 		if (error)
+ 			goto out;
+-		qa->qa_qd_num++;
++		ip->i_res->rs_qa_qd_num++;
+ 		qd++;
+ 	}
+ 
+@@ -542,16 +546,17 @@ out:
+ void gfs2_quota_unhold(struct gfs2_inode *ip)
+ {
+ 	struct gfs2_sbd *sdp = GFS2_SB(&ip->i_inode);
+-	struct gfs2_qadata *qa = ip->i_qadata;
+ 	unsigned int x;
+ 
++	if (ip->i_res == NULL)
++		return;
+ 	gfs2_assert_warn(sdp, !test_bit(GIF_QD_LOCKED, &ip->i_flags));
+ 
+-	for (x = 0; x < qa->qa_qd_num; x++) {
+-		qdsb_put(qa->qa_qd[x]);
+-		qa->qa_qd[x] = NULL;
++	for (x = 0; x < ip->i_res->rs_qa_qd_num; x++) {
++		qdsb_put(ip->i_res->rs_qa_qd[x]);
++		ip->i_res->rs_qa_qd[x] = NULL;
+ 	}
+-	qa->qa_qd_num = 0;
++	ip->i_res->rs_qa_qd_num = 0;
+ }
+ 
+ static int sort_qd(const void *a, const void *b)
+@@ -919,7 +924,6 @@ fail:
+ int gfs2_quota_lock(struct gfs2_inode *ip, u32 uid, u32 gid)
+ {
+ 	struct gfs2_sbd *sdp = GFS2_SB(&ip->i_inode);
+-	struct gfs2_qadata *qa = ip->i_qadata;
+ 	struct gfs2_quota_data *qd;
+ 	unsigned int x;
+ 	int error = 0;
+@@ -932,15 +936,15 @@ int gfs2_quota_lock(struct gfs2_inode *ip, u32 uid, u32 gid)
+ 	    sdp->sd_args.ar_quota != GFS2_QUOTA_ON)
+ 		return 0;
+ 
+-	sort(qa->qa_qd, qa->qa_qd_num, sizeof(struct gfs2_quota_data *),
+-	     sort_qd, NULL);
++	sort(ip->i_res->rs_qa_qd, ip->i_res->rs_qa_qd_num,
++	     sizeof(struct gfs2_quota_data *), sort_qd, NULL);
+ 
+-	for (x = 0; x < qa->qa_qd_num; x++) {
++	for (x = 0; x < ip->i_res->rs_qa_qd_num; x++) {
+ 		int force = NO_FORCE;
+-		qd = qa->qa_qd[x];
++		qd = ip->i_res->rs_qa_qd[x];
+ 		if (test_and_clear_bit(QDF_REFRESH, &qd->qd_flags))
+ 			force = FORCE;
+-		error = do_glock(qd, force, &qa->qa_qd_ghs[x]);
++		error = do_glock(qd, force, &ip->i_res->rs_qa_qd_ghs[x]);
+ 		if (error)
+ 			break;
+ 	}
+@@ -949,7 +953,7 @@ int gfs2_quota_lock(struct gfs2_inode *ip, u32 uid, u32 gid)
+ 		set_bit(GIF_QD_LOCKED, &ip->i_flags);
+ 	else {
+ 		while (x--)
+-			gfs2_glock_dq_uninit(&qa->qa_qd_ghs[x]);
++			gfs2_glock_dq_uninit(&ip->i_res->rs_qa_qd_ghs[x]);
+ 		gfs2_quota_unhold(ip);
+ 	}
+ 
+@@ -994,7 +998,6 @@ static int need_sync(struct gfs2_quota_data *qd)
+ 
+ void gfs2_quota_unlock(struct gfs2_inode *ip)
+ {
+-	struct gfs2_qadata *qa = ip->i_qadata;
+ 	struct gfs2_quota_data *qda[4];
+ 	unsigned int count = 0;
+ 	unsigned int x;
+@@ -1002,14 +1005,14 @@ void gfs2_quota_unlock(struct gfs2_inode *ip)
+ 	if (!test_and_clear_bit(GIF_QD_LOCKED, &ip->i_flags))
+ 		goto out;
+ 
+-	for (x = 0; x < qa->qa_qd_num; x++) {
++	for (x = 0; x < ip->i_res->rs_qa_qd_num; x++) {
+ 		struct gfs2_quota_data *qd;
+ 		int sync;
+ 
+-		qd = qa->qa_qd[x];
++		qd = ip->i_res->rs_qa_qd[x];
+ 		sync = need_sync(qd);
+ 
+-		gfs2_glock_dq_uninit(&qa->qa_qd_ghs[x]);
++		gfs2_glock_dq_uninit(&ip->i_res->rs_qa_qd_ghs[x]);
+ 
+ 		if (sync && qd_trylock(qd))
+ 			qda[count++] = qd;
+@@ -1042,7 +1045,6 @@ static int print_message(struct gfs2_quota_data *qd, char *type)
+ int gfs2_quota_check(struct gfs2_inode *ip, u32 uid, u32 gid)
+ {
+ 	struct gfs2_sbd *sdp = GFS2_SB(&ip->i_inode);
+-	struct gfs2_qadata *qa = ip->i_qadata;
+ 	struct gfs2_quota_data *qd;
+ 	s64 value;
+ 	unsigned int x;
+@@ -1054,8 +1056,8 @@ int gfs2_quota_check(struct gfs2_inode *ip, u32 uid, u32 gid)
+         if (sdp->sd_args.ar_quota != GFS2_QUOTA_ON)
+                 return 0;
+ 
+-	for (x = 0; x < qa->qa_qd_num; x++) {
+-		qd = qa->qa_qd[x];
++	for (x = 0; x < ip->i_res->rs_qa_qd_num; x++) {
++		qd = ip->i_res->rs_qa_qd[x];
+ 
+ 		if (!((qd->qd_id == uid && test_bit(QDF_USER, &qd->qd_flags)) ||
+ 		      (qd->qd_id == gid && !test_bit(QDF_USER, &qd->qd_flags))))
+@@ -1093,7 +1095,6 @@ int gfs2_quota_check(struct gfs2_inode *ip, u32 uid, u32 gid)
+ void gfs2_quota_change(struct gfs2_inode *ip, s64 change,
+ 		       u32 uid, u32 gid)
+ {
+-	struct gfs2_qadata *qa = ip->i_qadata;
+ 	struct gfs2_quota_data *qd;
+ 	unsigned int x;
+ 
+@@ -1102,8 +1103,8 @@ void gfs2_quota_change(struct gfs2_inode *ip, s64 change,
+ 	if (ip->i_diskflags & GFS2_DIF_SYSTEM)
+ 		return;
+ 
+-	for (x = 0; x < qa->qa_qd_num; x++) {
+-		qd = qa->qa_qd[x];
++	for (x = 0; x < ip->i_res->rs_qa_qd_num; x++) {
++		qd = ip->i_res->rs_qa_qd[x];
+ 
+ 		if ((qd->qd_id == uid && test_bit(QDF_USER, &qd->qd_flags)) ||
+ 		    (qd->qd_id == gid && !test_bit(QDF_USER, &qd->qd_flags))) {
+diff --git a/fs/gfs2/rgrp.c b/fs/gfs2/rgrp.c
+index e944fef..9eca6a9 100644
+--- a/fs/gfs2/rgrp.c
++++ b/fs/gfs2/rgrp.c
+@@ -1007,25 +1007,6 @@ out:
+ }
+ 
+ /**
+- * gfs2_qadata_get - get the struct gfs2_qadata structure for an inode
+- * @ip: the incore GFS2 inode structure
+- *
+- * Returns: the struct gfs2_qadata
+- */
+-
+-struct gfs2_qadata *gfs2_qadata_get(struct gfs2_inode *ip)
+-{
+-	struct gfs2_sbd *sdp = GFS2_SB(&ip->i_inode);
+-	int error;
+-	BUG_ON(ip->i_qadata != NULL);
+-	ip->i_qadata = kzalloc(sizeof(struct gfs2_qadata), GFP_NOFS);
+-	error = gfs2_rindex_update(sdp);
+-	if (error)
+-		fs_warn(sdp, "rindex update returns %d\n", error);
+-	return ip->i_qadata;
+-}
+-
+-/**
+  * try_rgrp_fit - See if a given reservation will fit in a given RG
+  * @rgd: the RG data
+  * @ip: the inode
+diff --git a/fs/gfs2/rgrp.h b/fs/gfs2/rgrp.h
+index d9eda5f..5d8314d 100644
+--- a/fs/gfs2/rgrp.h
++++ b/fs/gfs2/rgrp.h
+@@ -29,14 +29,6 @@ extern void gfs2_free_clones(struct gfs2_rgrpd *rgd);
+ extern int gfs2_rgrp_go_lock(struct gfs2_holder *gh);
+ extern void gfs2_rgrp_go_unlock(struct gfs2_holder *gh);
+ 
+-extern struct gfs2_qadata *gfs2_qadata_get(struct gfs2_inode *ip);
+-static inline void gfs2_qadata_put(struct gfs2_inode *ip)
+-{
+-	BUG_ON(ip->i_qadata == NULL);
+-	kfree(ip->i_qadata);
+-	ip->i_qadata = NULL;
+-}
+-
+ extern int gfs2_inplace_reserve(struct gfs2_inode *ip, u32 requested);
+ extern void gfs2_inplace_release(struct gfs2_inode *ip);
+ 
+diff --git a/fs/gfs2/super.c b/fs/gfs2/super.c
+index 65578df..81fc762 100644
+--- a/fs/gfs2/super.c
++++ b/fs/gfs2/super.c
+@@ -1399,7 +1399,6 @@ static void gfs2_final_release_pages(struct gfs2_inode *ip)
+ static int gfs2_dinode_dealloc(struct gfs2_inode *ip)
+ {
+ 	struct gfs2_sbd *sdp = GFS2_SB(&ip->i_inode);
+-	struct gfs2_qadata *qa;
+ 	struct gfs2_rgrpd *rgd;
+ 	struct gfs2_holder gh;
+ 	int error;
+@@ -1409,13 +1408,9 @@ static int gfs2_dinode_dealloc(struct gfs2_inode *ip)
+ 		return -EIO;
+ 	}
+ 
+-	qa = gfs2_qadata_get(ip);
+-	if (!qa)
+-		return -ENOMEM;
+-
+ 	error = gfs2_quota_hold(ip, NO_QUOTA_CHANGE, NO_QUOTA_CHANGE);
+ 	if (error)
+-		goto out;
++		return error;
+ 
+ 	rgd = gfs2_blk2rgrpd(sdp, ip->i_no_addr, 1);
+ 	if (!rgd) {
+@@ -1443,8 +1438,6 @@ out_rg_gunlock:
+ 	gfs2_glock_dq_uninit(&gh);
+ out_qs:
+ 	gfs2_quota_unhold(ip);
+-out:
+-	gfs2_qadata_put(ip);
+ 	return error;
+ }
+ 
+diff --git a/fs/gfs2/xattr.c b/fs/gfs2/xattr.c
+index 927f4df..523c0de 100644
+--- a/fs/gfs2/xattr.c
++++ b/fs/gfs2/xattr.c
+@@ -325,13 +325,8 @@ static int ea_remove_unstuffed(struct gfs2_inode *ip, struct buffer_head *bh,
+ 			       struct gfs2_ea_header *ea,
+ 			       struct gfs2_ea_header *prev, int leave)
+ {
+-	struct gfs2_qadata *qa;
+ 	int error;
+ 
+-	qa = gfs2_qadata_get(ip);
+-	if (!qa)
+-		return -ENOMEM;
+-
+ 	error = gfs2_quota_hold(ip, NO_QUOTA_CHANGE, NO_QUOTA_CHANGE);
+ 	if (error)
+ 		goto out_alloc;
+@@ -340,7 +335,6 @@ static int ea_remove_unstuffed(struct gfs2_inode *ip, struct buffer_head *bh,
+ 
+ 	gfs2_quota_unhold(ip);
+ out_alloc:
+-	gfs2_qadata_put(ip);
+ 	return error;
+ }
+ 
+@@ -713,17 +707,12 @@ static int ea_alloc_skeleton(struct gfs2_inode *ip, struct gfs2_ea_request *er,
+ 			     unsigned int blks,
+ 			     ea_skeleton_call_t skeleton_call, void *private)
+ {
+-	struct gfs2_qadata *qa;
+ 	struct buffer_head *dibh;
+ 	int error;
+ 
+-	qa = gfs2_qadata_get(ip);
+-	if (!qa)
+-		return -ENOMEM;
+-
+ 	error = gfs2_quota_lock_check(ip);
+ 	if (error)
+-		goto out;
++		return error;
+ 
+ 	error = gfs2_inplace_reserve(ip, blks);
+ 	if (error)
+@@ -753,8 +742,6 @@ out_ipres:
+ 	gfs2_inplace_release(ip);
+ out_gunlock_q:
+ 	gfs2_quota_unlock(ip);
+-out:
+-	gfs2_qadata_put(ip);
+ 	return error;
+ }
+ 
+@@ -1494,16 +1481,11 @@ out_gunlock:
+ 
+ int gfs2_ea_dealloc(struct gfs2_inode *ip)
+ {
+-	struct gfs2_qadata *qa;
+ 	int error;
+ 
+-	qa = gfs2_qadata_get(ip);
+-	if (!qa)
+-		return -ENOMEM;
+-
+ 	error = gfs2_quota_hold(ip, NO_QUOTA_CHANGE, NO_QUOTA_CHANGE);
+ 	if (error)
+-		goto out_alloc;
++		return error;
+ 
+ 	error = ea_foreach(ip, ea_dealloc_unstuffed, NULL);
+ 	if (error)
+@@ -1519,8 +1501,6 @@ int gfs2_ea_dealloc(struct gfs2_inode *ip)
+ 
+ out_quota:
+ 	gfs2_quota_unhold(ip);
+-out_alloc:
+-	gfs2_qadata_put(ip);
+ 	return error;
+ }
+ 
+-- 
+1.7.4
+
+

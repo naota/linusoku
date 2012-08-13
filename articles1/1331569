@@ -1,0 +1,184 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 015/108] NFSv4: Further reduce the footprint of the idmapper
+Date: Mon, 23 Jul 2012 02:07:06 +0100
+Lines: 130
+Approved: news@gmane.org
+Message-ID: <20120723010653.829997005@decadent.org.uk>
+References: <20120723010651.408577075@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343009327 21451 80.91.229.3 (23 Jul 2012 02:08:47 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 02:08:47 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	Trond Myklebust <Trond.Myklebust@netapp.com>,
+	Jeff Layton <jlayton@redhat.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 04:08:46 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1St84i-00040D-Dn
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 04:08:44 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753633Ab2GWCIh (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 22:08:37 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:53990 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1752897Ab2GWBmS (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 21:42:18 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7eo-0008Rs-IB; Mon, 23 Jul 2012 02:41:58 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7eW-00089D-AA; Mon, 23 Jul 2012 02:41:40 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120723010651.408577075@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331569 gmane.linux.kernel.stable:28715
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331569>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Trond Myklebust <Trond.Myklebust@netapp.com>
+
+commit 685f50f9188ac1e8244d0340a9d6ea36b6136cec upstream.
+
+Don't allocate the legacy idmapper tables until we actually need
+them.
+
+Signed-off-by: Trond Myklebust <Trond.Myklebust@netapp.com>
+Reviewed-by: Jeff Layton <jlayton@redhat.com>
+[bwh: Backported to 3.2: adjust context in nfs_idmap_delete()]
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ fs/nfs/idmap.c |   42 ++++++++++++++++++++++++++++++++++++------
+ 1 file changed, 36 insertions(+), 6 deletions(-)
+
+--- a/fs/nfs/idmap.c
++++ b/fs/nfs/idmap.c
+@@ -323,7 +323,7 @@
+ 
+ struct idmap_hashtable {
+ 	__u8			h_type;
+-	struct idmap_hashent	h_entries[IDMAP_HASH_SZ];
++	struct idmap_hashent	*h_entries;
+ };
+ 
+ struct idmap {
+@@ -378,20 +378,39 @@
+ 	return 0;
+ }
+ 
++static void
++idmap_alloc_hashtable(struct idmap_hashtable *h)
++{
++	if (h->h_entries != NULL)
++		return;
++	h->h_entries = kcalloc(IDMAP_HASH_SZ,
++			sizeof(*h->h_entries),
++			GFP_KERNEL);
++}
++
++static void
++idmap_free_hashtable(struct idmap_hashtable *h)
++{
++	int i;
++
++	if (h->h_entries == NULL)
++		return;
++	for (i = 0; i < IDMAP_HASH_SZ; i++)
++		kfree(h->h_entries[i].ih_name);
++	kfree(h->h_entries);
++}
++
+ void
+ nfs_idmap_delete(struct nfs_client *clp)
+ {
+ 	struct idmap *idmap = clp->cl_idmap;
+-	int i;
+ 
+ 	if (!idmap)
+ 		return;
+ 	rpc_unlink(idmap->idmap_dentry);
+ 	clp->cl_idmap = NULL;
+-	for (i = 0; i < ARRAY_SIZE(idmap->idmap_user_hash.h_entries); i++)
+-		kfree(idmap->idmap_user_hash.h_entries[i].ih_name);
+-	for (i = 0; i < ARRAY_SIZE(idmap->idmap_group_hash.h_entries); i++)
+-		kfree(idmap->idmap_group_hash.h_entries[i].ih_name);
++	idmap_free_hashtable(&idmap->idmap_user_hash);
++	idmap_free_hashtable(&idmap->idmap_group_hash);
+ 	kfree(idmap);
+ }
+ 
+@@ -401,6 +420,8 @@
+ static inline struct idmap_hashent *
+ idmap_name_hash(struct idmap_hashtable* h, const char *name, size_t len)
+ {
++	if (h->h_entries == NULL)
++		return NULL;
+ 	return &h->h_entries[fnvhash32(name, len) % IDMAP_HASH_SZ];
+ }
+ 
+@@ -409,6 +430,8 @@
+ {
+ 	struct idmap_hashent *he = idmap_name_hash(h, name, len);
+ 
++	if (he == NULL)
++		return NULL;
+ 	if (he->ih_namelen != len || memcmp(he->ih_name, name, len) != 0)
+ 		return NULL;
+ 	if (time_after(jiffies, he->ih_expires))
+@@ -419,6 +442,8 @@
+ static inline struct idmap_hashent *
+ idmap_id_hash(struct idmap_hashtable* h, __u32 id)
+ {
++	if (h->h_entries == NULL)
++		return NULL;
+ 	return &h->h_entries[fnvhash32(&id, sizeof(id)) % IDMAP_HASH_SZ];
+ }
+ 
+@@ -426,6 +451,9 @@
+ idmap_lookup_id(struct idmap_hashtable *h, __u32 id)
+ {
+ 	struct idmap_hashent *he = idmap_id_hash(h, id);
++
++	if (he == NULL)
++		return NULL;
+ 	if (he->ih_id != id || he->ih_namelen == 0)
+ 		return NULL;
+ 	if (time_after(jiffies, he->ih_expires))
+@@ -441,12 +469,14 @@
+ static inline struct idmap_hashent *
+ idmap_alloc_name(struct idmap_hashtable *h, char *name, size_t len)
+ {
++	idmap_alloc_hashtable(h);
+ 	return idmap_name_hash(h, name, len);
+ }
+ 
+ static inline struct idmap_hashent *
+ idmap_alloc_id(struct idmap_hashtable *h, __u32 id)
+ {
++	idmap_alloc_hashtable(h);
+ 	return idmap_id_hash(h, id);
+ }
+ 
+
+
+

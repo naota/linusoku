@@ -1,0 +1,120 @@
+Path: news.gmane.org!not-for-mail
+From: Arnaldo Carvalho de Melo <acme@infradead.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 02/11] perf tools: Fix lib/traceevent build dir with OUTPUT variable set
+Date: Wed,  8 Aug 2012 14:13:39 -0300
+Lines: 70
+Approved: news@gmane.org
+Message-ID: <1344446028-21381-3-git-send-email-acme@infradead.org>
+References: <1344446028-21381-1-git-send-email-acme@infradead.org>
+NNTP-Posting-Host: plane.gmane.org
+Content-Type: text/plain; charset="UTF-8"
+X-Trace: dough.gmane.org 1344446050 24913 80.91.229.3 (8 Aug 2012 17:14:10 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 17:14:10 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org,
+	Robert Richter <robert.richter@amd.com>,
+	Arnaldo Carvalho de Melo <acme@redhat.com>
+To: Ingo Molnar <mingo@kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 19:14:10 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sz9ph-0005sL-IB
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 19:14:09 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030624Ab2HHROE (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 13:14:04 -0400
+Original-Received: from casper.infradead.org ([85.118.1.10]:45860 "EHLO
+	casper.infradead.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030592Ab2HHROA (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 13:14:00 -0400
+Original-Received: from [187.65.5.202] (helo=sandy.ghostprotocols.net)
+	by casper.infradead.org with esmtpsa (Exim 4.76 #1 (Red Hat Linux))
+	id 1Sz9pT-0001hR-Nq; Wed, 08 Aug 2012 17:13:55 +0000
+Original-Received: by sandy.ghostprotocols.net (Postfix, from userid 500)
+	id D1D38260306; Wed,  8 Aug 2012 14:13:50 -0300 (BRT)
+X-Mailer: git-send-email 1.7.9.2.358.g22243
+In-Reply-To: <1344446028-21381-1-git-send-email-acme@infradead.org>
+X-SRS-Rewrite: SMTP reverse-path rewritten from <acme@infradead.org> by casper.infradead.org
+	See http://www.infradead.org/rpr.html
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340181
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340181>
+
+From: Robert Richter <robert.richter@amd.com>
+
+With the OUTPUT variable set the libtraceevent.a file is wrongly built
+in the source directory:
+
+ + make -d OUTPUT=/.../.build/perf-user/ DESTDIR=/.../.install/perf-user/
+ ...
+     Considering target file `../lib/traceevent//libtraceevent.a'.
+      File `../lib/traceevent//libtraceevent.a' does not exist.
+      Finished prerequisites of target file `../lib/traceevent//libtraceevent.a'.
+     Must remake target `../lib/traceevent//libtraceevent.a'.
+ Invoking recipe from Makefile:837 to update target `../lib/traceevent//libtraceevent.a'.
+ Putting child 0x703850 (../lib/traceevent//libtraceevent.a) PID 8365 on the chain.
+ Live child 0x703850 (../lib/traceevent//libtraceevent.a) PID 8365
+     SUBDIR ../lib/traceevent/
+
+ $ git clean -nxd
+ Would remove tools/lib/traceevent/.event-parse.d
+ Would remove tools/lib/traceevent/.parse-filter.d
+ Would remove tools/lib/traceevent/.parse-utils.d
+ Would remove tools/lib/traceevent/.trace-seq.d
+ Would remove tools/lib/traceevent/event-parse.o
+ Would remove tools/lib/traceevent/libtraceevent.a
+ Would remove tools/lib/traceevent/parse-filter.o
+ Would remove tools/lib/traceevent/parse-utils.o
+ Would remove tools/lib/traceevent/trace-seq.o
+
+This patch fixes this.
+
+Note: Though this should already work with O=$outputdir we better use
+the OUTPUT variable directly.
+
+Signed-off-by: Robert Richter <robert.richter@amd.com>
+Cc: Ingo Molnar <mingo@kernel.org>
+Link: http://lkml.kernel.org/r/1344361396-7237-3-git-send-email-robert.richter@amd.com
+Signed-off-by: Arnaldo Carvalho de Melo <acme@redhat.com>
+---
+ tools/perf/Makefile |    8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/tools/perf/Makefile b/tools/perf/Makefile
+index 35655c3..2d4bf6e 100644
+--- a/tools/perf/Makefile
++++ b/tools/perf/Makefile
+@@ -186,10 +186,10 @@ SCRIPTS = $(patsubst %.sh,%,$(SCRIPT_SH))
+ 
+ TRACE_EVENT_DIR = ../lib/traceevent/
+ 
+-ifeq ("$(origin O)", "command line")
+-	TE_PATH=$(OUTPUT)/
++ifneq ($(OUTPUT),)
++	TE_PATH=$(OUTPUT)
+ else
+-	TE_PATH=$(TRACE_EVENT_DIR)/
++	TE_PATH=$(TRACE_EVENT_DIR)
+ endif
+ 
+ LIBTRACEEVENT = $(TE_PATH)libtraceevent.a
+@@ -842,7 +842,7 @@ $(LIB_FILE): $(LIB_OBJS)
+ 
+ # libtraceevent.a
+ $(LIBTRACEEVENT):
+-	$(QUIET_SUBDIR0)$(TRACE_EVENT_DIR) $(QUIET_SUBDIR1) $(COMMAND_O) libtraceevent.a
++	$(QUIET_SUBDIR0)$(TRACE_EVENT_DIR) $(QUIET_SUBDIR1) O=$(OUTPUT) libtraceevent.a
+ 
+ help:
+ 	@echo 'Perf make targets:'
+-- 
+1.7.9.2.358.g22243
+

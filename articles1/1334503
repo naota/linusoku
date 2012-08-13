@@ -1,0 +1,91 @@
+Path: news.gmane.org!not-for-mail
+From: Matthew Garrett <mjg@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] x86, EFI: Calculate the EFI framebuffer size instead of trusting the firmware
+Date: Fri, 27 Jul 2012 17:20:49 -0400
+Lines: 36
+Approved: news@gmane.org
+Message-ID: <1343424049-7460-1-git-send-email-mjg@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343424089 23930 80.91.229.3 (27 Jul 2012 21:21:29 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 21:21:29 +0000 (UTC)
+Cc: linux-efi@vger.kernel.org, linux-kernel@vger.kernel.org,
+	x86@kernel.org, pjones@redhat.com, Matthew Garrett <mjg@redhat.com>
+To: matt.fleming@intel.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 23:21:29 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuryR-0005NU-4B
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 23:21:27 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752177Ab2G0VVH (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 17:21:07 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:38201 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751197Ab2G0VVE (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 17:21:04 -0400
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6RLL2OX017361
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Fri, 27 Jul 2012 17:21:02 -0400
+Original-Received: from cavan.codon.org.uk (ovpn-113-108.phx2.redhat.com [10.3.113.108])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6RLL0QF014457
+	(version=TLSv1/SSLv3 cipher=AES256-SHA bits=256 verify=NO);
+	Fri, 27 Jul 2012 17:21:01 -0400
+Original-Received: from 209-6-41-104.c3-0.smr-ubr1.sbo-smr.ma.cable.rcn.com ([209.6.41.104] helo=localhost.localdomain)
+	by cavan.codon.org.uk with esmtpsa (TLS1.0:DHE_RSA_AES_256_CBC_SHA1:32)
+	(Exim 4.72)
+	(envelope-from <mjg@redhat.com>)
+	id 1Surxz-0006k2-2D; Fri, 27 Jul 2012 22:20:59 +0100
+X-SA-Do-Not-Run: Yes
+X-SA-Exim-Connect-IP: 209.6.41.104
+X-SA-Exim-Mail-From: mjg@redhat.com
+X-SA-Exim-Scanned: No (on cavan.codon.org.uk); SAEximRunCond expanded to false
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334503
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334503>
+
+Seth Forshee reported that his system was reporting that the EFI framebuffer
+stretched from 0x90010000-0xb0010000 despite the GPU's BAR only covering
+0x90000000-0x9ffffff. It's safer to calculate this value from the pixel
+stride and screen height (values we already depend on) rather than face
+potential problems with resource allocation later on.
+
+Signed-off-by: Matthew Garrett <mjg@redhat.com>
+Tested-by: Seth Forshee <seth.forshee@canonical.com>
+---
+ arch/x86/boot/compressed/eboot.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/boot/compressed/eboot.c b/arch/x86/boot/compressed/eboot.c
+index b329312..fc7da79 100644
+--- a/arch/x86/boot/compressed/eboot.c
++++ b/arch/x86/boot/compressed/eboot.c
+@@ -447,7 +447,6 @@ static efi_status_t setup_gop(struct screen_info *si, efi_guid_t *proto,
+ 	si->lfb_width = width;
+ 	si->lfb_height = height;
+ 	si->lfb_base = fb_base;
+-	si->lfb_size = fb_size;
+ 	si->pages = 1;
+ 
+ 	if (pixel_format == PIXEL_RGB_RESERVED_8BIT_PER_COLOR) {
+@@ -495,6 +494,8 @@ static efi_status_t setup_gop(struct screen_info *si, efi_guid_t *proto,
+ 		si->rsvd_pos = 0;
+ 	}
+ 
++	si->lfb_size = si->lfb_linelength * si->lfb_height;
++
+ 	si->capabilities |= VIDEO_CAPABILITY_SKIP_QUIRKS;
+ 
+ free_handle:
+-- 
+1.7.10.4
+

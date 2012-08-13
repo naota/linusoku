@@ -1,0 +1,137 @@
+Path: news.gmane.org!not-for-mail
+From: Nicolas Pitre <nico@fluxnic.net>
+Newsgroups: gmane.linux.ports.arm.kernel,gmane.linux.kernel
+Subject: Re: RFC: mutex: hung tasks on SMP platforms with
+ asm-generic/mutex-xchg.h
+Date: Tue, 07 Aug 2012 13:14:36 -0400 (EDT)
+Lines: 68
+Approved: news@gmane.org
+Message-ID: <alpine.LFD.2.02.1208071259270.5231@xanadu.home>
+References: <20120807115647.GA12828@mudshark.cambridge.arm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344359754 7509 80.91.229.3 (7 Aug 2012 17:15:54 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 17:15:54 +0000 (UTC)
+Cc: Chris Mason <chris.mason@fusionio.com>,
+ Peter Zijlstra <a.p.zijlstra@chello.nl>, Arnd Bergmann <arnd@arndb.de>,
+ linux-kernel@vger.kernel.org, Ingo Molnar <mingo@elte.hu>,
+ Thomas Gleixner <tglx@linutronix.de>, linux-arm-kernel@lists.infradead.org
+To: Will Deacon <will.deacon@arm.com>
+Original-X-From: linux-arm-kernel-bounces+linux-arm-kernel=m.gmane.org@lists.infradead.org Tue Aug 07 19:15:53 2012
+Return-path: <linux-arm-kernel-bounces+linux-arm-kernel=m.gmane.org@lists.infradead.org>
+Envelope-to: linux-arm-kernel@m.gmane.org
+Original-Received: from merlin.infradead.org ([205.233.59.134])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-arm-kernel-bounces+linux-arm-kernel=m.gmane.org@lists.infradead.org>)
+	id 1SynNk-0000Fd-1m
+	for linux-arm-kernel@m.gmane.org; Tue, 07 Aug 2012 19:15:48 +0200
+Original-Received: from localhost ([::1] helo=merlin.infradead.org)
+	by merlin.infradead.org with esmtp (Exim 4.76 #1 (Red Hat Linux))
+	id 1SynMq-0006JI-8B; Tue, 07 Aug 2012 17:14:52 +0000
+Original-Received: from relais.videotron.ca ([24.201.245.36])
+ by merlin.infradead.org with esmtp (Exim 4.76 #1 (Red Hat Linux))
+ id 1SynMn-0006J4-IA
+ for linux-arm-kernel@lists.infradead.org; Tue, 07 Aug 2012 17:14:50 +0000
+Original-Received: from xanadu.home ([24.201.196.149]) by VL-VM-MR003.ip.videotron.ca
+ (Oracle Communications Messaging Exchange Server 7u4-22.01 64bit (built Apr 21
+ 2011)) with ESMTP id <0M8E00I48AKC75D0@VL-VM-MR003.ip.videotron.ca> for
+ linux-arm-kernel@lists.infradead.org; Tue, 07 Aug 2012 13:14:36 -0400 (EDT)
+In-reply-to: <20120807115647.GA12828@mudshark.cambridge.arm.com>
+User-Agent: Alpine 2.02 (LFD 1266 2009-07-14)
+X-Spam-Note: CRM114 invocation failed
+X-Spam-Score: -1.9 (-)
+X-Spam-Report: SpamAssassin version 3.3.2 on merlin.infradead.org summary:
+ Content analysis details:   (-1.9 points)
+ pts rule name              description
+ ---- ---------------------- --------------------------------------------------
+ -0.0 RCVD_IN_DNSWL_NONE     RBL: Sender listed at http://www.dnswl.org/, no
+ trust [24.201.245.36 listed in list.dnswl.org]
+ -1.9 BAYES_00               BODY: Bayes spam probability is 0 to 1%
+ [score: 0.0000]
+X-BeenThere: linux-arm-kernel@lists.infradead.org
+X-Mailman-Version: 2.1.14
+Precedence: list
+List-Id: <linux-arm-kernel.lists.infradead.org>
+List-Unsubscribe: <http://lists.infradead.org/mailman/options/linux-arm-kernel>, 
+ <mailto:linux-arm-kernel-request@lists.infradead.org?subject=unsubscribe>
+List-Archive: <http://lists.infradead.org/pipermail/linux-arm-kernel/>
+List-Post: <mailto:linux-arm-kernel@lists.infradead.org>
+List-Help: <mailto:linux-arm-kernel-request@lists.infradead.org?subject=help>
+List-Subscribe: <http://lists.infradead.org/mailman/listinfo/linux-arm-kernel>, 
+ <mailto:linux-arm-kernel-request@lists.infradead.org?subject=subscribe>
+Original-Sender: linux-arm-kernel-bounces@lists.infradead.org
+Errors-To: linux-arm-kernel-bounces+linux-arm-kernel=m.gmane.org@lists.infradead.org
+Xref: news.gmane.org gmane.linux.ports.arm.kernel:180713 gmane.linux.kernel:1339192
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339192>
+
+On Tue, 7 Aug 2012, Will Deacon wrote:
+
+> Hello,
+> 
+> ARM recently moved to asm-generic/mutex-xchg.h for its mutex implementation
+> after our previous implementation was found to be missing some crucial
+> memory barriers. However, I'm seeing some problems running hackbench on
+> SMP platforms due to the way in which the MUTEX_SPIN_ON_OWNER code operates.
+> 
+> The symptoms are that a bunch of hackbench tasks are left waiting on an
+> unlocked mutex and therefore never get woken up to claim it. I think this
+> boils down to the following sequence:
+> 
+> 
+>         Task A        Task B        Task C        Lock value
+> 0                                                     1
+> 1       lock()                                        0
+> 2                     lock()                          0
+> 3                     spin(A)                         0
+> 4       unlock()                                      1
+> 5                                   lock()            0
+> 6                     cmpxchg(1,0)                    0
+> 7                     contended()                    -1
+> 8       lock()                                        0
+> 9       spin(C)                                       0
+> 10                                  unlock()          1
+> 11      cmpxchg(1,0)                                  0
+> 12      unlock()                                      1
+> 
+> 
+> At this point, the lock is unlocked, but Task B is in an uninterruptible
+> sleep with nobody to wake it up.
+
+I fail to see how the lock value would go from -1 to 0 on line 8.  How 
+does that happen?
+> The following patch fixes the problem by ensuring we put the lock into
+> the contended state if we acquire it from the spin loop on the slowpath
+> but I'd like to be sure that this won't cause problems with other mutex
+> implementations:
+> 
+> 
+> diff --git a/kernel/mutex.c b/kernel/mutex.c
+> index a307cc9..27b7887 100644
+> --- a/kernel/mutex.c
+> +++ b/kernel/mutex.c
+> @@ -170,7 +170,7 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
+>                 if (owner && !mutex_spin_on_owner(lock, owner))
+>                         break;
+>  
+> -               if (atomic_cmpxchg(&lock->count, 1, 0) == 1) {
+> +               if (atomic_cmpxchg(&lock->count, 1, -1) == 1) {
+>                         lock_acquired(&lock->dep_map, ip);
+>                         mutex_set_owner(lock);
+>                         preempt_enable();
+
+This would force invokation of the slow path on unlock even if in most 
+cases the lock is unlikely to be contended.  The really slow path does 
+check if the waiting list is empty and sets the count to 0 before 
+exiting to avoid that.  I don't see how this could be done safely in the 
+spin_on_owner loop code as the lock->wait_lock isn't held (which appears 
+to be the point of this code in the first place).
+
+Yet, if the lock is heavily contended with a waiting task, the count 
+should never get back to 1 and the cmpxchg on line 11 would not set the 
+count to 0.  Hence my interrogation about line 8 above.
+
+
+Nicolas

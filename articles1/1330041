@@ -1,0 +1,150 @@
+Path: news.gmane.org!not-for-mail
+From: H Hartley Sweeten <hartleys@visionengravers.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 14/90] staging: comedi: adv_pci1723: cleanup "find pci device" code
+Date: Wed, 18 Jul 2012 18:30:15 -0700
+Lines: 96
+Approved: news@gmane.org
+Message-ID: <201207181830.15424.hartleys@visionengravers.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342661443 18855 80.91.229.3 (19 Jul 2012 01:30:43 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 01:30:43 +0000 (UTC)
+Cc: <devel@driverdev.osuosl.org>, <abbotti@mev.co.uk>,
+	<gregkh@linuxfoundation.org>
+To: Linux Kernel <linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 03:30:42 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SrfZb-0003iu-TE
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 03:30:36 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754877Ab2GSBa1 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 18 Jul 2012 21:30:27 -0400
+Original-Received: from mail131.messagelabs.com ([216.82.242.99]:26667 "EHLO
+	mail131.messagelabs.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752007Ab2GSBaX (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 18 Jul 2012 21:30:23 -0400
+X-Env-Sender: hartleys@visionengravers.com
+X-Msg-Ref: server-8.tower-131.messagelabs.com!1342661421!7942780!2
+X-Originating-IP: [216.166.12.180]
+X-StarScan-Version: 6.5.10; banners=-,-,-
+X-VirusChecked: Checked
+Original-Received: (qmail 21497 invoked from network); 19 Jul 2012 01:30:22 -0000
+Original-Received: from out001.collaborationhost.net (HELO out001.collaborationhost.net) (216.166.12.180)
+  by server-8.tower-131.messagelabs.com with RC4-SHA encrypted SMTP; 19 Jul 2012 01:30:22 -0000
+Original-Received: from etch.local (10.2.3.210) by smtp.collaborationhost.net
+ (10.2.0.232) with Microsoft SMTP Server (TLS) id 8.3.213.0; Wed, 18 Jul 2012
+ 20:30:21 -0500
+User-Agent: KMail/1.9.9
+Content-Disposition: inline
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330041
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330041>
+
+Use for_each_pci_dev() instead of open-coding the loop using
+pci_get_device().
+
+Drop the printk error messages. They just add noise.
+
+Signed-off-by: H Hartley Sweeten <hsweeten@visionengravers.com>
+Cc: Ian Abbott <abbotti@mev.co.uk>
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/staging/comedi/drivers/adv_pci1723.c | 63 ++++++++--------------------
+ 1 file changed, 17 insertions(+), 46 deletions(-)
+
+diff --git a/drivers/staging/comedi/drivers/adv_pci1723.c b/drivers/staging/comedi/drivers/adv_pci1723.c
+index 4803a8c..f561a2a 100644
+--- a/drivers/staging/comedi/drivers/adv_pci1723.c
++++ b/drivers/staging/comedi/drivers/adv_pci1723.c
+@@ -290,59 +290,30 @@ static int pci1723_dio_insn_bits(struct comedi_device *dev,
+ static struct pci_dev *pci1723_find_pci_dev(struct comedi_device *dev,
+ 					    struct comedi_devconfig *it)
+ {
+-	struct pci_dev *pcidev;
+-	unsigned int iobase;
+-	unsigned char pci_bus, pci_slot, pci_func;
+-	int opt_bus, opt_slot;
+-	const char *errstr;
+-
+-	opt_bus = it->options[0];
+-	opt_slot = it->options[1];
+-
+-	/* Look for matching PCI device */
+-	errstr = "not found!";
+-	pcidev = NULL;
+-	while (NULL != (pcidev =
+-			pci_get_device(PCI_VENDOR_ID_ADVANTECH,
+-				       this_board->device_id, pcidev))) {
+-		/* Found matching vendor/device. */
+-		if (opt_bus || opt_slot) {
+-			/* Check bus/slot. */
+-			if (opt_bus != pcidev->bus->number
+-			    || opt_slot != PCI_SLOT(pcidev->devfn))
+-				continue;	/* no match */
++	struct pci_dev *pcidev = NULL;
++	int bus = it->options[0];
++	int slot = it->options[1];
++
++	for_each_pci_dev(pcidev) {
++		if (bus || slot) {
++			if (bus != pcidev->bus->number ||
++			    slot != PCI_SLOT(pcidev->devfn))
++				continue;
+ 		}
++		if (pcidev->vendor != PCI_VENDOR_ID_ADVANTECH)
++			continue;
+ 		/*
+ 		 * Look for device that isn't in use.
+ 		 * Enable PCI device and request regions.
+ 		 */
+-		if (comedi_pci_enable(pcidev, "adv_pci1723")) {
+-			errstr =
+-			    "failed to enable PCI device and request regions!";
++		if (comedi_pci_enable(pcidev, "adv_pci1723"))
+ 			continue;
+-		}
+-		break;
+-	}
+-
+-	if (!pcidev) {
+-		if (opt_bus || opt_slot) {
+-			printk(KERN_ERR " - Card at b:s %d:%d %s\n",
+-						     opt_bus, opt_slot, errstr);
+-		} else {
+-			printk(KERN_ERR " - Card %s\n", errstr);
+-		}
+-		return NULL;
++		return pcidev;
+ 	}
+-
+-	pci_bus = pcidev->bus->number;
+-	pci_slot = PCI_SLOT(pcidev->devfn);
+-	pci_func = PCI_FUNC(pcidev->devfn);
+-	iobase = pci_resource_start(pcidev, 2);
+-
+-	printk(KERN_ERR ", b:s:f=%d:%d:%d, io=0x%4x",
+-					   pci_bus, pci_slot, pci_func, iobase);
+-
+-	return pcidev;
++	dev_err(dev->class_dev,
++		"No supported board found! (req. bus %d, slot %d)\n",
++		bus, slot);
++	return NULL;
+ }
+ 
+ static int pci1723_attach(struct comedi_device *dev,
+-- 
+1.7.11
+

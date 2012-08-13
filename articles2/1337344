@@ -1,0 +1,97 @@
+Path: news.gmane.org!not-for-mail
+From: Alan Stern <stern-nwvwT67g6+6dFdvTe/nMLpVzexx5G7lz@public.gmane.org>
+Newsgroups: gmane.linux.usb.general,gmane.linux.kernel
+Subject: Re: kernel panic when called usb_control_msg()
+Date: Fri, 3 Aug 2012 10:42:53 -0400 (EDT)
+Lines: 52
+Approved: news@gmane.org
+Message-ID: <Pine.LNX.4.44L0.1208031041070.1520-100000@iolanthe.rowland.org>
+References: <CAPoh-nbx6pxhV2kXhnOmWzAGp6-jAkwQPcwGRtdXZEFoBB-iBw@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: TEXT/PLAIN; charset=US-ASCII
+X-Trace: dough.gmane.org 1344004977 23291 80.91.229.3 (3 Aug 2012 14:42:57 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 14:42:57 +0000 (UTC)
+Cc: balbi-l0cyMroinI0@public.gmane.org, <gregkh-hQyY1W1yCW8ekmWlsbkhG0B+6BGkLq7r@public.gmane.org>,
+	<linux-usb-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>, <linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+To: y b <ycbzzjlby-Re5JQEeQqe8AvxtiuMwx3w@public.gmane.org>
+Original-X-From: linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org Fri Aug 03 16:42:57 2012
+Return-path: <linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Envelope-to: glug-linux-usb-wOFGN7rlS/M9smdsby/KFg@public.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>)
+	id 1SxJ5c-0000oO-4a
+	for glug-linux-usb-wOFGN7rlS/M9smdsby/KFg@public.gmane.org; Fri, 03 Aug 2012 16:42:56 +0200
+Original-Received: (majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org) by vger.kernel.org via listexpand
+	id S1754095Ab2HCOmy (ORCPT <rfc822;glug-linux-usb@m.gmane.org>);
+	Fri, 3 Aug 2012 10:42:54 -0400
+Original-Received: from iolanthe.rowland.org ([192.131.102.54]:55589 "HELO
+	iolanthe.rowland.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with SMTP id S1753409Ab2HCOmy (ORCPT
+	<rfc822;linux-usb-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>); Fri, 3 Aug 2012 10:42:54 -0400
+Original-Received: (qmail 2186 invoked by uid 2102); 3 Aug 2012 10:42:53 -0400
+Original-Received: from localhost (sendmail-bs-savSHZN5Fh8qMp+WYRx65w@public.gmane.org)
+  by localhost with SMTP; 3 Aug 2012 10:42:53 -0400
+X-X-Sender: stern-IYeN2dnnYyZXsRXLowluHWD2FQJk+8+b@public.gmane.org
+In-Reply-To: <CAPoh-nbx6pxhV2kXhnOmWzAGp6-jAkwQPcwGRtdXZEFoBB-iBw-JsoAwUIsXosN+BqQ9rBEUg@public.gmane.org>
+Original-Sender: linux-usb-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Precedence: bulk
+List-ID: <linux-usb.vger.kernel.org>
+X-Mailing-List: linux-usb-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Xref: news.gmane.org gmane.linux.usb.general:68843 gmane.linux.kernel:1337344
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337344>
+
+On Fri, 3 Aug 2012, y b wrote:
+
+> Hi,
+> kernel panic when called usb_control_msg(), like this:
+>    usb_control_msg(serial->dev, usb_sndctrlpipe(serial->dev, 0),
+> XR_SET_REG, USB_DIR_OUT | USB_TYPE_VENDOR, value, regnum | (block <<
+> 8), NULL, 0, 5000)
+> The kernel's version is 2.6.33_rc4, but I think it will happen in
+> lastest statable version too.
+
+> I fixed it like this:
+> 
+> diff --git a/drivers/usb/musb/musb_host.c b/drivers/usb/musb/musb_host.c
+> index 4bb717d..b043f27 100644
+> --- a/drivers/usb/musb/musb_host.c
+> +++ b/drivers/usb/musb/musb_host.c
+> @@ -2056,9 +2056,15 @@ static int musb_urb_enqueue(
+>         kfree(qh);
+>         qh = NULL;
+>         ret = 0;
+> -   } else
+> -       ret = musb_schedule(musb, qh,
+> -               epd->bEndpointAddress & USB_ENDPOINT_DIR_MASK);
+> +   } else {
+> +       if (!next_urb(qh)) {
+> +           kfree(qh);
+> +           qh = NULL;
+> +           ret = 0;
+> +       } else
+> +           ret = musb_schedule(musb, qh,
+> +                   epd->bEndpointAddress & USB_ENDPOINT_DIR_MASK);
+> +   }
+> 
+
+You could shrink this patch a lot:
+
+	 * we only have work to do in the former case.
+	 */
+	spin_lock_irqsave(&musb->lock, flags);
+-	if (hep->hcpriv) {
++	if (hep->hcpriv || !next_urb(qh)) {
+		/* some concurrent activity submitted another urb to hep...
+		 * odd, rare, error prone, but legal.
+		 */
+
+Alan Stern
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-usb" in
+the body of a message to majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

@@ -1,0 +1,146 @@
+Path: news.gmane.org!not-for-mail
+From: Yoshihiro YUNOMAE <yoshihiro.yunomae.ez@hitachi.com>
+Newsgroups: gmane.linux.kernel.virtualization,gmane.linux.kernel,gmane.comp.emulators.qemu
+Subject: [PATCH V2 4/6] ftrace: Allow stealing pages from pipe buffer
+Date: Thu, 09 Aug 2012 21:31:10 +0900
+Lines: 46
+Approved: news@gmane.org
+Message-ID: <20120809123110.8542.99098.stgit@ltc189.sdl.hitachi.co.jp>
+References: <20120809123029.8542.38311.stgit@ltc189.sdl.hitachi.co.jp>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344515494 18820 80.91.229.3 (9 Aug 2012 12:31:34 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 12:31:34 +0000 (UTC)
+Cc: Herbert Xu <herbert@gondor.apana.org.au>, Arnd Bergmann <arnd@arndb.de>,
+	Frederic Weisbecker <fweisbec@gmail.com>, qemu-devel@nongnu.org,
+	Borislav Petkov <bp@amd64.org>, virtualization@lists.linux-foundation.org,
+	Masami Hiramatsu <masami.hiramatsu.pt@hitachi.com>,
+	"Franch Ch. Eigler" <fche@redhat.com>, Ingo Molnar <mingo@redhat.com>,
+	Mathieu Desnoyers <mathieu.desnoyers@efficios.com>,
+	Steven Rostedt <rostedt@goodmis.org>,
+	Anthony Liguori <anthony@codemonkey.ws>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	Amit Shah <amit.shah@redhat.com>, yrl.pp-manager.tt@hitachi.com
+To: linux-kernel@vger.kernel.org
+Original-X-From: virtualization-bounces@lists.linux-foundation.org Thu Aug 09 14:31:31 2012
+Return-path: <virtualization-bounces@lists.linux-foundation.org>
+Envelope-to: glkv-virtualization@gmane.org
+Original-Received: from mail.linuxfoundation.org ([140.211.169.12])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <virtualization-bounces@lists.linux-foundation.org>)
+	id 1SzRtf-0007YM-Ru
+	for glkv-virtualization@gmane.org; Thu, 09 Aug 2012 14:31:28 +0200
+Original-Received: from mail.linux-foundation.org (localhost [IPv6:::1])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id C5D4F7D8;
+	Thu,  9 Aug 2012 12:31:26 +0000 (UTC)
+X-Original-To: virtualization@lists.linux-foundation.org
+Delivered-To: virtualization@mail.linuxfoundation.org
+Original-Received: from smtp1.linuxfoundation.org (smtp1.linux-foundation.org
+	[172.17.192.35])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id 7DFEA285
+	for <virtualization@lists.linux-foundation.org>;
+	Thu,  9 Aug 2012 12:31:25 +0000 (UTC)
+X-Greylist: domain auto-whitelisted by SQLgrey-1.7.6
+Original-Received: from mail7.hitachi.co.jp (mail7.hitachi.co.jp [133.145.228.42])
+	by smtp1.linuxfoundation.org (Postfix) with ESMTP id 6D7CB1F950
+	for <virtualization@lists.linux-foundation.org>;
+	Thu,  9 Aug 2012 12:31:23 +0000 (UTC)
+Original-Received: from mlsv5.hitachi.co.jp (unknown [133.144.234.166])
+	by mail7.hitachi.co.jp (Postfix) with ESMTP id E33F437AC3;
+	Thu,  9 Aug 2012 21:31:22 +0900 (JST)
+Original-Received: from mfilter03.hitachi.co.jp by mlsv5.hitachi.co.jp (8.13.1/8.13.1)
+	id q79CVMZj018112; Thu, 9 Aug 2012 21:31:22 +0900
+Original-Received: from vshuts4.hitachi.co.jp (vshuts4.hitachi.co.jp [10.201.6.80])
+	by mfilter03.hitachi.co.jp (Switch-3.3.4/Switch-3.3.4) with ESMTP id
+	q79CVLJn009045; Thu, 9 Aug 2012 21:31:22 +0900
+X-AuditID: b753bd60-932c5ba0000047ca-a3-5023ad991478
+Original-Received: from hsdlmain.sdl.hitachi.co.jp (unknown [133.144.14.194])
+	by vshuts4.hitachi.co.jp (Symantec Mail Security) with ESMTP id
+	300AF2043CD; Thu,  9 Aug 2012 21:31:21 +0900 (JST)
+Original-Received: from hsdlvgate2.sdl.hitachi.co.jp by hsdlmain.sdl.hitachi.co.jp
+	(8.13.8/3.7W11021512) id q79CVLSE010671;
+	Thu, 9 Aug 2012 21:31:21 +0900
+X-AuditID: b753bd60-932c5ba0000047ca-a3-5023ad991478
+Original-Received: from sdl99w.sdl.hitachi.co.jp (sdl99w.sdl.hitachi.co.jp
+	[133.144.14.250])
+	by hsdlvgate2.sdl.hitachi.co.jp (Symantec Mail Security) with ESMTP id
+	A952B236561; Thu,  9 Aug 2012 21:31:20 +0900 (JST)
+Original-Received: from maild.sdl.hitachi.co.jp (sdl99d.sdl.hitachi.co.jp
+	[133.144.14.199])
+	by sdl99w.sdl.hitachi.co.jp (Postfix) with ESMTP id 48CDA53C158;
+	Thu,  9 Aug 2012 21:31:21 +0900 (JST)
+Original-Received: from ltc189.sdl.hitachi.co.jp (unknown [10.232.28.60])
+	by maild.sdl.hitachi.co.jp (Postfix) with ESMTP id A24E0495B83;
+	Thu,  9 Aug 2012 21:31:20 +0900 (JST)
+In-Reply-To: <20120809123029.8542.38311.stgit@ltc189.sdl.hitachi.co.jp>
+User-Agent: StGIT/0.14.3
+X-Brightmail-Tracker: AAAAAA==
+X-Spam-Status: No, score=-2.6 required=5.0 tests=BAYES_00,RCVD_IN_DNSWL_LOW
+	autolearn=ham version=3.3.1
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on
+	smtp1.linux-foundation.org
+X-BeenThere: virtualization@lists.linux-foundation.org
+X-Mailman-Version: 2.1.12
+Precedence: list
+List-Id: Linux virtualization <virtualization.lists.linux-foundation.org>
+List-Unsubscribe: <https://lists.linuxfoundation.org/mailman/options/virtualization>,
+	<mailto:virtualization-request@lists.linux-foundation.org?subject=unsubscribe>
+List-Archive: <http://lists.linuxfoundation.org/pipermail/virtualization/>
+List-Post: <mailto:virtualization@lists.linux-foundation.org>
+List-Help: <mailto:virtualization-request@lists.linux-foundation.org?subject=help>
+List-Subscribe: <https://lists.linuxfoundation.org/mailman/listinfo/virtualization>,
+	<mailto:virtualization-request@lists.linux-foundation.org?subject=subscribe>
+Original-Sender: virtualization-bounces@lists.linux-foundation.org
+Errors-To: virtualization-bounces@lists.linux-foundation.org
+Xref: news.gmane.org gmane.linux.kernel.virtualization:16452 gmane.linux.kernel:1340655 gmane.comp.emulators.qemu:164356
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340655>
+
+From: Masami Hiramatsu <masami.hiramatsu.pt@hitachi.com>
+
+Use generic steal operation on pipe buffer to allow stealing
+ring buffer's read page from pipe buffer.
+
+Note that this could reduce the performance of splice on the
+splice_write side operation without affinity setting.
+Since the ring buffer's read pages are allocated on the
+tracing-node, but the splice user does not always execute
+splice write side operation on the same node. In this case,
+the page will be accessed from the another node.
+Thus, it is strongly recommended to assign the splicing
+thread to corresponding node.
+
+Signed-off-by: Masami Hiramatsu <masami.hiramatsu.pt@hitachi.com>
+Acked-by: Steven Rostedt <rostedt@goodmis.org>
+---
+
+ kernel/trace/trace.c |    8 +-------
+ 1 files changed, 1 insertions(+), 7 deletions(-)
+
+diff --git a/kernel/trace/trace.c b/kernel/trace/trace.c
+index a120f98..ae01930 100644
+--- a/kernel/trace/trace.c
++++ b/kernel/trace/trace.c
+@@ -4194,12 +4194,6 @@ static void buffer_pipe_buf_release(struct pipe_inode_info *pipe,
+ 	buf->private = 0;
+ }
+ 
+-static int buffer_pipe_buf_steal(struct pipe_inode_info *pipe,
+-				 struct pipe_buffer *buf)
+-{
+-	return 1;
+-}
+-
+ static void buffer_pipe_buf_get(struct pipe_inode_info *pipe,
+ 				struct pipe_buffer *buf)
+ {
+@@ -4215,7 +4209,7 @@ static const struct pipe_buf_operations buffer_pipe_buf_ops = {
+ 	.unmap			= generic_pipe_buf_unmap,
+ 	.confirm		= generic_pipe_buf_confirm,
+ 	.release		= buffer_pipe_buf_release,
+-	.steal			= buffer_pipe_buf_steal,
++	.steal			= generic_pipe_buf_steal,
+ 	.get			= buffer_pipe_buf_get,
+ };

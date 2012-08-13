@@ -1,0 +1,239 @@
+Path: news.gmane.org!not-for-mail
+From: Oleg Nesterov <oleg@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 10/14] uprobes: teach build_probe_list() to consider the
+	range
+Date: Sun, 29 Jul 2012 20:22:40 +0200
+Lines: 184
+Approved: news@gmane.org
+Message-ID: <20120729182240.GA20352@redhat.com>
+References: <20120729182128.GA20269@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343586415 27579 80.91.229.3 (29 Jul 2012 18:26:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 29 Jul 2012 18:26:55 +0000 (UTC)
+Cc: Anton Arapov <anton@redhat.com>,
+	Srikar Dronamraju <srikar@linux.vnet.ibm.com>,
+	linux-kernel@vger.kernel.org
+To: Ingo Molnar <mingo@elte.hu>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 29 20:26:54 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvYCZ-00075O-WB
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 29 Jul 2012 20:26:52 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753535Ab2G2S0q (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 29 Jul 2012 14:26:46 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:32211 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753475Ab2G2SZj (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 29 Jul 2012 14:25:39 -0400
+Original-Received: from int-mx12.intmail.prod.int.phx2.redhat.com (int-mx12.intmail.prod.int.phx2.redhat.com [10.5.11.25])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6TIPX2X007429
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Sun, 29 Jul 2012 14:25:33 -0400
+Original-Received: from tranklukator.englab.brq.redhat.com (dhcp-1-232.brq.redhat.com [10.34.1.232])
+	by int-mx12.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with SMTP id q6TIPWN1014871;
+	Sun, 29 Jul 2012 14:25:32 -0400
+Original-Received: by tranklukator.englab.brq.redhat.com (nbSMTP-1.00) for uid 500
+	oleg@redhat.com; Sun, 29 Jul 2012 20:22:42 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <20120729182128.GA20269@redhat.com>
+User-Agent: Mutt/1.5.18 (2008-05-17)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.25
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334769
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334769>
+
+Currently build_probe_list() builds the list of all uprobes attached
+to the given inode, and the caller should filter out those who don't
+fall into the [start,end) range, this is sub-optimal.
+
+This patch turns find_least_offset_node() into find_node_in_range()
+which returns the first node inside the [min,max] range, and changes
+build_probe_list() to use this node as a starting point for rb_prev()
+and rb_next() to find all other nodes the caller needs. The resulting
+list is no longer sorted but we do not care.
+
+This can speed up both build_probe_list() and the callers, but there
+is another reason to introduce find_node_in_range(). It can be used
+to figure out whether the given vma has uprobes or not, this will be
+needed soon.
+
+While at it, shift INIT_LIST_HEAD(tmp_list) into build_probe_list().
+
+Signed-off-by: Oleg Nesterov <oleg@redhat.com>
+Acked-by: Srikar Dronamraju <srikar.vnet.ibm.com>
+---
+ kernel/events/uprobes.c |  103 +++++++++++++++++++++++------------------------
+ 1 files changed, 50 insertions(+), 53 deletions(-)
+
+diff --git a/kernel/events/uprobes.c b/kernel/events/uprobes.c
+index 6194edb..c825404 100644
+--- a/kernel/events/uprobes.c
++++ b/kernel/events/uprobes.c
+@@ -939,59 +939,66 @@ void uprobe_unregister(struct inode *inode, loff_t offset, struct uprobe_consume
+ 		put_uprobe(uprobe);
+ }
+ 
+-/*
+- * Of all the nodes that correspond to the given inode, return the node
+- * with the least offset.
+- */
+-static struct rb_node *find_least_offset_node(struct inode *inode)
++static struct rb_node *
++find_node_in_range(struct inode *inode, loff_t min, loff_t max)
+ {
+-	struct uprobe u = { .inode = inode, .offset = 0};
+ 	struct rb_node *n = uprobes_tree.rb_node;
+-	struct rb_node *close_node = NULL;
+-	struct uprobe *uprobe;
+-	int match;
+ 
+ 	while (n) {
+-		uprobe = rb_entry(n, struct uprobe, rb_node);
+-		match = match_uprobe(&u, uprobe);
+-
+-		if (uprobe->inode == inode)
+-			close_node = n;
++		struct uprobe *u = rb_entry(n, struct uprobe, rb_node);
+ 
+-		if (!match)
+-			return close_node;
+-
+-		if (match < 0)
++		if (inode < u->inode) {
+ 			n = n->rb_left;
+-		else
++		} else if (inode > u->inode) {
+ 			n = n->rb_right;
++		} else {
++			if (max < u->offset)
++				n = n->rb_left;
++			else if (min > u->offset)
++				n = n->rb_right;
++			else
++				break;
++		}
+ 	}
+ 
+-	return close_node;
++	return n;
+ }
+ 
+ /*
+- * For a given inode, build a list of probes that need to be inserted.
++ * For a given range in vma, build a list of probes that need to be inserted.
+  */
+-static void build_probe_list(struct inode *inode, struct list_head *head)
++static void build_probe_list(struct inode *inode,
++				struct vm_area_struct *vma,
++				unsigned long start, unsigned long end,
++				struct list_head *head)
+ {
+-	struct uprobe *uprobe;
++	loff_t min, max;
+ 	unsigned long flags;
+-	struct rb_node *n;
+-
+-	spin_lock_irqsave(&uprobes_treelock, flags);
+-
+-	n = find_least_offset_node(inode);
++	struct rb_node *n, *t;
++	struct uprobe *u;
+ 
+-	for (; n; n = rb_next(n)) {
+-		uprobe = rb_entry(n, struct uprobe, rb_node);
+-		if (uprobe->inode != inode)
+-			break;
++	INIT_LIST_HEAD(head);
++	min = ((loff_t)vma->vm_pgoff << PAGE_SHIFT) + start - vma->vm_start;
++	max = min + (end - start) - 1;
+ 
+-		list_add(&uprobe->pending_list, head);
+-		atomic_inc(&uprobe->ref);
++	spin_lock_irqsave(&uprobes_treelock, flags);
++	n = find_node_in_range(inode, min, max);
++	if (n) {
++		for (t = n; t; t = rb_prev(t)) {
++			u = rb_entry(t, struct uprobe, rb_node);
++			if (u->inode != inode || u->offset < min)
++				break;
++			list_add(&u->pending_list, head);
++			atomic_inc(&u->ref);
++		}
++		for (t = n; (t = rb_next(t)); ) {
++			u = rb_entry(t, struct uprobe, rb_node);
++			if (u->inode != inode || u->offset > max)
++				break;
++			list_add(&u->pending_list, head);
++			atomic_inc(&u->ref);
++		}
+ 	}
+-
+ 	spin_unlock_irqrestore(&uprobes_treelock, flags);
+ }
+ 
+@@ -1021,9 +1028,8 @@ int uprobe_mmap(struct vm_area_struct *vma)
+ 	if (!inode)
+ 		return 0;
+ 
+-	INIT_LIST_HEAD(&tmp_list);
+ 	mutex_lock(uprobes_mmap_hash(inode));
+-	build_probe_list(inode, &tmp_list);
++	build_probe_list(inode, vma, vma->vm_start, vma->vm_end, &tmp_list);
+ 
+ 	ret = 0;
+ 	count = 0;
+@@ -1032,11 +1038,6 @@ int uprobe_mmap(struct vm_area_struct *vma)
+ 		if (!ret) {
+ 			loff_t vaddr = vma_address(vma, uprobe->offset);
+ 
+-			if (vaddr < vma->vm_start || vaddr >= vma->vm_end) {
+-				put_uprobe(uprobe);
+-				continue;
+-			}
+-
+ 			ret = install_breakpoint(uprobe, vma->vm_mm, vma, vaddr);
+ 			/*
+ 			 * We can race against uprobe_register(), see the
+@@ -1092,21 +1093,17 @@ void uprobe_munmap(struct vm_area_struct *vma, unsigned long start, unsigned lon
+ 	if (!inode)
+ 		return;
+ 
+-	INIT_LIST_HEAD(&tmp_list);
+ 	mutex_lock(uprobes_mmap_hash(inode));
+-	build_probe_list(inode, &tmp_list);
++	build_probe_list(inode, vma, start, end, &tmp_list);
+ 
+ 	list_for_each_entry_safe(uprobe, u, &tmp_list, pending_list) {
+ 		loff_t vaddr = vma_address(vma, uprobe->offset);
+-
+-		if (vaddr >= start && vaddr < end) {
+-			/*
+-			 * An unregister could have removed the probe before
+-			 * unmap. So check before we decrement the count.
+-			 */
+-			if (is_swbp_at_addr(vma->vm_mm, vaddr) == 1)
+-				atomic_dec(&vma->vm_mm->uprobes_state.count);
+-		}
++		/*
++		 * An unregister could have removed the probe before
++		 * unmap. So check before we decrement the count.
++		 */
++		if (is_swbp_at_addr(vma->vm_mm, vaddr) == 1)
++			atomic_dec(&vma->vm_mm->uprobes_state.count);
+ 		put_uprobe(uprobe);
+ 	}
+ 	mutex_unlock(uprobes_mmap_hash(inode));
+-- 
+1.5.5.1
+

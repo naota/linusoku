@@ -1,0 +1,242 @@
+Path: news.gmane.org!not-for-mail
+From: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.xen.devel
+Subject: [PATCH 4/5] xen/swiotlb: Use the swiotlb_late_init_with_tbl to init Xen-SWIOTLB late when PV PCI is used.
+Date: Tue, 31 Jul 2012 10:00:22 -0400
+Lines: 183
+Approved: news@gmane.org
+Message-ID: <1343743223-30092-5-git-send-email-konrad.wilk@oracle.com>
+References: <1343743223-30092-1-git-send-email-konrad.wilk@oracle.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343743875 21413 80.91.229.3 (31 Jul 2012 14:11:15 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 14:11:15 +0000 (UTC)
+Cc: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+To: fujita.tomonori@lab.ntt.co.jp, xen-devel@lists.xensource.com,
+	linux-kernel@vger.kernel.org, stefano.stabellini@eu.citrix.com,
+	JBeulich@suse.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 16:11:13 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwDAH-0002wt-6l
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 16:11:13 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754144Ab2GaOKu (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 10:10:50 -0400
+Original-Received: from rcsinet15.oracle.com ([148.87.113.117]:33056 "EHLO
+	rcsinet15.oracle.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753540Ab2GaOKr (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 10:10:47 -0400
+Original-Received: from ucsinet21.oracle.com (ucsinet21.oracle.com [156.151.31.93])
+	by rcsinet15.oracle.com (Sentrion-MTA-4.2.2/Sentrion-MTA-4.2.2) with ESMTP id q6VE9V3c021198
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Tue, 31 Jul 2012 14:09:32 GMT
+Original-Received: from acsmt356.oracle.com (acsmt356.oracle.com [141.146.40.156])
+	by ucsinet21.oracle.com (8.14.4+Sun/8.14.4) with ESMTP id q6VE9TDg022420
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Tue, 31 Jul 2012 14:09:31 GMT
+Original-Received: from abhmt112.oracle.com (abhmt112.oracle.com [141.146.116.64])
+	by acsmt356.oracle.com (8.12.11.20060308/8.12.11) with ESMTP id q6VE9Sgr023806;
+	Tue, 31 Jul 2012 09:09:29 -0500
+Original-Received: from phenom.dumpdata.com (/209.6.85.33)
+	by default (Oracle Beehive Gateway v4.0)
+	with ESMTP ; Tue, 31 Jul 2012 07:09:28 -0700
+Original-Received: by phenom.dumpdata.com (Postfix, from userid 1000)
+	id 6CF47402C1; Tue, 31 Jul 2012 10:00:28 -0400 (EDT)
+X-Mailer: git-send-email 1.7.7.6
+In-Reply-To: <1343743223-30092-1-git-send-email-konrad.wilk@oracle.com>
+X-Source-IP: ucsinet21.oracle.com [156.151.31.93]
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335753 gmane.comp.emulators.xen.devel:135967
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335753>
+
+With this patch we provide the functionality to initialize the
+Xen-SWIOTLB late in the bootup cycle - specifically for
+Xen PCI-frontend. We still will work if the user had
+supplied 'iommu=soft' on the Linux command line.
+
+CC: FUJITA Tomonori <fujita.tomonori@lab.ntt.co.jp>
+Signed-off-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+---
+ arch/x86/include/asm/xen/swiotlb-xen.h |    2 +
+ arch/x86/xen/pci-swiotlb-xen.c         |   17 ++++++++++-
+ drivers/xen/swiotlb-xen.c              |   50 +++++++++++++++++++++++++++----
+ include/xen/swiotlb-xen.h              |    1 +
+ 4 files changed, 62 insertions(+), 8 deletions(-)
+
+diff --git a/arch/x86/include/asm/xen/swiotlb-xen.h b/arch/x86/include/asm/xen/swiotlb-xen.h
+index 1be1ab7..ee52fca 100644
+--- a/arch/x86/include/asm/xen/swiotlb-xen.h
++++ b/arch/x86/include/asm/xen/swiotlb-xen.h
+@@ -5,10 +5,12 @@
+ extern int xen_swiotlb;
+ extern int __init pci_xen_swiotlb_detect(void);
+ extern void __init pci_xen_swiotlb_init(void);
++extern int pci_xen_swiotlb_init_late(void);
+ #else
+ #define xen_swiotlb (0)
+ static inline int __init pci_xen_swiotlb_detect(void) { return 0; }
+ static inline void __init pci_xen_swiotlb_init(void) { }
++static inline int pci_xen_swiotlb_init_late(void) { return -ENXIO; }
+ #endif
+ 
+ #endif /* _ASM_X86_SWIOTLB_XEN_H */
+diff --git a/arch/x86/xen/pci-swiotlb-xen.c b/arch/x86/xen/pci-swiotlb-xen.c
+index 0d5a214..bc2daf6 100644
+--- a/arch/x86/xen/pci-swiotlb-xen.c
++++ b/arch/x86/xen/pci-swiotlb-xen.c
+@@ -12,7 +12,7 @@
+ #include <asm/iommu.h>
+ #include <asm/dma.h>
+ #endif
+-
++#include <linux/export.h>
+ int xen_swiotlb __read_mostly;
+ 
+ static struct dma_map_ops xen_swiotlb_dma_ops = {
+@@ -74,6 +74,21 @@ void __init pci_xen_swiotlb_init(void)
+ 		pci_request_acs();
+ 	}
+ }
++
++int pci_xen_swiotlb_init_late(void)
++{
++	int rc = xen_swiotlb_late_init(1);
++	if (rc)
++		return rc;
++
++	dma_ops = &xen_swiotlb_dma_ops;
++	/* Make sure ACS will be enabled */
++	pci_request_acs();
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(pci_xen_swiotlb_init_late);
++
+ IOMMU_INIT_FINISH(pci_xen_swiotlb_detect,
+ 		  0,
+ 		  pci_xen_swiotlb_init,
+diff --git a/drivers/xen/swiotlb-xen.c b/drivers/xen/swiotlb-xen.c
+index 1afb4fb..8805e94 100644
+--- a/drivers/xen/swiotlb-xen.c
++++ b/drivers/xen/swiotlb-xen.c
+@@ -145,13 +145,14 @@ xen_swiotlb_fixup(void *buf, size_t size, unsigned long nslabs)
+ 	return 0;
+ }
+ 
+-void __init xen_swiotlb_init(int verbose)
++int __xen_swiotlb_init(int verbose, bool early)
+ {
+ 	unsigned long bytes;
+ 	int rc = -ENOMEM;
+ 	unsigned long nr_tbl;
+ 	char *m = NULL;
+ 	unsigned int repeat = 3;
++	unsigned long order;
+ 
+ 	nr_tbl = swiotlb_nr_tbl();
+ 	if (nr_tbl)
+@@ -161,12 +162,31 @@ void __init xen_swiotlb_init(int verbose)
+ 		xen_io_tlb_nslabs = ALIGN(xen_io_tlb_nslabs, IO_TLB_SEGSIZE);
+ 	}
+ retry:
++	order = get_order(xen_io_tlb_nslabs << IO_TLB_SHIFT);
+ 	bytes = xen_io_tlb_nslabs << IO_TLB_SHIFT;
+ 
+ 	/*
+ 	 * Get IO TLB memory from any location.
+ 	 */
+-	xen_io_tlb_start = alloc_bootmem_pages(PAGE_ALIGN(bytes));
++	if (early)
++		xen_io_tlb_start = alloc_bootmem_pages(PAGE_ALIGN(bytes));
++	else {
++#define SLABS_PER_PAGE (1 << (PAGE_SHIFT - IO_TLB_SHIFT))
++#define IO_TLB_MIN_SLABS ((1<<20) >> IO_TLB_SHIFT)
++
++		while ((SLABS_PER_PAGE << order) > IO_TLB_MIN_SLABS) {
++			xen_io_tlb_start = (void *)__get_free_pages(__GFP_NOWARN, order);
++			if (xen_io_tlb_start)
++				break;
++			order--;
++		}
++		if (order != get_order(bytes)) {
++			pr_warn("Warning: only able to allocate %ld MB "
++				"for software IO TLB\n", (PAGE_SIZE << order) >> 20);
++			xen_io_tlb_nslabs = SLABS_PER_PAGE << order;
++			bytes = xen_io_tlb_nslabs << IO_TLB_SHIFT;
++		}
++	}
+ 	if (!xen_io_tlb_start) {
+ 		m = "Cannot allocate Xen-SWIOTLB buffer!\n";
+ 		goto error;
+@@ -179,7 +199,8 @@ retry:
+ 			       bytes,
+ 			       xen_io_tlb_nslabs);
+ 	if (rc) {
+-		free_bootmem(__pa(xen_io_tlb_start), PAGE_ALIGN(bytes));
++		if (early)
++			free_bootmem(__pa(xen_io_tlb_start), PAGE_ALIGN(bytes));
+ 		m = "Failed to get contiguous memory for DMA from Xen!\n"\
+ 		    "You either: don't have the permissions, do not have"\
+ 		    " enough free memory under 4GB, or the hypervisor memory"\
+@@ -187,9 +208,13 @@ retry:
+ 		goto error;
+ 	}
+ 	start_dma_addr = xen_virt_to_bus(xen_io_tlb_start);
+-	swiotlb_init_with_tbl(xen_io_tlb_start, xen_io_tlb_nslabs, verbose);
+ 
+-	return;
++	rc = 0;
++	if (early)
++		swiotlb_init_with_tbl(xen_io_tlb_start, xen_io_tlb_nslabs, verbose);
++	else
++		rc = swiotlb_late_init_with_tbl(xen_io_tlb_start, xen_io_tlb_nslabs);
++	return rc;
+ error:
+ 	if (repeat--) {
+ 		xen_io_tlb_nslabs = max(1024UL, /* Min is 2MB */
+@@ -199,9 +224,20 @@ error:
+ 		goto retry;
+ 	}
+ 	xen_raw_printk("%s (rc:%d)", m, rc);
+-	panic("%s (rc:%d)", m, rc);
++	if (early)
++		panic("%s (rc:%d)", m, rc);
++	else
++		free_pages((unsigned long)xen_io_tlb_start, order);
++	return rc;
++}
++void __init xen_swiotlb_init(int verbose)
++{
++	__xen_swiotlb_init(verbose, true /* early */);
++}
++int xen_swiotlb_late_init(int verbose)
++{
++	return __xen_swiotlb_init(verbose, false /* late */);
+ }
+-
+ void *
+ xen_swiotlb_alloc_coherent(struct device *hwdev, size_t size,
+ 			   dma_addr_t *dma_handle, gfp_t flags,
+diff --git a/include/xen/swiotlb-xen.h b/include/xen/swiotlb-xen.h
+index 4f4d449..d38d984 100644
+--- a/include/xen/swiotlb-xen.h
++++ b/include/xen/swiotlb-xen.h
+@@ -4,6 +4,7 @@
+ #include <linux/swiotlb.h>
+ 
+ extern void xen_swiotlb_init(int verbose);
++extern int  xen_swiotlb_late_init(int verbose);
+ 
+ extern void
+ *xen_swiotlb_alloc_coherent(struct device *hwdev, size_t size,
+-- 
+1.7.7.6
+

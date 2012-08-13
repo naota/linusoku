@@ -1,0 +1,233 @@
+Path: news.gmane.org!not-for-mail
+From: Tomasz Stanislawski <t.stanislaws@samsung.com>
+Newsgroups: gmane.comp.video.dri.devel,gmane.linux.documentation,gmane.linux.kernel,gmane.linux.drivers.video-input-infrastructure
+Subject: [PATCH] dma-buf: add reference counting for exporter module
+Date: Wed, 08 Aug 2012 12:17:41 +0200
+Lines: 156
+Approved: news@gmane.org
+Message-ID: <50223CC5.9060007@samsung.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344421092 6730 80.91.229.3 (8 Aug 2012 10:18:12 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 10:18:12 +0000 (UTC)
+Cc: Tomasz Stanislawski <t.stanislaws@samsung.com>,
+	Pawel Osciak <pawel@osciak.com>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	Jerome Glisse <jglisse@redhat.com>, dri-devel@lists.freedesktop.org,
+	Vinod Koul <vinod.koul@intel.com>,
+	Kyungmin Park <kyungmin.park@samsung.com>, Rob Landley <rob@landley.net>,
+	Daniel Vetter <daniel.vetter@ffwll.ch>,
+	Alex Deucher <alexander.deucher@amd.com>, Rob Clark <rob@ti.com>,
+	Dan Williams <dan.j.williams@intel.com>,
+	Marek Szyprowski <m.szyprowski@samsung.com>,
+	Sumit Semwal <sumit.semwal@linaro.org>, linux-media@vger.kernel.org
+To: linaro-mm-sig@lists.linaro.org, linux-doc@vger.kernel.org,
+	linux-kernel@vger.kernel.org, devel@driverdev.osuosl.org
+Original-X-From: dri-devel-bounces+sf-dri-devel=m.gmane.org@lists.freedesktop.org Wed Aug 08 12:18:07 2012
+Return-path: <dri-devel-bounces+sf-dri-devel=m.gmane.org@lists.freedesktop.org>
+Envelope-to: sf-dri-devel@m.gmane.org
+Original-Received: from gabe.freedesktop.org ([131.252.210.177])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <dri-devel-bounces+sf-dri-devel=m.gmane.org@lists.freedesktop.org>)
+	id 1Sz3L4-000610-4r
+	for sf-dri-devel@m.gmane.org; Wed, 08 Aug 2012 12:18:06 +0200
+Original-Received: from gabe.freedesktop.org (localhost [127.0.0.1])
+	by gabe.freedesktop.org (Postfix) with ESMTP id E5C7F9E99F
+	for <sf-dri-devel@m.gmane.org>; Wed,  8 Aug 2012 03:18:04 -0700 (PDT)
+X-Original-To: dri-devel@lists.freedesktop.org
+Delivered-To: dri-devel@lists.freedesktop.org
+Original-Received: from mailout1.w1.samsung.com (mailout1.w1.samsung.com
+	[210.118.77.11])
+	by gabe.freedesktop.org (Postfix) with ESMTP id E723C9E8B6
+	for <dri-devel@lists.freedesktop.org>;
+	Wed,  8 Aug 2012 03:17:45 -0700 (PDT)
+Original-Received: from eusync1.samsung.com (mailout1.w1.samsung.com [210.118.77.11])
+	by mailout1.w1.samsung.com
+	(Oracle Communications Messaging Server 7u4-24.01(7.0.4.24.0) 64bit
+	(built Nov
+	17 2011)) with ESMTP id <0M8F008W0LYB6H20@mailout1.w1.samsung.com> for
+	dri-devel@lists.freedesktop.org; Wed, 08 Aug 2012 11:18:11 +0100 (BST)
+Original-Received: from [106.116.147.108] by eusync1.samsung.com
+	(Oracle Communications Messaging Server 7u4-23.01(7.0.4.23.0) 64bit
+	(built Aug
+	10 2011)) with ESMTPA id <0M8F00CI6LXHI730@eusync1.samsung.com> for
+	dri-devel@lists.freedesktop.org; Wed, 08 Aug 2012 11:17:43 +0100 (BST)
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:14.0) Gecko/20120714
+	Thunderbird/14.0
+X-TM-AS-MML: No
+X-BeenThere: dri-devel@lists.freedesktop.org
+X-Mailman-Version: 2.1.13
+Precedence: list
+List-Id: Direct Rendering Infrastructure - Development
+	<dri-devel.lists.freedesktop.org>
+List-Unsubscribe: <http://lists.freedesktop.org/mailman/options/dri-devel>,
+	<mailto:dri-devel-request@lists.freedesktop.org?subject=unsubscribe>
+List-Archive: <http://lists.freedesktop.org/archives/dri-devel>
+List-Post: <mailto:dri-devel@lists.freedesktop.org>
+List-Help: <mailto:dri-devel-request@lists.freedesktop.org?subject=help>
+List-Subscribe: <http://lists.freedesktop.org/mailman/listinfo/dri-devel>,
+	<mailto:dri-devel-request@lists.freedesktop.org?subject=subscribe>
+Original-Sender: dri-devel-bounces+sf-dri-devel=m.gmane.org@lists.freedesktop.org
+Errors-To: dri-devel-bounces+sf-dri-devel=m.gmane.org@lists.freedesktop.org
+Xref: news.gmane.org gmane.comp.video.dri.devel:72270 gmane.linux.documentation:6130 gmane.linux.kernel:1339949 gmane.linux.drivers.video-input-infrastructure:52009
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339949>
+
+This patch adds reference counting on a module that exports dma-buf and
+implements its operations. This prevents the module from being unloaded while
+DMABUF file is in use.
+
+Signed-off-by: Tomasz Stanislawski <t.stanislaws@samsung.com>
+---
+ Documentation/dma-buf-sharing.txt          |    3 ++-
+ drivers/base/dma-buf.c                     |   10 +++++++++-
+ drivers/gpu/drm/exynos/exynos_drm_dmabuf.c |    1 +
+ drivers/gpu/drm/i915/i915_gem_dmabuf.c     |    1 +
+ drivers/gpu/drm/nouveau/nouveau_prime.c    |    1 +
+ drivers/gpu/drm/radeon/radeon_prime.c      |    1 +
+ drivers/staging/omapdrm/omap_gem_dmabuf.c  |    1 +
+ include/linux/dma-buf.h                    |    2 ++
+ 8 files changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/Documentation/dma-buf-sharing.txt b/Documentation/dma-buf-sharing.txt
+index ad86fb8..2613057 100644
+--- a/Documentation/dma-buf-sharing.txt
++++ b/Documentation/dma-buf-sharing.txt
+@@ -49,7 +49,8 @@ The dma_buf buffer sharing API usage contains the following steps:
+    The buffer exporter announces its wish to export a buffer. In this, it
+    connects its own private buffer data, provides implementation for operations
+    that can be performed on the exported dma_buf, and flags for the file
+-   associated with this buffer.
++   associated with this buffer. The operations structure has owner field.
++   You should initialize this to THIS_MODULE in most cases.
+
+    Interface:
+       struct dma_buf *dma_buf_export(void *priv, struct dma_buf_ops *ops,
+diff --git a/drivers/base/dma-buf.c b/drivers/base/dma-buf.c
+index c30f3e1..d14b2f5 100644
+--- a/drivers/base/dma-buf.c
++++ b/drivers/base/dma-buf.c
+@@ -27,6 +27,7 @@
+ #include <linux/dma-buf.h>
+ #include <linux/anon_inodes.h>
+ #include <linux/export.h>
++#include <linux/module.h>
+
+ static inline int is_dma_buf_file(struct file *);
+
+@@ -40,6 +41,7 @@ static int dma_buf_release(struct inode *inode, struct file *file)
+ 	dmabuf = file->private_data;
+
+ 	dmabuf->ops->release(dmabuf);
++	module_put(dmabuf->ops->owner);
+ 	kfree(dmabuf);
+ 	return 0;
+ }
+@@ -96,6 +98,7 @@ struct dma_buf *dma_buf_export(void *priv, const struct dma_buf_ops *ops,
+ 	struct file *file;
+
+ 	if (WARN_ON(!priv || !ops
++			  || !ops->owner
+ 			  || !ops->map_dma_buf
+ 			  || !ops->unmap_dma_buf
+ 			  || !ops->release
+@@ -105,9 +108,14 @@ struct dma_buf *dma_buf_export(void *priv, const struct dma_buf_ops *ops,
+ 		return ERR_PTR(-EINVAL);
+ 	}
+
++	if (!try_module_get(ops->owner))
++		return ERR_PTR(-ENOENT);
++
+ 	dmabuf = kzalloc(sizeof(struct dma_buf), GFP_KERNEL);
+-	if (dmabuf == NULL)
++	if (dmabuf == NULL) {
++		module_put(ops->owner);
+ 		return ERR_PTR(-ENOMEM);
++	}
+
+ 	dmabuf->priv = priv;
+ 	dmabuf->ops = ops;
+diff --git a/drivers/gpu/drm/exynos/exynos_drm_dmabuf.c b/drivers/gpu/drm/exynos/exynos_drm_dmabuf.c
+index 613bf8a..cf3bc6d 100644
+--- a/drivers/gpu/drm/exynos/exynos_drm_dmabuf.c
++++ b/drivers/gpu/drm/exynos/exynos_drm_dmabuf.c
+@@ -164,6 +164,7 @@ static void exynos_gem_dmabuf_kunmap(struct dma_buf *dma_buf,
+ }
+
+ static struct dma_buf_ops exynos_dmabuf_ops = {
++	.owner			= THIS_MODULE,
+ 	.map_dma_buf		= exynos_gem_map_dma_buf,
+ 	.unmap_dma_buf		= exynos_gem_unmap_dma_buf,
+ 	.kmap			= exynos_gem_dmabuf_kmap,
+diff --git a/drivers/gpu/drm/i915/i915_gem_dmabuf.c b/drivers/gpu/drm/i915/i915_gem_dmabuf.c
+index aa308e1..07ff03b 100644
+--- a/drivers/gpu/drm/i915/i915_gem_dmabuf.c
++++ b/drivers/gpu/drm/i915/i915_gem_dmabuf.c
+@@ -152,6 +152,7 @@ static int i915_gem_dmabuf_mmap(struct dma_buf *dma_buf, struct vm_area_struct *
+ }
+
+ static const struct dma_buf_ops i915_dmabuf_ops =  {
++	.owner = THIS_MODULE,
+ 	.map_dma_buf = i915_gem_map_dma_buf,
+ 	.unmap_dma_buf = i915_gem_unmap_dma_buf,
+ 	.release = i915_gem_dmabuf_release,
+diff --git a/drivers/gpu/drm/nouveau/nouveau_prime.c b/drivers/gpu/drm/nouveau/nouveau_prime.c
+index a25cf2c..8605033 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_prime.c
++++ b/drivers/gpu/drm/nouveau/nouveau_prime.c
+@@ -127,6 +127,7 @@ static void nouveau_gem_prime_vunmap(struct dma_buf *dma_buf, void *vaddr)
+ }
+
+ static const struct dma_buf_ops nouveau_dmabuf_ops =  {
++	.owner = THIS_MODULE,
+ 	.map_dma_buf = nouveau_gem_map_dma_buf,
+ 	.unmap_dma_buf = nouveau_gem_unmap_dma_buf,
+ 	.release = nouveau_gem_dmabuf_release,
+diff --git a/drivers/gpu/drm/radeon/radeon_prime.c b/drivers/gpu/drm/radeon/radeon_prime.c
+index 6bef46a..4061fd3 100644
+--- a/drivers/gpu/drm/radeon/radeon_prime.c
++++ b/drivers/gpu/drm/radeon/radeon_prime.c
+@@ -127,6 +127,7 @@ static void radeon_gem_prime_vunmap(struct dma_buf *dma_buf, void *vaddr)
+ 	mutex_unlock(&dev->struct_mutex);
+ }
+ const static struct dma_buf_ops radeon_dmabuf_ops =  {
++	.owner = THIS_MODULE,
+ 	.map_dma_buf = radeon_gem_map_dma_buf,
+ 	.unmap_dma_buf = radeon_gem_unmap_dma_buf,
+ 	.release = radeon_gem_dmabuf_release,
+diff --git a/drivers/staging/omapdrm/omap_gem_dmabuf.c b/drivers/staging/omapdrm/omap_gem_dmabuf.c
+index 42728e0..6a4dd67 100644
+--- a/drivers/staging/omapdrm/omap_gem_dmabuf.c
++++ b/drivers/staging/omapdrm/omap_gem_dmabuf.c
+@@ -179,6 +179,7 @@ out_unlock:
+ }
+
+ struct dma_buf_ops omap_dmabuf_ops = {
++		.owner = THIS_MODULE,
+ 		.map_dma_buf = omap_gem_map_dma_buf,
+ 		.unmap_dma_buf = omap_gem_unmap_dma_buf,
+ 		.release = omap_gem_dmabuf_release,
+diff --git a/include/linux/dma-buf.h b/include/linux/dma-buf.h
+index eb48f38..22953de 100644
+--- a/include/linux/dma-buf.h
++++ b/include/linux/dma-buf.h
+@@ -37,6 +37,7 @@ struct dma_buf_attachment;
+
+ /**
+  * struct dma_buf_ops - operations possible on struct dma_buf
++ * @owner: the module that implements dma_buf operations
+  * @attach: [optional] allows different devices to 'attach' themselves to the
+  *	    given buffer. It might return -EBUSY to signal that backing storage
+  *	    is already allocated and incompatible with the requirements
+@@ -70,6 +71,7 @@ struct dma_buf_attachment;
+  * @vunmap: [optional] unmaps a vmap from the buffer
+  */
+ struct dma_buf_ops {
++	struct module *owner;
+ 	int (*attach)(struct dma_buf *, struct device *,
+ 			struct dma_buf_attachment *);
+
+-- 
+1.7.9.5

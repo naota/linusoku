@@ -1,0 +1,125 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 42/70] pcdp: use early_ioremap/early_iounmap to access pcdp table
+Date: Tue, 07 Aug 2012 04:28:37 +0100
+Lines: 72
+Approved: news@gmane.org
+Message-ID: <20120807032802.217296163@decadent.org.uk>
+References: <20120807032755.803571133@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344310996 19774 80.91.229.3 (7 Aug 2012 03:43:16 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 03:43:16 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Greg Pearson <greg.pearson@hp.com>,
+	Khalid Aziz <khalid.aziz@hp.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 05:43:15 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyahP-00063J-0f
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 05:43:15 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S964837Ab2HGDi5 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 23:38:57 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:59831 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S964805Ab2HGDix (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 23:38:53 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Syacz-00081o-AN; Tue, 07 Aug 2012 04:38:41 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Syac4-0002pg-20; Tue, 07 Aug 2012 04:37:44 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120807032755.803571133@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338736 gmane.linux.kernel.stable:29178
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338736>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Greg Pearson <greg.pearson@hp.com>
+
+commit 6c4088ac3a4d82779903433bcd5f048c58fb1aca upstream.
+
+efi_setup_pcdp_console() is called during boot to parse the HCDP/PCDP
+EFI system table and setup an early console for printk output.  The
+routine uses ioremap/iounmap to setup access to the HCDP/PCDP table
+information.
+
+The call to ioremap is happening early in the boot process which leads
+to a panic on x86_64 systems:
+
+    panic+0x01ca
+    do_exit+0x043c
+    oops_end+0x00a7
+    no_context+0x0119
+    __bad_area_nosemaphore+0x0138
+    bad_area_nosemaphore+0x000e
+    do_page_fault+0x0321
+    page_fault+0x0020
+    reserve_memtype+0x02a1
+    __ioremap_caller+0x0123
+    ioremap_nocache+0x0012
+    efi_setup_pcdp_console+0x002b
+    setup_arch+0x03a9
+    start_kernel+0x00d4
+    x86_64_start_reservations+0x012c
+    x86_64_start_kernel+0x00fe
+
+This replaces the calls to ioremap/iounmap in efi_setup_pcdp_console()
+with calls to early_ioremap/early_iounmap which can be called during
+early boot.
+
+This patch was tested on an x86_64 prototype system which uses the
+HCDP/PCDP table for early console setup.
+
+Signed-off-by: Greg Pearson <greg.pearson@hp.com>
+Acked-by: Khalid Aziz <khalid.aziz@hp.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ drivers/firmware/pcdp.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/firmware/pcdp.c b/drivers/firmware/pcdp.c
+index 51e0e2d..a330492 100644
+--- a/drivers/firmware/pcdp.c
++++ b/drivers/firmware/pcdp.c
+@@ -95,7 +95,7 @@ efi_setup_pcdp_console(char *cmdline)
+ 	if (efi.hcdp == EFI_INVALID_TABLE_ADDR)
+ 		return -ENODEV;
+ 
+-	pcdp = ioremap(efi.hcdp, 4096);
++	pcdp = early_ioremap(efi.hcdp, 4096);
+ 	printk(KERN_INFO "PCDP: v%d at 0x%lx\n", pcdp->rev, efi.hcdp);
+ 
+ 	if (strstr(cmdline, "console=hcdp")) {
+@@ -131,6 +131,6 @@ efi_setup_pcdp_console(char *cmdline)
+ 	}
+ 
+ out:
+-	iounmap(pcdp);
++	early_iounmap(pcdp, 4096);
+ 	return rc;
+ }
+
+

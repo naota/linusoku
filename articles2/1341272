@@ -1,0 +1,99 @@
+Path: news.gmane.org!not-for-mail
+From: Jens Axboe <jaxboe@fusionio.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH 2/3] block: Fix not tracing all device plug-operation.
+Date: Fri, 10 Aug 2012 15:09:30 +0200
+Lines: 40
+Approved: news@gmane.org
+Message-ID: <5025080A.1040001@fusionio.com>
+References: <201208101945571256852@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="GB2312"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344604240 9236 80.91.229.3 (10 Aug 2012 13:10:40 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 13:10:40 +0000 (UTC)
+Cc: shli <shli@kernel.org>, linux-kernel <linux-kernel@vger.kernel.org>
+To: Jianpeng Ma <majianpeng@gmail.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 10 15:10:40 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Szoz5-0003Gj-MD
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 10 Aug 2012 15:10:36 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755589Ab2HJNJ6 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 10 Aug 2012 09:09:58 -0400
+Original-Received: from mx2.fusionio.com ([66.114.96.31]:33811 "EHLO mx2.fusionio.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751185Ab2HJNJ5 (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 10 Aug 2012 09:09:57 -0400
+X-ASG-Debug-ID: 1344604195-0421b5402c658d0001-xx1T2L
+Original-Received: from mail1.int.fusionio.com (mail1.int.fusionio.com [10.101.1.21]) by mx2.fusionio.com with ESMTP id hPMROpw8jeyYEJLA (version=TLSv1 cipher=AES128-SHA bits=128 verify=NO); Fri, 10 Aug 2012 07:09:55 -0600 (MDT)
+X-Barracuda-Envelope-From: JAxboe@fusionio.com
+Original-Received: from [192.168.0.33] (87.104.106.3) by mail.fusionio.com
+ (10.101.1.19) with Microsoft SMTP Server (TLS) id 8.3.83.0; Fri, 10 Aug 2012
+ 07:09:55 -0600
+X-ASG-Orig-Subj: Re: [PATCH 2/3] block: Fix not tracing all device plug-operation.
+In-Reply-To: <201208101945571256852@gmail.com>
+X-Barracuda-Connect: mail1.int.fusionio.com[10.101.1.21]
+X-Barracuda-Start-Time: 1344604195
+X-Barracuda-Encrypted: AES128-SHA
+X-Barracuda-URL: http://10.101.1.181:8000/cgi-mod/mark.cgi
+X-Virus-Scanned: by bsmtpd at fusionio.com
+X-Barracuda-Spam-Score: 0.00
+X-Barracuda-Spam-Status: No, SCORE=0.00 using global scores of TAG_LEVEL=1000.0 QUARANTINE_LEVEL=1000.0 KILL_LEVEL=9.0 tests=
+X-Barracuda-Spam-Report: Code version 3.2, rules version 3.2.2.105236
+	Rule breakdown below
+	 pts rule name              description
+	---- ---------------------- --------------------------------------------------
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341272
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341272>
+
+On 08/10/2012 01:46 PM, Jianpeng Ma wrote:
+> If process handled two or more devices,there will not be trace some
+> devices plug-operation.
+> 
+> Signed-off-by: Jianpeng Ma <majianpeng@gmail.com>
+> ---
+>  block/blk-core.c |   16 +++++++++++++++-
+>  1 file changed, 15 insertions(+), 1 deletion(-)
+> 
+> diff --git a/block/blk-core.c b/block/blk-core.c
+> index 7a3abc6..034f186 100644
+> --- a/block/blk-core.c
+> +++ b/block/blk-core.c
+> @@ -1521,11 +1521,25 @@ get_rq:
+>  				struct request *__rq;
+>  
+>  				__rq = list_entry_rq(plug->list.prev);
+> -				if (__rq->q != q)
+> +				if (__rq->q != q) {
+>  					plug->should_sort = 1;
+> +					trace_block_plug(q);
+> +				}
+> +			} else {
+> +				struct request *__rq;
+> +				list_for_each_entry_reverse(__rq, &plug->list,
+> +					queuelist) {
+> +					if (__rq->q == q) {
+> +						list_add_tail(&req->queuelist,
+> +							&__rq->queuelist);
+> +						goto stat_acct;
+
+Did you verify this? It doesn't look right to me. You browse the list in
+reverse, which means __rq is the first one that has a matching q. Then
+you add the new req IN FRONT of that. You would want list_add() here
+instead, adding it as the last member of that q string, not in the
+middle.
+
+-- 
+Jens Axboe
+

@@ -1,0 +1,185 @@
+Path: news.gmane.org!not-for-mail
+From: Marcelo Tosatti <mtosatti@redhat.com>
+Newsgroups: gmane.comp.emulators.kvm.devel,gmane.linux.kernel
+Subject: Re: [PATCH v5 05/12] KVM: reorganize hva_to_pfn
+Date: Fri, 10 Aug 2012 14:51:16 -0300
+Lines: 127
+Approved: news@gmane.org
+Message-ID: <20120810175115.GA12477@amt.cnet>
+References: <5020E423.9080004@linux.vnet.ibm.com>
+ <5020E509.8070901@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344623787 12513 80.91.229.3 (10 Aug 2012 18:36:27 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 18:36:27 +0000 (UTC)
+Cc: Avi Kivity <avi@redhat.com>, LKML <linux-kernel@vger.kernel.org>,
+	KVM <kvm@vger.kernel.org>
+To: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Original-X-From: kvm-owner@vger.kernel.org Fri Aug 10 20:36:25 2012
+Return-path: <kvm-owner@vger.kernel.org>
+Envelope-to: gcekd-kvm-devel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <kvm-owner@vger.kernel.org>)
+	id 1Szu4G-00022e-2K
+	for gcekd-kvm-devel@plane.gmane.org; Fri, 10 Aug 2012 20:36:16 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1759934Ab2HJSgL (ORCPT <rfc822;gcekd-kvm-devel@m.gmane.org>);
+	Fri, 10 Aug 2012 14:36:11 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:27050 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1759753Ab2HJSgI (ORCPT <rfc822;kvm@vger.kernel.org>);
+	Fri, 10 Aug 2012 14:36:08 -0400
+Original-Received: from int-mx11.intmail.prod.int.phx2.redhat.com (int-mx11.intmail.prod.int.phx2.redhat.com [10.5.11.24])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q7AIa6nD016062
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Fri, 10 Aug 2012 14:36:06 -0400
+Original-Received: from amt.cnet (vpn1-5-243.gru2.redhat.com [10.97.5.243])
+	by int-mx11.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q7AIa54Q008438;
+	Fri, 10 Aug 2012 14:36:06 -0400
+Original-Received: from amt.cnet (amt.cnet [127.0.0.1])
+	by amt.cnet (Postfix) with ESMTP id 39572652165;
+	Fri, 10 Aug 2012 14:51:19 -0300 (BRT)
+Original-Received: (from marcelo@localhost)
+	by amt.cnet (8.14.5/8.14.5/Submit) id q7AHpG58013800;
+	Fri, 10 Aug 2012 14:51:16 -0300
+Content-Disposition: inline
+In-Reply-To: <5020E509.8070901@linux.vnet.ibm.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.24
+Original-Sender: kvm-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <kvm.vger.kernel.org>
+X-Mailing-List: kvm@vger.kernel.org
+Xref: news.gmane.org gmane.comp.emulators.kvm.devel:95985 gmane.linux.kernel:1341387
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341387>
+
+On Tue, Aug 07, 2012 at 05:51:05PM +0800, Xiao Guangrong wrote:
+> We do too many things in hva_to_pfn, this patch reorganize the code,
+> let it be better readable
+> 
+> Signed-off-by: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+> ---
+>  virt/kvm/kvm_main.c |  159 +++++++++++++++++++++++++++++++--------------------
+>  1 files changed, 97 insertions(+), 62 deletions(-)
+> 
+> diff --git a/virt/kvm/kvm_main.c b/virt/kvm/kvm_main.c
+> index 26ffc87..dd01bcb 100644
+> --- a/virt/kvm/kvm_main.c
+> +++ b/virt/kvm/kvm_main.c
+> @@ -1043,83 +1043,118 @@ static inline int check_user_page_hwpoison(unsigned long addr)
+>  	return rc == -EHWPOISON;
+>  }
+> 
+> -static pfn_t hva_to_pfn(unsigned long addr, bool atomic, bool *async,
+> -			bool write_fault, bool *writable)
+> +/*
+> + * The atomic path to get the writable pfn which will be stored in @pfn,
+> + * true indicates success, otherwise false is returned.
+> + */
+> +static bool hva_to_pfn_fast(unsigned long addr, bool atomic, bool *async,
+> +			    bool write_fault, bool *writable, pfn_t *pfn)
+>  {
+>  	struct page *page[1];
+> -	int npages = 0;
+> -	pfn_t pfn;
+> +	int npages;
+> 
+> -	/* we can do it either atomically or asynchronously, not both */
+> -	BUG_ON(atomic && async);
+> +	if (!(async || atomic))
+> +		return false;
+> 
+> -	BUG_ON(!write_fault && !writable);
+> +	npages = __get_user_pages_fast(addr, 1, 1, page);
+> +	if (npages == 1) {
+> +		*pfn = page_to_pfn(page[0]);
+> 
+> -	if (writable)
+> -		*writable = true;
+> +		if (writable)
+> +			*writable = true;
+> +		return true;
+> +	}
+> +
+> +	return false;
+> +}
+> 
+> -	if (atomic || async)
+> -		npages = __get_user_pages_fast(addr, 1, 1, page);
+> +/*
+> + * The slow path to get the pfn of the specified host virtual address,
+> + * 1 indicates success, -errno is returned if error is detected.
+> + */
+> +static int hva_to_pfn_slow(unsigned long addr, bool *async, bool write_fault,
+> +			   bool *writable, pfn_t *pfn)
+> +{
+> +	struct page *page[1];
+> +	int npages = 0;
+> 
+> -	if (unlikely(npages != 1) && !atomic) {
+> -		might_sleep();
+> +	might_sleep();
+> 
+> -		if (writable)
+> -			*writable = write_fault;
+> -
+> -		if (async) {
+> -			down_read(&current->mm->mmap_sem);
+> -			npages = get_user_page_nowait(current, current->mm,
+> -						     addr, write_fault, page);
+> -			up_read(&current->mm->mmap_sem);
+> -		} else
+> -			npages = get_user_pages_fast(addr, 1, write_fault,
+> -						     page);
+> -
+> -		/* map read fault as writable if possible */
+> -		if (unlikely(!write_fault) && npages == 1) {
+> -			struct page *wpage[1];
+> -
+> -			npages = __get_user_pages_fast(addr, 1, 1, wpage);
+> -			if (npages == 1) {
+> -				*writable = true;
+> -				put_page(page[0]);
+> -				page[0] = wpage[0];
+> -			}
+> -			npages = 1;
+> +	if (writable)
+> +		*writable = write_fault;
+> +
+> +	if (async) {
+> +		down_read(&current->mm->mmap_sem);
+> +		npages = get_user_page_nowait(current, current->mm,
+> +					      addr, write_fault, page);
+> +		up_read(&current->mm->mmap_sem);
+> +	} else
+> +		npages = get_user_pages_fast(addr, 1, write_fault,
+> +					     page);
+> +	if (npages != 1)
+> +		return npages;
+
+ * Returns number of pages pinned. This may be fewer than the number
+ * requested. If nr_pages is 0 or negative, returns 0. If no pages
+ * were pinned, returns -errno.
+ */
+int get_user_pages_fast(unsigned long start, int nr_pages, int write,
+                        struct page **pages)
+
+
+Current behaviour is
+
+        if (atomic || async)
+                npages = __get_user_pages_fast(addr, 1, 1, page);
+
+	if (npages != 1) 
+		slow path retry;
+
+The changes above change this, don't they?
+
+--
+To unsubscribe from this list: send the line "unsubscribe kvm" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

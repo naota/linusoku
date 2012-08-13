@@ -1,0 +1,97 @@
+Path: news.gmane.org!not-for-mail
+From: Oleg Nesterov <oleg@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 08/14] uprobes: kill copy_vma()->uprobe_mmap()
+Date: Sun, 29 Jul 2012 20:22:36 +0200
+Lines: 43
+Approved: news@gmane.org
+Message-ID: <20120729182236.GA20342@redhat.com>
+References: <20120729182128.GA20269@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343586364 27242 80.91.229.3 (29 Jul 2012 18:26:04 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 29 Jul 2012 18:26:04 +0000 (UTC)
+Cc: Anton Arapov <anton@redhat.com>,
+	Srikar Dronamraju <srikar@linux.vnet.ibm.com>,
+	linux-kernel@vger.kernel.org
+To: Ingo Molnar <mingo@elte.hu>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 29 20:26:04 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvYBm-0006a3-Hn
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 29 Jul 2012 20:26:02 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753505Ab2G2SZk (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 29 Jul 2012 14:25:40 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:11139 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753361Ab2G2SZe (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 29 Jul 2012 14:25:34 -0400
+Original-Received: from int-mx10.intmail.prod.int.phx2.redhat.com (int-mx10.intmail.prod.int.phx2.redhat.com [10.5.11.23])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6TIPThj032572
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Sun, 29 Jul 2012 14:25:29 -0400
+Original-Received: from tranklukator.englab.brq.redhat.com (dhcp-1-232.brq.redhat.com [10.34.1.232])
+	by int-mx10.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with SMTP id q6TIPRGD006601;
+	Sun, 29 Jul 2012 14:25:28 -0400
+Original-Received: by tranklukator.englab.brq.redhat.com (nbSMTP-1.00) for uid 500
+	oleg@redhat.com; Sun, 29 Jul 2012 20:22:37 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <20120729182128.GA20269@redhat.com>
+User-Agent: Mutt/1.5.18 (2008-05-17)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.23
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334763
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334763>
+
+Kill copy_vma()->uprobe_mmap(new_vma), it is absolutely wrong.
+
+This new_vma was just initialized to represent the new unmapped area,
+[vm_start, vm_end) was returned by get_unmapped_area() in the caller.
+
+This means that uprobe_mmap()->get_user_pages() will fail for sure,
+simply because find_vma() can never succeed. And I verified that
+sys_mremap()->mremap_to() indeed always fails with the wrong ENOMEM
+code if [addr, addr+old_len] is probed.
+
+And why this uprobe_mmap() was added? I believe the intent was wrong.
+Note that the caller is going to do move_page_tables(), all registered
+uprobes are already faulted in, we only change the virtual addresses.
+
+NOTE: However, somehow we need to close the race with uprobe_register()
+which relies on map_info->vaddr. This needs another fix I'll try to do
+later. Probably we need uprobe_mmap() in move_vma() but we can not do
+this right now, this can confuse uprobes_state.counter (which I still
+hope we are going to kill).
+
+Signed-off-by: Oleg Nesterov <oleg@redhat.com>
+Acked-by: Srikar Dronamraju <srikar.vnet.ibm.com>
+---
+ mm/mmap.c |    3 ---
+ 1 files changed, 0 insertions(+), 3 deletions(-)
+
+diff --git a/mm/mmap.c b/mm/mmap.c
+index 3edfcdf..e5a4614 100644
+--- a/mm/mmap.c
++++ b/mm/mmap.c
+@@ -2418,9 +2418,6 @@ struct vm_area_struct *copy_vma(struct vm_area_struct **vmap,
+ 			if (new_vma->vm_file) {
+ 				get_file(new_vma->vm_file);
+ 
+-				if (uprobe_mmap(new_vma))
+-					goto out_free_mempol;
+-
+ 				if (vma->vm_flags & VM_EXECUTABLE)
+ 					added_exe_file_vma(mm);
+ 			}
+-- 
+1.5.5.1
+

@@ -1,0 +1,318 @@
+Path: news.gmane.org!not-for-mail
+From: Namhyung Kim <namhyung@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 03/12] perf hist: Collapse group hist_entries to a leader
+Date: Tue, 24 Jul 2012 18:01:24 +0900
+Lines: 267
+Approved: news@gmane.org
+Message-ID: <1343120493-23059-4-git-send-email-namhyung@kernel.org>
+References: <1343120493-23059-1-git-send-email-namhyung@kernel.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343120881 28207 80.91.229.3 (24 Jul 2012 09:08:01 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 09:08:01 +0000 (UTC)
+Cc: Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Paul Mackerras <paulus@samba.org>,
+	Ingo Molnar <mingo@kernel.org>,
+	LKML <linux-kernel@vger.kernel.org>,
+	Stephane Eranian <eranian@google.com>,
+	Jiri Olsa <jolsa@redhat.com>,
+	Ulrich Drepper <drepper@gmail.com>,
+	Andi Kleen <andi@firstfloor.org>
+To: Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 11:07:59 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Stb5x-0001kr-8f
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 11:07:57 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753202Ab2GXJHI (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 05:07:08 -0400
+Original-Received: from LGEMRELSE6Q.lge.com ([156.147.1.121]:55075 "EHLO
+	LGEMRELSE6Q.lge.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752707Ab2GXJG7 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 05:06:59 -0400
+X-AuditID: 9c930179-b7bdcae000003d91-fd-500e65b13e5e
+Original-Received: from sejong.aot.lge.com ( [10.177.220.181])
+	by LGEMRELSE6Q.lge.com (Symantec Brightmail Gateway) with SMTP id 09.33.15761.1B56E005; Tue, 24 Jul 2012 18:06:57 +0900 (KST)
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1343120493-23059-1-git-send-email-namhyung@kernel.org>
+X-Brightmail-Tracker: AAAAAA==
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332209
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332209>
+
+To support viewing an event group together, collapse all of members
+in the group to the leader's tree. The entries in the leader's tree
+will have group_stats to store those information.
+
+Cc: Stephane Eranian <eranian@google.com>
+Cc: Jiri Olsa <jolsa@redhat.com>
+Signed-off-by: Namhyung Kim <namhyung@kernel.org>
+---
+ tools/perf/util/hist.c   |  114 ++++++++++++++++++++++++++++++++++++++++++----
+ tools/perf/util/symbol.c |    4 ++
+ tools/perf/util/symbol.h |    3 +-
+ 3 files changed, 111 insertions(+), 10 deletions(-)
+
+diff --git a/tools/perf/util/hist.c b/tools/perf/util/hist.c
+index d2a76d379f87..a8f4c56261a0 100644
+--- a/tools/perf/util/hist.c
++++ b/tools/perf/util/hist.c
+@@ -4,6 +4,7 @@
+ #include "hist.h"
+ #include "session.h"
+ #include "sort.h"
++#include "evsel.h"
+ #include <math.h>
+ 
+ static bool hists__filter_entry_by_dso(struct hists *hists,
+@@ -394,17 +395,50 @@ void hist_entry__free(struct hist_entry *he)
+ 	free(he);
+ }
+ 
++static void hist_entry__add_stat(struct he_stat *left, struct he_stat *right)
++{
++	left->period		+= right->period;
++	left->period_sys	+= right->period_sys;
++	left->period_us		+= right->period_us;
++	left->period_guest_sys	+= right->period_guest_sys;
++	left->period_guest_us	+= right->period_guest_us;
++	left->nr_events		+= right->nr_events;
++}
++
++static void hist_entry__add_group_stat(struct perf_evsel *evsel,
++				       struct hist_entry *iter,
++				       struct hist_entry *he)
++{
++	struct perf_evsel *leader = evsel->leader;
++	if (!leader)
++		leader = evsel;
++
++	if (!iter->group_stats) {
++		iter->group_stats = calloc(leader->nr_children,
++					   sizeof(struct he_stat));
++		if (!iter->group_stats)
++			return;
++	}
++
++	if (!perf_evsel__is_group_leader(evsel))
++		hist_entry__add_stat(&iter->group_stats[evsel->group_idx],
++				     &he->stat);
++	else
++		hist_entry__add_stat(&iter->stat, &he->stat);
++}
++
+ /*
+  * collapse the histogram
+  */
+ 
+-static bool hists__collapse_insert_entry(struct hists *hists __used,
++static bool hists__collapse_insert_entry(struct hists *hists,
+ 					 struct rb_root *root,
+ 					 struct hist_entry *he)
+ {
+ 	struct rb_node **p = &root->rb_node;
+ 	struct rb_node *parent = NULL;
+ 	struct hist_entry *iter;
++	struct perf_evsel *evsel = hists_2_evsel(hists);
+ 	int64_t cmp;
+ 
+ 	while (*p != NULL) {
+@@ -414,8 +448,11 @@ static bool hists__collapse_insert_entry(struct hists *hists __used,
+ 		cmp = hist_entry__collapse(iter, he);
+ 
+ 		if (!cmp) {
+-			iter->stat.period += he->stat.period;
+-			iter->stat.nr_events += he->stat.nr_events;
++			if (symbol_conf.report_group)
++				hist_entry__add_group_stat(evsel, iter, he);
++			else
++				hist_entry__add_stat(&iter->stat, &he->stat);
++
+ 			if (symbol_conf.use_callchain) {
+ 				callchain_cursor_reset(&callchain_cursor);
+ 				callchain_merge(&callchain_cursor,
+@@ -432,6 +469,16 @@ static bool hists__collapse_insert_entry(struct hists *hists __used,
+ 			p = &(*p)->rb_right;
+ 	}
+ 
++	if (symbol_conf.report_group) {
++		/*
++		 * 'he' is not found in the leader tree.
++		 * Insert it to the tree and setup stats properly.
++		 */
++		hist_entry__add_group_stat(evsel, he, he);
++		if (!perf_evsel__is_group_leader(evsel))
++			memset(&he->stat, 0, sizeof(struct he_stat));
++	}
++
+ 	rb_link_node(&he->rb_node_in, parent, p);
+ 	rb_insert_color(&he->rb_node_in, root);
+ 	return true;
+@@ -462,6 +509,7 @@ static void hists__apply_filters(struct hists *hists, struct hist_entry *he)
+ static void __hists__collapse_resort(struct hists *hists, bool threaded)
+ {
+ 	struct rb_root *root;
++	struct rb_root *dest;
+ 	struct rb_node *next;
+ 	struct hist_entry *n;
+ 
+@@ -470,13 +518,26 @@ static void __hists__collapse_resort(struct hists *hists, bool threaded)
+ 
+ 	root = hists__get_rotate_entries_in(hists);
+ 	next = rb_first(root);
++	dest = &hists->entries_collapsed;
++
++	if (symbol_conf.report_group) {
++		struct perf_evsel *leader;
++
++		/*
++		 * Collapse hist entries to the leader's tree.
++		 * If evsel->leader == NULL, it's the leader.
++		 */
++		leader = hists_2_evsel(hists)->leader;
++		if (leader)
++			dest = &leader->hists.entries_collapsed;
++	}
+ 
+ 	while (next) {
+ 		n = rb_entry(next, struct hist_entry, rb_node_in);
+ 		next = rb_next(&n->rb_node_in);
+ 
+ 		rb_erase(&n->rb_node_in, root);
+-		if (hists__collapse_insert_entry(hists, &hists->entries_collapsed, n)) {
++		if (hists__collapse_insert_entry(hists, dest, n)) {
+ 			/*
+ 			 * If it wasn't combined with one of the entries already
+ 			 * collapsed, we need to apply the filters that may have
+@@ -501,13 +562,38 @@ void hists__collapse_resort_threaded(struct hists *hists)
+  * reverse the map, sort on period.
+  */
+ 
+-static void __hists__insert_output_entry(struct rb_root *entries,
++static int __hists__output_cmd_period(struct hist_entry *left,
++				      struct hist_entry *right,
++				      int nr_group)
++{
++	if (left->stat.period > right->stat.period)
++		return 1;
++	if (left->stat.period < right->stat.period)
++		return -1;
++
++	if (symbol_conf.report_group) {
++		int i;
++
++		for (i = 0; i < nr_group; i++) {
++			if (left->group_stats[i].period >
++			    right->group_stats[i].period)
++				return 1;
++			if (left->group_stats[i].period <
++			    right->group_stats[i].period)
++				return -1;
++		}
++	}
++	return 0;
++}
++
++static void __hists__insert_output_entry(struct hists *hists,
+ 					 struct hist_entry *he,
+ 					 u64 min_callchain_hits)
+ {
+-	struct rb_node **p = &entries->rb_node;
++	struct rb_node **p = &hists->entries.rb_node;
+ 	struct rb_node *parent = NULL;
+ 	struct hist_entry *iter;
++	struct perf_evsel *evsel = hists_2_evsel(hists);
+ 
+ 	if (symbol_conf.use_callchain)
+ 		callchain_param.sort(&he->sorted_chain, he->callchain,
+@@ -517,14 +603,14 @@ static void __hists__insert_output_entry(struct rb_root *entries,
+ 		parent = *p;
+ 		iter = rb_entry(parent, struct hist_entry, rb_node);
+ 
+-		if (he->stat.period > iter->stat.period)
++		if (__hists__output_cmd_period(he, iter, evsel->nr_children) > 0)
+ 			p = &(*p)->rb_left;
+ 		else
+ 			p = &(*p)->rb_right;
+ 	}
+ 
+ 	rb_link_node(&he->rb_node, parent, p);
+-	rb_insert_color(&he->rb_node, entries);
++	rb_insert_color(&he->rb_node, &hists->entries);
+ }
+ 
+ static void __hists__output_resort(struct hists *hists, bool threaded)
+@@ -536,6 +622,16 @@ static void __hists__output_resort(struct hists *hists, bool threaded)
+ 
+ 	min_callchain_hits = hists->stats.total_period * (callchain_param.min_percent / 100);
+ 
++	if (symbol_conf.report_group) {
++		struct perf_evsel *evsel = hists_2_evsel(hists);
++
++		/*
++		 * We've collapsed all of non-leader entries to the leader.
++		 */
++		if (!perf_evsel__is_group_leader(evsel))
++			return;
++	}
++
+ 	if (sort__need_collapse || threaded)
+ 		root = &hists->entries_collapsed;
+ 	else
+@@ -552,7 +648,7 @@ static void __hists__output_resort(struct hists *hists, bool threaded)
+ 		n = rb_entry(next, struct hist_entry, rb_node_in);
+ 		next = rb_next(&n->rb_node_in);
+ 
+-		__hists__insert_output_entry(&hists->entries, n, min_callchain_hits);
++		__hists__insert_output_entry(hists, n, min_callchain_hits);
+ 		hists__inc_nr_entries(hists, n);
+ 	}
+ }
+diff --git a/tools/perf/util/symbol.c b/tools/perf/util/symbol.c
+index 50958bbeb26a..753faa76b7c3 100644
+--- a/tools/perf/util/symbol.c
++++ b/tools/perf/util/symbol.c
+@@ -14,6 +14,7 @@
+ #include "debug.h"
+ #include "symbol.h"
+ #include "strlist.h"
++#include "sort.h"
+ 
+ #include <libelf.h>
+ #include <gelf.h>
+@@ -2733,6 +2734,9 @@ int symbol__init(void)
+ 
+ 	symbol_conf.kptr_restrict = symbol__read_kptr_restrict();
+ 
++	if (symbol_conf.report_group)
++		sort__need_collapse = 1;
++
+ 	symbol_conf.initialized = true;
+ 	return 0;
+ 
+diff --git a/tools/perf/util/symbol.h b/tools/perf/util/symbol.h
+index a884b99017f0..9da14d6b1729 100644
+--- a/tools/perf/util/symbol.h
++++ b/tools/perf/util/symbol.h
+@@ -88,7 +88,8 @@ struct symbol_conf {
+ 			initialized,
+ 			kptr_restrict,
+ 			annotate_asm_raw,
+-			annotate_src;
++			annotate_src,
++			report_group;
+ 	const char	*vmlinux_name,
+ 			*kallsyms_name,
+ 			*source_prefix,
+-- 
+1.7.10.4
+

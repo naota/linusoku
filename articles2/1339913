@@ -1,0 +1,86 @@
+Path: news.gmane.org!not-for-mail
+From: Vladimir Gratinskiy <gratinskiy@ispras.ru>
+Newsgroups: gmane.linux.kernel,gmane.linux.scsi
+Subject: [PATCH 1/2] scsi: Use GFP_ATOMIC in kzalloc().
+Date: Wed,  8 Aug 2012 12:41:30 +0400
+Lines: 43
+Approved: news@gmane.org
+Message-ID: <1344415290-10486-1-git-send-email-gratinskiy@ispras.ru>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344417066 7258 80.91.229.3 (8 Aug 2012 09:11:06 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 09:11:06 +0000 (UTC)
+Cc: Vladimir Gratinskiy <gratinskiy@ispras.ru>,
+	"James E.J. Bottomley" <JBottomley@parallels.com>,
+	linux-scsi@vger.kernel.org, linux-kernel@vger.kernel.org,
+	ldv-project@ispras.ru
+To: "Jianyun Li" <jyli@marvell.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 11:11:03 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sz2I8-0001M0-9a
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 11:11:00 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757921Ab2HHJKy (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 05:10:54 -0400
+Original-Received: from smtp.ispras.ru ([83.149.198.202]:51731 "EHLO smtp.ispras.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753062Ab2HHJKw (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 05:10:52 -0400
+Original-Received: from vladimir-System-Product-Name.intra.ispras.ru (unknown [83.149.198.253])
+	by smtp.ispras.ru (Postfix) with ESMTP id 6CACA5D403C;
+	Wed,  8 Aug 2012 12:06:16 +0400 (MSD)
+X-Mailer: git-send-email 1.7.9.5
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339913 gmane.linux.scsi:76801
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339913>
+
+Calling memory allocation function from the context of interrupt:
+request_irq(mhba->pdev->irq, mvumi_isr_handler, IRQF_SHARED, "mvumi", mhba);
+Function mvumi_isr_handler() calls mvumi_handshake(mhba) that calls
+mvumi_init_data(mhba). In mvumi_init_data() there is function
+mvumi_alloc_mem_resource(mhba,..) that calls kzalloc(sizeof(*res), GFP_KERNEL).
+In the case of GFP_KERNEL flag, function execution can be preempted,
+because a greater number of operations to find and allocate memory
+blocks is executed.
+
+The patch change GFP_KERNEL flag to GFP_ATOMIC.
+
+Found by Linux Driver Verification project (linuxtesting.org).
+
+Signed-off-by: Vladimir Gratinskiy <gratinskiy@ispras.ru>
+---
+ drivers/scsi/mvumi.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/scsi/mvumi.c b/drivers/scsi/mvumi.c
+index 88cf1db..097f72f 100644
+--- a/drivers/scsi/mvumi.c
++++ b/drivers/scsi/mvumi.c
+@@ -118,7 +118,7 @@ static int mvumi_map_pci_addr(struct pci_dev *dev, void **addr_array)
+ static struct mvumi_res *mvumi_alloc_mem_resource(struct mvumi_hba *mhba,
+ 				enum resource_type type, unsigned int size)
+ {
+-	struct mvumi_res *res = kzalloc(sizeof(*res), GFP_KERNEL);
++	struct mvumi_res *res = kzalloc(sizeof(*res), GFP_ATOMIC);
+ 
+ 	if (!res) {
+ 		dev_err(&mhba->pdev->dev,
+@@ -128,7 +128,7 @@ static struct mvumi_res *mvumi_alloc_mem_resource(struct mvumi_hba *mhba,
+ 
+ 	switch (type) {
+ 	case RESOURCE_CACHED_MEMORY:
+-		res->virt_addr = kzalloc(size, GFP_KERNEL);
++		res->virt_addr = kzalloc(size, GFP_ATOMIC);
+ 		if (!res->virt_addr) {
+ 			dev_err(&mhba->pdev->dev,
+ 				"unable to allocate memory,size = %d.\n", size);
+-- 
+1.7.9.5
+

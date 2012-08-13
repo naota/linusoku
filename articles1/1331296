@@ -1,0 +1,116 @@
+Path: news.gmane.org!not-for-mail
+From: Josh Triplett <josh@joshtriplett.org>
+Newsgroups: gmane.linux.kernel,gmane.comp.parsers.sparse
+Subject: Re: False warning from Sparse
+Date: Sat, 21 Jul 2012 21:44:21 -0700
+Lines: 58
+Approved: news@gmane.org
+Message-ID: <20120722044421.GA3934@leaf>
+References: <500B7916.6060804@lwfinger.net>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1342932346 21624 80.91.229.3 (22 Jul 2012 04:45:46 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 22 Jul 2012 04:45:46 +0000 (UTC)
+Cc: Christopher Li <sparse@chrisli.org>,
+	Linux-Sparse <linux-sparse@vger.kernel.org>,
+	linux-kernel@vger.kernel.org
+To: Larry Finger <Larry.Finger@lwfinger.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 22 06:45:46 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sso31-0002Ut-Fg
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 22 Jul 2012 06:45:39 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1750986Ab2GVEo3 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 00:44:29 -0400
+Original-Received: from relay3-d.mail.gandi.net ([217.70.183.195]:51196 "EHLO
+	relay3-d.mail.gandi.net" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750725Ab2GVEo2 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 00:44:28 -0400
+X-Originating-IP: 217.70.178.147
+Original-Received: from mfilter19-d.gandi.net (mfilter19-d.gandi.net [217.70.178.147])
+	by relay3-d.mail.gandi.net (Postfix) with ESMTP id 3C489A808D;
+	Sun, 22 Jul 2012 06:44:26 +0200 (CEST)
+X-Virus-Scanned: Debian amavisd-new at mfilter19-d.gandi.net
+Original-Received: from relay3-d.mail.gandi.net ([217.70.183.195])
+	by mfilter19-d.gandi.net (mfilter19-d.gandi.net [10.0.15.180]) (amavisd-new, port 10024)
+	with ESMTP id aru2P094laUz; Sun, 22 Jul 2012 06:44:24 +0200 (CEST)
+X-Originating-IP: 50.43.46.74
+Original-Received: from leaf (static-50-43-46-74.bvtn.or.frontiernet.net [50.43.46.74])
+	(Authenticated sender: josh@joshtriplett.org)
+	by relay3-d.mail.gandi.net (Postfix) with ESMTPSA id AEC8EA807A;
+	Sun, 22 Jul 2012 06:44:23 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <500B7916.6060804@lwfinger.net>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331296 gmane.comp.parsers.sparse:2972
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331296>
+
+On Sat, Jul 21, 2012 at 10:52:54PM -0500, Larry Finger wrote:
+> I am getting the following false warning from sparse:
+> 
+>   CHECK   drivers/net/wireless/rtlwifi/rtl8192c/dm_common.c
+> drivers/net/wireless/rtlwifi/rtl8192c/dm_common.c:1158:13: warning:
+> context imbalance in 'rtl92c_dm_refresh_rate_adaptive_mask' -
+> different lock contexts for basic block
+> 
+> The only code in that routine that does any locking is the following:
+> 
+>              /* Only the PCI card uses sta in the update rate table
+>               * callback routine */
+>              if (rtlhal->interface == INTF_PCI) {
+>                      rcu_read_lock();
+>                      sta = ieee80211_find_sta(mac->vif, mac->bssid);
+>              }
+>              rtlpriv->cfg->ops->update_rate_tbl(hw, sta,
+>                                   p_ra->ratr_state);
+> 
+>              p_ra->pre_ratr_state = p_ra->ratr_state;
+>              if (rtlhal->interface == INTF_PCI)
+>                      rcu_read_unlock();
+> 
+> Does the warning get output because the code cannot assume that
+> rtlhal->interface is the same in both if statements?
+
+Correct; sparse does not have enough dataflow analysis to connect the
+two if bodies, nor can it verify that nothing between the two changes
+rtlhal->interface.
+
+> If that is the
+> case, are there any compiler directives that would tell sparse of
+> the situation?
+
+No, none of Sparse's directives will let you override this.  However,
+you could do something like the following:
+
+              /* Only the PCI card uses sta in the update rate table
+               * callback routine */
+              if (rtlhal->interface == INTF_PCI) {
+                      rcu_read_lock();
+                      sta = ieee80211_find_sta(mac->vif, mac->bssid);
+                      rtlpriv->cfg->ops->update_rate_tbl(hw, sta, p_ra->ratr_state);
+                      p_ra->pre_ratr_state = p_ra->ratr_state;
+                      rcu_read_unlock();
+              } else {
+                      rtlpriv->cfg->ops->update_rate_tbl(hw, sta, p_ra->ratr_state);
+                      p_ra->pre_ratr_state = p_ra->ratr_state;
+              }
+
+You could wrap those two lines in a function if you don't want to
+duplicate them.
+
+If that solution or a similar refactoring doesn't appeal to you, then
+you don't currently have any way of making that context warning go away,
+short of improving Sparse to handle this situation better.
+
+- Josh Triplett

@@ -1,0 +1,117 @@
+Path: news.gmane.org!not-for-mail
+From: Tejun Heo <tj@kernel.org>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH 1/1] kthread: disable preemption during complete()
+Date: Tue, 24 Jul 2012 17:09:01 -0700
+Lines: 51
+Approved: news@gmane.org
+Message-ID: <20120725000901.GA5304@google.com>
+References: <5FBF8E85CA34454794F0F7ECBA79798F379D364859@HQMAIL04.nvidia.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343174963 14803 80.91.229.3 (25 Jul 2012 00:09:23 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 00:09:23 +0000 (UTC)
+Cc: "linux-kernel@vger.kernel.org" <linux-kernel@vger.kernel.org>,
+	Paul Gortmaker <paul.gortmaker@windriver.com>,
+	Henrique de Moraes Holschuh <ibm-acpi@hmh.eng.br>,
+	Andy Walls <awalls@md.metrocast.net>,
+	Diwakar Tundlam <dtundlam@nvidia.com>
+To: Peter Boonstoppel <pboonstoppel@nvidia.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 02:09:22 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StpAD-0006ke-0s
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 02:09:17 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754595Ab2GYAJI (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 20:09:08 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:41281 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753326Ab2GYAJG (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 20:09:06 -0400
+Original-Received: by pbbrp8 with SMTP id rp8so415954pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 24 Jul 2012 17:09:05 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=sender:date:from:to:cc:subject:message-id:references:mime-version
+         :content-type:content-disposition:in-reply-to:user-agent;
+        bh=tzjbJhoDy/Vb9wHI0TNvATKv2wKYTn+CRXuLRXVTg+4=;
+        b=1AGIz18O2bH8VgQZsrRKsjDPAUJ11jcZLqefXhII8o8ZV7zYw0nSE58xRnaW4kcyrT
+         sH/uOtmM9V85QD8ZBFoy57pP/IR+rMnPBim18vL+so1z8IOY//paVs0NH9SS+11VjBfc
+         VLFHaEjflodtIk1+Y+nHUTUbWpClB0WlcaRvqi5ReVs8C4AYty5563QmyWMPt7g6gw0L
+         y6RUy7yEAaJfz/+ONKp7WV+UN1Jcd4AZNEuramx8aNagUwD5+T0j5YV21z6qmWkdMUMe
+         KGbpbHfVdJ4SOAa0jN8lHdtjr+3nweFaAZuUJWU+KnRWRKx2PluGxOZACPtzV19zo/aF
+         Y/BA==
+Original-Received: by 10.68.193.196 with SMTP id hq4mr7319201pbc.76.1343174945881;
+        Tue, 24 Jul 2012 17:09:05 -0700 (PDT)
+Original-Received: from google.com (wtj.mtv.corp.google.com [172.18.110.84])
+        by mx.google.com with ESMTPS id oo6sm13121478pbc.22.2012.07.24.17.09.04
+        (version=SSLv3 cipher=OTHER);
+        Tue, 24 Jul 2012 17:09:04 -0700 (PDT)
+Content-Disposition: inline
+In-Reply-To: <5FBF8E85CA34454794F0F7ECBA79798F379D364859@HQMAIL04.nvidia.com>
+User-Agent: Mutt/1.5.20 (2009-06-14)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332641
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332641>
+
+Hello,
+
+On Tue, Jul 24, 2012 at 05:05:32PM -0700, Peter Boonstoppel wrote:
+> After a kthread is created it signals the requester using complete()
+> and enters TASK_UNINTERRUPTIBLE. However, since complete() wakes up
+> the requesting thread this can cause a preemption. The preemption will
+> not remove the task from the runqueue (for that schedule() has to be
+> invoked directly).
+> 
+> This is a problem if directly after kthread creation you try to do a
+> kthread_bind(), which will block in HZ steps until the thread is off
+> the runqueue.
+> 
+> This patch disables preemption during complete(), since we call
+> schedule() directly afterwards, so it will correctly enter
+> TASK_UNINTERRUPTIBLE. This speeds up kthread creation/binding during
+> cpu hotplug significantly.
+> 
+> Change-Id: I856ddd4e01ebdb198ba90f343b4a0c5933fd2b23
+
+Is this from internal gerrit?  Can you please remove it before sending
+things upstream?
+
+>  #include <linux/mutex.h>
+>  #include <linux/slab.h>
+>  #include <linux/freezer.h>
+> +#include <linux/preempt.h>
+> +#include <linux/thread_info.h>
+>  #include <trace/events/sched.h>
+>  
+>  static DEFINE_SPINLOCK(kthread_create_lock);
+> @@ -113,7 +115,10 @@ static int kthread(void *_create)
+>  	/* OK, tell user we're spawned, wait for stop or wakeup */
+>  	__set_current_state(TASK_UNINTERRUPTIBLE);
+>  	create->result = current;
+> +	preempt_disable();
+>  	complete(&create->done);
+> +	clear_need_resched();
+
+Is the above really necessary given that you're calling
+preempt_enable_no_resched() right after?
+
+> +	preempt_enable_no_resched();
+>  	schedule();
+
+Some comments would be really nice.
+
+Thanks.
+
+-- 
+tejun

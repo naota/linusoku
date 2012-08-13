@@ -1,0 +1,111 @@
+Path: news.gmane.org!not-for-mail
+From: Fengguang Wu <fengguang.wu@intel.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.file-systems
+Subject: [PATCH 2/2] block: move down direct IO plugging
+Date: Sun, 05 Aug 2012 16:26:16 +0800
+Lines: 57
+Approved: news@gmane.org
+Message-ID: <20120805083337.187282560@intel.com>
+References: <20120805082614.071671796@intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344155697 23649 80.91.229.3 (5 Aug 2012 08:34:57 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 5 Aug 2012 08:34:57 +0000 (UTC)
+Cc: Andrew Morton <akpm@linux-foundation.org>,
+	Li Shaohua <shli@fusionio.com>, Jeff Moyer <jmoyer@redhat.com>,
+	Wu Fengguang <fengguang.wu@intel.com>
+To: Jens Axboe <axboe@kernel.dk>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Aug 05 10:34:56 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxwIa-0008F4-6V
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 05 Aug 2012 10:34:56 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754354Ab2HEIer (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 5 Aug 2012 04:34:47 -0400
+Original-Received: from mga01.intel.com ([192.55.52.88]:29789 "EHLO mga01.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754067Ab2HEIep (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 5 Aug 2012 04:34:45 -0400
+Original-Received: from fmsmga001.fm.intel.com ([10.253.24.23])
+  by fmsmga101.fm.intel.com with ESMTP; 05 Aug 2012 01:34:43 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="193349700"
+Original-Received: from unknown (HELO wfg-t420.sh.intel.com) ([10.255.20.173])
+  by fmsmga001.fm.intel.com with ESMTP; 05 Aug 2012 01:34:39 -0700
+Original-Received: from wfg by wfg-t420.sh.intel.com with local (Exim 4.77)
+	(envelope-from <fengguang.wu@intel.com>)
+	id 1SxwIC-0004f0-Vm; Sun, 05 Aug 2012 16:34:32 +0800
+User-Agent: quilt/0.51-1
+Original-cc: <linux-fsdevel@vger.kernel.org>
+Original-cc: Damien Wyart <damien.wyart@free.fr>
+Original-Cc: LKML <linux-kernel@vger.kernel.org>
+Content-Disposition: inline; filename=move-down-directio-plug.patch
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337795 gmane.linux.file-systems:66424
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337795>
+
+Move unplugging for direct I/O from around ->direct_IO() down to
+do_blockdev_direct_IO(). This implicitly adds plugging for direct
+writes.
+
+CC: Li Shaohua <shli@fusionio.com>
+Acked-by: Jeff Moyer <jmoyer@redhat.com>
+Signed-off-by: Wu Fengguang <fengguang.wu@intel.com>
+---
+ fs/direct-io.c |    5 +++++
+ mm/filemap.c   |    4 ----
+ 2 files changed, 5 insertions(+), 4 deletions(-)
+
+--- linux-next.orig/mm/filemap.c	2012-08-05 16:24:47.859465122 +0800
++++ linux-next/mm/filemap.c	2012-08-05 16:24:48.407465135 +0800
+@@ -1412,12 +1412,8 @@ generic_file_aio_read(struct kiocb *iocb
+ 			retval = filemap_write_and_wait_range(mapping, pos,
+ 					pos + iov_length(iov, nr_segs) - 1);
+ 			if (!retval) {
+-				struct blk_plug plug;
+-
+-				blk_start_plug(&plug);
+ 				retval = mapping->a_ops->direct_IO(READ, iocb,
+ 							iov, pos, nr_segs);
+-				blk_finish_plug(&plug);
+ 			}
+ 			if (retval > 0) {
+ 				*ppos = pos + retval;
+--- linux-next.orig/fs/direct-io.c	2012-07-07 21:46:39.531508198 +0800
++++ linux-next/fs/direct-io.c	2012-08-05 16:24:48.411465136 +0800
+@@ -1062,6 +1062,7 @@ do_blockdev_direct_IO(int rw, struct kio
+ 	unsigned long user_addr;
+ 	size_t bytes;
+ 	struct buffer_head map_bh = { 0, };
++	struct blk_plug plug;
+ 
+ 	if (rw & WRITE)
+ 		rw = WRITE_ODIRECT;
+@@ -1177,6 +1178,8 @@ do_blockdev_direct_IO(int rw, struct kio
+ 				PAGE_SIZE - user_addr / PAGE_SIZE);
+ 	}
+ 
++	blk_start_plug(&plug);
++
+ 	for (seg = 0; seg < nr_segs; seg++) {
+ 		user_addr = (unsigned long)iov[seg].iov_base;
+ 		sdio.size += bytes = iov[seg].iov_len;
+@@ -1235,6 +1238,8 @@ do_blockdev_direct_IO(int rw, struct kio
+ 	if (sdio.bio)
+ 		dio_bio_submit(dio, &sdio);
+ 
++	blk_finish_plug(&plug);
++
+ 	/*
+ 	 * It is possible that, we return short IO due to end of file.
+ 	 * In that case, we need to release all the pages we got hold on.
+
+

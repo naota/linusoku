@@ -1,0 +1,167 @@
+Path: news.gmane.org!not-for-mail
+From: Mel Gorman <mgorman@suse.de>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel.stable,gmane.linux.kernel
+Subject: [PATCH 10/34] mm: Abort reclaim/compaction if compaction can proceed
+Date: Thu, 19 Jul 2012 15:36:20 +0100
+Lines: 107
+Approved: news@gmane.org
+Message-ID: <1342708604-26540-11-git-send-email-mgorman@suse.de>
+References: <1342708604-26540-1-git-send-email-mgorman@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342708644 12292 80.91.229.3 (19 Jul 2012 14:37:24 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 14:37:24 +0000 (UTC)
+Cc: "Linux-MM <linux-mm"@kvack.org,
+	LKML <linux-kernel@vger.kernel.org>, Mel Gorman <mgorman@suse.de>
+To: Stable <stable@vger.kernel.org>
+Original-X-From: owner-linux-mm@kvack.org Thu Jul 19 16:37:23 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Srrqz-0005T7-UI
+	for glkm-linux-mm-2@m.gmane.org; Thu, 19 Jul 2012 16:37:22 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id BED4A6B0078; Thu, 19 Jul 2012 10:37:03 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 12EF16B0081; Thu, 19 Jul 2012 10:37:01 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id C245F6B0070; Thu, 19 Jul 2012 10:36:58 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx180.postini.com [74.125.245.180])
+	by kanga.kvack.org (Postfix) with SMTP id D9B9F6B007D
+	for <linux-mm@kvack.org>; Thu, 19 Jul 2012 10:36:53 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx180.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 19 Jul 2012 07:36:54 PDT
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 3D090A2FD6;
+	Thu, 19 Jul 2012 16:36:52 +0200 (CEST)
+X-Mailer: git-send-email 1.7.9.2
+In-Reply-To: <1342708604-26540-1-git-send-email-mgorman@suse.de>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mgorman@suse.de> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82702 gmane.linux.kernel.stable:28542 gmane.linux.kernel:1330375
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330375>
+
+commit e0c23279c9f800c403f37511484d9014ac83adec upstream.
+
+Stable note: Not tracked on Bugzilla. THP and compaction was found to
+	aggressively reclaim pages and stall systems under different
+	situations that was addressed piecemeal over time.
+
+If compaction can proceed, shrink_zones() stops doing any work but its
+callers still call shrink_slab() which raises the priority and potentially
+sleeps.  This is unnecessary and wasteful so this patch aborts direct
+reclaim/compaction entirely if compaction can proceed.
+
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+Acked-by: Rik van Riel <riel@redhat.com>
+Reviewed-by: Minchan Kim <minchan.kim@gmail.com>
+Acked-by: Johannes Weiner <jweiner@redhat.com>
+Cc: Josh Boyer <jwboyer@redhat.com>
+Cc: Andrea Arcangeli <aarcange@redhat.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+---
+ mm/vmscan.c |   32 +++++++++++++++++++++-----------
+ 1 file changed, 21 insertions(+), 11 deletions(-)
+
+diff --git a/mm/vmscan.c b/mm/vmscan.c
+index d11b6c4..65388ac 100644
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -2037,14 +2037,19 @@ restart:
+  *
+  * If a zone is deemed to be full of pinned pages then just give it a light
+  * scan then give up on it.
++ *
++ * This function returns true if a zone is being reclaimed for a costly
++ * high-order allocation and compaction is either ready to begin or deferred.
++ * This indicates to the caller that it should retry the allocation or fail.
+  */
+-static void shrink_zones(int priority, struct zonelist *zonelist,
++static bool shrink_zones(int priority, struct zonelist *zonelist,
+ 					struct scan_control *sc)
+ {
+ 	struct zoneref *z;
+ 	struct zone *zone;
+ 	unsigned long nr_soft_reclaimed;
+ 	unsigned long nr_soft_scanned;
++	bool should_abort_reclaim = false;
+ 
+ 	for_each_zone_zonelist_nodemask(zone, z, zonelist,
+ 					gfp_zone(sc->gfp_mask), sc->nodemask) {
+@@ -2061,19 +2066,20 @@ static void shrink_zones(int priority, struct zonelist *zonelist,
+ 				continue;	/* Let kswapd poll it */
+ 			if (COMPACTION_BUILD) {
+ 				/*
+-				 * If we already have plenty of memory
+-				 * free for compaction, don't free any
+-				 * more.  Even though compaction is
+-				 * invoked for any non-zero order,
+-				 * only frequent costly order
+-				 * reclamation is disruptive enough to
+-				 * become a noticable problem, like
+-				 * transparent huge page allocations.
++				 * If we already have plenty of memory free for
++				 * compaction in this zone, don't free any more.
++				 * Even though compaction is invoked for any
++				 * non-zero order, only frequent costly order
++				 * reclamation is disruptive enough to become a
++				 * noticable problem, like transparent huge page
++				 * allocations.
+ 				 */
+ 				if (sc->order > PAGE_ALLOC_COSTLY_ORDER &&
+ 					(compaction_suitable(zone, sc->order) ||
+-					 compaction_deferred(zone)))
++					 compaction_deferred(zone))) {
++					should_abort_reclaim = true;
+ 					continue;
++				}
+ 			}
+ 			/*
+ 			 * This steals pages from memory cgroups over softlimit
+@@ -2092,6 +2098,8 @@ static void shrink_zones(int priority, struct zonelist *zonelist,
+ 
+ 		shrink_zone(priority, zone, sc);
+ 	}
++
++	return should_abort_reclaim;
+ }
+ 
+ static bool zone_reclaimable(struct zone *zone)
+@@ -2156,7 +2164,9 @@ static unsigned long do_try_to_free_pages(struct zonelist *zonelist,
+ 		sc->nr_scanned = 0;
+ 		if (!priority)
+ 			disable_swap_token(sc->mem_cgroup);
+-		shrink_zones(priority, zonelist, sc);
++		if (shrink_zones(priority, zonelist, sc))
++			break;
++
+ 		/*
+ 		 * Don't shrink slabs when reclaiming memory from
+ 		 * over limit cgroups
+-- 
+1.7.9.2
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

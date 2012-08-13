@@ -1,0 +1,188 @@
+Path: news.gmane.org!not-for-mail
+From: Kent Overstreet <koverstreet@google.com>
+Newsgroups: gmane.linux.kernel.device-mapper.devel,gmane.linux.kernel.bcache.devel,gmane.linux.kernel,gmane.linux.kernel.drbd.devel
+Subject: [PATCH v5 02/12] dm: Use bioset's front_pad for
+	dm_rq_clone_bio_info
+Date: Mon,  6 Aug 2012 15:08:31 -0700
+Lines: 85
+Approved: news@gmane.org
+Message-ID: <1344290921-25154-3-git-send-email-koverstreet@google.com>
+References: <1344290921-25154-1-git-send-email-koverstreet@google.com>
+Reply-To: device-mapper development <dm-devel@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344291071 15015 80.91.229.3 (6 Aug 2012 22:11:11 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 22:11:11 +0000 (UTC)
+Cc: axboe@kernel.dk, Kent Overstreet <koverstreet@google.com>,
+        mpatocka@redhat.com, vgoyal@redhat.com, yehuda@hq.newdream.net,
+        tj@kernel.org, sage@newdream.net, agk@redhat.com,
+        drbd-dev@lists.linbit.com
+To: linux-bcache@vger.kernel.org, linux-kernel@vger.kernel.org,
+        dm-devel@redhat.com
+Original-X-From: dm-devel-bounces@redhat.com Tue Aug 07 00:11:10 2012
+Return-path: <dm-devel-bounces@redhat.com>
+Envelope-to: glkdd-dm-devel@gmane.org
+Original-Received: from mx4-phx2.redhat.com ([209.132.183.25])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <dm-devel-bounces@redhat.com>)
+	id 1SyVW0-0003S1-1Q
+	for glkdd-dm-devel@gmane.org; Tue, 07 Aug 2012 00:11:08 +0200
+Original-Received: from lists01.pubmisc.prod.ext.phx2.redhat.com (lists01.pubmisc.prod.ext.phx2.redhat.com [10.5.19.33])
+	by mx4-phx2.redhat.com (8.13.8/8.13.8) with ESMTP id q76M9GGi011939;
+	Mon, 6 Aug 2012 18:09:18 -0400
+Original-Received: from int-mx02.intmail.prod.int.phx2.redhat.com
+	(int-mx02.intmail.prod.int.phx2.redhat.com [10.5.11.12])
+	by lists01.pubmisc.prod.ext.phx2.redhat.com (8.13.8/8.13.8) with ESMTP
+	id q76M9Fou000939 for <dm-devel@listman.util.phx.redhat.com>;
+	Mon, 6 Aug 2012 18:09:15 -0400
+Original-Received: from mx1.redhat.com (ext-mx13.extmail.prod.ext.phx2.redhat.com
+	[10.5.110.18])
+	by int-mx02.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with ESMTP
+	id q76M9AtZ004192
+	for <dm-devel@redhat.com>; Mon, 6 Aug 2012 18:09:10 -0400
+Original-Received: from mail-pb0-f46.google.com (mail-pb0-f46.google.com
+	[209.85.160.46])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q76M98w3015024
+	for <dm-devel@redhat.com>; Mon, 6 Aug 2012 18:09:08 -0400
+Original-Received: by pbbrr13 with SMTP id rr13so3170584pbb.33
+	for <dm-devel@redhat.com>; Mon, 06 Aug 2012 15:09:08 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=20120113;
+	h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+	bh=q3sMh64RmLgJ3bNKW0hZqAy+QA7dV9zJ6dgT6TFIR2o=;
+	b=fUl4bAaQyfDX0Ljf9LgKlvL6kV6BNtk+/EqOlTyXiC6kF4l+qYemE9lfNY4zOOgfhg
+	aPniFev+bIyFMwoEJIP/V/LBtUiDngGvl+YWnUVdCfM8YctG6Fyc7Us4JmXzx8KQ9YhR
+	rhWSdwIlvLCfhfyG1gJdDlPW7Hfa53+flzYPEDEWUHdaiYgph7ovvmzDZQL71Ww//pdp
+	lCjgoGIqpnDHyU/L3UWZWaGzPtWEEOssSMgUveDJf6vWxYGKDA/y9HQUfr8eRtidGtIY
+	bVEI07on+4GJzJpS/g7q1cK6pAiQD5R9VPfV0v2bxAhImuNY4cjKrixDwPgn6VN8rFVr
+	4VIQ==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+	d=google.com; s=20120113;
+	h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+	:x-gm-message-state;
+	bh=q3sMh64RmLgJ3bNKW0hZqAy+QA7dV9zJ6dgT6TFIR2o=;
+	b=o1+cYS3Pe0Nl6dzummDnteq25iwGkn58K37uuaCZfPmpDBlLlwWgs3ytT5j0eFEhzH
+	8FBhxzI99rZIilStKXRRIgKyKrb3Az41X4e+gjbsoBNufgD02JAJ/T98WYRpwKhDSI5/
+	xI3YqZbw6aO2qhFHGFVCbc0Ncfibyhk3bsp/al1FmBttyUBNzJUn1cjDp62SgCIulBnd
+	KxHwBRTXzA83Q43sUirN7ObiQoeFtNtpmRCK3CBJP+lNSRYsgKAjlh6VxtgFO3+tYuU0
+	DidOk0u6VRzvbKR1gF14iTX8/OJFrgoZlZ+QVUe8rlgMQWBIJ3IyaYy6RJNd2CI8nK36
+	MkAQ==
+Original-Received: by 10.68.191.226 with SMTP id hb2mr1680660pbc.129.1344290948466;
+	Mon, 06 Aug 2012 15:09:08 -0700 (PDT)
+Original-Received: by 10.68.191.226 with SMTP id hb2mr1680634pbc.129.1344290948306;
+	Mon, 06 Aug 2012 15:09:08 -0700 (PDT)
+Original-Received: from formenos.mtv.corp.google.com (formenos.mtv.corp.google.com
+	[172.18.110.66])
+	by mx.google.com with ESMTPS id iq1sm6145082pbc.37.2012.08.06.15.09.06
+	(version=TLSv1/SSLv3 cipher=OTHER);
+	Mon, 06 Aug 2012 15:09:07 -0700 (PDT)
+In-Reply-To: <1344290921-25154-1-git-send-email-koverstreet@google.com>
+X-Gm-Message-State: ALoCoQkMXReW5avozttBKiVyOz4spgp26+wY/I7FqaJVBtobpwDBhrfMKgeHcRuAPJe3WiiEeP22z0Cm0xLpsNJdLdOvx38N/nT++RxwfbbBCSZSzlNIdjZFVjnBzDrlU4nR0BIyZMC0kFdzUqCwbZxu5HEBT5GefUxBZaNBK+Z8W5HehYNls8McRvEZwTrSYjS5tqrF82Zl
+X-RedHat-Spam-Score: -2.711  (BAYES_00, DKIM_SIGNED, DKIM_VALID, DKIM_VALID_AU,
+	RCVD_IN_DNSWL_LOW, SPF_PASS, T_RP_MATCHES_RCVD)
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.12
+X-Scanned-By: MIMEDefang 2.68 on 10.5.110.18
+X-loop: dm-devel@redhat.com
+X-BeenThere: dm-devel@redhat.com
+X-Mailman-Version: 2.1.12
+Precedence: junk
+List-Id: device-mapper development <dm-devel.redhat.com>
+List-Unsubscribe: <https://www.redhat.com/mailman/options/dm-devel>,
+	<mailto:dm-devel-request@redhat.com?subject=unsubscribe>
+List-Archive: <https://www.redhat.com/archives/dm-devel>
+List-Post: <mailto:dm-devel@redhat.com>
+List-Help: <mailto:dm-devel-request@redhat.com?subject=help>
+List-Subscribe: <https://www.redhat.com/mailman/listinfo/dm-devel>,
+	<mailto:dm-devel-request@redhat.com?subject=subscribe>
+Original-Sender: dm-devel-bounces@redhat.com
+Errors-To: dm-devel-bounces@redhat.com
+Xref: news.gmane.org gmane.linux.kernel.device-mapper.devel:16477 gmane.linux.kernel.bcache.devel:669 gmane.linux.kernel:1338603 gmane.linux.kernel.drbd.devel:2062
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338603>
+
+Previously, dm_rq_clone_bio_info needed to be freed by the bio's
+destructor to avoid a memory leak in the blk_rq_prep_clone() error path.
+This gets rid of a memory allocation and means we can kill
+dm_rq_bio_destructor.
+
+Signed-off-by: Kent Overstreet <koverstreet@google.com>
+---
+ drivers/md/dm.c |   31 +++++--------------------------
+ 1 files changed, 5 insertions(+), 26 deletions(-)
+
+diff --git a/drivers/md/dm.c b/drivers/md/dm.c
+index 40b7735..4014696 100644
+--- a/drivers/md/dm.c
++++ b/drivers/md/dm.c
+@@ -92,6 +92,7 @@ struct dm_rq_target_io {
+ struct dm_rq_clone_bio_info {
+ 	struct bio *orig;
+ 	struct dm_rq_target_io *tio;
++	struct bio clone;
+ };
+ 
+ union map_info *dm_get_mapinfo(struct bio *bio)
+@@ -467,16 +468,6 @@ static void free_rq_tio(struct dm_rq_target_io *tio)
+ 	mempool_free(tio, tio->md->tio_pool);
+ }
+ 
+-static struct dm_rq_clone_bio_info *alloc_bio_info(struct mapped_device *md)
+-{
+-	return mempool_alloc(md->io_pool, GFP_ATOMIC);
+-}
+-
+-static void free_bio_info(struct dm_rq_clone_bio_info *info)
+-{
+-	mempool_free(info, info->tio->md->io_pool);
+-}
+-
+ static int md_in_flight(struct mapped_device *md)
+ {
+ 	return atomic_read(&md->pending[READ]) +
+@@ -1438,30 +1429,17 @@ void dm_dispatch_request(struct request *rq)
+ }
+ EXPORT_SYMBOL_GPL(dm_dispatch_request);
+ 
+-static void dm_rq_bio_destructor(struct bio *bio)
+-{
+-	struct dm_rq_clone_bio_info *info = bio->bi_private;
+-	struct mapped_device *md = info->tio->md;
+-
+-	free_bio_info(info);
+-	bio_free(bio, md->bs);
+-}
+-
+ static int dm_rq_bio_constructor(struct bio *bio, struct bio *bio_orig,
+ 				 void *data)
+ {
+ 	struct dm_rq_target_io *tio = data;
+-	struct mapped_device *md = tio->md;
+-	struct dm_rq_clone_bio_info *info = alloc_bio_info(md);
+-
+-	if (!info)
+-		return -ENOMEM;
++	struct dm_rq_clone_bio_info *info =
++		container_of(bio, struct dm_rq_clone_bio_info, clone);
+ 
+ 	info->orig = bio_orig;
+ 	info->tio = tio;
+ 	bio->bi_end_io = end_clone_bio;
+ 	bio->bi_private = info;
+-	bio->bi_destructor = dm_rq_bio_destructor;
+ 
+ 	return 0;
+ }
+@@ -2696,7 +2674,8 @@ struct dm_md_mempools *dm_alloc_md_mempools(unsigned type, unsigned integrity)
+ 	if (!pools->tio_pool)
+ 		goto free_io_pool_and_out;
+ 
+-	pools->bs = bioset_create(pool_size, 0);
++	pools->bs = bioset_create(pool_size,
++				  offsetof(struct dm_rq_clone_bio_info, orig));
+ 	if (!pools->bs)
+ 		goto free_tio_pool_and_out;
+ 
+-- 
+1.7.7.3
+

@@ -1,0 +1,103 @@
+Path: news.gmane.org!not-for-mail
+From: Colin Cross <ccross@android.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] cpuidle: coupled: fix sleeping while atomic in cpu notifier
+Date: Wed, 25 Jul 2012 14:20:11 -0700
+Lines: 36
+Approved: news@gmane.org
+Message-ID: <1343251216-24106-1-git-send-email-ccross@android.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343251234 18444 80.91.229.3 (25 Jul 2012 21:20:34 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 21:20:34 +0000 (UTC)
+Cc: Colin Cross <ccross@android.com>, Len Brown <len.brown@intel.com>,
+	Kevin Hilman <khilman@ti.com>,
+	Santosh Shilimkar <santosh.shilimkar@ti.com>,
+	"Rafael J. Wysocki" <rjw@sisk.pl>, linux-kernel@vger.kernel.org
+To: Len Brown <lenb@kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Jul 25 23:20:33 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Su90R-0002IF-86
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 25 Jul 2012 23:20:31 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752699Ab2GYVUX (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 25 Jul 2012 17:20:23 -0400
+Original-Received: from mail-ee0-f74.google.com ([74.125.83.74]:41277 "EHLO
+	mail-ee0-f74.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750897Ab2GYVUW (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 25 Jul 2012 17:20:22 -0400
+Original-Received: by eekd4 with SMTP id d4so52894eek.1
+        for <linux-kernel@vger.kernel.org>; Wed, 25 Jul 2012 14:20:21 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:x-gm-message-state;
+        bh=DvdgPlHxEYyoxhOs9QEsqMuFRJaSjshs/xmEzU3J4Do=;
+        b=GIe6N6OzceZIQqqMaZCSEul7knCi372aCH591Uo5oJk7FvugZW42qoA0+IoaZ28VlE
+         sn/QPGLiSGdGDekU67ZM3i8KiiufLd/B5ncxDbzOJ1O2hfnDAYvaXpHWjXpRc/FDOy3C
+         Cl8veKhBc7YXzIW+Ets8fBhQcLnmQsTWsHHzyWc3q/Pr25HkD/1HiqJg3rmwYpSDeCcV
+         r3rSO32FMPePOfmrQuvEP1WNtSKpNLrMYSlxxFUuchaK6Ulwc6ceK+Kl2tXo+0GBwzGt
+         Ex78Wzd+OxUFNcnqmx3qkCQkN1H8/u36caJojMhXVFfiXOleE0Bcud92jGjfPWp+VcRp
+         RzEQ==
+Original-Received: by 10.14.225.71 with SMTP id y47mr998067eep.4.1343251221551;
+        Wed, 25 Jul 2012 14:20:21 -0700 (PDT)
+Original-Received: by 10.14.225.71 with SMTP id y47mr998054eep.4.1343251221485;
+        Wed, 25 Jul 2012 14:20:21 -0700 (PDT)
+Original-Received: from hpza9.eem.corp.google.com ([74.125.121.33])
+        by gmr-mx.google.com with ESMTPS id 46si761816eed.1.2012.07.25.14.20.21
+        (version=TLSv1/SSLv3 cipher=AES128-SHA);
+        Wed, 25 Jul 2012 14:20:21 -0700 (PDT)
+Original-Received: from walnut.mtv.corp.google.com (walnut.mtv.corp.google.com [172.18.104.116])
+	by hpza9.eem.corp.google.com (Postfix) with ESMTP id 4AEE75C0050;
+	Wed, 25 Jul 2012 14:20:21 -0700 (PDT)
+Original-Received: by walnut.mtv.corp.google.com (Postfix, from userid 99897)
+	id 8724F257A53; Wed, 25 Jul 2012 14:20:20 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7.3
+X-Gm-Message-State: ALoCoQkqtjJe54OYodZWmyD71MQCxsDzxeEBpQRqvG2ogNUUrflYona3Ggj75PMIHhJs39llwU7N3GyMfu3SlrqcYkZJ7DlWCGQMbO7EU4fmGT/ajxsnQdVdTlT2BBFvEyeiwWgTPkjjGdRH0LUP2W+pS+q3aspiQBxXGmETVtQ/s5lT9Mp+pneQjEEo9IMr+K/Zq1owDprN
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333285
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333285>
+
+The cpu hotplug notifier gets called in both atomic and non-atomic
+contexts, it is not always safe to lock a mutex.  Filter out all events
+except the six necessary ones, which are all sleepable, before taking
+the mutex.
+
+Signed-off-by: Colin Cross <ccross@android.com>
+---
+ drivers/cpuidle/coupled.c |   12 ++++++++++++
+ 1 files changed, 12 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/cpuidle/coupled.c b/drivers/cpuidle/coupled.c
+index 2c9bf26..c24dda0 100644
+--- a/drivers/cpuidle/coupled.c
++++ b/drivers/cpuidle/coupled.c
+@@ -678,6 +678,18 @@ static int cpuidle_coupled_cpu_notify(struct notifier_block *nb,
+ 	int cpu = (unsigned long)hcpu;
+ 	struct cpuidle_device *dev;
+ 
++	switch (action & ~CPU_TASKS_FROZEN) {
++	case CPU_UP_PREPARE:
++	case CPU_DOWN_PREPARE:
++	case CPU_ONLINE:
++	case CPU_DEAD:
++	case CPU_UP_CANCELED:
++	case CPU_DOWN_FAILED:
++		break;
++	default:
++		return NOTIFY_OK;
++	}
++
+ 	mutex_lock(&cpuidle_lock);
+ 
+ 	dev = per_cpu(cpuidle_devices, cpu);
+-- 
+1.7.7.3
+

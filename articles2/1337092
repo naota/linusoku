@@ -1,0 +1,89 @@
+Path: news.gmane.org!not-for-mail
+From: George Spelvin <linux@horizon.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 3/4] lib: vsprintf: Optimize put_dec_trunc8
+Date: Fri,  3 Aug 2012 01:21:10 -0400
+Lines: 48
+Approved: news@gmane.org
+Message-ID: <1343971271-13355-3-git-send-email-linux@horizon.com>
+References: <1343971271-13355-1-git-send-email-linux@horizon.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343971303 23893 80.91.229.3 (3 Aug 2012 05:21:43 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 05:21:43 +0000 (UTC)
+Cc: hughd@google.com, linux-kernel@vger.kernel.org, linux@horizon.com
+To: vda.linux@googlemail.com, mina86@mina86.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 07:21:40 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxAKQ-0002jF-1K
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 07:21:38 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752047Ab2HCFVS (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 01:21:18 -0400
+Original-Received: from science.horizon.com ([71.41.210.146]:14844 "HELO
+	science.horizon.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with SMTP id S1751311Ab2HCFVN (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 01:21:13 -0400
+Original-Received: (qmail 13405 invoked by uid 1000); 3 Aug 2012 01:21:11 -0400
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1343971271-13355-1-git-send-email-linux@horizon.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337092
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337092>
+
+If you're going to have a conditional branch after
+each 32x32->64-bit multiply, might as well shrink the code
+and make it a loop.
+
+This also avoids using the long multiply for small integers.
+
+(This leaves the comments in a confusing state, but that's a separate
+patch to make review easier.)
+
+Signed-off-by: George Spelvin <linux@horizon.com>
+---
+ lib/vsprintf.c |   20 ++++++--------------
+ 1 file changed, 6 insertions(+), 14 deletions(-)
+
+diff --git a/lib/vsprintf.c b/lib/vsprintf.c
+index a8e7392..3ca77b8 100644
+--- a/lib/vsprintf.c
++++ b/lib/vsprintf.c
+@@ -174,20 +174,12 @@ char *put_dec_trunc8(char *buf, unsigned r)
+ 	unsigned q;
+ 
+ 	/* Copy of previous function's body with added early returns */
+-	q      = (r * (uint64_t)0x1999999a) >> 32;
+-	*buf++ = (r - 10 * q) + '0'; /* 2 */
+-	if (q == 0)
+-		return buf;
+-	r      = (q * (uint64_t)0x1999999a) >> 32;
+-	*buf++ = (q - 10 * r) + '0'; /* 3 */
+-	if (r == 0)
+-		return buf;
+-	q      = (r * (uint64_t)0x1999999a) >> 32;
+-	*buf++ = (r - 10 * q) + '0'; /* 4 */
+-	if (q == 0)
+-		return buf;
+-	r      = (q * (uint64_t)0x1999999a) >> 32;
+-	*buf++ = (q - 10 * r) + '0'; /* 5 */
++	while (r >= 10000) {
++		q = r + '0';
++		r  = (r * (uint64_t)0x1999999a) >> 32;
++		*buf++ = q - 10*r;
++	}
++
+ 	if (r == 0)
+ 		return buf;
+ 	q      = (r * 0x199a) >> 16;
+-- 
+1.7.10.4
+

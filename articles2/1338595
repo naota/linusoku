@@ -1,0 +1,214 @@
+Path: news.gmane.org!not-for-mail
+From: Kent Overstreet <koverstreet@google.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.bcache.devel,gmane.linux.kernel.device-mapper.devel,gmane.linux.kernel.drbd.devel
+Subject: [PATCH v5 04/12] pktcdvd: Switch to bio_kmalloc()
+Date: Mon,  6 Aug 2012 15:08:33 -0700
+Lines: 138
+Approved: news@gmane.org
+Message-ID: <1344290921-25154-5-git-send-email-koverstreet@google.com>
+References: <1344290921-25154-1-git-send-email-koverstreet@google.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344290976 14305 80.91.229.3 (6 Aug 2012 22:09:36 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 22:09:36 +0000 (UTC)
+Cc: Kent Overstreet <koverstreet@google.com>, tj@kernel.org,
+	axboe@kernel.dk, agk@redhat.com, neilb@suse.de,
+	drbd-dev@lists.linbit.com, vgoyal@redhat.com, mpatocka@redhat.com,
+	sage@newdream.net, yehuda@hq.newdream.net
+To: linux-bcache@vger.kernel.org, linux-kernel@vger.kernel.org,
+	dm-devel@redhat.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 00:09:33 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyVUS-0002Di-Dn
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 00:09:32 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756817Ab2HFWJQ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 18:09:16 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:61129 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756668Ab2HFWJM (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 18:09:12 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so3188610pbb.19
+        for <linux-kernel@vger.kernel.org>; Mon, 06 Aug 2012 15:09:11 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=/hs+YnGmDxO/dL6QkXvjYHymtOrikH0i327JS+3ylbU=;
+        b=Ny9UPmDrCOf8NKgQJhNo+wDI5LagghEXCMeqOuwp8v64Ae6V5Z6mmnoeJIJOxvAqKC
+         DzFzglzZY3d3MfMlpKVuarbpjWHIvi0TYPyDWZamdQCAJkfZW8BITsBUOZYicLmOw3Qc
+         sHK4hO8zOY2NZRNN3Knd/Sy7GYZWGkQ48LWBfDTTvxuAnLGFUO1tmwguUXd+TOj6ukI9
+         p5tJlAdTonLXu23V1lGZYkdm4UCEyEmCFG0W51+3MddJwByi+zh0KY2IAP4Nsiy9h7Gs
+         Ja9l23ilYzTZ8xLjSP5liQsmDn+F6nn0TSPEjTis+hLiZ/Ttl8Hm5D6FA8lYFpx5RZy6
+         Bemg==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :x-gm-message-state;
+        bh=/hs+YnGmDxO/dL6QkXvjYHymtOrikH0i327JS+3ylbU=;
+        b=RcTJg+vtilhOZheamJIlxqwEmET001hfAvZ6Kuy/V1T+PDrM8QHJyDJZSKkH4jFZpo
+         BIcko3JMStzsP4hWh2jj2ml2LyEMcHLwXuYD4XdIalqz5s6QXrLkLvE/j2+enOVZvEhX
+         UfJyvn2u5VctmJrRpEwegcpR5RxaR80rHxi2mkPSrfsAHfPNn9YtSggw9kaayK4ket4m
+         PEYH5ssVOk5KjrCch4lKrHSU3EhCuuSVdaPu1EqUknO7c0bwhh1UDPGQ3nmzTWt6qysq
+         iHHDuYfUsRTDf6leqJjXetC35ZLCNJOyidFDpjdPGV4enVM6NZ7YapSbX1IadAhUOqGQ
+         C1wA==
+Original-Received: by 10.68.136.8 with SMTP id pw8mr22166273pbb.82.1344290951775;
+        Mon, 06 Aug 2012 15:09:11 -0700 (PDT)
+Original-Received: by 10.68.136.8 with SMTP id pw8mr22166234pbb.82.1344290951629;
+        Mon, 06 Aug 2012 15:09:11 -0700 (PDT)
+Original-Received: from formenos.mtv.corp.google.com (formenos.mtv.corp.google.com [172.18.110.66])
+        by mx.google.com with ESMTPS id iq1sm6145082pbc.37.2012.08.06.15.09.10
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 06 Aug 2012 15:09:10 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7.3
+In-Reply-To: <1344290921-25154-1-git-send-email-koverstreet@google.com>
+X-Gm-Message-State: ALoCoQkPArLmDFmWuQTpnfbhWlULsnDbbReLtr5Hxg6RJ4mgLSkN3Y59fCBnlOHzgGTmQdXyCiVVu2tNu3yR0jTWp0lJGS4pbqEVeelE7VM1CF/h+q92lKXncJoEq1M7Tkn95TQvXCjfjZ3NhjutVZsbZHsfmyD1bfxZQ6UwvBlOSvv3cqy2wtlM61dW624dyFPre3td1Ih+3glkLLr7bhkFKR+nD1Xftw==
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338595 gmane.linux.kernel.bcache.devel:661 gmane.linux.kernel.device-mapper.devel:16469 gmane.linux.kernel.drbd.devel:2054
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338595>
+
+This is prep work for killing bi_destructor - previously, pktcdvd had
+its own pkt_bio_alloc which was basically duplication bio_kmalloc(),
+necessitating its own bi_destructor implementation.
+
+v5: Un-reorder some functions, to make the patch easier to review
+
+Signed-off-by: Kent Overstreet <koverstreet@google.com>
+---
+ drivers/block/pktcdvd.c |   67 +++++++++++-----------------------------------
+ 1 files changed, 16 insertions(+), 51 deletions(-)
+
+diff --git a/drivers/block/pktcdvd.c b/drivers/block/pktcdvd.c
+index ba66e44..ae55f08 100644
+--- a/drivers/block/pktcdvd.c
++++ b/drivers/block/pktcdvd.c
+@@ -101,6 +101,8 @@ static struct dentry	*pkt_debugfs_root = NULL; /* /sys/kernel/debug/pktcdvd */
+ static int pkt_setup_dev(dev_t dev, dev_t* pkt_dev);
+ static int pkt_remove_dev(dev_t pkt_dev);
+ static int pkt_seq_show(struct seq_file *m, void *p);
++static void pkt_end_io_read(struct bio *bio, int err);
++static void pkt_end_io_packet_write(struct bio *bio, int err);
+ 
+ 
+ 
+@@ -522,38 +524,6 @@ static void pkt_bio_finished(struct pktcdvd_device *pd)
+ 	}
+ }
+ 
+-static void pkt_bio_destructor(struct bio *bio)
+-{
+-	kfree(bio->bi_io_vec);
+-	kfree(bio);
+-}
+-
+-static struct bio *pkt_bio_alloc(int nr_iovecs)
+-{
+-	struct bio_vec *bvl = NULL;
+-	struct bio *bio;
+-
+-	bio = kmalloc(sizeof(struct bio), GFP_KERNEL);
+-	if (!bio)
+-		goto no_bio;
+-	bio_init(bio);
+-
+-	bvl = kcalloc(nr_iovecs, sizeof(struct bio_vec), GFP_KERNEL);
+-	if (!bvl)
+-		goto no_bvl;
+-
+-	bio->bi_max_vecs = nr_iovecs;
+-	bio->bi_io_vec = bvl;
+-	bio->bi_destructor = pkt_bio_destructor;
+-
+-	return bio;
+-
+- no_bvl:
+-	kfree(bio);
+- no_bio:
+-	return NULL;
+-}
+-
+ /*
+  * Allocate a packet_data struct
+  */
+@@ -567,10 +537,13 @@ static struct packet_data *pkt_alloc_packet_data(int frames)
+ 		goto no_pkt;
+ 
+ 	pkt->frames = frames;
+-	pkt->w_bio = pkt_bio_alloc(frames);
++	pkt->w_bio = bio_kmalloc(GFP_KERNEL, frames);
+ 	if (!pkt->w_bio)
+ 		goto no_bio;
+ 
++	pkt->w_bio->bi_end_io = pkt_end_io_packet_write;
++	pkt->w_bio->bi_private = pkt;
++
+ 	for (i = 0; i < frames / FRAMES_PER_PAGE; i++) {
+ 		pkt->pages[i] = alloc_page(GFP_KERNEL|__GFP_ZERO);
+ 		if (!pkt->pages[i])
+@@ -581,9 +554,12 @@ static struct packet_data *pkt_alloc_packet_data(int frames)
+ 	bio_list_init(&pkt->orig_bios);
+ 
+ 	for (i = 0; i < frames; i++) {
+-		struct bio *bio = pkt_bio_alloc(1);
++		struct bio *bio = bio_kmalloc(GFP_KERNEL, 1);
+ 		if (!bio)
+ 			goto no_rd_bio;
++
++		bio->bi_end_io = pkt_end_io_read;
++		bio->bi_private = pkt;
+ 		pkt->r_bios[i] = bio;
+ 	}
+ 
+@@ -1111,21 +1087,15 @@ static void pkt_gather_data(struct pktcdvd_device *pd, struct packet_data *pkt)
+ 	 * Schedule reads for missing parts of the packet.
+ 	 */
+ 	for (f = 0; f < pkt->frames; f++) {
+-		struct bio_vec *vec;
+-
+ 		int p, offset;
++
+ 		if (written[f])
+ 			continue;
++
+ 		bio = pkt->r_bios[f];
+-		vec = bio->bi_io_vec;
+-		bio_init(bio);
+-		bio->bi_max_vecs = 1;
+-		bio->bi_sector = pkt->sector + f * (CD_FRAMESIZE >> 9);
+-		bio->bi_bdev = pd->bdev;
+-		bio->bi_end_io = pkt_end_io_read;
+-		bio->bi_private = pkt;
+-		bio->bi_io_vec = vec;
+-		bio->bi_destructor = pkt_bio_destructor;
++		bio_reset(bio);
++		bio->bi_sector	= pkt->sector + f * (CD_FRAMESIZE >> 9);
++		bio->bi_bdev	= pd->bdev;
+ 
+ 		p = (f * CD_FRAMESIZE) / PAGE_SIZE;
+ 		offset = (f * CD_FRAMESIZE) % PAGE_SIZE;
+@@ -1418,14 +1388,9 @@ static void pkt_start_write(struct pktcdvd_device *pd, struct packet_data *pkt)
+ 	}
+ 
+ 	/* Start the write request */
+-	bio_init(pkt->w_bio);
+-	pkt->w_bio->bi_max_vecs = PACKET_MAX_SIZE;
++	bio_reset(pkt->w_bio);
+ 	pkt->w_bio->bi_sector = pkt->sector;
+ 	pkt->w_bio->bi_bdev = pd->bdev;
+-	pkt->w_bio->bi_end_io = pkt_end_io_packet_write;
+-	pkt->w_bio->bi_private = pkt;
+-	pkt->w_bio->bi_io_vec = bvec;
+-	pkt->w_bio->bi_destructor = pkt_bio_destructor;
+ 	for (f = 0; f < pkt->frames; f++)
+ 		if (!bio_add_page(pkt->w_bio, bvec[f].bv_page, CD_FRAMESIZE, bvec[f].bv_offset))
+ 			BUG();
+-- 
+1.7.7.3
+

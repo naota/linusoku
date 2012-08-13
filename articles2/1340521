@@ -1,0 +1,154 @@
+Path: news.gmane.org!not-for-mail
+From: Todd Poynor <toddpoynor@google.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] alarmtimer: implement minimum alarm interval for allowing suspend
+Date: Thu,  9 Aug 2012 00:37:27 -0700
+Lines: 79
+Approved: news@gmane.org
+Message-ID: <1344497847-7161-1-git-send-email-toddpoynor@google.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344497869 2687 80.91.229.3 (9 Aug 2012 07:37:49 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 07:37:49 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, linux-pm@vger.kernel.org,
+	arve@android.com, Todd Poynor <toddpoynor@google.com>
+To: John Stultz <john.stultz@linaro.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 09 09:37:47 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzNJR-0000ln-N5
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 09 Aug 2012 09:37:46 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756025Ab2HIHhk (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 03:37:40 -0400
+Original-Received: from mail-wi0-f202.google.com ([209.85.212.202]:44717 "EHLO
+	mail-wi0-f202.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753977Ab2HIHhh (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 03:37:37 -0400
+Original-Received: by wibhr14 with SMTP id hr14so4088wib.1
+        for <linux-kernel@vger.kernel.org>; Thu, 09 Aug 2012 00:37:35 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer;
+        bh=QQ8Y7OlDAcqswBi6TkAeptiQqX3pu+MS1e1ZyBB9RrU=;
+        b=kJp7I2YDM5KqYXjxH44hUC4uD1P4YQqXZe8ljc69D7cvayl8WAMsB/AZ00SVkUydyG
+         N6F14hK0NeVO/SuJJuMhv3jYo/Yg0wpT0y90wklHAJ2k+3IjW+FHAgglVX2LvnzRyQBY
+         aL42vevEBE682IsNgW8+6plvAGaDv+r7vTxpyojD2BGokOOguilEmlQ7NKseB/Pjm5D+
+         jMyuuI0E6+osAZcjQ8V9f3253VA4/yG/U+x1RwC2upRF0FAqKXlMNCJvFpPH4HXFtXgU
+         EN8wwsmYwvja7xKokQqhAgdHXyRjVLDF4UlhZ5DViHFsnHGjumhIS6wB0V6jjlPWh7b/
+         L70g==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:x-gm-message-state;
+        bh=QQ8Y7OlDAcqswBi6TkAeptiQqX3pu+MS1e1ZyBB9RrU=;
+        b=evaARQC3lqPQqdE2EEbD59zyNcVeiEWYqSGp+Ji3K50r5ilhm/kI3DIVcclZAaKERQ
+         2yR9jvf3Dc3wNd3EJUeUwGhvCSm+KBCxzzySTN8zX3czrIo9/PGje/Zo9ab3pEw9QSAl
+         h+wXvbTWJ9aFCKcVumGyd2UaOEwzV54ECqvcBNQEbbVE9fmU5PDoW5mh4KhrfRIdNwN6
+         s/Yrtr9+77SIEIzChy7wrPRSwQAMtCHsAb8kmydFcksJ2sjRkxRciViizMn8sqP6U9Dv
+         f1IGeMdWxR7pbG9D1ziMS8r4PzTty9S2CudTGMUwPuSwDdQ7z57wnZ+cJbZskYnLu56x
+         K11g==
+Original-Received: by 10.14.179.72 with SMTP id g48mr17691744eem.2.1344497855860;
+        Thu, 09 Aug 2012 00:37:35 -0700 (PDT)
+Original-Received: by 10.14.179.72 with SMTP id g48mr17691738eem.2.1344497855793;
+        Thu, 09 Aug 2012 00:37:35 -0700 (PDT)
+Original-Received: from hpza10.eem.corp.google.com ([74.125.121.33])
+        by gmr-mx.google.com with ESMTPS id d5si643680eep.0.2012.08.09.00.37.35
+        (version=TLSv1/SSLv3 cipher=AES128-SHA);
+        Thu, 09 Aug 2012 00:37:35 -0700 (PDT)
+Original-Received: from toddpoynor2.mtv.corp.google.com (toddpoynor2.mtv.corp.google.com [172.18.104.48])
+	by hpza10.eem.corp.google.com (Postfix) with ESMTP id 96E4120004E;
+	Thu,  9 Aug 2012 00:37:35 -0700 (PDT)
+Original-Received: by toddpoynor2.mtv.corp.google.com (Postfix, from userid 115684)
+	id DEE21142C06; Thu,  9 Aug 2012 00:37:34 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7.3
+X-Gm-Message-State: ALoCoQlw4w/MVK5D+cp7mPiAJ4OJqY231x3vhnHCH7C/8/r4tD2wWdWSEb6NL1mq2etcq164jDZukANNFcYkzIE2VwIGNEGndozd0Zp4EwwXiNiqhWFjPzfxBGZez+6HlFvpIdZL0PGpQtd8zGtn2Qistdl323ObKtHB/SVQ5csTnjHWYSwX98IMlTC5rIm1iFjomS7W5qylTr9nwL0gfYfvxH2Fd1debA==
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340521
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340521>
+
+alarmtimer suspend return -EBUSY if the next alarm will fire in less
+than 2 seconds.  This allows one RTC seconds tick to occur subsequent
+to this check before the alarm wakeup time is set, ensuring the wakeup
+time is still in the future (assuming the RTC does not tick one more
+second prior to setting the alarm).
+
+If suspend is rejected due to an imminent alarm, hold a wakeup source
+for 2 seconds to process the alarm prior to reattempting suspend.
+
+If setting the alarm incurs an -ETIME for an alarm set in the past,
+or any other problem setting the alarm, abort suspend and hold a
+wakelock for 1 second while the alarm is allowed to be serviced or
+other hopefully transient conditions preventing the alarm clear up.
+
+Signed-off-by: Todd Poynor <toddpoynor@google.com>
+---
+ kernel/time/alarmtimer.c |   18 +++++++++++++-----
+ 1 files changed, 13 insertions(+), 5 deletions(-)
+
+diff --git a/kernel/time/alarmtimer.c b/kernel/time/alarmtimer.c
+index aa27d39..f979d85 100644
+--- a/kernel/time/alarmtimer.c
++++ b/kernel/time/alarmtimer.c
+@@ -46,6 +46,8 @@ static struct alarm_base {
+ static ktime_t freezer_delta;
+ static DEFINE_SPINLOCK(freezer_delta_lock);
+ 
++static struct wakeup_source *ws;
++
+ #ifdef CONFIG_RTC_CLASS
+ /* rtc timer and device for setting alarm wakeups at suspend */
+ static struct rtc_timer		rtctimer;
+@@ -250,6 +252,7 @@ static int alarmtimer_suspend(struct device *dev)
+ 	unsigned long flags;
+ 	struct rtc_device *rtc;
+ 	int i;
++	int ret;
+ 
+ 	spin_lock_irqsave(&freezer_delta_lock, flags);
+ 	min = freezer_delta;
+@@ -279,8 +282,10 @@ static int alarmtimer_suspend(struct device *dev)
+ 	if (min.tv64 == 0)
+ 		return 0;
+ 
+-	/* XXX - Should we enforce a minimum sleep time? */
+-	WARN_ON(min.tv64 < NSEC_PER_SEC);
++	if (ktime_to_ns(min) < 2 * NSEC_PER_SEC) {
++		__pm_wakeup_event(ws, 2 * MSEC_PER_SEC);
++		return -EBUSY;
++	}
+ 
+ 	/* Setup an rtc timer to fire that far in the future */
+ 	rtc_timer_cancel(rtc, &rtctimer);
+@@ -288,9 +293,11 @@ static int alarmtimer_suspend(struct device *dev)
+ 	now = rtc_tm_to_ktime(tm);
+ 	now = ktime_add(now, min);
+ 
+-	rtc_timer_start(rtc, &rtctimer, now, ktime_set(0, 0));
+-
+-	return 0;
++	/* Set alarm, if in the past reject suspend briefly to handle */
++	ret = rtc_timer_start(rtc, &rtctimer, now, ktime_set(0, 0));
++	if (ret < 0)
++		__pm_wakeup_event(ws, 1 * MSEC_PER_SEC);
++	return ret;
+ }
+ #else
+ static int alarmtimer_suspend(struct device *dev)
+@@ -821,6 +828,7 @@ static int __init alarmtimer_init(void)
+ 		error = PTR_ERR(pdev);
+ 		goto out_drv;
+ 	}
++	ws = wakeup_source_register("alarmtimer");
+ 	return 0;
+ 
+ out_drv:
+-- 
+1.7.7.3
+

@@ -1,0 +1,203 @@
+Path: news.gmane.org!not-for-mail
+From: Jiang Liu <liuj97@gmail.com>
+Newsgroups: gmane.linux.kernel.pci,gmane.linux.kernel
+Subject: [PATCH v3 10/32] PCI/AER: use PCIe capabilities access functions to simplify implementation
+Date: Wed,  1 Aug 2012 23:54:15 +0800
+Lines: 139
+Approved: news@gmane.org
+Message-ID: <1343836477-7287-11-git-send-email-jiang.liu@huawei.com>
+References: <1343836477-7287-1-git-send-email-jiang.liu@huawei.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343836630 18742 80.91.229.3 (1 Aug 2012 15:57:10 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 1 Aug 2012 15:57:10 +0000 (UTC)
+Cc: Jiang Liu <jiang.liu@huawei.com>, Yinghai Lu <yinghai@kernel.org>,
+	Taku Izumi <izumi.taku@jp.fujitsu.com>,
+	"Rafael J . Wysocki" <rjw@sisk.pl>,
+	Kenji Kaneshige <kaneshige.kenji@jp.fujitsu.com>,
+	Yijing Wang <wangyijing@huawei.com>,
+	linux-kernel@vger.kernel.org, linux-pci@vger.kernel.org,
+	Jiang Liu <liuj97@gmail.com>
+To: Bjorn Helgaas <bhelgaas@google.com>,
+	Don Dutile <ddutile@redhat.com>
+Original-X-From: linux-pci-owner@vger.kernel.org Wed Aug 01 17:57:08 2012
+Return-path: <linux-pci-owner@vger.kernel.org>
+Envelope-to: glp-linux-pci@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-pci-owner@vger.kernel.org>)
+	id 1SwbIJ-0003J4-2y
+	for glp-linux-pci@plane.gmane.org; Wed, 01 Aug 2012 17:57:07 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755880Ab2HAP4s (ORCPT <rfc822;glp-linux-pci@m.gmane.org>);
+	Wed, 1 Aug 2012 11:56:48 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:36922 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755585Ab2HAP4q (ORCPT
+	<rfc822;linux-pci@vger.kernel.org>); Wed, 1 Aug 2012 11:56:46 -0400
+Original-Received: by pbbrp8 with SMTP id rp8so1284067pbb.19
+        for <multiple recipients>; Wed, 01 Aug 2012 08:56:45 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=HZTubpYZG7+XsnOk8cZ5Qzzvdw8W0vqO2JI6xSZA0sI=;
+        b=r/6WWWcjFhiiCOCvqn5p+i/TRxwAhpr6eLbZsOecDub4hmbg8/J4ccRtkEErHPP4+Y
+         NbtXUOgVwDVARS1YFofs1o/0/lsefjEzCjpPp4hSvXD20RQ7i5lIj9bzP2V04JeprUON
+         RMwr9m77XYwxYAEfc9naf6cLxQTTpEoBB5Mv5E8kw5FbQvQ+mbnLnkCghop1OnTpBFKx
+         NclHgHWoVJA4DNmDvltzNqisX/HJ7VqK60LObjlUQA827flOrOxyB3wJe9jijZ3TQM6C
+         tASRam1gY63pxJzli+y4b+NTz9EqTujmTH6x4vBL5D7L2xbKxzb39btQyH8EiExuUScm
+         YjAQ==
+Original-Received: by 10.68.219.166 with SMTP id pp6mr53114829pbc.35.1343836605668;
+        Wed, 01 Aug 2012 08:56:45 -0700 (PDT)
+Original-Received: from localhost.localdomain ([58.250.81.2])
+        by mx.google.com with ESMTPS id pe8sm2816231pbc.76.2012.08.01.08.56.36
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Wed, 01 Aug 2012 08:56:43 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1343836477-7287-1-git-send-email-jiang.liu@huawei.com>
+Original-Sender: linux-pci-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-pci.vger.kernel.org>
+X-Mailing-List: linux-pci@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel.pci:16770 gmane.linux.kernel:1336410
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336410>
+
+From: Jiang Liu <jiang.liu@huawei.com>
+
+Use PCIe capabilities access functions to simplify PCIe AER implementation.
+
+Signed-off-by: Jiang Liu <liuj97@gmail.com>
+Signed-off-by: Yijing Wang <wangyijing@huawei.com>
+---
+ drivers/pci/pcie/aer/aerdrv.c      |   17 ++++++--------
+ drivers/pci/pcie/aer/aerdrv_core.c |   45 ++++++++----------------------------
+ 2 files changed, 16 insertions(+), 46 deletions(-)
+
+diff --git a/drivers/pci/pcie/aer/aerdrv.c b/drivers/pci/pcie/aer/aerdrv.c
+index f7c6245..b85750d 100644
+--- a/drivers/pci/pcie/aer/aerdrv.c
++++ b/drivers/pci/pcie/aer/aerdrv.c
+@@ -122,19 +122,17 @@ static void set_downstream_devices_error_reporting(struct pci_dev *dev,
+ static void aer_enable_rootport(struct aer_rpc *rpc)
+ {
+ 	struct pci_dev *pdev = rpc->rpd->port;
+-	int pos, aer_pos;
++	int aer_pos;
+ 	u16 reg16;
+ 	u32 reg32;
+ 
+-	pos = pci_pcie_cap(pdev);
+ 	/* Clear PCIe Capability's Device Status */
+-	pci_read_config_word(pdev, pos+PCI_EXP_DEVSTA, &reg16);
+-	pci_write_config_word(pdev, pos+PCI_EXP_DEVSTA, reg16);
++	pci_pcie_capability_read_word(pdev, PCI_EXP_DEVSTA, &reg16);
++	pci_pcie_capability_write_word(pdev, PCI_EXP_DEVSTA, reg16);
+ 
+ 	/* Disable system error generation in response to error messages */
+-	pci_read_config_word(pdev, pos + PCI_EXP_RTCTL, &reg16);
+-	reg16 &= ~(SYSTEM_ERROR_INTR_ON_MESG_MASK);
+-	pci_write_config_word(pdev, pos + PCI_EXP_RTCTL, reg16);
++	pci_pcie_capability_change_word(pdev, PCI_EXP_RTCTL,
++					0, SYSTEM_ERROR_INTR_ON_MESG_MASK);
+ 
+ 	aer_pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_ERR);
+ 	/* Clear error status */
+@@ -396,9 +394,8 @@ static void aer_error_resume(struct pci_dev *dev)
+ 	u16 reg16;
+ 
+ 	/* Clean up Root device status */
+-	pos = pci_pcie_cap(dev);
+-	pci_read_config_word(dev, pos + PCI_EXP_DEVSTA, &reg16);
+-	pci_write_config_word(dev, pos + PCI_EXP_DEVSTA, reg16);
++	pci_pcie_capability_read_word(dev, PCI_EXP_DEVSTA, &reg16);
++	pci_pcie_capability_write_word(dev, PCI_EXP_DEVSTA, reg16);
+ 
+ 	/* Clean AER Root Error Status */
+ 	pos = pci_find_ext_capability(dev, PCI_EXT_CAP_ID_ERR);
+diff --git a/drivers/pci/pcie/aer/aerdrv_core.c b/drivers/pci/pcie/aer/aerdrv_core.c
+index f551534..2af79f7 100644
+--- a/drivers/pci/pcie/aer/aerdrv_core.c
++++ b/drivers/pci/pcie/aer/aerdrv_core.c
+@@ -34,51 +34,26 @@ module_param(nosourceid, bool, 0);
+ 
+ int pci_enable_pcie_error_reporting(struct pci_dev *dev)
+ {
+-	u16 reg16 = 0;
+-	int pos;
+-
+ 	if (pcie_aer_get_firmware_first(dev))
+ 		return -EIO;
+ 
+-	pos = pci_find_ext_capability(dev, PCI_EXT_CAP_ID_ERR);
+-	if (!pos)
+-		return -EIO;
+-
+-	pos = pci_pcie_cap(dev);
+-	if (!pos)
++	if (!pci_find_ext_capability(dev, PCI_EXT_CAP_ID_ERR))
+ 		return -EIO;
+ 
+-	pci_read_config_word(dev, pos + PCI_EXP_DEVCTL, &reg16);
+-	reg16 |= (PCI_EXP_DEVCTL_CERE |
+-		PCI_EXP_DEVCTL_NFERE |
+-		PCI_EXP_DEVCTL_FERE |
+-		PCI_EXP_DEVCTL_URRE);
+-	pci_write_config_word(dev, pos + PCI_EXP_DEVCTL, reg16);
+-
+-	return 0;
++	return pci_pcie_capability_change_word(dev, PCI_EXP_DEVCTL,
++			PCI_EXP_DEVCTL_CERE | PCI_EXP_DEVCTL_NFERE |
++			PCI_EXP_DEVCTL_FERE | PCI_EXP_DEVCTL_URRE, 0);
+ }
+ EXPORT_SYMBOL_GPL(pci_enable_pcie_error_reporting);
+ 
+ int pci_disable_pcie_error_reporting(struct pci_dev *dev)
+ {
+-	u16 reg16 = 0;
+-	int pos;
+-
+ 	if (pcie_aer_get_firmware_first(dev))
+ 		return -EIO;
+ 
+-	pos = pci_pcie_cap(dev);
+-	if (!pos)
+-		return -EIO;
+-
+-	pci_read_config_word(dev, pos + PCI_EXP_DEVCTL, &reg16);
+-	reg16 &= ~(PCI_EXP_DEVCTL_CERE |
+-		PCI_EXP_DEVCTL_NFERE |
+-		PCI_EXP_DEVCTL_FERE |
+-		PCI_EXP_DEVCTL_URRE);
+-	pci_write_config_word(dev, pos + PCI_EXP_DEVCTL, reg16);
+-
+-	return 0;
++	return pci_pcie_capability_change_word(dev, PCI_EXP_DEVCTL, 0,
++			PCI_EXP_DEVCTL_CERE | PCI_EXP_DEVCTL_NFERE |
++			PCI_EXP_DEVCTL_FERE | PCI_EXP_DEVCTL_URRE);
+ }
+ EXPORT_SYMBOL_GPL(pci_disable_pcie_error_reporting);
+ 
+@@ -151,18 +126,16 @@ static bool is_error_source(struct pci_dev *dev, struct aer_err_info *e_info)
+ 	 */
+ 	if (atomic_read(&dev->enable_cnt) == 0)
+ 		return false;
+-	pos = pci_pcie_cap(dev);
+-	if (!pos)
+-		return false;
+ 
+ 	/* Check if AER is enabled */
+-	pci_read_config_word(dev, pos + PCI_EXP_DEVCTL, &reg16);
++	pci_pcie_capability_read_word(dev, PCI_EXP_DEVCTL, &reg16);
+ 	if (!(reg16 & (
+ 		PCI_EXP_DEVCTL_CERE |
+ 		PCI_EXP_DEVCTL_NFERE |
+ 		PCI_EXP_DEVCTL_FERE |
+ 		PCI_EXP_DEVCTL_URRE)))
+ 		return false;
++
+ 	pos = pci_find_ext_capability(dev, PCI_EXT_CAP_ID_ERR);
+ 	if (!pos)
+ 		return false;
+-- 
+1.7.9.5
+

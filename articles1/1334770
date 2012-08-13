@@ -1,0 +1,86 @@
+Path: news.gmane.org!not-for-mail
+From: Oleg Nesterov <oleg@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 09/14] uprobes: kill insert_vm_struct()->uprobe_mmap()
+Date: Sun, 29 Jul 2012 20:22:38 +0200
+Lines: 32
+Approved: news@gmane.org
+Message-ID: <20120729182238.GA20349@redhat.com>
+References: <20120729182128.GA20269@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343586415 27582 80.91.229.3 (29 Jul 2012 18:26:55 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 29 Jul 2012 18:26:55 +0000 (UTC)
+Cc: Anton Arapov <anton@redhat.com>,
+	Srikar Dronamraju <srikar@linux.vnet.ibm.com>,
+	linux-kernel@vger.kernel.org
+To: Ingo Molnar <mingo@elte.hu>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 29 20:26:55 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvYCZ-00075O-F3
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 29 Jul 2012 20:26:51 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753488Ab2G2SZi (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 29 Jul 2012 14:25:38 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:62979 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753475Ab2G2SZg (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 29 Jul 2012 14:25:36 -0400
+Original-Received: from int-mx01.intmail.prod.int.phx2.redhat.com (int-mx01.intmail.prod.int.phx2.redhat.com [10.5.11.11])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6TIPVZ9007266
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Sun, 29 Jul 2012 14:25:31 -0400
+Original-Received: from tranklukator.englab.brq.redhat.com (dhcp-1-232.brq.redhat.com [10.34.1.232])
+	by int-mx01.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with SMTP id q6TIPTDS013467;
+	Sun, 29 Jul 2012 14:25:30 -0400
+Original-Received: by tranklukator.englab.brq.redhat.com (nbSMTP-1.00) for uid 500
+	oleg@redhat.com; Sun, 29 Jul 2012 20:22:39 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <20120729182128.GA20269@redhat.com>
+User-Agent: Mutt/1.5.18 (2008-05-17)
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.11
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334770
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334770>
+
+Kill insert_vm_struct()->uprobe_mmap(). It is not needed, nobody
+except arch/ia64/kernel/perfmon.c uses insert_vm_struct(vma) with
+vma->vm_file != NULL.
+
+And it is wrong. Again, get_user_pages() can not succeed before
+vma_link(vma) makes is visible to find_vma(). And even if this
+worked, we must not insert the new bp before this mapping is
+visible to vma_prio_tree_foreach() for uprobe_unregister().
+
+Signed-off-by: Oleg Nesterov <oleg@redhat.com>
+Acked-by: Srikar Dronamraju <srikar.vnet.ibm.com>
+---
+ mm/mmap.c |    3 ---
+ 1 files changed, 0 insertions(+), 3 deletions(-)
+
+diff --git a/mm/mmap.c b/mm/mmap.c
+index e5a4614..4fe2697 100644
+--- a/mm/mmap.c
++++ b/mm/mmap.c
+@@ -2345,9 +2345,6 @@ int insert_vm_struct(struct mm_struct * mm, struct vm_area_struct * vma)
+ 	     security_vm_enough_memory_mm(mm, vma_pages(vma)))
+ 		return -ENOMEM;
+ 
+-	if (vma->vm_file && uprobe_mmap(vma))
+-		return -EINVAL;
+-
+ 	vma_link(mm, vma, prev, rb_link, rb_parent);
+ 	return 0;
+ }
+-- 
+1.5.5.1
+

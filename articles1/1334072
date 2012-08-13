@@ -1,0 +1,177 @@
+Path: news.gmane.org!not-for-mail
+From: Toshi Kani <toshi.kani@hp.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.acpi.devel
+Subject: [PATCH v4 1/4] ACPI: Add acpi_pr_<level>() interfaces
+Date: Thu, 26 Jul 2012 21:05:41 -0600
+Lines: 127
+Approved: news@gmane.org
+Message-ID: <1343358344-31517-2-git-send-email-toshi.kani@hp.com>
+References: <1343358344-31517-1-git-send-email-toshi.kani@hp.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343358710 2328 80.91.229.3 (27 Jul 2012 03:11:50 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 03:11:50 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, joe@perches.com, bhelgaas@google.com,
+	isimatu.yasuaki@jp.fujitsu.com, liuj97@gmail.com,
+	srivatsa.bhat@linux.vnet.ibm.com, prarit@redhat.com,
+	imammedo@redhat.com, vijaymohan.pandarathil@hp.com,
+	Toshi Kani <toshi.kani@hp.com>
+To: lenb@kernel.org, linux-acpi@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 05:11:48 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Suaxu-0006D3-OT
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 05:11:47 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753274Ab2G0DK4 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 23:10:56 -0400
+Original-Received: from g1t0026.austin.hp.com ([15.216.28.33]:16764 "EHLO
+	g1t0026.austin.hp.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753219Ab2G0DKw (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 23:10:52 -0400
+Original-Received: from g1t0039.austin.hp.com (g1t0039.austin.hp.com [16.236.32.45])
+	by g1t0026.austin.hp.com (Postfix) with ESMTP id 799DEC099;
+	Fri, 27 Jul 2012 03:10:51 +0000 (UTC)
+Original-Received: from misato.fc.hp.com (misato.fc.hp.com [16.71.12.41])
+	by g1t0039.austin.hp.com (Postfix) with ESMTP id B6DBA34081;
+	Fri, 27 Jul 2012 03:10:50 +0000 (UTC)
+X-Mailer: git-send-email 1.7.7.6
+In-Reply-To: <1343358344-31517-1-git-send-email-toshi.kani@hp.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334072 gmane.linux.acpi.devel:54612
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334072>
+
+This patch introduces acpi_pr_<level>(), where <level> is a kernel
+message level such as err/warn/info, to support improved logging
+messages for ACPI, esp. in hotplug operations.  acpi_pr_<level>()
+appends "ACPI" prefix and ACPI object path to the messages.  This
+improves diagnostics in hotplug operations since it identifies an
+object that caused an issue in a log file.
+
+acpi_pr_<level>() takes acpi_handle as an argument, which is passed
+to ACPI hotplug notify handlers from the ACPICA.  Therefore, it is
+always available unlike other kernel objects, such as device.
+
+For example, the statement below
+  acpi_pr_err(handle, "Device don't exist, dropping EJECT\n");
+logs an error message like this at KERN_ERR.
+  ACPI: \_SB_.SCK4.CPU4: Device don't exist, dropping EJECT
+
+ACPI drivers can use acpi_pr_<level>() when they need to identify
+a target ACPI object path in their messages, such as error messages.
+The usage model is similar to dev_<level>().  acpi_pr_<level>() can
+be used when device is not created/valid, which may be the case for
+ACPI hotplug handlers.  ACPI object path is also consistent on the
+platform.  Device name changes over hotplug operations.
+
+ACPI drivers should use dev_<level>() when device is valid and
+acpi_pr_<level>() is already used by the caller in its error path.
+Device name provides more user friendly information.
+
+ACPI drivers also continue to use pr_<level>() when messages do not
+need to specify device information, such as boot-up messages.
+
+Note: ACPI_[WARNING|INFO|ERROR]() are intended for the ACPICA and
+are not associated with the kernel message level.
+
+Signed-off-by: Toshi Kani <toshi.kani@hp.com>
+Tested-by: Vijay Mohan Pandarathil <vijaymohan.pandarathil@hp.com>
+---
+ drivers/acpi/utils.c    |   34 ++++++++++++++++++++++++++++++++++
+ include/acpi/acpi_bus.h |   31 +++++++++++++++++++++++++++++++
+ 2 files changed, 65 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/acpi/utils.c b/drivers/acpi/utils.c
+index 3e87c9c..ec0c6f9 100644
+--- a/drivers/acpi/utils.c
++++ b/drivers/acpi/utils.c
+@@ -454,3 +454,37 @@ acpi_evaluate_hotplug_ost(acpi_handle handle, u32 source_event,
+ #endif
+ }
+ EXPORT_SYMBOL(acpi_evaluate_hotplug_ost);
++
++/**
++ * acpi_printk: Print messages with ACPI prefix and object path
++ *
++ * This function is intended to be called through acpi_pr_<level> macros.
++ */
++void
++acpi_printk(const char *level, acpi_handle handle, const char *fmt, ...)
++{
++	struct va_format vaf;
++	va_list args;
++	struct acpi_buffer buffer = {
++		.length = ACPI_ALLOCATE_BUFFER,
++		.pointer = NULL
++	};
++	const char *path;
++	acpi_status ret;
++
++	va_start(args, fmt);
++	vaf.fmt = fmt;
++	vaf.va = &args;
++
++	ret = acpi_get_name(handle, ACPI_FULL_PATHNAME, &buffer);
++	if (ret == AE_OK)
++		path = buffer.pointer;
++	else
++		path = "<n/a>";
++
++	printk("%sACPI: %s: %pV", level, path, &vaf);
++
++	va_end(args);
++	kfree(buffer.pointer);
++}
++EXPORT_SYMBOL(acpi_printk);
+diff --git a/include/acpi/acpi_bus.h b/include/acpi/acpi_bus.h
+index bde976e..1c855b8 100644
+--- a/include/acpi/acpi_bus.h
++++ b/include/acpi/acpi_bus.h
+@@ -85,6 +85,37 @@ struct acpi_pld {
+ 
+ acpi_status
+ acpi_get_physical_device_location(acpi_handle handle, struct acpi_pld *pld);
++
++void acpi_printk(const char *level, acpi_handle handle, const char *fmt, ...);
++
++#define acpi_pr_emerg(handle, fmt, ...)				\
++	acpi_printk(KERN_EMERG, handle, fmt, ##__VA_ARGS__)
++#define acpi_pr_alert(handle, fmt, ...)				\
++	acpi_printk(KERN_ALERT, handle, fmt, ##__VA_ARGS__)
++#define acpi_pr_crit(handle, fmt, ...)				\
++	acpi_printk(KERN_CRIT, handle, fmt, ##__VA_ARGS__)
++#define acpi_pr_err(handle, fmt, ...)				\
++	acpi_printk(KERN_ERR, handle, fmt, ##__VA_ARGS__)
++#define acpi_pr_warn(handle, fmt, ...)				\
++	acpi_printk(KERN_WARNING, handle, fmt, ##__VA_ARGS__)
++#define acpi_pr_notice(handle, fmt, ...)			\
++	acpi_printk(KERN_NOTICE, handle, fmt, ##__VA_ARGS__)
++#define acpi_pr_info(handle, fmt, ...)				\
++	acpi_printk(KERN_INFO, handle, fmt, ##__VA_ARGS__)
++
++/* REVISIT: Need to support CONFIG_DYNAMIC_DEBUG */
++#if defined(DEBUG) || defined(CONFIG_DYNAMIC_DEBUG)
++#define acpi_pr_debug(handle, fmt, ...)					\
++	acpi_printk(KERN_DEBUG, handle, fmt, ##__VA_ARGS__)
++#else
++#define acpi_pr_debug(handle, fmt, ...)					\
++({									\
++	if (0)								\
++		acpi_printk(KERN_DEBUG, handle, fmt, ##__VA_ARGS__);	\
++	0;								\
++})
++#endif
++
+ #ifdef CONFIG_ACPI
+ 
+ #include <linux/proc_fs.h>
+-- 
+1.7.7.6
+

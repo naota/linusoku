@@ -1,0 +1,78 @@
+Path: news.gmane.org!not-for-mail
+From: Marina Makienko <makienko@ispras.ru>
+Newsgroups: gmane.linux.kernel,gmane.linux.ide
+Subject: [PATCH 09/13] ide: Potential null pointer dereference in set_multcount()
+Date: Thu,  9 Aug 2012 17:55:26 +0400
+Lines: 35
+Approved: news@gmane.org
+Message-ID: <1344520529-19164-7-git-send-email-makienko@ispras.ru>
+References: <1344520529-19164-1-git-send-email-makienko@ispras.ru>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344520850 31312 80.91.229.3 (9 Aug 2012 14:00:50 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 14:00:50 +0000 (UTC)
+Cc: Marina Makienko <makienko@ispras.ru>, linux-ide@vger.kernel.org,
+	linux-kernel@vger.kernel.org, ldv-project@ispras.ru
+To: "David S. Miller" <davem@davemloft.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 09 16:00:50 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzTI7-0006Nn-6H
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 09 Aug 2012 16:00:47 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932890Ab2HIOAk (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 10:00:40 -0400
+Original-Received: from smtp.ispras.ru ([83.149.198.202]:52415 "EHLO smtp.ispras.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S932262Ab2HIN7Q (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 09:59:16 -0400
+Original-Received: from torvalds.intra.ispras.ru (unknown [83.149.198.253])
+	by smtp.ispras.ru (Postfix) with ESMTP id B45DE5D404C;
+	Thu,  9 Aug 2012 17:23:49 +0400 (MSD)
+X-Mailer: git-send-email 1.7.7
+In-Reply-To: <1344520529-19164-1-git-send-email-makienko@ispras.ru>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340722 gmane.linux.ide:52553
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340722>
+
+The function blk_get_request() can return NULL in some cases. There are
+checks on it if function is called with argumetns one of which is
+GFP_ATOMIC/GFP_NOIO/etc. If system couldn't find request
+blk_get_request() return NULL.
+
+But if there is function call with argument __GFP_WAIT
+the system will wait until get request or the queue becomes
+dead. If something kills the queue, blk_get_request()
+return NULL and next operations will lead to errors.
+
+Found by Linux Driver Verification project (linuxtesting.org).
+
+Signed-off-by: Marina Makienko <makienko@ispras.ru>
+---
+ drivers/ide/ide-disk.c |    4 ++++
+ 1 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/ide/ide-disk.c b/drivers/ide/ide-disk.c
+index 16f69be..538d206 100644
+--- a/drivers/ide/ide-disk.c
++++ b/drivers/ide/ide-disk.c
+@@ -479,6 +479,10 @@ static int set_multcount(ide_drive_t *drive, int arg)
+ 		return -EBUSY;
+ 
+ 	rq = blk_get_request(drive->queue, READ, __GFP_WAIT);
++	if (!rq) {
++		printk(KERN_ERR PFX"set_multcount: blk_get_request() failed. \n");
++		return 1;
++	}
+ 	rq->cmd_type = REQ_TYPE_ATA_TASKFILE;
+ 
+ 	drive->mult_req = arg;
+-- 
+1.7.7
+

@@ -1,0 +1,156 @@
+Path: news.gmane.org!not-for-mail
+From: Glauber Costa <glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+Newsgroups: gmane.linux.kernel.cgroups,gmane.linux.kernel,gmane.linux.kernel.mm,gmane.linux.openvz.devel
+Subject: [PATCH 04/10] memcg: skip memcg kmem allocations in specified code regions
+Date: Wed, 25 Jul 2012 18:38:15 +0400
+Lines: 103
+Approved: news@gmane.org
+Message-ID: <1343227101-14217-5-git-send-email-glommer@parallels.com>
+References: <1343227101-14217-1-git-send-email-glommer@parallels.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343227292 11497 80.91.229.3 (25 Jul 2012 14:41:32 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 14:41:32 +0000 (UTC)
+Cc: <linux-mm-Bw31MaZKKs3YtjvyW6yDsg@public.gmane.org>, Andrew Morton <akpm-de/tnXTf+JLsfHDXvbKv3WD2FQJk+8+b@public.gmane.org>,
+	Christoph Lameter <cl-vYTEC60ixJUAvxtiuMwx3w@public.gmane.org>,
+	David Rientjes <rientjes-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>,
+	Pekka Enberg <penberg-DgEjT+Ai2ygdnm+yROfE0A@public.gmane.org>,
+	Greg Thelen <gthelen-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>,
+	Johannes Weiner <hannes-druUgvl0LCNAfugRpC6u6w@public.gmane.org>,
+	Michal Hocko <mhocko-AlSwsSmVLrQ@public.gmane.org>,
+	Frederic Weisbecker <fweisbec-Re5JQEeQqe8AvxtiuMwx3w@public.gmane.org>, <devel-GEFAQzZX7r8dnm+yROfE0A@public.gmane.org>,
+	<cgroups-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>, Glauber Costa <glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>,
+	Pekka Enberg <penberg-bbCR+/B0CizivPeTLB3BmA@public.gmane.org>,
+	Kamezawa Hiroyuki <kamezawa.hiroyu-+CUm20s59erQFUHtdCDX3A@public.gmane.org>,
+	Suleiman Souhlal <suleiman-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>
+To: <linux-kernel-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Original-X-From: cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org Wed Jul 25 16:41:29 2012
+Return-path: <cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>
+Envelope-to: glkc-cgroups-wOFGN7rlS/M9smdsby/KFg@public.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>)
+	id 1Su2mE-00055D-Rz
+	for glkc-cgroups-wOFGN7rlS/M9smdsby/KFg@public.gmane.org; Wed, 25 Jul 2012 16:41:27 +0200
+Original-Received: (majordomo-u79uwXL29TY76Z2rM5mHXA@public.gmane.org) by vger.kernel.org via listexpand
+	id S933240Ab2GYOl0 (ORCPT <rfc822;glkc-cgroups@m.gmane.org>);
+	Wed, 25 Jul 2012 10:41:26 -0400
+Original-Received: from mailhub.sw.ru ([195.214.232.25]:21340 "EHLO relay.sw.ru"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S933148Ab2GYOlZ (ORCPT <rfc822;cgroups-u79uwXL29TY76Z2rM5mHXA@public.gmane.org>);
+	Wed, 25 Jul 2012 10:41:25 -0400
+Original-Received: from straightjacket.localdomain.ru ([10.30.18.238])
+	by relay.sw.ru (8.13.4/8.13.4) with ESMTP id q6PEf35E015145;
+	Wed, 25 Jul 2012 18:41:21 +0400 (MSK)
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1343227101-14217-1-git-send-email-glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+Original-Sender: cgroups-owner-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Precedence: bulk
+List-ID: <cgroups.vger.kernel.org>
+X-Mailing-List: cgroups-u79uwXL29TY76Z2rM5mHXA@public.gmane.org
+Xref: news.gmane.org gmane.linux.kernel.cgroups:3433 gmane.linux.kernel:1333028 gmane.linux.kernel.mm:82971 gmane.linux.openvz.devel:1905
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333028>
+
+This patch creates a mechanism that skip memcg allocations during
+certain pieces of our core code. It basically works in the same way
+as preempt_disable()/preempt_enable(): By marking a region under
+which all allocations will be accounted to the root memcg.
+
+We need this to prevent races in early cache creation, when we
+allocate data using caches that are not necessarily created already.
+
+Signed-off-by: Glauber Costa <glommer-bzQdu9zFT3WakBO8gow8eQ@public.gmane.org>
+CC: Christoph Lameter <cl-vYTEC60ixJUAvxtiuMwx3w@public.gmane.org>
+CC: Pekka Enberg <penberg-bbCR+/B0CizivPeTLB3BmA@public.gmane.org>
+CC: Michal Hocko <mhocko-AlSwsSmVLrQ@public.gmane.org>
+CC: Kamezawa Hiroyuki <kamezawa.hiroyu-+CUm20s59erQFUHtdCDX3A@public.gmane.org>
+CC: Johannes Weiner <hannes-druUgvl0LCNAfugRpC6u6w@public.gmane.org>
+CC: Suleiman Souhlal <suleiman-hpIqsD4AKlfQT0dZR+AlfA@public.gmane.org>
+---
+ include/linux/sched.h |    1 +
+ mm/memcontrol.c       |   27 +++++++++++++++++++++++++++
+ 2 files changed, 28 insertions(+)
+
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index c350e60..c09cd1b 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -1562,6 +1562,7 @@ struct task_struct {
+ 		unsigned long nr_pages;	/* uncharged usage */
+ 		unsigned long memsw_nr_pages; /* uncharged mem+swap usage */
+ 	} memcg_batch;
++	unsigned int memcg_kmem_skip_account;
+ #endif
+ #ifdef CONFIG_HAVE_HW_BREAKPOINT
+ 	atomic_t ptrace_bp_refcnt;
+diff --git a/mm/memcontrol.c b/mm/memcontrol.c
+index 8d012c7..854f6cc 100644
+--- a/mm/memcontrol.c
++++ b/mm/memcontrol.c
+@@ -541,6 +541,22 @@ static inline bool memcg_kmem_enabled(struct mem_cgroup *memcg)
+ 		memcg->kmem_accounted;
+ }
+ 
++static void memcg_stop_kmem_account(void)
++{
++	if (!current->mm)
++		return;
++
++	current->memcg_kmem_skip_account++;
++}
++
++static void memcg_resume_kmem_account(void)
++{
++	if (!current->mm)
++		return;
++
++	current->memcg_kmem_skip_account--;
++}
++
+ static char *memcg_cache_name(struct mem_cgroup *memcg, struct kmem_cache *cachep)
+ {
+ 	char *name;
+@@ -614,6 +630,10 @@ bool __memcg_kmem_new_page(gfp_t gfp, void *_handle, int order)
+ 	struct task_struct *p;
+ 
+ 	*handle = NULL;
++
++	if (current->memcg_kmem_skip_account)
++		return true;
++
+ 	rcu_read_lock();
+ 	p = rcu_dereference(current->mm->owner);
+ 	memcg = mem_cgroup_from_task(p);
+@@ -734,7 +754,9 @@ static struct kmem_cache *memcg_create_kmem_cache(struct mem_cgroup *memcg,
+ 	if (new_cachep)
+ 		goto out;
+ 
++	memcg_stop_kmem_account();
+ 	new_cachep = kmem_cache_dup(memcg, cachep);
++	memcg_resume_kmem_account();
+ 
+ 	if (new_cachep == NULL) {
+ 		new_cachep = cachep;
+@@ -824,7 +846,9 @@ static void memcg_create_cache_enqueue(struct mem_cgroup *memcg,
+ 	if (!css_tryget(&memcg->css))
+ 		return;
+ 
++	memcg_stop_kmem_account();
+ 	cw = kmalloc(sizeof(struct create_work), GFP_NOWAIT);
++	memcg_resume_kmem_account();
+ 	if (cw == NULL) {
+ 		css_put(&memcg->css);
+ 		return;
+@@ -859,6 +883,9 @@ struct kmem_cache *__memcg_kmem_get_cache(struct kmem_cache *cachep,
+ 	int idx;
+ 	struct task_struct *p;
+ 
++	if (!current->mm || current->memcg_kmem_skip_account)
++		return cachep;
++
+ 	if (cachep->memcg_params.memcg)
+ 		return cachep;
+ 
+-- 
+1.7.10.4
+

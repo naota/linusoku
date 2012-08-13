@@ -1,0 +1,151 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 096/108] eCryptfs: Gracefully refuse miscdev file ops on inherited/passed
+ files
+Date: Mon, 23 Jul 2012 02:08:27 +0100
+Lines: 97
+Approved: news@gmane.org
+Message-ID: <20120723010706.104076762@decadent.org.uk>
+References: <20120723010651.408577075@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343009101 20077 80.91.229.3 (23 Jul 2012 02:05:01 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 02:05:01 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Tyler Hicks <tyhicks@canonical.com>,
+	Sasha Levin <levinsasha928@gmail.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 04:05:00 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1St815-0001Kt-NY
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 04:05:00 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753499Ab2GWCEw (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 22:04:52 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:54086 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1753114Ab2GWBmj (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 21:42:39 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7f8-0008Rn-9v; Mon, 23 Jul 2012 02:42:18 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1St7el-0008Gj-UM; Mon, 23 Jul 2012 02:41:55 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120723010651.408577075@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331556 gmane.linux.kernel.stable:28702
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331556>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Tyler Hicks <tyhicks@canonical.com>
+
+commit 8dc6780587c99286c0d3de747a2946a76989414a upstream.
+
+File operations on /dev/ecryptfs would BUG() when the operations were
+performed by processes other than the process that originally opened the
+file. This could happen with open files inherited after fork() or file
+descriptors passed through IPC mechanisms. Rather than calling BUG(), an
+error code can be safely returned in most situations.
+
+In ecryptfs_miscdev_release(), eCryptfs still needs to handle the
+release even if the last file reference is being held by a process that
+didn't originally open the file. ecryptfs_find_daemon_by_euid() will not
+be successful, so a pointer to the daemon is stored in the file's
+private_data. The private_data pointer is initialized when the miscdev
+file is opened and only used when the file is released.
+
+https://launchpad.net/bugs/994247
+
+Signed-off-by: Tyler Hicks <tyhicks@canonical.com>
+Reported-by: Sasha Levin <levinsasha928@gmail.com>
+Tested-by: Sasha Levin <levinsasha928@gmail.com>
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ fs/ecryptfs/miscdev.c |   23 ++++++++++++++++-------
+ 1 file changed, 16 insertions(+), 7 deletions(-)
+
+diff --git a/fs/ecryptfs/miscdev.c b/fs/ecryptfs/miscdev.c
+index 3c632ec..c0038f6 100644
+--- a/fs/ecryptfs/miscdev.c
++++ b/fs/ecryptfs/miscdev.c
+@@ -49,7 +49,10 @@ ecryptfs_miscdev_poll(struct file *file, poll_table *pt)
+ 	mutex_lock(&ecryptfs_daemon_hash_mux);
+ 	/* TODO: Just use file->private_data? */
+ 	rc = ecryptfs_find_daemon_by_euid(&daemon, euid, current_user_ns());
+-	BUG_ON(rc || !daemon);
++	if (rc || !daemon) {
++		mutex_unlock(&ecryptfs_daemon_hash_mux);
++		return -EINVAL;
++	}
+ 	mutex_lock(&daemon->mux);
+ 	mutex_unlock(&ecryptfs_daemon_hash_mux);
+ 	if (daemon->flags & ECRYPTFS_DAEMON_ZOMBIE) {
+@@ -122,6 +125,7 @@ ecryptfs_miscdev_open(struct inode *inode, struct file *file)
+ 		goto out_unlock_daemon;
+ 	}
+ 	daemon->flags |= ECRYPTFS_DAEMON_MISCDEV_OPEN;
++	file->private_data = daemon;
+ 	atomic_inc(&ecryptfs_num_miscdev_opens);
+ out_unlock_daemon:
+ 	mutex_unlock(&daemon->mux);
+@@ -152,9 +156,9 @@ ecryptfs_miscdev_release(struct inode *inode, struct file *file)
+ 
+ 	mutex_lock(&ecryptfs_daemon_hash_mux);
+ 	rc = ecryptfs_find_daemon_by_euid(&daemon, euid, current_user_ns());
+-	BUG_ON(rc || !daemon);
++	if (rc || !daemon)
++		daemon = file->private_data;
+ 	mutex_lock(&daemon->mux);
+-	BUG_ON(daemon->pid != task_pid(current));
+ 	BUG_ON(!(daemon->flags & ECRYPTFS_DAEMON_MISCDEV_OPEN));
+ 	daemon->flags &= ~ECRYPTFS_DAEMON_MISCDEV_OPEN;
+ 	atomic_dec(&ecryptfs_num_miscdev_opens);
+@@ -270,8 +274,16 @@ ecryptfs_miscdev_read(struct file *file, char __user *buf, size_t count,
+ 	mutex_lock(&ecryptfs_daemon_hash_mux);
+ 	/* TODO: Just use file->private_data? */
+ 	rc = ecryptfs_find_daemon_by_euid(&daemon, euid, current_user_ns());
+-	BUG_ON(rc || !daemon);
++	if (rc || !daemon) {
++		mutex_unlock(&ecryptfs_daemon_hash_mux);
++		return -EINVAL;
++	}
+ 	mutex_lock(&daemon->mux);
++	if (task_pid(current) != daemon->pid) {
++		mutex_unlock(&daemon->mux);
++		mutex_unlock(&ecryptfs_daemon_hash_mux);
++		return -EPERM;
++	}
+ 	if (daemon->flags & ECRYPTFS_DAEMON_ZOMBIE) {
+ 		rc = 0;
+ 		mutex_unlock(&ecryptfs_daemon_hash_mux);
+@@ -308,9 +320,6 @@ check_list:
+ 		 * message from the queue; try again */
+ 		goto check_list;
+ 	}
+-	BUG_ON(euid != daemon->euid);
+-	BUG_ON(current_user_ns() != daemon->user_ns);
+-	BUG_ON(task_pid(current) != daemon->pid);
+ 	msg_ctx = list_first_entry(&daemon->msg_ctx_out_queue,
+ 				   struct ecryptfs_msg_ctx, daemon_out_list);
+ 	BUG_ON(!msg_ctx);
+
+

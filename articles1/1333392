@@ -1,0 +1,91 @@
+Path: news.gmane.org!not-for-mail
+From: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Newsgroups: gmane.comp.emulators.kvm.devel,gmane.linux.kernel
+Subject: [PATCH v2 1/3] KVM: MMU: use kvm_release_pfn_clean to release pfn
+Date: Thu, 26 Jul 2012 11:57:43 +0800
+Lines: 31
+Approved: news@gmane.org
+Message-ID: <5010C037.6070604@linux.vnet.ibm.com>
+References: <5010C008.4030304@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343275113 11831 80.91.229.3 (26 Jul 2012 03:58:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 03:58:33 +0000 (UTC)
+Cc: Avi Kivity <avi@redhat.com>, Marcelo Tosatti <mtosatti@redhat.com>,
+	LKML <linux-kernel@vger.kernel.org>, KVM <kvm@vger.kernel.org>
+To: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Original-X-From: kvm-owner@vger.kernel.org Thu Jul 26 05:58:32 2012
+Return-path: <kvm-owner@vger.kernel.org>
+Envelope-to: gcekd-kvm-devel@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <kvm-owner@vger.kernel.org>)
+	id 1SuFDb-0000qF-Pp
+	for gcekd-kvm-devel@plane.gmane.org; Thu, 26 Jul 2012 05:58:32 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751801Ab2GZD61 (ORCPT <rfc822;gcekd-kvm-devel@m.gmane.org>);
+	Wed, 25 Jul 2012 23:58:27 -0400
+Original-Received: from e23smtp07.au.ibm.com ([202.81.31.140]:43896 "EHLO
+	e23smtp07.au.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751345Ab2GZD61 (ORCPT <rfc822;kvm@vger.kernel.org>);
+	Wed, 25 Jul 2012 23:58:27 -0400
+Original-Received: from /spool/local
+	by e23smtp07.au.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <kvm@vger.kernel.org> from <xiaoguangrong@linux.vnet.ibm.com>;
+	Thu, 26 Jul 2012 13:58:08 +1000
+Original-Received: from d23relay03.au.ibm.com (202.81.31.245)
+	by e23smtp07.au.ibm.com (202.81.31.204) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Thu, 26 Jul 2012 13:57:31 +1000
+Original-Received: from d23av03.au.ibm.com (d23av03.au.ibm.com [9.190.234.97])
+	by d23relay03.au.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6Q3vkhR65994786;
+	Thu, 26 Jul 2012 13:57:46 +1000
+Original-Received: from d23av03.au.ibm.com (loopback [127.0.0.1])
+	by d23av03.au.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6Q3vjdC016723;
+	Thu, 26 Jul 2012 13:57:45 +1000
+Original-Received: from localhost.localdomain ([9.123.236.99])
+	by d23av03.au.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6Q3vhD5016674;
+	Thu, 26 Jul 2012 13:57:44 +1000
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120615 Thunderbird/13.0.1
+In-Reply-To: <5010C008.4030304@linux.vnet.ibm.com>
+x-cbid: 12072603-0260-0000-0000-000001936D97
+Original-Sender: kvm-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <kvm.vger.kernel.org>
+X-Mailing-List: kvm@vger.kernel.org
+Xref: news.gmane.org gmane.comp.emulators.kvm.devel:95062 gmane.linux.kernel:1333392
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333392>
+
+The current code depends on the fact that fault_page is the normal page,
+however, we will use the error code instead of these dummy pages in the
+later patch, so we use kvm_release_pfn_clean to release pfn which will
+release the error code properly
+
+Signed-off-by: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+---
+ arch/x86/kvm/mmu.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/x86/kvm/mmu.c b/arch/x86/kvm/mmu.c
+index 2419934..a9a2052 100644
+--- a/arch/x86/kvm/mmu.c
++++ b/arch/x86/kvm/mmu.c
+@@ -3275,7 +3275,7 @@ static bool try_async_pf(struct kvm_vcpu *vcpu, bool prefault, gfn_t gfn,
+ 	if (!async)
+ 		return false; /* *pfn has correct page already */
+
+-	put_page(pfn_to_page(*pfn));
++	kvm_release_pfn_clean(*pfn);
+
+ 	if (!prefault && can_do_async_pf(vcpu)) {
+ 		trace_kvm_try_async_get_page(gva, gfn);
+-- 
+1.7.7.6
+
+--
+To unsubscribe from this list: send the line "unsubscribe kvm" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

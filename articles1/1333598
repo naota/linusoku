@@ -1,0 +1,134 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.file-systems,gmane.linux.nfs
+Subject: [PATCH v4 10/17] vfs: fix symlinkat to retry on ESTALE errors
+Date: Thu, 26 Jul 2012 07:55:13 -0400
+Lines: 72
+Approved: news@gmane.org
+Message-ID: <1343303720-11199-11-git-send-email-jlayton@redhat.com>
+References: <1343303720-11199-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343303923 27347 80.91.229.3 (26 Jul 2012 11:58:43 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 11:58:43 +0000 (UTC)
+Cc: linux-fsdevel@vger.kernel.org, linux-nfs@vger.kernel.org,
+	linux-kernel@vger.kernel.org, michael.brantley@deshaw.com,
+	hch@infradead.org, miklos@szeredi.hu, pstaubach@exagrid.com
+To: viro@ZenIV.linux.org.uk
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 13:58:42 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuMiC-000247-9m
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 13:58:36 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752681Ab2GZL60 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 07:58:26 -0400
+Original-Received: from mail-gg0-f174.google.com ([209.85.161.174]:46818 "EHLO
+	mail-gg0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752467Ab2GZLzm (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 07:55:42 -0400
+Original-Received: by mail-gg0-f174.google.com with SMTP id u4so1821085ggl.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 04:55:42 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:x-gm-message-state;
+        bh=0yvAg6Lvff1iGMOmpoPckEWc2td9+Y45SaQh9aT4Tfc=;
+        b=pqEtZ4BjlMFhXBzmNtd1/1V5Wmv1OOBvBxIIYoGYA0S8SiXaqQx1RoWeAcBoZP7UN8
+         oCsnoiT1uwukTx6cBmIGK+GqYVUgrnill6zFNYefUJDojejRHfSB9NNOZZL+F9lHtCT0
+         XK8PrOC5c5SLAa9001QHFse7hG5MARyg7YVJs3Re5Q0NM5q4Bwa9bEePouiJA04QPxaX
+         YeK175RWFsOdRiSXNH3X3NNhpRdbgr+a7Vj1iAeDaITU5LtF2kJz/S5SE+CLc51du4Zg
+         nqojnZF84qvNwucVagK9jV/nlFv7gPh5yuFgushr0d+4gzWDjC588aDUUGZer2qEnwEG
+         MfdQ==
+Original-Received: by 10.236.185.201 with SMTP id u49mr26961690yhm.28.1343303741897;
+        Thu, 26 Jul 2012 04:55:41 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-076-182-054-194.nc.res.rr.com. [76.182.54.194])
+        by mx.google.com with ESMTPS id l12sm4436364ank.2.2012.07.26.04.55.40
+        (version=SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 04:55:41 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1343303720-11199-1-git-send-email-jlayton@redhat.com>
+X-Gm-Message-State: ALoCoQlrgbaK+llkW+GpHSYZirKwWRwIAhu9o7xZilhJwALmaitaytbwV4TZHpmw3Pi4WbCqpX+f
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333598 gmane.linux.file-systems:66253 gmane.linux.nfs:51145
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333598>
+
+Signed-off-by: Jeff Layton <jlayton@redhat.com>
+---
+ fs/namei.c | 43 ++++++++++++++++++++++++++-----------------
+ 1 file changed, 26 insertions(+), 17 deletions(-)
+
+diff --git a/fs/namei.c b/fs/namei.c
+index 4bec3f4..5a81c48 100644
+--- a/fs/namei.c
++++ b/fs/namei.c
+@@ -3340,33 +3340,42 @@ SYSCALL_DEFINE3(symlinkat, const char __user *, oldname,
+ 		int, newdfd, const char __user *, newname)
+ {
+ 	int error;
+-	char *from;
++	char *from, *to;
+ 	struct dentry *dentry;
+ 	struct path path;
++	unsigned int try = 0;
+ 
+ 	from = getname(oldname);
+ 	if (IS_ERR(from))
+ 		return PTR_ERR(from);
+ 
+-	dentry = user_path_create(newdfd, newname, &path, 0);
+-	error = PTR_ERR(dentry);
+-	if (IS_ERR(dentry))
+-		goto out_putname;
++	to = getname(newname);
++	if (IS_ERR(to)) {
++		putname(from);
++		return PTR_ERR(to);
++	}
+ 
+-	error = mnt_want_write(path.mnt);
+-	if (error)
+-		goto out_dput;
+-	error = security_path_symlink(&path, dentry, from);
+-	if (error)
+-		goto out_drop_write;
+-	error = vfs_symlink(path.dentry->d_inode, dentry, from);
++	do {
++		dentry = kern_path_create(newdfd, to, &path, 0, try);
++		error = PTR_ERR(dentry);
++		if (IS_ERR(dentry))
++			break;
++
++		error = mnt_want_write(path.mnt);
++		if (error)
++			goto out_dput;
++		error = security_path_symlink(&path, dentry, from);
++		if (error)
++			goto out_drop_write;
++		error = vfs_symlink(path.dentry->d_inode, dentry, from);
+ out_drop_write:
+-	mnt_drop_write(path.mnt);
++		mnt_drop_write(path.mnt);
+ out_dput:
+-	dput(dentry);
+-	mutex_unlock(&path.dentry->d_inode->i_mutex);
+-	path_put(&path);
+-out_putname:
++		dput(dentry);
++		mutex_unlock(&path.dentry->d_inode->i_mutex);
++		path_put(&path);
++	} while (retry_estale(error, try++));
++	putname(to);
+ 	putname(from);
+ 	return error;
+ }
+-- 
+1.7.11.2
+

@@ -1,0 +1,239 @@
+Path: news.gmane.org!not-for-mail
+From: Peter Zijlstra <a.p.zijlstra@chello.nl>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 09/19] mm, migrate: Introduce migrate_misplaced_page()
+Date: Tue, 31 Jul 2012 21:12:13 +0200
+Lines: 191
+Approved: news@gmane.org
+Message-ID: <20120731192808.891463219@chello.nl>
+References: <20120731191204.540691987@chello.nl>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343763922 1626 80.91.229.3 (31 Jul 2012 19:45:22 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 19:45:22 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>
+To: mingo@kernel.org, riel@redhat.com, oleg@redhat.com, pjt@google.com,
+	akpm@linux-foundation.org, torvalds@linux-foundation.org,
+	tglx@linutronix.de, Lee.Schermerhorn@hp.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 21:45:20 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwINW-000166-Hb
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 21:45:14 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755598Ab2GaToy (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 15:44:54 -0400
+Original-Received: from casper.infradead.org ([85.118.1.10]:58925 "EHLO
+	casper.infradead.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753437Ab2GaTon (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 15:44:43 -0400
+Original-Received: from dhcp-089-099-019-018.chello.nl ([89.99.19.18] helo=twins)
+	by casper.infradead.org with esmtpsa (Exim 4.76 #1 (Red Hat Linux))
+	id 1SwIMq-0007ui-IC; Tue, 31 Jul 2012 19:44:32 +0000
+Original-Received: by twins (Postfix, from userid 0)
+	id 8A72B8483D8D; Tue, 31 Jul 2012 21:44:28 +0200 (CEST)
+User-Agent: quilt/0.48-1
+Content-Disposition: inline; filename=numa-migrate_misplaced_page.patch
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335971
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335971>
+
+Add migrate_misplaced_page() which deals with migrating pages from
+faults. This includes adding a new MIGRATE_FAULT migration mode to
+deal with the extra page reference required due to having to look up
+the page.
+
+Based-on-work-by: Lee Schermerhorn <Lee.Schermerhorn@hp.com>
+Cc: Paul Turner <pjt@google.com>
+Signed-off-by: Peter Zijlstra <a.p.zijlstra@chello.nl>
+---
+ include/linux/migrate.h      |    7 +++
+ include/linux/migrate_mode.h |    3 +
+ mm/migrate.c                 |   85 ++++++++++++++++++++++++++++++++++++++-----
+ 3 files changed, 87 insertions(+), 8 deletions(-)
+--- a/include/linux/migrate.h
++++ b/include/linux/migrate.h
+@@ -30,6 +30,7 @@ extern int migrate_vmas(struct mm_struct
+ extern void migrate_page_copy(struct page *newpage, struct page *page);
+ extern int migrate_huge_page_move_mapping(struct address_space *mapping,
+ 				  struct page *newpage, struct page *page);
++extern int migrate_misplaced_page(struct mm_struct *, struct page *, int);
+ #else
+ 
+ static inline void putback_lru_pages(struct list_head *l) {}
+@@ -63,5 +64,11 @@ static inline int migrate_huge_page_move
+ #define migrate_page NULL
+ #define fail_migrate_page NULL
+ 
++static inline
++int migrate_misplaced_page(struct mm_struct *mm, struct page *page, int node)
++{
++	return -EAGAIN; /* can't migrate now */
++}
+ #endif /* CONFIG_MIGRATION */
++
+ #endif /* _LINUX_MIGRATE_H */
+--- a/include/linux/migrate_mode.h
++++ b/include/linux/migrate_mode.h
+@@ -6,11 +6,14 @@
+  *	on most operations but not ->writepage as the potential stall time
+  *	is too significant
+  * MIGRATE_SYNC will block when migrating pages
++ * MIGRATE_FAULT called from the fault path to migrate-on-fault for mempolicy
++ *	this path has an extra reference count
+  */
+ enum migrate_mode {
+ 	MIGRATE_ASYNC,
+ 	MIGRATE_SYNC_LIGHT,
+ 	MIGRATE_SYNC,
++	MIGRATE_FAULT,
+ };
+ 
+ #endif		/* MIGRATE_MODE_H_INCLUDED */
+--- a/mm/migrate.c
++++ b/mm/migrate.c
+@@ -224,7 +224,7 @@ static bool buffer_migrate_lock_buffers(
+ 	struct buffer_head *bh = head;
+ 
+ 	/* Simple case, sync compaction */
+-	if (mode != MIGRATE_ASYNC) {
++	if (mode != MIGRATE_ASYNC && mode != MIGRATE_FAULT) {
+ 		do {
+ 			get_bh(bh);
+ 			lock_buffer(bh);
+@@ -278,12 +278,22 @@ static int migrate_page_move_mapping(str
+ 		struct page *newpage, struct page *page,
+ 		struct buffer_head *head, enum migrate_mode mode)
+ {
+-	int expected_count;
++	int expected_count = 0;
+ 	void **pslot;
+ 
++	if (mode == MIGRATE_FAULT) {
++		/*
++		 * MIGRATE_FAULT has an extra reference on the page and
++		 * otherwise acts like ASYNC, no point in delaying the
++		 * fault, we'll try again next time.
++		 */
++		expected_count++;
++	}
++
+ 	if (!mapping) {
+ 		/* Anonymous page without mapping */
+-		if (page_count(page) != 1)
++		expected_count += 1;
++		if (page_count(page) != expected_count)
+ 			return -EAGAIN;
+ 		return 0;
+ 	}
+@@ -293,7 +303,7 @@ static int migrate_page_move_mapping(str
+ 	pslot = radix_tree_lookup_slot(&mapping->page_tree,
+  					page_index(page));
+ 
+-	expected_count = 2 + page_has_private(page);
++	expected_count += 2 + page_has_private(page);
+ 	if (page_count(page) != expected_count ||
+ 		radix_tree_deref_slot_protected(pslot, &mapping->tree_lock) != page) {
+ 		spin_unlock_irq(&mapping->tree_lock);
+@@ -312,7 +322,7 @@ static int migrate_page_move_mapping(str
+ 	 * the mapping back due to an elevated page count, we would have to
+ 	 * block waiting on other references to be dropped.
+ 	 */
+-	if (mode == MIGRATE_ASYNC && head &&
++	if ((mode == MIGRATE_ASYNC || mode == MIGRATE_FAULT) && head &&
+ 			!buffer_migrate_lock_buffers(head, mode)) {
+ 		page_unfreeze_refs(page, expected_count);
+ 		spin_unlock_irq(&mapping->tree_lock);
+@@ -520,7 +530,7 @@ int buffer_migrate_page(struct address_s
+ 	 * with an IRQ-safe spinlock held. In the sync case, the buffers
+ 	 * need to be locked now
+ 	 */
+-	if (mode != MIGRATE_ASYNC)
++	if (mode != MIGRATE_ASYNC && mode != MIGRATE_FAULT)
+ 		BUG_ON(!buffer_migrate_lock_buffers(head, mode));
+ 
+ 	ClearPagePrivate(page);
+@@ -687,7 +697,7 @@ static int __unmap_and_move(struct page 
+ 	struct anon_vma *anon_vma = NULL;
+ 
+ 	if (!trylock_page(page)) {
+-		if (!force || mode == MIGRATE_ASYNC)
++		if (!force || mode == MIGRATE_ASYNC || mode == MIGRATE_FAULT)
+ 			goto out;
+ 
+ 		/*
+@@ -1428,4 +1438,63 @@ int migrate_vmas(struct mm_struct *mm, c
+  	}
+  	return err;
+ }
+-#endif
++
++/*
++ * Attempt to migrate a misplaced page to the specified destination
++ * node.
++ */
++int migrate_misplaced_page(struct mm_struct *mm, struct page *page, int node)
++{
++	struct address_space *mapping = page_mapping(page);
++	int page_lru = page_is_file_cache(page);
++	struct page *newpage;
++	int ret = -EAGAIN;
++	gfp_t gfp = GFP_HIGHUSER_MOVABLE;
++
++	/*
++	 * Don't migrate pages that are mapped in multiple processes.
++	 */
++	if (page_mapcount(page) != 1)
++		goto out;
++
++	/*
++	 * Never wait for allocations just to migrate on fault, but don't dip
++	 * into reserves. And, only accept pages from the specified node. No
++	 * sense migrating to a different "misplaced" page!
++	 */
++	if (mapping)
++		gfp = mapping_gfp_mask(mapping);
++	gfp &= ~__GFP_WAIT;
++	gfp |= __GFP_NOMEMALLOC | GFP_THISNODE;
++
++	newpage = alloc_pages_node(node, gfp, 0);
++	if (!newpage) {
++		ret = -ENOMEM;
++		goto out;
++	}
++
++	if (isolate_lru_page(page)) {
++		ret = -EBUSY;
++		goto put_new;
++	}
++
++	inc_zone_page_state(page, NR_ISOLATED_ANON + page_lru);
++	ret = __unmap_and_move(page, newpage, 0, 0, MIGRATE_FAULT);
++	/*
++	 * A page that has been migrated has all references removed and will be
++	 * freed. A page that has not been migrated will have kepts its
++	 * references and be restored.
++	 */
++	dec_zone_page_state(page, NR_ISOLATED_ANON + page_lru);
++	putback_lru_page(page);
++put_new:
++	/*
++	 * Move the new page to the LRU. If migration was not successful
++	 * then this will free the page.
++	 */
++	putback_lru_page(newpage);
++out:
++	return ret;
++}
++
++#endif /* CONFIG_NUMA */
+
+

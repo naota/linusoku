@@ -1,0 +1,88 @@
+Path: news.gmane.org!not-for-mail
+From: Peter Zijlstra <peterz@infradead.org>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] sched: fix divide by zero at {thread_group,task}_times
+Date: Wed, 08 Aug 2012 22:08:20 +0200
+Lines: 29
+Approved: news@gmane.org
+Message-ID: <1344456500.16728.15.camel@laptop>
+References: <20120808092714.GA3580@redhat.com>
+	 <1344455404.2440.35.camel@marge.simpson.net>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344456512 13068 80.91.229.3 (8 Aug 2012 20:08:32 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 20:08:32 +0000 (UTC)
+Cc: Stanislaw Gruszka <sgruszka@redhat.com>,
+	linux-kernel@vger.kernel.org, Ingo Molnar <mingo@kernel.org>
+To: Mike Galbraith <efault@gmx.de>
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 22:08:32 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzCYR-0007e3-8b
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 22:08:31 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1759196Ab2HHUIY (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 16:08:24 -0400
+Original-Received: from casper.infradead.org ([85.118.1.10]:48270 "EHLO
+	casper.infradead.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753480Ab2HHUIW (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 16:08:22 -0400
+Original-Received: from dhcp-089-099-019-018.chello.nl ([89.99.19.18] helo=dyad.programming.kicks-ass.net)
+	by casper.infradead.org with esmtpsa (Exim 4.76 #1 (Red Hat Linux))
+	id 1SzCYI-0006OV-18
+	for linux-kernel@vger.kernel.org; Wed, 08 Aug 2012 20:08:22 +0000
+Original-Received: by dyad.programming.kicks-ass.net (Postfix, from userid 65534)
+	id 1BFEA7A9EB; Wed,  8 Aug 2012 22:20:30 +0200 (CEST)
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on
+	dyad.programming.kicks-ass.net
+X-Spam-Level: 
+X-Spam-Status: No, score=-1.0 required=5.0 tests=ALL_TRUSTED
+	autolearn=unavailable version=3.3.1
+Original-Received: from [IPv6:::1] (localhost [127.0.0.1])
+	by dyad.programming.kicks-ass.net (Postfix) with ESMTP id 3D5337A9E9;
+	Wed,  8 Aug 2012 22:20:29 +0200 (CEST)
+In-Reply-To: <1344455404.2440.35.camel@marge.simpson.net>
+X-Mailer: Evolution 2.32.2 
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340288
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340288>
+
+On Wed, 2012-08-08 at 21:50 +0200, Mike Galbraith wrote:
+> 32bit built do_div()
+> and div64_u64() both sucked equally compared to 64bit 
+
+/me peeks at div64_u64 fallback implementation and sees why, it still
+does a single div, it does some neat fls tricks.
+
+Ok, no point in avoiding this then.. 
+
+I did the below little edit, no point in mixing the old and new
+primitives.. those __force things annoy me, but I guess otherwise we'll
+upset sparse.
+
+---
+Index: linux-2.6/kernel/sched/core.c
+===================================================================
+--- linux-2.6.orig/kernel/sched/core.c
++++ linux-2.6/kernel/sched/core.c
+@@ -3149,7 +3149,7 @@ static cputime_t scale_utime(cputime_t u
+ 	temp *= (__force u64) utime;
+ 
+ 	if (sizeof(cputime_t) == 4)
+-		do_div(temp, (__force u32) total);
++		temp = div_u64(temp, (__force u32) total);
+ 	else
+ 		temp = div64_u64(temp, (__force u64) total);
+ 
+
+

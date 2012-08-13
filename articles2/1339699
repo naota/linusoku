@@ -1,0 +1,113 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 010/122] smack: off by one error
+Date: Tue,  7 Aug 2012 15:24:58 -0700
+Lines: 48
+Approved: news@gmane.org
+Message-ID: <20120807221949.167564072@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344382996 12290 80.91.229.3 (7 Aug 2012 23:43:16 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 23:43:16 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Alan Cox <alan@linux.intel.com>,
+	Casey Schaufler <casey@schaufler-ca.com>,
+	James Morris <james.l.morris@oracle.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 01:43:15 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SytQg-0003hG-9H
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 01:43:14 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757774Ab2HGXnE (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 19:43:04 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:54583 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756997Ab2HGW11 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:27:27 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so346924pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:27:27 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=Ug4KJGqp8YZb1YDqZieYRYORRT3+U/hVe3tW0X3oHHs=;
+        b=KS3fXJLV8GltSN6tAh4gPqrwgzRi9OZwHvVijS34Ra049l7bb1fzjANwLczr5VKonR
+         LhFRjBjNzqjY4wH6IphRiQGY3vw30HyB6L9vjX2vFJhk8kNInaa/cnwud9WBVwpNCMcZ
+         sYhJyhKYUjoKsBpV0QZ7wyVANkh25rZhaR/Upsxkq7BrimFnCDgRLvQkpdACFlnXekxH
+         lu9secZ9AQD7zTJXj3WvZ6BJE5kRK/gn7DybHXcLhwoNrafp7UyXz1Rj+NZ0qk1gDwmJ
+         KlbP9jdIFWBI8enr6gAdwI9LJLXAmeDnjfzl7On9mB8Wq9ffUT9mywTpU2ZF29+Xj3b5
+         Rcxg==
+Original-Received: by 10.68.227.37 with SMTP id rx5mr31049206pbc.47.1344378447588;
+        Tue, 07 Aug 2012 15:27:27 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id pp2sm11965571pbb.1.2012.08.07.15.27.25
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:27:26 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQnq527QTgNsvhCal473tvht6w0FS6pKZtuFxJORPFNSgKjog1qMxpyENNVcBGgNs5SgBYiJ
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339699 gmane.linux.kernel.stable:29524
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339699>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Alan Cox <alan@linux.intel.com>
+
+commit 3b9fc37280c521b086943f9aedda767f5bf3b2d3 upstream.
+
+Consider the input case of a rule that consists entirely of non space
+symbols followed by a \0. Say 64 + \0
+
+In this case strlen(data) = 64
+kzalloc of subject and object are 64 byte objects
+sscanfdata, "%s %s %s", subject, ...)
+
+will put 65 bytes into subject.
+
+Signed-off-by: Alan Cox <alan@linux.intel.com>
+Acked-by: Casey Schaufler <casey@schaufler-ca.com>
+Signed-off-by: James Morris <james.l.morris@oracle.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ security/smack/smackfs.c |    8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+--- a/security/smack/smackfs.c
++++ b/security/smack/smackfs.c
+@@ -325,11 +325,11 @@ static int smk_parse_long_rule(const cha
+ 	int datalen;
+ 	int rc = -1;
+ 
+-	/*
+-	 * This is probably inefficient, but safe.
+-	 */
++	/* This is inefficient */
+ 	datalen = strlen(data);
+-	subject = kzalloc(datalen, GFP_KERNEL);
++
++	/* Our first element can be 64 + \0 with no spaces */
++	subject = kzalloc(datalen + 1, GFP_KERNEL);
+ 	if (subject == NULL)
+ 		return -1;
+ 	object = kzalloc(datalen, GFP_KERNEL);
+
+

@@ -1,0 +1,103 @@
+Path: news.gmane.org!not-for-mail
+From: Rik van Riel <riel@redhat.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: Re: [PATCH 5/6] rbtree: faster augmented erase
+Date: Wed, 25 Jul 2012 13:53:39 -0400
+Lines: 36
+Approved: news@gmane.org
+Message-ID: <501032A3.3010705@redhat.com>
+References: <1342787467-5493-1-git-send-email-walken@google.com> <1342787467-5493-6-git-send-email-walken@google.com> <20120724015410.GA9690@google.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1; format=flowed
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343238925 16187 80.91.229.3 (25 Jul 2012 17:55:25 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 17:55:25 +0000 (UTC)
+Cc: peterz@infradead.org, daniel.santos@pobox.com, aarcange@redhat.com,
+        dwmw2@infradead.org, akpm@linux-foundation.org, linux-mm@kvack.org,
+        linux-kernel@vger.kernel.org
+To: Michel Lespinasse <walken@google.com>
+Original-X-From: owner-linux-mm@kvack.org Wed Jul 25 19:55:23 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Su5nu-0008Tq-Kr
+	for glkm-linux-mm-2@m.gmane.org; Wed, 25 Jul 2012 19:55:22 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id B068E6B004D; Wed, 25 Jul 2012 13:55:20 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 9DB756B005A; Wed, 25 Jul 2012 13:55:20 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 68AAC6B005D; Wed, 25 Jul 2012 13:55:20 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx158.postini.com [74.125.245.158])
+	by kanga.kvack.org (Postfix) with SMTP id 29E636B004D
+	for <linux-mm@kvack.org>; Wed, 25 Jul 2012 13:55:14 -0400 (EDT)
+Original-Received: from mx1.redhat.com ([209.132.183.28]) (using TLSv1) by na3sys010amx158.postini.com ([74.125.244.10]) with SMTP;
+	Wed, 25 Jul 2012 17:55:14 GMT
+Original-Received: from int-mx01.intmail.prod.int.phx2.redhat.com (int-mx01.intmail.prod.int.phx2.redhat.com [10.5.11.11])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6PHt95C007816
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Wed, 25 Jul 2012 13:55:09 -0400
+Original-Received: from cuia.bos.redhat.com (cuia.bos.redhat.com [10.16.184.35])
+	by int-mx01.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with ESMTP id q6PHt8br011938;
+	Wed, 25 Jul 2012 13:55:08 -0400
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120605 Thunderbird/13.0
+In-Reply-To: <20120724015410.GA9690@google.com>
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.11
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:88.1613 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <riel@redhat.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82992 gmane.linux.kernel:1333185
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333185>
+
+On 07/23/2012 09:54 PM, Michel Lespinasse wrote:
+> Add an augmented tree rotation callback to __rb_erase_color(), so that
+> augmented tree information can be maintained while rebalancing.
+>
+> Also introduce rb_erase_augmented(), which is a version of rb_erase()
+> with augmented tree callbacks. We need three callbacks here: one to
+> copy the subtree's augmented value after stitching in a new node as
+> the subtree root (rb_erase_augmented cases 2 and 3), one to propagate
+> the augmented values up after removing a node, and one to pass up to
+> __rb_erase_color() to handle rebalancing.
+>
+> Things are set up so that rb_erase() uses dummy do-nothing callbacks,
+> which get inlined and eliminated by the compiler, and also inlines the
+> __rb_erase_color() call so as to generate similar code than before
+> (once again, the compiler somehow generates smaller code than before
+> with all that inlining, but the speed seems to be on par). For the
+> augmented version rb_erase_augmented(), however, we use partial
+> inlining: we want rb_erase_augmented() and its augmented copy and
+> propagation callbacks to get inlined together, but we still call into
+> a generic __rb_erase_color() (passing a non-inlined callback function)
+> for the rebalancing work. This is intended to strike a reasonable
+> compromise between speed and compiled code size.
+
+I guess moving the inlined function to the include file
+takes care of my concerns for patch 4/6...
+
+> Signed-off-by: Michel Lespinasse <walken@google.com>
+
+Acked-by: Rik van Riel <riel@redhat.com>
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

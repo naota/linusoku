@@ -1,0 +1,145 @@
+Path: news.gmane.org!not-for-mail
+From: Aaron Lu <aaron.lu@amd.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.scsi,gmane.linux.ide
+Subject: [PATCH v3 5/7] scsi: pm: use runtime resume callback if available
+Date: Thu, 26 Jul 2012 18:05:27 +0800
+Lines: 60
+Approved: news@gmane.org
+Message-ID: <1343297129-28174-6-git-send-email-aaron.lu@amd.com>
+References: <1343297129-28174-1-git-send-email-aaron.lu@amd.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1343297211 4659 80.91.229.3 (26 Jul 2012 10:06:51 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 10:06:51 +0000 (UTC)
+Cc: Jeff Garzik <jgarzik@pobox.com>, Lin Ming <minggr@gmail.com>,
+	Jeff Wu <jeff.wu@amd.com>, <linux-kernel@vger.kernel.org>,
+	<linux-pm@vger.kernel.org>, <linux-scsi@vger.kernel.org>,
+	<linux-ide@vger.kernel.org>, Aaron Lu <aaron.lwe@gmail.com>,
+	Aaron Lu <aaron.lu@amd.com>
+To: James Bottomley <James.Bottomley@HansenPartnership.com>,
+	Alan Stern <stern@rowland.harvard.edu>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 12:06:49 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuKy0-0005Wn-8E
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 12:06:48 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752060Ab2GZKGZ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 06:06:25 -0400
+Original-Received: from va3ehsobe001.messaging.microsoft.com ([216.32.180.11]:25679
+	"EHLO va3outboundpool.messaging.microsoft.com" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1751113Ab2GZKGQ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 06:06:16 -0400
+Original-Received: from mail153-va3-R.bigfish.com (10.7.14.240) by
+ VA3EHSOBE002.bigfish.com (10.7.40.22) with Microsoft SMTP Server id
+ 14.1.225.23; Thu, 26 Jul 2012 10:06:12 +0000
+Original-Received: from mail153-va3 (localhost [127.0.0.1])	by
+ mail153-va3-R.bigfish.com (Postfix) with ESMTP id 88AF42E0223;	Thu, 26 Jul
+ 2012 10:06:11 +0000 (UTC)
+X-Forefront-Antispam-Report: CIP:163.181.249.109;KIP:(null);UIP:(null);IPV:NLI;H:ausb3twp02.amd.com;RD:none;EFVD:NLI
+X-SpamScore: 0
+X-BigFish: VPS0(zzzz1202hzz8275bhz2dh668h839hd24he5bhf0ah107ah)
+Original-Received: from mail153-va3 (localhost.localdomain [127.0.0.1]) by mail153-va3
+ (MessageSwitch) id 1343297168636653_12610; Thu, 26 Jul 2012 10:06:08 +0000
+ (UTC)
+Original-Received: from VA3EHSMHS009.bigfish.com (unknown [10.7.14.242])	by
+ mail153-va3.bigfish.com (Postfix) with ESMTP id 8D1E9200050;	Thu, 26 Jul 2012
+ 10:06:08 +0000 (UTC)
+Original-Received: from ausb3twp02.amd.com (163.181.249.109) by
+ VA3EHSMHS009.bigfish.com (10.7.99.19) with Microsoft SMTP Server id
+ 14.1.225.23; Thu, 26 Jul 2012 10:06:08 +0000
+X-WSS-ID: 0M7RIQ5-02-3OU-02
+X-M-MSG: 
+Original-Received: from sausexedgep01.amd.com (sausexedgep01-ext.amd.com
+ [163.181.249.72])	(using TLSv1 with cipher AES128-SHA (128/128 bits))	(No
+ client certificate requested)	by ausb3twp02.amd.com (Axway MailGate 3.8.1)
+ with ESMTP id 25D5EC815E;	Thu, 26 Jul 2012 05:06:04 -0500 (CDT)
+Original-Received: from sausexhtp01.amd.com (163.181.3.165) by sausexedgep01.amd.com
+ (163.181.36.54) with Microsoft SMTP Server (TLS) id 8.3.192.1; Thu, 26 Jul
+ 2012 05:06:20 -0500
+Original-Received: from sausexmb1.amd.com (163.181.3.156) by sausexhtp01.amd.com
+ (163.181.3.165) with Microsoft SMTP Server id 8.3.213.0; Thu, 26 Jul 2012
+ 05:06:04 -0500
+Original-Received: from storexbh1.amd.com ([10.1.1.17]) by sausexmb1.amd.com with
+ Microsoft SMTPSVC(6.0.3790.3959);	 Thu, 26 Jul 2012 05:06:04 -0500
+Original-Received: from sshaexmb1.amd.com ([10.237.2.11]) by storexbh1.amd.com with
+ Microsoft SMTPSVC(6.0.3790.4675);	 Thu, 26 Jul 2012 06:06:03 -0400
+Original-Received: from aarontestpc.amd.com ([10.237.73.70]) by sshaexmb1.amd.com with
+ Microsoft SMTPSVC(6.0.3790.4675);	 Thu, 26 Jul 2012 18:05:58 +0800
+X-Mailer: git-send-email 1.7.11.3
+In-Reply-To: <1343297129-28174-1-git-send-email-aaron.lu@amd.com>
+X-OriginalArrivalTime: 26 Jul 2012 10:05:58.0519 (UTC) FILETIME=[40DB7870:01CD6B16]
+X-OriginatorOrg: amd.com
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333491 gmane.linux.scsi:76606 gmane.linux.ide:52475
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333491>
+
+When runtime resume a scsi device, if the device's driver has
+implemented runtime resume callback, use that.
+
+sr driver needs this to do different things for system resume and
+runtime resume.
+
+Signed-off-by: Aaron Lu <aaron.lu@amd.com>
+---
+ drivers/scsi/scsi_pm.c | 15 ++++++++++-----
+ 1 file changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/scsi/scsi_pm.c b/drivers/scsi/scsi_pm.c
+index 7c93723..65d723d 100644
+--- a/drivers/scsi/scsi_pm.c
++++ b/drivers/scsi/scsi_pm.c
+@@ -34,14 +34,19 @@ static int scsi_dev_type_suspend(struct device *dev, pm_message_t msg)
+ 	return err;
+ }
+ 
+-static int scsi_dev_type_resume(struct device *dev)
++static int scsi_dev_type_resume(struct device *dev, bool runtime)
+ {
+ 	struct device_driver *drv;
+ 	int err = 0;
++	int (*resume)(struct device *);
+ 
+ 	drv = dev->driver;
+-	if (drv && drv->resume)
+-		err = drv->resume(dev);
++	if (runtime && drv && drv->pm && drv->pm->runtime_resume)
++		resume = drv->pm->runtime_resume;
++	else
++		resume = drv ? drv->resume : NULL;
++	if (resume)
++		err = resume(dev);
+ 	scsi_device_resume(to_scsi_device(dev));
+ 	dev_dbg(dev, "scsi resume: %d\n", err);
+ 	return err;
+@@ -85,7 +90,7 @@ static int scsi_bus_resume_common(struct device *dev)
+ 	pm_runtime_get_sync(dev->parent);
+ 
+ 	if (scsi_is_sdev_device(dev))
+-		err = scsi_dev_type_resume(dev);
++		err = scsi_dev_type_resume(dev, false);
+ 	if (err == 0) {
+ 		pm_runtime_disable(dev);
+ 		pm_runtime_set_active(dev);
+@@ -160,7 +165,7 @@ static int scsi_runtime_resume(struct device *dev)
+ 
+ 	dev_dbg(dev, "scsi_runtime_resume\n");
+ 	if (scsi_is_sdev_device(dev))
+-		err = scsi_dev_type_resume(dev);
++		err = scsi_dev_type_resume(dev, true);
+ 
+ 	/* Insert hooks here for targets, hosts, and transport classes */
+ 
+-- 
+1.7.11.3
+
+

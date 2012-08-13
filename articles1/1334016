@@ -1,0 +1,579 @@
+Path: news.gmane.org!not-for-mail
+From: "Andrew Stiegmann (stieg)" <astiegmann@vmware.com>
+Newsgroups: gmane.linux.kernel.virtualization,gmane.linux.kernel
+Subject: [vmw_vmci 05/11] Apply VMCI event code
+Date: Thu, 26 Jul 2012 16:39:34 -0700
+Lines: 505
+Approved: news@gmane.org
+Message-ID: <1343345980-32397-6-git-send-email-astiegmann@vmware.com>
+References: <1343345980-32397-1-git-send-email-astiegmann@vmware.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343346063 16604 80.91.229.3 (26 Jul 2012 23:41:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 23:41:03 +0000 (UTC)
+Cc: pv-drivers@vmware.com, vm-crosstalk@vmware.com,
+	"Andrew Stiegmann \(stieg\)" <astiegmann@vmware.com>,
+	cschamp@vmware.com, gregkh@linuxfoundation.org
+To: linux-kernel@vger.kernel.org,
+	virtualization@lists.linux-foundation.org
+Original-X-From: virtualization-bounces@lists.linux-foundation.org Fri Jul 27 01:41:00 2012
+Return-path: <virtualization-bounces@lists.linux-foundation.org>
+Envelope-to: glkv-virtualization@gmane.org
+Original-Received: from mail.linuxfoundation.org ([140.211.169.12])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <virtualization-bounces@lists.linux-foundation.org>)
+	id 1SuXft-0002nz-0B
+	for glkv-virtualization@gmane.org; Fri, 27 Jul 2012 01:40:57 +0200
+Original-Received: from mail.linux-foundation.org (localhost [IPv6:::1])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id 3D6A9D48;
+	Thu, 26 Jul 2012 23:40:18 +0000 (UTC)
+X-Original-To: virtualization@lists.linux-foundation.org
+Delivered-To: virtualization@mail.linuxfoundation.org
+Original-Received: from smtp1.linuxfoundation.org (smtp1.linux-foundation.org
+	[172.17.192.35])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id 59AE0D3C
+	for <virtualization@lists.linux-foundation.org>;
+	Thu, 26 Jul 2012 23:40:16 +0000 (UTC)
+X-Greylist: domain auto-whitelisted by SQLgrey-1.7.6
+Original-Received: from smtp-outbound-1.vmware.com (smtp-outbound-1.vmware.com
+	[208.91.2.12])
+	by smtp1.linuxfoundation.org (Postfix) with ESMTP id 79AF61FCA7
+	for <virtualization@lists.linux-foundation.org>;
+	Thu, 26 Jul 2012 23:40:15 +0000 (UTC)
+Original-Received: from sc9-mailhost2.vmware.com (sc9-mailhost2.vmware.com
+	[10.113.161.72])
+	by smtp-outbound-1.vmware.com (Postfix) with ESMTP id 5C4182849C;
+	Thu, 26 Jul 2012 16:40:15 -0700 (PDT)
+Original-Received: from localhost.localdomain (stieg-dev1.eng.vmware.com [10.20.87.164])
+	by sc9-mailhost2.vmware.com (Postfix) with ESMTP id 52089B0374;
+	Thu, 26 Jul 2012 16:40:15 -0700 (PDT)
+X-Mailer: git-send-email 1.7.0.4
+In-Reply-To: <1343345980-32397-1-git-send-email-astiegmann@vmware.com>
+X-Spam-Status: No, score=-6.9 required=5.0 tests=BAYES_00,RCVD_IN_DNSWL_HI,
+	T_RP_MATCHES_RCVD autolearn=ham version=3.3.1
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on
+	smtp1.linux-foundation.org
+X-BeenThere: virtualization@lists.linux-foundation.org
+X-Mailman-Version: 2.1.12
+Precedence: list
+List-Id: Linux virtualization <virtualization.lists.linux-foundation.org>
+List-Unsubscribe: <https://lists.linuxfoundation.org/mailman/options/virtualization>,
+	<mailto:virtualization-request@lists.linux-foundation.org?subject=unsubscribe>
+List-Archive: <http://lists.linuxfoundation.org/pipermail/virtualization/>
+List-Post: <mailto:virtualization@lists.linux-foundation.org>
+List-Help: <mailto:virtualization-request@lists.linux-foundation.org?subject=help>
+List-Subscribe: <https://lists.linuxfoundation.org/mailman/listinfo/virtualization>,
+	<mailto:virtualization-request@lists.linux-foundation.org?subject=subscribe>
+Original-Sender: virtualization-bounces@lists.linux-foundation.org
+Errors-To: virtualization-bounces@lists.linux-foundation.org
+Xref: news.gmane.org gmane.linux.kernel.virtualization:16311 gmane.linux.kernel:1334016
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334016>
+
+Code that manages event handlers and handles callbacks when
+specific events fire.
+
+Signed-off-by: Andrew Stiegmann (stieg) <astiegmann@vmware.com>
+---
+ drivers/misc/vmw_vmci/vmci_event.c |  451 ++++++++++++++++++++++++++++++++++++
+ drivers/misc/vmw_vmci/vmci_event.h |   29 +++
+ 2 files changed, 480 insertions(+), 0 deletions(-)
+ create mode 100644 drivers/misc/vmw_vmci/vmci_event.c
+ create mode 100644 drivers/misc/vmw_vmci/vmci_event.h
+
+diff --git a/drivers/misc/vmw_vmci/vmci_event.c b/drivers/misc/vmw_vmci/vmci_event.c
+new file mode 100644
+index 0000000..bc4e976
+--- /dev/null
++++ b/drivers/misc/vmw_vmci/vmci_event.c
+@@ -0,0 +1,451 @@
++/*
++ * VMware VMCI Driver
++ *
++ * Copyright (C) 2012 VMware, Inc. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License as published by the
++ * Free Software Foundation version 2 and no later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
++ * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++ */
++
++#include <linux/module.h>
++#include <linux/list.h>
++#include <linux/sched.h>
++#include <linux/vmw_vmci_api.h>
++#include <linux/vmw_vmci_defs.h>
++
++#include "vmci_event.h"
++#include "vmci_driver.h"
++
++#define EVENT_MAGIC 0xEABE0000
++#define VMCI_EVENT_MAX_ATTEMPTS 10
++
++struct vmci_subscription {
++	uint32_t id;
++	int refCount;
++	bool runDelayed;
++	wait_queue_head_t destroyEvent;
++	uint32_t event;
++	VMCI_EventCB callback;
++	void *callbackData;
++	struct list_head subscriberListItem;
++};
++
++static struct list_head subscriberArray[VMCI_EVENT_MAX];
++static spinlock_t subscriberLock;
++
++struct delayed_event_info {
++	struct vmci_subscription *sub;
++	uint8_t eventPayload[sizeof(struct vmci_event_data_max)];
++};
++
++struct event_ref {
++	struct vmci_subscription *sub;
++	struct list_head listItem;
++};
++
++int __init vmci_event_init(void)
++{
++	int i;
++
++	for (i = 0; i < VMCI_EVENT_MAX; i++)
++		INIT_LIST_HEAD(&subscriberArray[i]);
++
++	spin_lock_init(&subscriberLock);
++	return VMCI_SUCCESS;
++}
++
++void vmci_event_exit(void)
++{
++	int e;
++
++	/* We free all memory at exit. */
++	for (e = 0; e < VMCI_EVENT_MAX; e++) {
++		struct vmci_subscription *cur, *p2;
++		list_for_each_entry_safe(cur, p2, &subscriberArray[e],
++					 subscriberListItem) {
++
++			/*
++			 * We should never get here because all events
++			 * should have been unregistered before we try
++			 * to unload the driver module.  Also, delayed
++			 * callbacks could still be firing so this
++			 * cleanup would not be safe.  Still it is
++			 * better to free the memory than not ... so
++			 * we leave this code in just in case....
++			 */
++			pr_warn("Unexpected free events occuring.");
++			kfree(cur);
++		}
++	}
++
++}
++
++/*
++ * Gets a reference to the given VMCISubscription.
++ */
++static void event_get(struct vmci_subscription *entry)
++{
++	ASSERT(entry);
++
++	entry->refCount++;
++}
++
++/*
++ * Releases the given VMCISubscription.
++ * Fires the destroy event if the reference count has gone to zero.
++ */
++static void event_release(struct vmci_subscription *entry)
++{
++	ASSERT(entry);
++	ASSERT(entry->refCount > 0);
++
++	entry->refCount--;
++	if (entry->refCount == 0)
++		wake_up(&entry->destroyEvent);
++}
++
++/*
++ * Callback to release the event entry reference. It is called by the
++ * VMCI_WaitOnEvent function before it blocks.
++ */
++static int event_release_cb(void *clientData)
++{
++	struct vmci_subscription *sub = (struct vmci_subscription *)clientData;
++
++	ASSERT(sub);
++
++	spin_lock_bh(&subscriberLock);
++	event_release(sub);
++	spin_unlock_bh(&subscriberLock);
++
++	return 0;
++}
++
++/*
++ * Find entry. Assumes lock is held.
++ * Increments the VMCISubscription refcount if an entry is found.
++ */
++static struct vmci_subscription *event_find(uint32_t subID)
++{
++	int e;
++
++	for (e = 0; e < VMCI_EVENT_MAX; e++) {
++		struct vmci_subscription *cur;
++		list_for_each_entry(cur, &subscriberArray[e],
++				    subscriberListItem) {
++			if (cur->id == subID) {
++				event_get(cur);
++				return cur;
++			}
++		}
++	}
++	return NULL;
++}
++
++/*
++ * Calls the specified callback in a delayed context.
++ */
++static void event_delayed_dispatch_cb(void *data)
++{
++	struct delayed_event_info *eventInfo;
++	struct vmci_subscription *sub;
++	struct vmci_event_data *ed;
++
++	eventInfo = data;
++
++	ASSERT(eventInfo);
++	ASSERT(eventInfo->sub);
++
++	sub = eventInfo->sub;
++	ed = (struct vmci_event_data *)eventInfo->eventPayload;
++
++	sub->callback(sub->id, ed, sub->callbackData);
++
++	spin_lock_bh(&subscriberLock);
++	event_release(sub);
++	spin_unlock_bh(&subscriberLock);
++
++	kfree(eventInfo);
++}
++
++/*
++ * Actually delivers the events to the subscribers.
++ * The callback function for each subscriber is invoked.
++ */
++static int event_deliver(struct vmci_event_msg *eventMsg)
++{
++	int err = VMCI_SUCCESS;
++	struct vmci_subscription *cur;
++	struct list_head noDelayList;
++	struct vmci_event_data *ed;
++	struct event_ref *eventRef, *p2;
++
++	ASSERT(eventMsg);
++
++	INIT_LIST_HEAD(&noDelayList);
++
++	spin_lock_bh(&subscriberLock);
++	list_for_each_entry(cur, &subscriberArray[eventMsg->eventData.event],
++			    subscriberListItem) {
++		ASSERT(cur && cur->event == eventMsg->eventData.event);
++
++		if (cur->runDelayed) {
++			struct delayed_event_info *eventInfo;
++			eventInfo = kzalloc(sizeof *eventInfo, GFP_ATOMIC);
++			if (!eventInfo) {
++				err = VMCI_ERROR_NO_MEM;
++				goto out;
++			}
++
++			event_get(cur);
++			memcpy(eventInfo->eventPayload,
++			       VMCI_DG_PAYLOAD(eventMsg),
++			       (size_t) eventMsg->hdr.payloadSize);
++			eventInfo->sub = cur;
++			err = vmci_drv_schedule_delayed_work(
++				event_delayed_dispatch_cb,
++				eventInfo);
++			if (err != VMCI_SUCCESS) {
++				event_release(cur);
++				kfree(eventInfo);
++				goto out;
++			}
++
++		} else {
++			/*
++			 * To avoid possible lock rank voilation when holding
++			 * subscriberLock, we construct a local list of
++			 * subscribers and release subscriberLock before
++			 * invokes the callbacks. This is similar to delayed
++			 * callbacks, but callbacks is invoked right away here.
++			 */
++			eventRef = kzalloc(sizeof *eventRef, GFP_ATOMIC);
++			if (!eventRef) {
++				err = VMCI_ERROR_NO_MEM;
++				goto out;
++			}
++
++			event_get(cur);
++			eventRef->sub = cur;
++			INIT_LIST_HEAD(&eventRef->listItem);
++			list_add(&eventRef->listItem, &noDelayList);
++		}
++	}
++
++out:
++	spin_unlock_bh(&subscriberLock);
++
++	list_for_each_entry_safe(eventRef, p2, &noDelayList, listItem) {
++		uint8_t eventPayload[sizeof(struct vmci_event_data_max)]
++			= { 0 };
++
++		/*
++		 * We set event data before each callback to ensure
++		 * isolation.
++		 */
++		memcpy(eventPayload, VMCI_DG_PAYLOAD(eventMsg),
++		       (size_t) eventMsg->hdr.payloadSize);
++		ed = (struct vmci_event_data *)eventPayload;
++		cur = eventRef->sub;
++		cur->callback(cur->id, ed, cur->callbackData);
++
++		spin_lock_bh(&subscriberLock);
++		event_release(cur);
++		spin_unlock_bh(&subscriberLock);
++		kfree(eventRef);
++	}
++
++	return err;
++}
++
++/*
++ * Dispatcher for the VMCI_EVENT_RECEIVE datagrams. Calls all
++ * subscribers for given event.
++ */
++int vmci_event_dispatch(struct vmci_dg *msg)
++{
++	struct vmci_event_msg *eventMsg = (struct vmci_event_msg *)msg;
++
++	ASSERT(msg &&
++	       msg->src.context == VMCI_HYPERVISOR_CONTEXT_ID &&
++	       msg->dst.resource == VMCI_EVENT_HANDLER);
++
++	if (msg->payloadSize < sizeof(uint32_t) ||
++	    msg->payloadSize > sizeof(struct vmci_event_data_max))
++		return VMCI_ERROR_INVALID_ARGS;
++
++	if (!VMCI_EVENT_VALID(eventMsg->eventData.event))
++		return VMCI_ERROR_EVENT_UNKNOWN;
++
++	event_deliver(eventMsg);
++	return VMCI_SUCCESS;
++}
++
++/*
++ * Initialize and add subscription to subscriber list.
++ */
++static int event_register_subscription(struct vmci_subscription *sub,
++				       uint32_t event,
++				       uint32_t flags,
++				       VMCI_EventCB callback,
++				       void *callbackData)
++{
++	static uint32_t subscriptionID;
++	uint32_t attempts = 0;
++	int result;
++	bool success;
++
++	ASSERT(sub);
++
++	if (!VMCI_EVENT_VALID(event) || callback == NULL) {
++		pr_devel("Failed to subscribe to event (type=%d) " \
++			 "(callback=%p) (data=%p).", event,
++			 callback, callbackData);
++		return VMCI_ERROR_INVALID_ARGS;
++	}
++
++	sub->runDelayed = !!(flags & VMCI_FLAG_EVENT_DELAYED_CB);
++	sub->refCount = 1;
++	sub->event = event;
++	sub->callback = callback;
++	sub->callbackData = callbackData;
++	INIT_LIST_HEAD(&sub->subscriberListItem);
++
++	spin_lock_bh(&subscriberLock);
++
++	/* Creation of a new event is always allowed. */
++	for (success = false, attempts = 0;
++	     success == false && attempts < VMCI_EVENT_MAX_ATTEMPTS;
++	     attempts++) {
++		struct vmci_subscription *existingSub = NULL;
++
++		/*
++		 * We try to get an id a couple of time before
++		 * claiming we are out of resources.
++		 */
++		sub->id = ++subscriptionID;
++
++		/* Test for duplicate id. */
++		existingSub = event_find(sub->id);
++		if (existingSub == NULL)
++			success = true;
++		else
++			event_release(existingSub);
++	}
++
++	if (success) {
++		init_waitqueue_head(&sub->destroyEvent);
++		list_add(&sub->subscriberListItem, &subscriberArray[event]);
++		result = VMCI_SUCCESS;
++	} else {
++		result = VMCI_ERROR_NO_RESOURCES;
++	}
++
++	spin_unlock_bh(&subscriberLock);
++	return result;
++}
++
++/*
++ * Remove subscription from subscriber list.
++ */
++static struct vmci_subscription *event_unregister_subscription(uint32_t subID)
++{
++	struct vmci_subscription *s;
++
++	spin_lock_bh(&subscriberLock);
++	s = event_find(subID);
++	if (s != NULL) {
++		event_release(s);
++		list_del(&s->subscriberListItem);
++	}
++	spin_unlock_bh(&subscriberLock);
++
++	if (s != NULL)
++		vmci_drv_wait_on_event_intr(&s->destroyEvent,
++					    event_release_cb, s);
++
++	return s;
++}
++
++/**
++ * VMCIEvent_Subscribe() - Subscribe to a given event.
++ * @event:	The event to subscribe to.
++ * @flags:	Event flags.  VMCI_FLAG_EVENT_*
++ * @callback:	The callback to invoke upon the event.
++ * @callbackData:	Data to pass to the callback.
++ * @subscriptionID:	ID used to track subscription.  Used with
++ *		VMCIEvent_Unsubscribe()
++ *
++ * Subscribes to the provided event.  The callback specified can be fired
++ * in different contexts depending on what flag is specified while
++ * registering. If flags contains VMCI_FLAG_EVENT_NONE then the
++ * callback is fired with the subscriber lock held (and BH context
++ * on the guest). If flags contain VMCI_FLAG_EVENT_DELAYED_CB then
++ * the callback is fired with no locks held in thread context.
++ * This is useful because other VMCIEvent functions can be called,
++ * but it also increases the chances that an event will be dropped.
++ */
++int VMCIEvent_Subscribe(uint32_t event,
++			uint32_t flags,
++			VMCI_EventCB callback,
++			void *callbackData,
++			uint32_t *subscriptionID)
++{
++	int retval;
++	struct vmci_subscription *s = NULL;
++
++	if (subscriptionID == NULL) {
++		pr_devel("Invalid subscription (NULL).");
++		return VMCI_ERROR_INVALID_ARGS;
++	}
++
++	s = kmalloc(sizeof *s, GFP_KERNEL);
++	if (s == NULL)
++		return VMCI_ERROR_NO_MEM;
++
++	retval = event_register_subscription(s, event, flags,
++					     callback, callbackData);
++	if (retval < VMCI_SUCCESS) {
++		kfree(s);
++		return retval;
++	}
++
++	*subscriptionID = s->id;
++	return retval;
++}
++EXPORT_SYMBOL(VMCIEvent_Subscribe);
++
++/**
++ * VMCIEvent_Unsubscribe() - Unsubscribe to an event.
++ * @subID:	A subscription ID ad provided by VMCIEvent_Subscribe()
++ *
++ * Unsubscribe to given event. Removes it from list and frees it.
++ * Will return callbackData if requested by caller.
++ */
++int VMCIEvent_Unsubscribe(uint32_t subID)
++{
++	struct vmci_subscription *s;
++
++	/*
++	 * Return subscription. At this point we know noone else is accessing
++	 * the subscription so we can free it.
++	 */
++	s = event_unregister_subscription(subID);
++	if (s == NULL)
++		return VMCI_ERROR_NOT_FOUND;
++
++	kfree(s);
++
++	return VMCI_SUCCESS;
++}
++EXPORT_SYMBOL(VMCIEvent_Unsubscribe);
+diff --git a/drivers/misc/vmw_vmci/vmci_event.h b/drivers/misc/vmw_vmci/vmci_event.h
+new file mode 100644
+index 0000000..83574c6
+--- /dev/null
++++ b/drivers/misc/vmw_vmci/vmci_event.h
+@@ -0,0 +1,29 @@
++/*
++ * VMware VMCI Driver
++ *
++ * Copyright (C) 2012 VMware, Inc. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License as published by the
++ * Free Software Foundation version 2 and no later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
++ * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++ */
++
++#ifndef __VMCI_EVENT_H__
++#define __VMCI_EVENT_H__
++
++#include <linux/vmw_vmci_api.h>
++
++int vmci_event_init(void);
++void vmci_event_exit(void);
++int vmci_event_dispatch(struct vmci_dg *msg);
++
++#endif /*__VMCI_EVENT_H__ */
+-- 
+1.7.0.4

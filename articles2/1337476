@@ -1,0 +1,115 @@
+Path: news.gmane.org!not-for-mail
+From: Josh Triplett <josh@joshtriplett.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] scripts/get_maintainer.pl: Default to --no-rolestats when
+ output not a terminal
+Date: Fri, 3 Aug 2012 11:27:08 -0700
+Lines: 56
+Approved: news@gmane.org
+Message-ID: <20120803182706.GA4637@jtriplet-mobl1>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344018450 10463 80.91.229.3 (3 Aug 2012 18:27:30 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 18:27:30 +0000 (UTC)
+To: Alex Kelly <alex.page.kelly@gmail.com>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Joe Perches <joe@perches.com>,
+	Ian Campbell <Ian.Campbell@citrix.com>,
+	Richard Weinberger <richard@nod.at>,
+	linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 20:27:26 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxMaq-0001bZ-Dp
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 20:27:24 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754098Ab2HCS1Q (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 14:27:16 -0400
+Original-Received: from relay3-d.mail.gandi.net ([217.70.183.195]:39604 "EHLO
+	relay3-d.mail.gandi.net" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751483Ab2HCS1P (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 14:27:15 -0400
+X-Originating-IP: 217.70.178.133
+Original-Received: from mfilter3-d.gandi.net (mfilter3-d.gandi.net [217.70.178.133])
+	by relay3-d.mail.gandi.net (Postfix) with ESMTP id EEDFDA8090;
+	Fri,  3 Aug 2012 20:27:13 +0200 (CEST)
+X-Virus-Scanned: Debian amavisd-new at mfilter3-d.gandi.net
+Original-Received: from relay3-d.mail.gandi.net ([217.70.183.195])
+	by mfilter3-d.gandi.net (mfilter3-d.gandi.net [10.0.15.180]) (amavisd-new, port 10024)
+	with ESMTP id S6RdcnlPbszi; Fri,  3 Aug 2012 20:27:12 +0200 (CEST)
+X-Originating-IP: 173.246.103.110
+Original-Received: from jtriplet-mobl1 (joshtriplett.org [173.246.103.110])
+	(Authenticated sender: josh@joshtriplett.org)
+	by relay3-d.mail.gandi.net (Postfix) with ESMTPSA id B5833A807F;
+	Fri,  3 Aug 2012 20:27:10 +0200 (CEST)
+Content-Disposition: inline
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337476
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337476>
+
+scripts/get_maintainer.pl defaults to showing --rolestats, which
+provides annotations explaining why each person or list might want to
+know about a patch.  This works well for interactive use, but breaks
+when used with git send-email's --to-cmd or --cc-cmd, resulting in
+malformed email headers and mails sent to some but not all recipients.
+
+To avoid the need to explicitly pass --no-rolestats for batch use,
+enable --rolestats by default only when outputting to a terminal.
+
+Reported-by: Alex Kelly <alex.page.kelly@gmail.com>
+Signed-off-by: Josh Triplett <josh@joshtriplett.org>
+---
+ scripts/get_maintainer.pl |   13 ++++++++-----
+ 1 file changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/scripts/get_maintainer.pl b/scripts/get_maintainer.pl
+index 8b673dd..dcb0748 100755
+--- a/scripts/get_maintainer.pl
++++ b/scripts/get_maintainer.pl
+@@ -40,7 +40,8 @@ my $email_use_mailmap = 1;
+ my $output_multiline = 1;
+ my $output_separator = ", ";
+ my $output_roles = 0;
+-my $output_rolestats = 1;
++my $output_rolestats = 0;
++$output_rolestats = 1 if -t STDOUT;
+ my $scm = 0;
+ my $web = 0;
+ my $subsystem = 0;
+@@ -768,7 +769,8 @@ Other options:
+ 
+ Default options:
+   [--email --nogit --git-fallback --m --n --l --multiline -pattern-depth=0
+-   --remove-duplicates --rolestats]
++   --remove-duplicates]
++  When outputting to a terminal, --rolestats defaults to enabled.
+ 
+ Notes:
+   Using "-f directory" may give unexpected results:
+@@ -781,9 +783,10 @@ Notes:
+       Used with "--git-blame", does not iterate all files in directory
+   Using "--git-blame" is slow and may add old committers and authors
+       that are no longer active maintainers to the output.
+-  Using "--roles" or "--rolestats" with git send-email --cc-cmd or any
+-      other automated tools that expect only ["name"] <email address>
+-      may not work because of additional output after <email address>.
++  Using "--roles" or "--rolestats" with git send-email --to-cmd or --cc-cmd, or
++      any other automated tools that expect only ["name"] <email address> may
++      not work because of additional output after <email address>.  These
++      options default to disabled when not outputting to a terminal.
+   Using "--rolestats" and "--git-blame" shows the #/total=% commits,
+       not the percentage of the entire file authored.  # of commits is
+       not a good measure of amount of code authored.  1 major commit may
+-- 
+1.7.10.4
+

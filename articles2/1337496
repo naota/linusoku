@@ -1,0 +1,92 @@
+Path: news.gmane.org!not-for-mail
+From: <pavan_savoy@ti.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH v2 3/6] drivers/misc/ti-st: chip_disable on timeout
+Date: Fri, 3 Aug 2012 14:46:14 -0500
+Lines: 28
+Approved: news@gmane.org
+Message-ID: <1344023177-21167-4-git-send-email-pavan_savoy@ti.com>
+References: <1344023177-21167-1-git-send-email-pavan_savoy@ti.com>
+ <1344023177-21167-2-git-send-email-pavan_savoy@ti.com>
+ <1344023177-21167-3-git-send-email-pavan_savoy@ti.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1344023247 15282 80.91.229.3 (3 Aug 2012 19:47:27 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 19:47:27 +0000 (UTC)
+Cc: <pavan_savoy@sify.com>, Pavan Savoy <pavan_savoy@ti.com>
+To: <gregkh@suse.de>, <linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 21:47:26 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxNqI-0001a9-9x
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 21:47:26 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754080Ab2HCTqo (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 15:46:44 -0400
+Original-Received: from devils.ext.ti.com ([198.47.26.153]:58004 "EHLO
+	devils.ext.ti.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753875Ab2HCTq0 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 15:46:26 -0400
+Original-Received: from dlelxv30.itg.ti.com ([172.17.2.17])
+	by devils.ext.ti.com (8.13.7/8.13.7) with ESMTP id q73JkIJK019155;
+	Fri, 3 Aug 2012 14:46:18 -0500
+Original-Received: from DLEE74.ent.ti.com (dlee74.ent.ti.com [157.170.170.8])
+	by dlelxv30.itg.ti.com (8.13.8/8.13.8) with ESMTP id q73JkIri009701;
+	Fri, 3 Aug 2012 14:46:18 -0500
+Original-Received: from dlelxv23.itg.ti.com (172.17.1.198) by DLEE74.ent.ti.com
+ (157.170.170.8) with Microsoft SMTP Server id 14.1.323.3; Fri, 3 Aug 2012
+ 14:46:18 -0500
+Original-Received: from legion.dal.design.ti.com (legion.dal.design.ti.com
+ [128.247.22.53])	by dlelxv23.itg.ti.com (8.13.8/8.13.8) with ESMTP id
+ q73JkIvB002997;	Fri, 3 Aug 2012 14:46:18 -0500
+Original-Received: from dirac.dal.design.ti.com (dirac.dal.design.ti.com
+ [10.248.4.197])	by legion.dal.design.ti.com (8.11.7p1+Sun/8.11.7) with ESMTP
+ id q73JkHr09166;	Fri, 3 Aug 2012 14:46:17 -0500 (CDT)
+Original-Received: from dirac.dal.design.ti.com (localhost.localdomain [127.0.0.1])	by
+ dirac.dal.design.ti.com (8.13.1/8.13.1) with ESMTP id q73JkHwb021212;	Fri, 3
+ Aug 2012 14:46:17 -0500
+Original-Received: (from x0099669@localhost)	by dirac.dal.design.ti.com
+ (8.13.1/8.13.1/Submit) id q73JkHQ9021209;	Fri, 3 Aug 2012 14:46:17 -0500
+X-Mailer: git-send-email 1.5.6.3
+In-Reply-To: <1344023177-21167-3-git-send-email-pavan_savoy@ti.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337496
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337496>
+
+From: Pavan Savoy <pavan_savoy@ti.com>
+
+If the communication with the WiLink breaks down for whatever reasons & the
+ti-st driver is unable to un-install the line-discipline during clean-up in
+st_kim_stop, the GPIO should be held low (BT_EN=0) & the platform's chip
+disable hook shall also be called.
+
+Signed-off-by: Pavan Savoy <pavan_savoy@ti.com>
+---
+ drivers/misc/ti-st/st_kim.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/misc/ti-st/st_kim.c b/drivers/misc/ti-st/st_kim.c
+index 847406a..54ff644 100644
+--- a/drivers/misc/ti-st/st_kim.c
++++ b/drivers/misc/ti-st/st_kim.c
+@@ -524,7 +524,7 @@ long st_kim_stop(void *kim_data)
+ 			msecs_to_jiffies(LDISC_TIME));
+ 	if (!err) {		/* timeout */
+ 		pr_err(" timed out waiting for ldisc to be un-installed");
+-		return -ETIMEDOUT;
++		err = -ETIMEDOUT;
+ 	}
+ 
+ 	/* platform specific disable */
+-- 
+1.7.4.1
+

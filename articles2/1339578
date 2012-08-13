@@ -1,0 +1,182 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 17/49] workqueue: perform cpu down operations from low priority cpu_notifier()
+Date: Tue,  7 Aug 2012 15:44:35 -0700
+Lines: 118
+Approved: news@gmane.org
+Message-ID: <20120807222028.420360083@linuxfoundation.org>
+References: <20120807222026.848194739@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344380146 25210 80.91.229.3 (7 Aug 2012 22:55:46 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:55:46 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Tejun Heo <tj@kernel.org>,
+	"Rafael J. Wysocki" <rjw@sisk.pl>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:55:45 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sysgi-00068g-Cg
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:55:44 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1031145Ab2HGWqU (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:46:20 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:53839 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1031136Ab2HGWqO (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:46:14 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so368883pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:46:13 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=/xkUEFS7VGDZ5YrsdVZFywuFkxSQo5w4wepICFtofqM=;
+        b=fWyztXEQn9Mi/6RjlDOSD0DunHoGAX6pDzNZ/cd1yn6Cym+j65wMu7yVDJITnAx53r
+         zLSxY9hjmd3TV29YK19D69yqn2i0DL43kucE/nTqcd17RSA0GE7cgbli5K07OsrR5ak9
+         bYR9/mT5Ocitg6pMq548XCHiSriI3QCTypWtlf+fGFYF9GG1lBPEpHQ/d7Y5/5+oSp73
+         YWxRjhofqLcKjy/qajJcTavkPWH4ajsOfC+K4PjPz3N+SdHrU3tF10e7H/6U7wRA5AUS
+         K/ARpEkxeHyAkPxUc/CukR1LphMlX6bOmKMHUSdmV58W8bJOqijlZ/Zzqy1zfURk2Z5C
+         PvDQ==
+Original-Received: by 10.68.238.166 with SMTP id vl6mr31165055pbc.96.1344379573770;
+        Tue, 07 Aug 2012 15:46:13 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id qb10sm11986334pbc.21.2012.08.07.15.46.11
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:46:12 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222026.848194739@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQmkKRiZq/FFhgaLvrBVgK+suP+1yvtvYppA8tfGehAc2O4I2Z4YEq4oBqcG5kTc94TBG/6Z
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339578 gmane.linux.kernel.stable:29411
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339578>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Tejun Heo <tj@kernel.org>
+
+commit 6575820221f7a4dd6eadecf7bf83cdd154335eda upstream.
+
+Currently, all workqueue cpu hotplug operations run off
+CPU_PRI_WORKQUEUE which is higher than normal notifiers.  This is to
+ensure that workqueue is up and running while bringing up a CPU before
+other notifiers try to use workqueue on the CPU.
+
+Per-cpu workqueues are supposed to remain working and bound to the CPU
+for normal CPU_DOWN_PREPARE notifiers.  This holds mostly true even
+with workqueue offlining running with higher priority because
+workqueue CPU_DOWN_PREPARE only creates a bound trustee thread which
+runs the per-cpu workqueue without concurrency management without
+explicitly detaching the existing workers.
+
+However, if the trustee needs to create new workers, it creates
+unbound workers which may wander off to other CPUs while
+CPU_DOWN_PREPARE notifiers are in progress.  Furthermore, if the CPU
+down is cancelled, the per-CPU workqueue may end up with workers which
+aren't bound to the CPU.
+
+While reliably reproducible with a convoluted artificial test-case
+involving scheduling and flushing CPU burning work items from CPU down
+notifiers, this isn't very likely to happen in the wild, and, even
+when it happens, the effects are likely to be hidden by the following
+successful CPU down.
+
+Fix it by using different priorities for up and down notifiers - high
+priority for up operations and low priority for down operations.
+
+Workqueue cpu hotplug operations will soon go through further cleanup.
+
+Signed-off-by: Tejun Heo <tj@kernel.org>
+Acked-by: "Rafael J. Wysocki" <rjw@sisk.pl>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ include/linux/cpu.h |    5 +++--
+ kernel/workqueue.c  |   38 +++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 40 insertions(+), 3 deletions(-)
+
+--- a/include/linux/cpu.h
++++ b/include/linux/cpu.h
+@@ -66,8 +66,9 @@ enum {
+ 	/* migration should happen before other stuff but after perf */
+ 	CPU_PRI_PERF		= 20,
+ 	CPU_PRI_MIGRATION	= 10,
+-	/* prepare workqueues for other notifiers */
+-	CPU_PRI_WORKQUEUE	= 5,
++	/* bring up workqueues before normal notifiers and down after */
++	CPU_PRI_WORKQUEUE_UP	= 5,
++	CPU_PRI_WORKQUEUE_DOWN	= -5,
+ };
+ 
+ #ifdef CONFIG_SMP
+--- a/kernel/workqueue.c
++++ b/kernel/workqueue.c
+@@ -3561,6 +3561,41 @@ static int __devinit workqueue_cpu_callb
+ 	return notifier_from_errno(0);
+ }
+ 
++/*
++ * Workqueues should be brought up before normal priority CPU notifiers.
++ * This will be registered high priority CPU notifier.
++ */
++static int __devinit workqueue_cpu_up_callback(struct notifier_block *nfb,
++					       unsigned long action,
++					       void *hcpu)
++{
++	switch (action & ~CPU_TASKS_FROZEN) {
++	case CPU_UP_PREPARE:
++	case CPU_UP_CANCELED:
++	case CPU_DOWN_FAILED:
++	case CPU_ONLINE:
++		return workqueue_cpu_callback(nfb, action, hcpu);
++	}
++	return NOTIFY_OK;
++}
++
++/*
++ * Workqueues should be brought down after normal priority CPU notifiers.
++ * This will be registered as low priority CPU notifier.
++ */
++static int __devinit workqueue_cpu_down_callback(struct notifier_block *nfb,
++						 unsigned long action,
++						 void *hcpu)
++{
++	switch (action & ~CPU_TASKS_FROZEN) {
++	case CPU_DOWN_PREPARE:
++	case CPU_DYING:
++	case CPU_POST_DEAD:
++		return workqueue_cpu_callback(nfb, action, hcpu);
++	}
++	return NOTIFY_OK;
++}
++
+ #ifdef CONFIG_SMP
+ 
+ struct work_for_cpu {
+@@ -3754,7 +3789,8 @@ static int __init init_workqueues(void)
+ 	unsigned int cpu;
+ 	int i;
+ 
+-	cpu_notifier(workqueue_cpu_callback, CPU_PRI_WORKQUEUE);
++	cpu_notifier(workqueue_cpu_up_callback, CPU_PRI_WORKQUEUE_UP);
++	cpu_notifier(workqueue_cpu_down_callback, CPU_PRI_WORKQUEUE_DOWN);
+ 
+ 	/* initialize gcwqs */
+ 	for_each_gcwq_cpu(cpu) {
+
+

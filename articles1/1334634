@@ -1,0 +1,120 @@
+Path: news.gmane.org!not-for-mail
+From: =?utf-8?Q?Bj=C3=B8rn_Mork?= <bjorn@mork.no>
+Newsgroups: gmane.linux.kernel,gmane.linux.usb.general
+Subject: Re: Kernel Oops while disconnecting USB peripheral (always)
+Date: Sat, 28 Jul 2012 14:27:02 +0200
+Organization: m
+Lines: 60
+Approved: news@gmane.org
+Message-ID: <87r4rwvzop.fsf@nemi.mork.no>
+References: <Pine.LNX.4.44L0.1207231044380.1633-100000@iolanthe.rowland.org>
+	<500D659E.5090207@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: QUOTED-PRINTABLE
+X-Trace: dough.gmane.org 1343478460 31158 80.91.229.3 (28 Jul 2012 12:27:40 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 28 Jul 2012 12:27:40 +0000 (UTC)
+Cc: Alan Stern <stern@rowland.harvard.edu>,
+	Sarbojit Ganguly <unixman.linuxboy@gmail.com>,
+	gregkh@linuxfoundation.org, linux-usb@vger.kernel.org,
+	linux-kernel@vger.kernel.org, Takashi Iwai <tiwai@suse.de>
+To: Daniel Mack <zonque@gmail.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Jul 28 14:27:37 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sv67I-000403-Fg
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 28 Jul 2012 14:27:32 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752459Ab2G1M1Q convert rfc822-to-quoted-printable (ORCPT
+	<rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 28 Jul 2012 08:27:16 -0400
+Original-Received: from canardo.mork.no ([148.122.252.1]:53603 "EHLO canardo.mork.no"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752299Ab2G1M1P convert rfc822-to-8bit (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 28 Jul 2012 08:27:15 -0400
+Original-Received: from nemi.mork.no (nemi.mork.no [148.122.252.4])
+	(authenticated bits=0)
+	by canardo.mork.no (8.14.3/8.14.3) with ESMTP id q6SCR2Cw029285
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES128-SHA bits=128 verify=NOT);
+	Sat, 28 Jul 2012 14:27:02 +0200
+Original-Received: from bjorn by nemi.mork.no with local (Exim 4.80)
+	(envelope-from <bjorn@mork.no>)
+	id 1Sv66o-0001Ss-1D; Sat, 28 Jul 2012 14:27:02 +0200
+In-Reply-To: <500D659E.5090207@gmail.com> (Daniel Mack's message of "Mon, 23
+	Jul 2012 16:54:22 +0200")
+User-Agent: Gnus/5.11002 (No Gnus v0.20) Emacs/23.4 (gnu/linux)
+X-Virus-Scanned: clamav-milter 0.97.3 at canardo
+X-Virus-Status: Clean
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334634 gmane.linux.usb.general:68443
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334634>
+
+Daniel Mack <zonque@gmail.com> writes:
+> On 23.07.2012 16:47, Alan Stern wrote:
+>> On Mon, 23 Jul 2012, Sarbojit Ganguly wrote:
+>>> That is why I provided two stacks,
+>>>
+>>> 1st one is when I tried to remove the USB hub (which connects a web=
+cam
+>>> + microphone)
+>>> 2nd one is when I tried to remove an USB powered external HDD.
+>>>
+>>> Just to make sure whether the problem is with USB sound or the USB =
+subsystem.
+>>=20
+>> Do you stop all the programs that are using the USB devices before=20
+>> unplugging the hub?  Do you unmount the USB HDD first?
+>>=20
+>> The first crash shows a problem in the snd-usb-audio driver.
+>>=20
+>> The second crash shows a problem in the VFS layer or in ext3, not in=
+=20
+>> the USB stack.
+>
+> I dare to doubt there are two severe bugs of that kind that are 100%
+> reproducible. I haven't had a  hotplug crash in any of the two driver=
+s
+> for a long time, and I use both of them extensively.
+
+Actually, based on the recent usb_wwan experience, I'd say that two suc=
+h
+bugs isn't as unlikely as it may seem at first.  Even three if we add
+the now fixed usb_wwan (or six, if we count the three drivers affected
+by the usb_wwan bug).  There are probably even more.
+
+The reason is this change:
+
+ 0998d0631 device-core: Ensure drvdata =3D NULL when no driver is bound
+
+
+It will make bugs like this suddenly 100% reproducible.  But the bugs
+*are* in the drivers, and may have been there for a long time.  The
+drivers have been accessing drvdata after unbinding.  They just didn't
+crash prior to that commit.
+
+But the commit is correct, and a very much needed improvement if my
+assumptions are correct.  The drivers need fixing and this just makes i=
+t
+evident.
+
+> I rather assume there's something else failing, probably some host
+> controller issue that corrupts mempory? Can anyone else reproduce thi=
+s
+> maybe?
+
+You could of course do like me and bisect, but if you end up with commi=
+t
+0998d0631 then you haven't really learned more than confirming my guess=
+=2E
+
+
+Bj=C3=B8rn

@@ -1,0 +1,112 @@
+Path: news.gmane.org!not-for-mail
+From: Mel Gorman <mgorman@suse.de>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel.stable,gmane.linux.kernel
+Subject: Re: [PATCH 16/34] mm: compaction: Allow compaction to isolate dirty
+ pages
+Date: Wed, 25 Jul 2012 17:07:49 +0100
+Lines: 46
+Approved: news@gmane.org
+Message-ID: <20120725160749.GD9222@suse.de>
+References: <1343050727-3045-1-git-send-email-mgorman@suse.de>
+ <1343050727-3045-17-git-send-email-mgorman@suse.de>
+ <20120725154745.GB18901@kroah.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=iso-8859-15
+X-Trace: dough.gmane.org 1343232480 26844 80.91.229.3 (25 Jul 2012 16:08:00 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 25 Jul 2012 16:08:00 +0000 (UTC)
+Cc: Stable <stable@vger.kernel.org>, Linux-MM <linux-mm@kvack.org>,
+	LKML <linux-kernel@vger.kernel.org>
+To: Greg KH <gregkh@linuxfoundation.org>
+Original-X-From: owner-linux-mm@kvack.org Wed Jul 25 18:08:00 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Su47w-0008C0-TR
+	for glkm-linux-mm-2@m.gmane.org; Wed, 25 Jul 2012 18:07:57 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 3FD846B004D; Wed, 25 Jul 2012 12:07:55 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id E86886B0062; Wed, 25 Jul 2012 12:07:54 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id AE3A16B004D; Wed, 25 Jul 2012 12:07:54 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx186.postini.com [74.125.245.186])
+	by kanga.kvack.org (Postfix) with SMTP id BC61F6B004D
+	for <linux-mm@kvack.org>; Wed, 25 Jul 2012 12:07:53 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx186.postini.com ([74.125.244.10]) with SMTP;
+	Wed, 25 Jul 2012 16:07:53 GMT
+Original-Received: from relay2.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id E7074A30B9;
+	Wed, 25 Jul 2012 18:07:51 +0200 (CEST)
+Content-Disposition: inline
+In-Reply-To: <20120725154745.GB18901@kroah.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mgorman@suse.de> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:82986 gmane.linux.kernel.stable:28806 gmane.linux.kernel:1333105
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333105>
+
+On Wed, Jul 25, 2012 at 08:47:45AM -0700, Greg KH wrote:
+> On Mon, Jul 23, 2012 at 02:38:29PM +0100, Mel Gorman wrote:
+> > commit a77ebd333cd810d7b680d544be88c875131c2bd3 upstream.
+> > 
+> > Stable note: Not tracked in Bugzilla. A fix aimed at preserving page aging
+> > 	information by reducing LRU list churning had the side-effect of
+> > 	reducing THP allocation success rates. This was part of a series
+> > 	to restore the success rates while preserving the reclaim fix.
+> > 
+> > Commit [39deaf85: mm: compaction: make isolate_lru_page() filter-aware]
+> > noted that compaction does not migrate dirty or writeback pages and
+> > that is was meaningless to pick the page and re-add it to the LRU list.
+> > 
+> > What was missed during review is that asynchronous migration moves
+> > dirty pages if their ->migratepage callback is migrate_page() because
+> > these can be moved without blocking. This potentially impacted
+> > hugepage allocation success rates by a factor depending on how many
+> > dirty pages are in the system.
+> > 
+> > This patch partially reverts 39deaf85 to allow migration to isolate
+> > dirty pages again. This increases how much compaction disrupts the
+> > LRU but that is addressed later in the series.
+> > 
+> > Signed-off-by: Mel Gorman <mgorman@suse.de>
+> > Reviewed-by: Andrea Arcangeli <aarcange@redhat.com>
+> > Reviewed-by: Rik van Riel <riel@redhat.com>
+> > Reviewed-by: Minchan Kim <minchan.kim@gmail.com>
+> 
+> Note, the changelog here differs from what is in Linus's tree by a LOT.
+> I took the version in Linus's tree instead.
+> 
+
+Yet another case of where the distribution kernel got the patch first
+and I mucked up the transfer back.  In this case the mainline changelog
+includes the patch leader with a lot of additional information.
+
+-- 
+Mel Gorman
+SUSE Labs
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

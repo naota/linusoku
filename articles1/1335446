@@ -1,0 +1,98 @@
+Path: news.gmane.org!not-for-mail
+From: Ben Hutchings <ben@decadent.org.uk>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 51/73] iommu/amd: Fix hotplug with iommu=pt
+Date: Tue, 31 Jul 2012 05:44:01 +0100
+Lines: 46
+Approved: news@gmane.org
+Message-ID: <20120731044319.439409567@decadent.org.uk>
+References: <20120731044310.013763753@decadent.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343710734 24452 80.91.229.3 (31 Jul 2012 04:58:54 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 04:58:54 +0000 (UTC)
+Cc: torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Joerg Roedel <joerg.roedel@amd.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 06:58:53 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sw4Xl-00039C-3W
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 06:58:53 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755599Ab2GaEuq (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 00:50:46 -0400
+Original-Received: from shadbolt.e.decadent.org.uk ([88.96.1.126]:48733 "EHLO
+	shadbolt.e.decadent.org.uk" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1755502Ab2GaEui (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 00:50:38 -0400
+Original-Received: from [2001:470:1f08:1539:21c:bfff:fe03:f805] (helo=deadeye.wl.decadent.org.uk)
+	by shadbolt.decadent.org.uk with esmtps (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.72)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Sw4Pi-0003QH-AW; Tue, 31 Jul 2012 05:50:34 +0100
+Original-Received: from ben by deadeye.wl.decadent.org.uk with local (Exim 4.80)
+	(envelope-from <ben@decadent.org.uk>)
+	id 1Sw4Oq-0000C8-Et; Tue, 31 Jul 2012 05:49:40 +0100
+User-Agent: quilt/0.60-1
+In-Reply-To: <20120731044310.013763753@decadent.org.uk>
+X-SA-Exim-Connect-IP: 2001:470:1f08:1539:21c:bfff:fe03:f805
+X-SA-Exim-Mail-From: ben@decadent.org.uk
+X-SA-Exim-Scanned: No (on shadbolt.decadent.org.uk); SAEximRunCond expanded to false
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335446 gmane.linux.kernel.stable:29015
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335446>
+
+3.2-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Joerg Roedel <joerg.roedel@amd.com>
+
+commit 2c9195e990297068d0f1f1bd8e2f1d09538009da upstream.
+
+This did not work because devices are not put into the
+pt_domain. Fix this.
+
+Signed-off-by: Joerg Roedel <joerg.roedel@amd.com>
+[bwh: Backported to 3.2: do not use iommu_dev_data::passthrough]
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+---
+ drivers/iommu/amd_iommu.c |   17 +++++++++++++----
+ 1 file changed, 13 insertions(+), 4 deletions(-)
+
+--- a/drivers/iommu/amd_iommu.c
++++ b/drivers/iommu/amd_iommu.c
+@@ -1865,6 +1865,11 @@ static int device_change_notifier(struct
+ 
+ 		iommu_init_device(dev);
+ 
++		if (iommu_pass_through) {
++			attach_device(dev, pt_domain);
++			break;
++		}
++
+ 		domain = domain_for_device(dev);
+ 
+ 		/* allocate a protection domain if a device is added */
+@@ -1880,10 +1885,7 @@ static int device_change_notifier(struct
+ 		list_add_tail(&dma_domain->list, &iommu_pd_list);
+ 		spin_unlock_irqrestore(&iommu_pd_list_lock, flags);
+ 
+-		if (!iommu_pass_through)
+-			dev->archdata.dma_ops = &amd_iommu_dma_ops;
+-		else
+-			dev->archdata.dma_ops = &nommu_dma_ops;
++		dev->archdata.dma_ops = &amd_iommu_dma_ops;
+ 
+ 		break;
+ 	case BUS_NOTIFY_DEL_DEVICE:
+
+

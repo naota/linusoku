@@ -1,0 +1,112 @@
+Path: news.gmane.org!not-for-mail
+From: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.xen.devel
+Subject: [PATCH 4/4] xen/mmu: Provide comments describing the _ka and _va aliasing issue
+Date: Thu, 26 Jul 2012 16:34:05 -0400
+Lines: 54
+Approved: news@gmane.org
+Message-ID: <1343334845-5340-5-git-send-email-konrad.wilk@oracle.com>
+References: <1343334845-5340-1-git-send-email-konrad.wilk@oracle.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343335411 15254 80.91.229.3 (26 Jul 2012 20:43:31 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 20:43:31 +0000 (UTC)
+Cc: xen-devel@lists.xensource.com,
+	Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 22:43:31 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuUuA-0000fB-HL
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 22:43:30 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752607Ab2GZUnD (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 16:43:03 -0400
+Original-Received: from rcsinet15.oracle.com ([148.87.113.117]:33988 "EHLO
+	rcsinet15.oracle.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752002Ab2GZUnA (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 16:43:00 -0400
+Original-Received: from acsinet22.oracle.com (acsinet22.oracle.com [141.146.126.238])
+	by rcsinet15.oracle.com (Sentrion-MTA-4.2.2/Sentrion-MTA-4.2.2) with ESMTP id q6QKgulb010375
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Thu, 26 Jul 2012 20:42:57 GMT
+Original-Received: from acsmt356.oracle.com (acsmt356.oracle.com [141.146.40.156])
+	by acsinet22.oracle.com (8.14.4+Sun/8.14.4) with ESMTP id q6QKgu7k010740
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Thu, 26 Jul 2012 20:42:56 GMT
+Original-Received: from abhmt110.oracle.com (abhmt110.oracle.com [141.146.116.62])
+	by acsmt356.oracle.com (8.12.11.20060308/8.12.11) with ESMTP id q6QKguCC022735;
+	Thu, 26 Jul 2012 15:42:56 -0500
+Original-Received: from phenom.dumpdata.com (/209.6.85.33)
+	by default (Oracle Beehive Gateway v4.0)
+	with ESMTP ; Thu, 26 Jul 2012 13:42:55 -0700
+Original-Received: by phenom.dumpdata.com (Postfix, from userid 1000)
+	id CB54C402D4; Thu, 26 Jul 2012 16:34:06 -0400 (EDT)
+X-Mailer: git-send-email 1.7.7.6
+In-Reply-To: <1343334845-5340-1-git-send-email-konrad.wilk@oracle.com>
+X-Source-IP: acsinet22.oracle.com [141.146.126.238]
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333866 gmane.comp.emulators.xen.devel:135672
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333866>
+
+Which is that the level2_kernel_pgt (__ka virtual addresses)
+and level2_ident_pgt (__va virtual address) contain the same
+PMD entries. So if you modify a PTE in __ka, it will be reflected
+in __va (and vice-versa).
+
+Signed-off-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+---
+ arch/x86/xen/mmu.c |   17 +++++++++++++++++
+ 1 files changed, 17 insertions(+), 0 deletions(-)
+
+diff --git a/arch/x86/xen/mmu.c b/arch/x86/xen/mmu.c
+index 4ac21a4..6ba6100 100644
+--- a/arch/x86/xen/mmu.c
++++ b/arch/x86/xen/mmu.c
+@@ -1734,19 +1734,36 @@ void __init xen_setup_kernel_pagetable(pgd_t *pgd, unsigned long max_pfn)
+ 	init_level4_pgt[0] = __pgd(0);
+ 
+ 	/* Pre-constructed entries are in pfn, so convert to mfn */
++	/* L4[272] -> level3_ident_pgt
++	 * L4[511] -> level3_kernel_pgt */
+ 	convert_pfn_mfn(init_level4_pgt);
++
++	/* L3_i[0] -> level2_ident_pgt */
+ 	convert_pfn_mfn(level3_ident_pgt);
++	/* L3_k[510] -> level2_kernel_pgt
++	 * L3_i[511] -> level2_fixmap_pgt */
+ 	convert_pfn_mfn(level3_kernel_pgt);
+ 
++	/* We get [511][511] and have Xen's version of level2_kernel_pgt */
+ 	l3 = m2v(pgd[pgd_index(__START_KERNEL_map)].pgd);
+ 	l2 = m2v(l3[pud_index(__START_KERNEL_map)].pud);
+ 
++	/* Graft it onto L4[272][0]. Note that we creating an aliasing problem:
++	 * Both L4[272][0] and L4[511][511] have entries that point to the same
++	 * L2 (PMD) tables. Meaning that if you modify it in __va space
++	 * it will be also modified in the __ka space! (But if you just
++	 * modify the PMD table to point to other PTE's or none, then you
++	 * are OK - which is what cleanup_highmap does) */
+ 	memcpy(level2_ident_pgt, l2, sizeof(pmd_t) * PTRS_PER_PMD);
++	/* Graft it onto L4[511][511] */
+ 	memcpy(level2_kernel_pgt, l2, sizeof(pmd_t) * PTRS_PER_PMD);
+ 
++	/* Get [511][510] and graft that in level2_fixmap_pgt */
+ 	l3 = m2v(pgd[pgd_index(__START_KERNEL_map + PMD_SIZE)].pgd);
+ 	l2 = m2v(l3[pud_index(__START_KERNEL_map + PMD_SIZE)].pud);
+ 	memcpy(level2_fixmap_pgt, l2, sizeof(pmd_t) * PTRS_PER_PMD);
++	/* Note that we don't do anything with level1_fixmap_pgt which
++	 * we don't need. */
+ 
+ 	/* Set up identity map */
+ 	xen_map_identity_early(level2_ident_pgt, max_pfn);
+-- 
+1.7.7.6
+

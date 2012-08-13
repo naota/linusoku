@@ -1,0 +1,107 @@
+Path: news.gmane.org!not-for-mail
+From: Arnaldo Carvalho de Melo <acme@infradead.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 17/18] perf kvm top: Limit guest kernel info message to once
+Date: Fri,  3 Aug 2012 11:01:09 -0300
+Lines: 54
+Approved: news@gmane.org
+Message-ID: <1344002470-5965-18-git-send-email-acme@infradead.org>
+References: <1344002470-5965-1-git-send-email-acme@infradead.org>
+NNTP-Posting-Host: plane.gmane.org
+Content-Type: text/plain; charset="UTF-8"
+X-Trace: dough.gmane.org 1344002697 3710 80.91.229.3 (3 Aug 2012 14:04:57 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 14:04:57 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, David Ahern <dsahern@gmail.com>,
+	Frederic Weisbecker <fweisbec@gmail.com>,
+	Jiri Olsa <jolsa@redhat.com>,
+	Namhyung Kim <namhyung@kernel.org>,
+	Peter Zijlstra <peterz@infradead.org>,
+	Arnaldo Carvalho de Melo <acme@redhat.com>
+To: Ingo Molnar <mingo@kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 16:04:54 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxIUm-0007OZ-JD
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 16:04:53 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753242Ab2HCOE0 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 10:04:26 -0400
+Original-Received: from casper.infradead.org ([85.118.1.10]:45784 "EHLO
+	casper.infradead.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752245Ab2HCOBY (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 10:01:24 -0400
+Original-Received: from [187.65.5.202] (helo=sandy.ghostprotocols.net)
+	by casper.infradead.org with esmtpsa (Exim 4.76 #1 (Red Hat Linux))
+	id 1SxIRO-0006h2-Uw; Fri, 03 Aug 2012 14:01:23 +0000
+Original-Received: by sandy.ghostprotocols.net (Postfix, from userid 500)
+	id 8887E2602FB; Fri,  3 Aug 2012 11:01:14 -0300 (BRT)
+X-Mailer: git-send-email 1.7.9.2.358.g22243
+In-Reply-To: <1344002470-5965-1-git-send-email-acme@infradead.org>
+X-SRS-Rewrite: SMTP reverse-path rewritten from <acme@infradead.org> by casper.infradead.org
+	See http://www.infradead.org/rpr.html
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337307
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337307>
+
+From: David Ahern <dsahern@gmail.com>
+
+'perf kvm top' shows a continual flurry of:
+    Can't find guest [5201]'s kernel information
+
+if it can't find the guest info and with a lot of VMs running a user has no
+chance of reading them all. Limit message to once per guest.
+
+Signed-off-by: David Ahern <dsahern@gmail.com>
+Cc: Frederic Weisbecker <fweisbec@gmail.com>
+Cc: Ingo Molnar <mingo@kernel.org>
+Cc: Jiri Olsa <jolsa@redhat.com>
+Cc: Namhyung Kim <namhyung@kernel.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Link: http://lkml.kernel.org/r/1343709095-7089-5-git-send-email-dsahern@gmail.com
+Signed-off-by: Arnaldo Carvalho de Melo <acme@redhat.com>
+---
+ tools/perf/builtin-top.c |   13 +++++++++++--
+ 1 files changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/tools/perf/builtin-top.c b/tools/perf/builtin-top.c
+index 3409627..68cd61e 100644
+--- a/tools/perf/builtin-top.c
++++ b/tools/perf/builtin-top.c
+@@ -38,6 +38,7 @@
+ #include "util/cpumap.h"
+ #include "util/xyarray.h"
+ #include "util/sort.h"
++#include "util/intlist.h"
+ 
+ #include "util/debug.h"
+ 
+@@ -706,8 +707,16 @@ static void perf_event__process_sample(struct perf_tool *tool,
+ 	int err;
+ 
+ 	if (!machine && perf_guest) {
+-		pr_err("Can't find guest [%d]'s kernel information\n",
+-			event->ip.pid);
++		static struct intlist *seen;
++
++		if (!seen)
++			seen = intlist__new();
++
++		if (!intlist__has_entry(seen, event->ip.pid)) {
++			pr_err("Can't find guest [%d]'s kernel information\n",
++				event->ip.pid);
++			intlist__add(seen, event->ip.pid);
++		}
+ 		return;
+ 	}
+ 
+-- 
+1.7.1
+

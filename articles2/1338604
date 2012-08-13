@@ -1,0 +1,139 @@
+Path: news.gmane.org!not-for-mail
+From: Kent Overstreet <koverstreet@google.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.bcache.devel,gmane.linux.kernel.device-mapper.devel,gmane.linux.kernel.drbd.devel
+Subject: [PATCH v5 06/12] block: Add an explicit bio flag for bios that own their bvec
+Date: Mon,  6 Aug 2012 15:08:35 -0700
+Lines: 63
+Approved: news@gmane.org
+Message-ID: <1344290921-25154-7-git-send-email-koverstreet@google.com>
+References: <1344290921-25154-1-git-send-email-koverstreet@google.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344291100 15237 80.91.229.3 (6 Aug 2012 22:11:40 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 22:11:40 +0000 (UTC)
+Cc: Kent Overstreet <koverstreet@google.com>, tj@kernel.org,
+	axboe@kernel.dk, agk@redhat.com, neilb@suse.de,
+	drbd-dev@lists.linbit.com, vgoyal@redhat.com, mpatocka@redhat.com,
+	sage@newdream.net, yehuda@hq.newdream.net
+To: linux-bcache@vger.kernel.org, linux-kernel@vger.kernel.org,
+	dm-devel@redhat.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 00:11:39 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyVWU-0003qx-Id
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 00:11:38 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757055Ab2HFWLb (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 18:11:31 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:46299 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1756714Ab2HFWJP (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 18:09:15 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so3188673pbb.19
+        for <linux-kernel@vger.kernel.org>; Mon, 06 Aug 2012 15:09:15 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references;
+        bh=0M+zAl02X1Ib7/ohm6t/Y+Gv09U9r8A5A8RFkiP8/Zs=;
+        b=KXCcI60AN1L8xsNd91Pekn5EMl8EhEcZbac28Q6aZxYL8DRnkof0kDbaCS3iqmam62
+         n9y0d1Q7x34fTiKwHEn5l6CFr47f7FIxbPw3CiVze9+DHgBOwUwJAjRYUySKQryMz1Cu
+         gypNTq1RM9Bel4TNlGOSbKtixENHUxTMGyVXnRWCzFsQSiiegWUIU/KsMIVOL1Sgdrup
+         pyIjoNMdsAb4BkI3FyFcMg45RbBGNreieiWLlxC4hFR9JP52IoMfiPdJC8kUA751fBJq
+         YR4LfXKiwEdA7ZFB/CsORbCk6uMt7Pr4m196BWRr8LiygeX96HoicP0y2Z76yksXstlq
+         Gu+w==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :x-gm-message-state;
+        bh=0M+zAl02X1Ib7/ohm6t/Y+Gv09U9r8A5A8RFkiP8/Zs=;
+        b=Dz4M3vtbccCinQTx+sYBal5P+iirqlpe1xqDPHjORBjAOeNQSAS5tEYQVBm6OLi2yj
+         92Jbgno7o9tSy00b6qWYk/hJ/Nb7kqWkWCWVGmEzPPh04MAUzNJXGYMGmwojENpNDYgd
+         Uw76pd0tWJnSu/1MlPqPX2bgDIREGZsp9aKlJ9zmGMicx4AvqwINUcwOEkxz6frqeAcA
+         0uEUsLOkDNgWbqBzVqIXApKUcXJPk7NUsWLOhYsl79WgG91XtX612qxDYTK/IqckmBnx
+         eV5zwDtgzvZdgFeXbFI/aSHdjEfpPYuT+9PWMz8G50O1u+alJzMxzC9qrmf9W6dXrbmC
+         8Oww==
+Original-Received: by 10.68.217.100 with SMTP id ox4mr22250229pbc.87.1344290955248;
+        Mon, 06 Aug 2012 15:09:15 -0700 (PDT)
+Original-Received: by 10.68.217.100 with SMTP id ox4mr22250207pbc.87.1344290955165;
+        Mon, 06 Aug 2012 15:09:15 -0700 (PDT)
+Original-Received: from formenos.mtv.corp.google.com (formenos.mtv.corp.google.com [172.18.110.66])
+        by mx.google.com with ESMTPS id iq1sm6145082pbc.37.2012.08.06.15.09.13
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Mon, 06 Aug 2012 15:09:14 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7.3
+In-Reply-To: <1344290921-25154-1-git-send-email-koverstreet@google.com>
+X-Gm-Message-State: ALoCoQmT8aCE14rOBHVI3e+v6GT13aKU+UTX2tWgKDLVp5Cot7VDdpsQtcBWJQ5Sr5WPiaIPlC62RtsRju8PRH4Ia2jhEOFT9L1so5G8fKSsSKwKZx1QI1qJOTORgRmaDyLx0CqpRGvSvAAnCZegPqP070TSqYfpd430x10lUyygS2YWZtNZMshI07B5nNktSH081PU1bDwLw2m+Gkn1tHREvIyi33IT9A==
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338604 gmane.linux.kernel.bcache.devel:670 gmane.linux.kernel.device-mapper.devel:16478 gmane.linux.kernel.drbd.devel:2063
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338604>
+
+This is for the new bio splitting code. When we split a bio, if the
+split occured on a bvec boundry we reuse the bvec for the new bio. But
+that means bio_free() can't free it, hence the explicit flag.
+
+Signed-off-by: Kent Overstreet <koverstreet@google.com>
+---
+ fs/bio.c                  |    3 ++-
+ include/linux/bio.h       |    5 -----
+ include/linux/blk_types.h |    1 +
+ 3 files changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/fs/bio.c b/fs/bio.c
+index ebc7309..ff34311 100644
+--- a/fs/bio.c
++++ b/fs/bio.c
+@@ -249,7 +249,7 @@ void bio_free(struct bio *bio)
+ 		return;
+ 	}
+ 
+-	if (bio_has_allocated_vec(bio))
++	if (bio_flagged(bio, BIO_OWNS_VEC))
+ 		bvec_free_bs(bs, bio->bi_io_vec, BIO_POOL_IDX(bio));
+ 
+ 	if (bio_integrity(bio))
+@@ -321,6 +321,7 @@ struct bio *bio_alloc_bioset(gfp_t gfp_mask, int nr_iovecs, struct bio_set *bs)
+ 			goto err_free;
+ 
+ 		nr_iovecs = bvec_nr_vecs(idx);
++		bio->bi_flags |= 1 << BIO_OWNS_VEC;
+ 	}
+ out_set:
+ 	bio->bi_flags |= idx << BIO_POOL_OFFSET;
+diff --git a/include/linux/bio.h b/include/linux/bio.h
+index 393c87e..484b96e 100644
+--- a/include/linux/bio.h
++++ b/include/linux/bio.h
+@@ -84,11 +84,6 @@ static inline void *bio_data(struct bio *bio)
+ 	return NULL;
+ }
+ 
+-static inline int bio_has_allocated_vec(struct bio *bio)
+-{
+-	return bio->bi_io_vec && bio->bi_io_vec != bio->bi_inline_vecs;
+-}
+-
+ /*
+  * will die
+  */
+diff --git a/include/linux/blk_types.h b/include/linux/blk_types.h
+index d10c2e49..416aae4 100644
+--- a/include/linux/blk_types.h
++++ b/include/linux/blk_types.h
+@@ -113,6 +113,7 @@ struct bio {
+ #define BIO_MAPPED_INTEGRITY 11/* integrity metadata has been remapped */
+ 
+ #define BIO_RESET_BITS	12	/* Flags starting here get preserved by bio_reset() */
++#define BIO_OWNS_VEC	12	/* bio_free() should free bvec */
+ 
+ #define bio_flagged(bio, flag)	((bio)->bi_flags & (1 << (flag)))
+ 
+-- 
+1.7.7.3
+

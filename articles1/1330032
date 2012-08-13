@@ -1,0 +1,125 @@
+Path: news.gmane.org!not-for-mail
+From: H Hartley Sweeten <hartleys@visionengravers.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 07/90] staging: comedi: adl_pci7432: store the pci_dev in the comedi_device
+Date: Wed, 18 Jul 2012 18:27:03 -0700
+Lines: 71
+Approved: news@gmane.org
+Message-ID: <201207181827.04106.hartleys@visionengravers.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342661247 17718 80.91.229.3 (19 Jul 2012 01:27:27 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 01:27:27 +0000 (UTC)
+Cc: <devel@driverdev.osuosl.org>, <abbotti@mev.co.uk>,
+	<gregkh@linuxfoundation.org>
+To: Linux Kernel <linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 03:27:26 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SrfWX-00070z-Tc
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 03:27:26 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754574Ab2GSB1T (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 18 Jul 2012 21:27:19 -0400
+Original-Received: from mail209.messagelabs.com ([216.82.255.3]:34453 "EHLO
+	mail209.messagelabs.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751791Ab2GSB1Q (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 18 Jul 2012 21:27:16 -0400
+X-Env-Sender: hartleys@visionengravers.com
+X-Msg-Ref: server-6.tower-209.messagelabs.com!1342661234!9078425!1
+X-Originating-IP: [216.166.12.98]
+X-StarScan-Version: 6.5.10; banners=-,-,-
+X-VirusChecked: Checked
+Original-Received: (qmail 8801 invoked from network); 19 Jul 2012 01:27:14 -0000
+Original-Received: from out001.collaborationhost.net (HELO out001.collaborationhost.net) (216.166.12.98)
+  by server-6.tower-209.messagelabs.com with RC4-SHA encrypted SMTP; 19 Jul 2012 01:27:14 -0000
+Original-Received: from etch.local (10.2.3.210) by smtp.collaborationhost.net
+ (10.2.0.59) with Microsoft SMTP Server (TLS) id 8.3.213.0; Wed, 18 Jul 2012
+ 20:27:13 -0500
+User-Agent: KMail/1.9.9
+Content-Disposition: inline
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330032
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330032>
+
+Use the hw_dev pointer in the comedi_device struct to hold the
+pci_dev instead of carrying it in the private data.
+
+Signed-off-by: H Hartley Sweeten <hsweeten@visionengravers.com>
+Cc: Ian Abbott <abbotti@mev.co.uk>
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/staging/comedi/drivers/adl_pci7432.c | 19 +++++++++++--------
+ 1 file changed, 11 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/staging/comedi/drivers/adl_pci7432.c b/drivers/staging/comedi/drivers/adl_pci7432.c
+index 10683c2..ebe022d 100644
+--- a/drivers/staging/comedi/drivers/adl_pci7432.c
++++ b/drivers/staging/comedi/drivers/adl_pci7432.c
+@@ -44,7 +44,6 @@ Configuration Options:
+ 
+ struct adl_pci7432_private {
+ 	int data;
+-	struct pci_dev *pci_dev;
+ };
+ 
+ #define devpriv ((struct adl_pci7432_private *)dev->private)
+@@ -110,6 +109,7 @@ static struct pci_dev *adl_pci7432_find_pci(struct comedi_device *dev,
+ static int adl_pci7432_attach(struct comedi_device *dev,
+ 			      struct comedi_devconfig *it)
+ {
++	struct pci_dev *pcidev;
+ 	struct comedi_subdevice *s;
+ 	int ret;
+ 
+@@ -124,16 +124,17 @@ static int adl_pci7432_attach(struct comedi_device *dev,
+ 	if (ret)
+ 		return ret;
+ 
+-	devpriv->pci_dev = adl_pci7432_find_pci(dev, it);
+-	if (!devpriv->pci_dev)
++	pcidev = adl_pci7432_find_pci(dev, it);
++	if (!pcidev)
+ 		return -EIO;
++	comedi_set_hw_dev(dev, &pcidev->dev);
+ 
+-	if (comedi_pci_enable(devpriv->pci_dev, "adl_pci7432") < 0) {
++	if (comedi_pci_enable(pcidev, "adl_pci7432") < 0) {
+ 		printk(KERN_ERR "comedi%d: Failed to enable PCI device and request regions\n",
+ 			dev->minor);
+ 		return -EIO;
+ 	}
+-	dev->iobase = pci_resource_start(devpriv->pci_dev, 2);
++	dev->iobase = pci_resource_start(pcidev, 2);
+ 	printk(KERN_INFO "comedi: base addr %4lx\n", dev->iobase);
+ 
+ 	s = dev->subdevices + 0;
+@@ -162,10 +163,12 @@ static int adl_pci7432_attach(struct comedi_device *dev,
+ 
+ static void adl_pci7432_detach(struct comedi_device *dev)
+ {
+-	if (devpriv && devpriv->pci_dev) {
++	struct pci_dev *pcidev = comedi_to_pci_dev(dev);
++
++	if (pcidev) {
+ 		if (dev->iobase)
+-			comedi_pci_disable(devpriv->pci_dev);
+-		pci_dev_put(devpriv->pci_dev);
++			comedi_pci_disable(pcidev);
++		pci_dev_put(pcidev);
+ 	}
+ }
+ 
+-- 
+1.7.11
+

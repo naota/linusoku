@@ -1,0 +1,102 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 108/109] futex: Fix bug in WARN_ON for NULL q.pi_state
+Date: Tue,  7 Aug 2012 15:36:07 -0700
+Lines: 37
+Approved: news@gmane.org
+Message-ID: <20120807222052.552860361@linuxfoundation.org>
+References: <20120807222043.089735600@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344379395 19485 80.91.229.3 (7 Aug 2012 22:43:15 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:43:15 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Darren Hart <dvhart@linux.intel.com>,
+	Dave Jones <davej@redhat.com>,
+	Thomas Gleixner <tglx@linutronix.de>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:43:12 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysUW-0007yj-AC
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:43:08 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030975Ab2HGWma (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:42:30 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:41610 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030915Ab2HGWmZ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:42:25 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so358014pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:42:25 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=y2PfCWSomxwEAx//95n4hYARkjhj/bpTjbPUDraohdY=;
+        b=ieK+vcl5VZkqxXECDlQadJ2/ff5+Hq02Oow4WxnMGuU7OAByp7Z9Ebgh2jkow7fwim
+         3vrjB6jGzX/cJLcGnXJQwcZ8vB2xu66KDQdWVO8Asy9KaY/uBJgm4jWCRsGHtniVq9vU
+         +4SivTM0R3YdNPSkyTeX9KJ9pyOu7bGlMQAWILb5ogyQqXoonZwTnS3E3B7q0PN/SsfX
+         itz8RUEAgoEONqzEWxWiXFyJUQh8F6hMkaMcNDRwHGpp9Vhna4+1LpgO0qj/TJYHXcVY
+         x75/W3/uvfEdiNsFU65nHkEJ3UVyIq0cm5Y2PTtqw4gqr5pesw+fPB9XbtrNcDNozOQf
+         oSHA==
+Original-Received: by 10.68.225.165 with SMTP id rl5mr22439732pbc.49.1344379345560;
+        Tue, 07 Aug 2012 15:42:25 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id og7sm11598649pbb.62.2012.08.07.15.42.23
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:42:24 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222043.089735600@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQlBLvep1YEOgsuhw4/c8vUVIjlCnHPBknAQOTBtEVzmGzURvuZoJmS7baaT/E8d9Cfx0TOk
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339520 gmane.linux.kernel.stable:29359
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339520>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.4-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Darren Hart <dvhart@linux.intel.com>
+
+commit f27071cb7fe3e1d37a9dbe6c0dfc5395cd40fa43 upstream.
+
+The WARN_ON in futex_wait_requeue_pi() for a NULL q.pi_state was testing
+the address (&q.pi_state) of the pointer instead of the value
+(q.pi_state) of the pointer. Correct it accordingly.
+
+Signed-off-by: Darren Hart <dvhart@linux.intel.com>
+Cc: Dave Jones <davej@redhat.com>
+Link: http://lkml.kernel.org/r/1c85d97f6e5f79ec389a4ead3e367363c74bd09a.1342809673.git.dvhart@linux.intel.com
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ kernel/futex.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/kernel/futex.c
++++ b/kernel/futex.c
+@@ -2343,7 +2343,7 @@ static int futex_wait_requeue_pi(u32 __u
+ 		 * signal.  futex_unlock_pi() will not destroy the lock_ptr nor
+ 		 * the pi_state.
+ 		 */
+-		WARN_ON(!&q.pi_state);
++		WARN_ON(!q.pi_state);
+ 		pi_mutex = &q.pi_state->pi_mutex;
+ 		ret = rt_mutex_finish_proxy_lock(pi_mutex, to, &rt_waiter, 1);
+ 		debug_rt_mutex_free_waiter(&rt_waiter);
+
+

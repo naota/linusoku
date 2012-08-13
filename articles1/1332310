@@ -1,0 +1,176 @@
+Path: news.gmane.org!not-for-mail
+From: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.xen.devel
+Subject: Re: [Xen-devel] [PATCH 4/5] xen/x86: Use memblock_reserve for
+ sensitive areas.
+Date: Tue, 24 Jul 2012 09:25:02 -0400
+Lines: 115
+Approved: news@gmane.org
+Message-ID: <20120724132502.GA29421@phenom.dumpdata.com>
+References: <1343068103-13579-1-git-send-email-konrad.wilk@oracle.com>
+ <1343068103-13579-5-git-send-email-konrad.wilk@oracle.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343136857 26847 80.91.229.3 (24 Jul 2012 13:34:17 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 13:34:17 +0000 (UTC)
+To: linux-kernel@vger.kernel.org, xen-devel@lists.xensource.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 15:34:16 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StfFf-0001xa-Tm
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 15:34:16 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753129Ab2GXNd7 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 09:33:59 -0400
+Original-Received: from rcsinet15.oracle.com ([148.87.113.117]:16828 "EHLO
+	rcsinet15.oracle.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751378Ab2GXNd5 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 09:33:57 -0400
+Original-Received: from ucsinet21.oracle.com (ucsinet21.oracle.com [156.151.31.93])
+	by rcsinet15.oracle.com (Sentrion-MTA-4.2.2/Sentrion-MTA-4.2.2) with ESMTP id q6ODXsxG014107
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Tue, 24 Jul 2012 13:33:54 GMT
+Original-Received: from acsmt356.oracle.com (acsmt356.oracle.com [141.146.40.156])
+	by ucsinet21.oracle.com (8.14.4+Sun/8.14.4) with ESMTP id q6ODXrg3017547
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Tue, 24 Jul 2012 13:33:53 GMT
+Original-Received: from abhmt112.oracle.com (abhmt112.oracle.com [141.146.116.64])
+	by acsmt356.oracle.com (8.12.11.20060308/8.12.11) with ESMTP id q6ODXqNh014670;
+	Tue, 24 Jul 2012 08:33:52 -0500
+Original-Received: from phenom.dumpdata.com (/209.6.85.33)
+	by default (Oracle Beehive Gateway v4.0)
+	with ESMTP ; Tue, 24 Jul 2012 06:33:52 -0700
+Original-Received: by phenom.dumpdata.com (Postfix, from userid 1000)
+	id 41CFC401A5; Tue, 24 Jul 2012 09:25:02 -0400 (EDT)
+Content-Disposition: inline
+In-Reply-To: <1343068103-13579-5-git-send-email-konrad.wilk@oracle.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Source-IP: ucsinet21.oracle.com [156.151.31.93]
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332310 gmane.comp.emulators.xen.devel:135366
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332310>
+
+On Mon, Jul 23, 2012 at 02:28:22PM -0400, Konrad Rzeszutek Wilk wrote:
+> instead of a big memblock_reserve. This way we can be more
+> selective in freeing regions (and it also makes it easier
+> to understand where is what).
+> 
+> Signed-off-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+> ---
+>  arch/x86/xen/enlighten.c |   36 ++++++++++++++++++++++++++++++++++++
+>  arch/x86/xen/p2m.c       |    5 +++++
+>  arch/x86/xen/setup.c     |    9 ---------
+>  3 files changed, 41 insertions(+), 9 deletions(-)
+> 
+> diff --git a/arch/x86/xen/enlighten.c b/arch/x86/xen/enlighten.c
+> index ae8a2ab..c986b7f 100644
+> --- a/arch/x86/xen/enlighten.c
+> +++ b/arch/x86/xen/enlighten.c
+> @@ -998,7 +998,42 @@ static int xen_write_msr_safe(unsigned int msr, unsigned low, unsigned high)
+>  
+>  	return ret;
+>  }
+> +static void __init xen_reserve_mfn(unsigned long mfn)
+> +{
+> +	unsigned long pfn;
+>  
+> +	if (!mfn)
+> +		return;
+> +	pfn = mfn_to_pfn(mfn);
+> +	if (phys_to_machine_mapping_valid(pfn))
+> +		memblock_reserve(PFN_PHYS(pfn), PAGE_SIZE);
+> +}
+> +static void __init xen_reserve_internals(void)
+> +{
+> +	unsigned long size;
+> +
+> +	if (!xen_pv_domain())
+> +		return;
+> +
+> +	if (xen_feature(XENFEAT_auto_translated_physmap))
+> +		return;
+
+This needs to be redone. On PV guests that do autotranslation the
+other areas (xen_start_info for example) are not reserved  - which
+is not good.
+> +
+> +	/* ALIGN up to compensate for the p2m_page pointing to an array that
+> +	 * can be partially filled (look in xen_build_dynamic_phys_to_machine).
+> +	 */
+> +	size = PAGE_ALIGN(xen_start_info->nr_pages * sizeof(unsigned long));
+> +
+> +	memblock_reserve(__pa(xen_start_info->mfn_list), size);
+> +
+> +	memblock_reserve(__pa(xen_start_info), PAGE_SIZE);
+> +
+> +	xen_reserve_mfn(PFN_DOWN(xen_start_info->shared_info));
+> +	xen_reserve_mfn(xen_start_info->store_mfn);
+> +
+> +	if (!xen_initial_domain())
+> +		xen_reserve_mfn(xen_start_info->console.domU.mfn);
+> +	/* The pagetables are reserved in mmu.c */
+> +}
+>  void xen_setup_shared_info(void)
+>  {
+>  	if (!xen_feature(XENFEAT_auto_translated_physmap)) {
+> @@ -1357,6 +1392,7 @@ asmlinkage void __init xen_start_kernel(void)
+>  	xen_raw_console_write("mapping kernel into physical memory\n");
+>  	xen_setup_kernel_pagetable((pgd_t *)xen_start_info->pt_base, xen_start_info->nr_pages);
+>  
+> +	xen_reserve_internals();
+>  	/* Allocate and initialize top and mid mfn levels for p2m structure */
+>  	xen_build_mfn_list_list();
+>  
+> diff --git a/arch/x86/xen/p2m.c b/arch/x86/xen/p2m.c
+> index e4adbfb..4219f9a 100644
+> --- a/arch/x86/xen/p2m.c
+> +++ b/arch/x86/xen/p2m.c
+> @@ -388,6 +388,11 @@ void __init xen_build_dynamic_phys_to_machine(void)
+>  	}
+>  
+>  	m2p_override_init();
+> +
+> +	/* NOTE: We cannot call memblock_reserve here for the mfn_list as there
+> +	 * isn't enough pieces to make it work (for one - we are still using the
+> +	 * Xen provided pagetable). So we do it a bit later:
+> +	 * (xen_reserve_internals).*/
+>  }
+>  
+>  unsigned long get_phys_to_machine(unsigned long pfn)
+> diff --git a/arch/x86/xen/setup.c b/arch/x86/xen/setup.c
+> index a4790bf..9efca75 100644
+> --- a/arch/x86/xen/setup.c
+> +++ b/arch/x86/xen/setup.c
+> @@ -424,15 +424,6 @@ char * __init xen_memory_setup(void)
+>  	e820_add_region(ISA_START_ADDRESS, ISA_END_ADDRESS - ISA_START_ADDRESS,
+>  			E820_RESERVED);
+>  
+> -	/*
+> -	 * Reserve Xen bits:
+> -	 *  - mfn_list
+> -	 *  - xen_start_info
+> -	 * See comment above "struct start_info" in <xen/interface/xen.h>
+> -	 */
+> -	memblock_reserve(__pa(xen_start_info->mfn_list),
+> -			 xen_start_info->pt_base - xen_start_info->mfn_list);
+> -
+>  	sanitize_e820_map(e820.map, ARRAY_SIZE(e820.map), &e820.nr_map);
+>  
+>  	return "Xen";
+> -- 
+> 1.7.7.6
+> 
+> 
+> _______________________________________________
+> Xen-devel mailing list
+> Xen-devel@lists.xen.org
+> http://lists.xen.org/xen-devel

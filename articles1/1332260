@@ -1,0 +1,115 @@
+Path: news.gmane.org!not-for-mail
+From: Catalin Marinas <catalin.marinas@arm.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: Re: [RFC 03/23] ARM: LPAE: use phys_addr_t on virt <--> phys
+ conversion
+Date: Tue, 24 Jul 2012 12:02:54 +0100
+Lines: 60
+Approved: news@gmane.org
+Message-ID: <20120724110254.GG20132@arm.com>
+References: <1343092165-9470-1-git-send-email-cyril@ti.com>
+ <1343092165-9470-4-git-send-email-cyril@ti.com>
+ <20120724103717.GF20132@arm.com>
+ <500E7F22.9090803@ti.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343127828 17677 80.91.229.3 (24 Jul 2012 11:03:48 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 11:03:48 +0000 (UTC)
+Cc: "linux-arm-kernel@lists.infradead.org" 
+	<linux-arm-kernel@lists.infradead.org>,
+	"linux-kernel@vger.kernel.org" <linux-kernel@vger.kernel.org>,
+	"nico@linaro.org" <nico@linaro.org>,
+	Will Deacon <Will.Deacon@arm.com>,
+	Vitaly Andrianov <vitalya@ti.com>
+To: Cyril Chemparathy <cyril@ti.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 13:03:47 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Stcu3-0007Ni-1m
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 13:03:47 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753403Ab2GXLDc (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 07:03:32 -0400
+Original-Received: from cam-admin0.cambridge.arm.com ([217.140.96.50]:45310 "EHLO
+	cam-admin0.cambridge.arm.com" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1752502Ab2GXLDb (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 07:03:31 -0400
+Original-Received: from arm.com (e102109-lin.cambridge.arm.com [10.1.69.68])
+	by cam-admin0.cambridge.arm.com (8.12.6/8.12.6) with ESMTP id q6OB3AOK016882;
+	Tue, 24 Jul 2012 12:03:10 +0100 (BST)
+Content-Disposition: inline
+In-Reply-To: <500E7F22.9090803@ti.com>
+User-Agent: Mutt/1.5.20 (2009-06-14)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332260 gmane.linux.ports.arm.kernel:178579
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332260>
+
+On Tue, Jul 24, 2012 at 11:55:30AM +0100, Cyril Chemparathy wrote:
+> On 7/24/2012 6:37 AM, Catalin Marinas wrote:
+> > On Tue, Jul 24, 2012 at 02:09:05AM +0100, Cyril Chemparathy wrote:
+> >> This patch fixes up the types used when converting back and forth between
+> >> physical and virtual addresses.
+> >>
+> >> Signed-off-by: Vitaly Andrianov <vitalya@ti.com>
+> >> Signed-off-by: Cyril Chemparathy <cyril@ti.com>
+> >> ---
+> >>   arch/arm/include/asm/memory.h |   17 +++++++++++------
+> >>   1 file changed, 11 insertions(+), 6 deletions(-)
+> >>
+> >> diff --git a/arch/arm/include/asm/memory.h b/arch/arm/include/asm/memory.h
+> >> index fcb5757..7629dfe 100644
+> >> --- a/arch/arm/include/asm/memory.h
+> >> +++ b/arch/arm/include/asm/memory.h
+> >> @@ -169,22 +169,27 @@ extern unsigned long __pv_phys_offset;
+> >>   	: "=r" (to)					\
+> >>   	: "r" (from), "I" (type))
+> >>
+> >> -static inline unsigned long __virt_to_phys(unsigned long x)
+> >> +static inline phys_addr_t __virt_to_phys(unsigned long x)
+> >>   {
+> >>   	unsigned long t;
+> >>   	__pv_stub(x, t, "add", __PV_BITS_31_24);
+> >>   	return t;
+> >>   }
+> >>
+> >> -static inline unsigned long __phys_to_virt(unsigned long x)
+> >> +static inline unsigned long __phys_to_virt(phys_addr_t x)
+> >>   {
+> >>   	unsigned long t;
+> >>   	__pv_stub(x, t, "sub", __PV_BITS_31_24);
+> >>   	return t;
+> >>   }
+> >
+> > BTW, I would prefer if the phys-to-virt patching was fixed as well. It
+> > shouldn't be difficult.
+> 
+> On that topic - yes, we have this on our radar, but in our case we;re 
+> talking about patching (in head.S) and then repatching (at switch over).
+> 
+> One of the ideas we've been bouncing around has been to convert the 
+> phys-virt patch code into arithmetic on PFNs.  This way we don't have to 
+> get too messy with 64-bit in the patch code, and we can use the same 
+> patch code for both phys_to_virt and virt_to_phys.  Thoughts on this 
+> approach?
+
+It may be slightly less efficient with Thumb-2 code as we can't have add
+and lsl in the same instruction. It may anyway be faster than reading a
+global variable.
+
+But I suspect you can just mask out the top 32-bit part of a physical
+address when converting to virtual. The opposite may also work, you just
+have some constant in the top 32-bit part of the phys address. Note that
+virt_to_phys is only valid for the lowmem, so 32-bit arithmetic with
+some constant for the top 32-bit should be enough.
+
+-- 
+Catalin

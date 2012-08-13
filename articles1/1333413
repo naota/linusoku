@@ -1,0 +1,117 @@
+Path: news.gmane.org!not-for-mail
+From: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.kvm.devel
+Subject: [PATCH v2] KVM: x86: simplify read_emulated
+Date: Thu, 26 Jul 2012 13:12:22 +0800
+Lines: 58
+Approved: news@gmane.org
+Message-ID: <5010D1B6.6040401@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343279560 6695 80.91.229.3 (26 Jul 2012 05:12:40 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 05:12:40 +0000 (UTC)
+Cc: Marcelo Tosatti <mtosatti@redhat.com>,
+	LKML <linux-kernel@vger.kernel.org>, KVM <kvm@vger.kernel.org>
+To: Avi Kivity <avi@redhat.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 07:12:40 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuGNK-0007B2-9s
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 07:12:38 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751377Ab2GZFMb (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 01:12:31 -0400
+Original-Received: from e23smtp05.au.ibm.com ([202.81.31.147]:48242 "EHLO
+	e23smtp05.au.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751095Ab2GZFM3 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 01:12:29 -0400
+Original-Received: from /spool/local
+	by e23smtp05.au.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <xiaoguangrong@linux.vnet.ibm.com>;
+	Thu, 26 Jul 2012 15:12:18 +1000
+Original-Received: from d23relay05.au.ibm.com (202.81.31.247)
+	by e23smtp05.au.ibm.com (202.81.31.211) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Thu, 26 Jul 2012 15:12:16 +1000
+Original-Received: from d23av03.au.ibm.com (d23av03.au.ibm.com [9.190.234.97])
+	by d23relay05.au.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6Q546Sd983304;
+	Thu, 26 Jul 2012 15:04:06 +1000
+Original-Received: from d23av03.au.ibm.com (loopback [127.0.0.1])
+	by d23av03.au.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6Q5COmS005611;
+	Thu, 26 Jul 2012 15:12:25 +1000
+Original-Received: from localhost.localdomain ([9.123.236.99])
+	by d23av03.au.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6Q5CNbu005577;
+	Thu, 26 Jul 2012 15:12:23 +1000
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:13.0) Gecko/20120615 Thunderbird/13.0.1
+x-cbid: 12072605-1396-0000-0000-0000019EC06A
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333413 gmane.comp.emulators.kvm.devel:95065
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333413>
+
+No need split mmio read region into 8-bits pieces since we do it in
+emulator_read_write_onepage
+
+Changelog:
+  Add a WARN_ON to check read-cache overflow
+
+Acked-by: Marcelo Tosatti <mtosatti@redhat.com>
+Signed-off-by: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+---
+ arch/x86/kvm/emulate.c |   31 ++++++++++++++-----------------
+ 1 files changed, 14 insertions(+), 17 deletions(-)
+
+diff --git a/arch/x86/kvm/emulate.c b/arch/x86/kvm/emulate.c
+index 97d9a99..e33eb02 100644
+--- a/arch/x86/kvm/emulate.c
++++ b/arch/x86/kvm/emulate.c
+@@ -1166,24 +1166,21 @@ static int read_emulated(struct x86_emulate_ctxt *ctxt,
+ 	int rc;
+ 	struct read_cache *mc = &ctxt->mem_read;
+
+-	while (size) {
+-		int n = min(size, 8u);
+-		size -= n;
+-		if (mc->pos < mc->end)
+-			goto read_cached;
+-
+-		rc = ctxt->ops->read_emulated(ctxt, addr, mc->data + mc->end, n,
+-					      &ctxt->exception);
+-		if (rc != X86EMUL_CONTINUE)
+-			return rc;
+-		mc->end += n;
++	if (mc->pos < mc->end)
++		goto read_cached;
+
+-	read_cached:
+-		memcpy(dest, mc->data + mc->pos, n);
+-		mc->pos += n;
+-		dest += n;
+-		addr += n;
+-	}
++	WARN_ON((mc->end + size) >= sizeof(mc->data));
++
++	rc = ctxt->ops->read_emulated(ctxt, addr, mc->data + mc->end, size,
++				      &ctxt->exception);
++	if (rc != X86EMUL_CONTINUE)
++		return rc;
++
++	mc->end += size;
++
++read_cached:
++	memcpy(dest, mc->data + mc->pos, size);
++	mc->pos += size;
+ 	return X86EMUL_CONTINUE;
+ }
+
+-- 
+1.7.7.6
+

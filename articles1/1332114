@@ -1,0 +1,165 @@
+Path: news.gmane.org!not-for-mail
+From: Yoshihiro YUNOMAE <yoshihiro.yunomae.ez@hitachi.com>
+Newsgroups: gmane.linux.kernel.virtualization,gmane.linux.kernel,gmane.comp.emulators.qemu
+Subject: [RFC PATCH 2/6] virtio/console: Add a failback for unstealable pipe
+	buffer
+Date: Tue, 24 Jul 2012 11:37:18 +0900
+Lines: 63
+Approved: news@gmane.org
+Message-ID: <20120724023718.6600.68836.stgit@ltc189.sdl.hitachi.co.jp>
+References: <20120724023657.6600.52706.stgit@ltc189.sdl.hitachi.co.jp>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343097458 5322 80.91.229.3 (24 Jul 2012 02:37:38 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 02:37:38 +0000 (UTC)
+Cc: Herbert Xu <herbert@gondor.apana.org.au>, Arnd Bergmann <arnd@arndb.de>,
+	Frederic Weisbecker <fweisbec@gmail.com>,
+	yrl.pp-manager.tt@hitachi.com, qemu-devel@nongnu.org,
+	Borislav Petkov <bp@amd64.org>, virtualization@lists.linux-foundation.org,
+	Masami Hiramatsu <masami.hiramatsu.pt@hitachi.com>,
+	"Franch Ch. Eigler" <fche@redhat.com>, Ingo Molnar <mingo@redhat.com>,
+	Mathieu Desnoyers <mathieu.desnoyers@efficios.com>,
+	Steven Rostedt <rostedt@goodmis.org>,
+	Anthony Liguori <anthony@codemonkey.ws>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	Amit Shah <amit.shah@redhat.com>
+To: linux-kernel@vger.kernel.org
+Original-X-From: virtualization-bounces@lists.linux-foundation.org Tue Jul 24 04:37:35 2012
+Return-path: <virtualization-bounces@lists.linux-foundation.org>
+Envelope-to: glkv-virtualization@gmane.org
+Original-Received: from mail.linuxfoundation.org ([140.211.169.12])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <virtualization-bounces@lists.linux-foundation.org>)
+	id 1StV09-0001qd-RA
+	for glkv-virtualization@gmane.org; Tue, 24 Jul 2012 04:37:34 +0200
+Original-Received: from mail.linux-foundation.org (localhost [IPv6:::1])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id D9DBF5A8;
+	Tue, 24 Jul 2012 02:37:32 +0000 (UTC)
+X-Original-To: virtualization@lists.linux-foundation.org
+Delivered-To: virtualization@mail.linuxfoundation.org
+Original-Received: from smtp1.linuxfoundation.org (smtp1.linux-foundation.org
+	[172.17.192.35])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id 192A1283
+	for <virtualization@lists.linux-foundation.org>;
+	Tue, 24 Jul 2012 02:37:32 +0000 (UTC)
+X-Greylist: domain auto-whitelisted by SQLgrey-1.7.6
+Original-Received: from mail7.hitachi.co.jp (mail7.hitachi.co.jp [133.145.228.42])
+	by smtp1.linuxfoundation.org (Postfix) with ESMTP id 8B3691F950
+	for <virtualization@lists.linux-foundation.org>;
+	Tue, 24 Jul 2012 02:37:31 +0000 (UTC)
+Original-Received: from mlsv3.hitachi.co.jp (unknown [133.144.234.166])
+	by mail7.hitachi.co.jp (Postfix) with ESMTP id 9229637AC6;
+	Tue, 24 Jul 2012 11:37:30 +0900 (JST)
+Original-Received: from mfilter03.hitachi.co.jp by mlsv3.hitachi.co.jp (8.13.1/8.13.1)
+	id q6O2bUm7022939; Tue, 24 Jul 2012 11:37:30 +0900
+Original-Received: from vshuts1.hitachi.co.jp (vshuts1.hitachi.co.jp [10.201.6.70])
+	by mfilter03.hitachi.co.jp (Switch-3.3.4/Switch-3.3.4) with ESMTP id
+	q6O2bTRY009923; Tue, 24 Jul 2012 11:37:29 +0900
+X-AuditID: 0ac90646-982c3ba000003485-a3-500e0a684042
+Original-Received: from hsdlmain.sdl.hitachi.co.jp (unknown [133.144.14.194])
+	by vshuts1.hitachi.co.jp (Symantec Mail Security) with ESMTP id
+	D075F3D42CD; Tue, 24 Jul 2012 11:37:28 +0900 (JST)
+Original-Received: from hsdlvgate2.sdl.hitachi.co.jp by hsdlmain.sdl.hitachi.co.jp
+	(8.13.8/3.7W11021512) id q6O2bSmg027795;
+	Tue, 24 Jul 2012 11:37:28 +0900
+X-AuditID: 0ac90646-982c3ba000003485-a3-500e0a684042
+Original-Received: from sdl99w.sdl.hitachi.co.jp (sdl99w.sdl.hitachi.co.jp
+	[133.144.14.250])
+	by hsdlvgate2.sdl.hitachi.co.jp (Symantec Mail Security) with ESMTP id
+	7AD19236561; Tue, 24 Jul 2012 11:37:27 +0900 (JST)
+Original-Received: from maild.sdl.hitachi.co.jp (sdl99d.sdl.hitachi.co.jp
+	[133.144.14.199])
+	by sdl99w.sdl.hitachi.co.jp (Postfix) with ESMTP id 8C73053C1FA;
+	Tue, 24 Jul 2012 11:37:28 +0900 (JST)
+Original-Received: from ltc189.sdl.hitachi.co.jp (unknown [10.232.28.60])
+	by maild.sdl.hitachi.co.jp (Postfix) with ESMTP id 4E5A2495B93;
+	Tue, 24 Jul 2012 11:37:28 +0900 (JST)
+In-Reply-To: <20120724023657.6600.52706.stgit@ltc189.sdl.hitachi.co.jp>
+User-Agent: StGIT/0.14.3
+X-Brightmail-Tracker: AAAAAA==
+X-Spam-Status: No, score=-2.6 required=5.0 tests=BAYES_00,RCVD_IN_DNSWL_LOW
+	autolearn=ham version=3.3.1
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on
+	smtp1.linux-foundation.org
+X-BeenThere: virtualization@lists.linux-foundation.org
+X-Mailman-Version: 2.1.12
+Precedence: list
+List-Id: Linux virtualization <virtualization.lists.linux-foundation.org>
+List-Unsubscribe: <https://lists.linuxfoundation.org/mailman/options/virtualization>,
+	<mailto:virtualization-request@lists.linux-foundation.org?subject=unsubscribe>
+List-Archive: <http://lists.linuxfoundation.org/pipermail/virtualization/>
+List-Post: <mailto:virtualization@lists.linux-foundation.org>
+List-Help: <mailto:virtualization-request@lists.linux-foundation.org?subject=help>
+List-Subscribe: <https://lists.linuxfoundation.org/mailman/listinfo/virtualization>,
+	<mailto:virtualization-request@lists.linux-foundation.org?subject=subscribe>
+Original-Sender: virtualization-bounces@lists.linux-foundation.org
+Errors-To: virtualization-bounces@lists.linux-foundation.org
+Xref: news.gmane.org gmane.linux.kernel.virtualization:16206 gmane.linux.kernel:1332114 gmane.comp.emulators.qemu:161341
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332114>
+
+From: Masami Hiramatsu <masami.hiramatsu.pt@hitachi.com>
+
+Add a failback memcpy path for unstealable pipe buffer.
+If buf->ops->steal() fails, virtio-serial tries to
+copy the page contents to an allocated page, instead
+of just failing splice().
+
+Signed-off-by: Masami Hiramatsu <masami.hiramatsu.pt@hitachi.com>
+Cc: Amit Shah <amit.shah@redhat.com>
+Cc: Arnd Bergmann <arnd@arndb.de>
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+
+ drivers/char/virtio_console.c |   28 +++++++++++++++++++++++++---
+ 1 files changed, 25 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/char/virtio_console.c b/drivers/char/virtio_console.c
+index fe31b2f..911cb3e 100644
+--- a/drivers/char/virtio_console.c
++++ b/drivers/char/virtio_console.c
+@@ -794,7 +794,7 @@ static int pipe_to_sg(struct pipe_inode_info *pipe, struct pipe_buffer *buf,
+ 			struct splice_desc *sd)
+ {
+ 	struct sg_list *sgl = sd->u.data;
+-	unsigned int len = 0;
++	unsigned int offset, len;
+ 
+ 	if (sgl->n == MAX_SPLICE_PAGES)
+ 		return 0;
+@@ -807,9 +807,31 @@ static int pipe_to_sg(struct pipe_inode_info *pipe, struct pipe_buffer *buf,
+ 
+ 		len = min(buf->len, sd->len);
+ 		sg_set_page(&(sgl->sg[sgl->n]), buf->page, len, buf->offset);
+-		sgl->n++;
+-		sgl->len += len;
++	} else {
++		/* Failback to copying a page */
++		struct page *page = alloc_page(GFP_KERNEL);
++		char *src = buf->ops->map(pipe, buf, 1);
++		char *dst;
++
++		if (!page)
++			return -ENOMEM;
++		dst = kmap(page);
++
++		offset = sd->pos & ~PAGE_MASK;
++
++		len = sd->len;
++		if (len + offset > PAGE_SIZE)
++			len = PAGE_SIZE - offset;
++
++		memcpy(dst + offset, src + buf->offset, len);
++
++		kunmap(page);
++		buf->ops->unmap(pipe, buf, src);
++
++		sg_set_page(&(sgl->sg[sgl->n]), page, len, offset);
+ 	}
++	sgl->n++;
++	sgl->len += len;
+ 
+ 	return len;
+ }

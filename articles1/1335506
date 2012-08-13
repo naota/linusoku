@@ -1,0 +1,146 @@
+Path: news.gmane.org!not-for-mail
+From: John Stultz <john.stultz@linaro.org>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 1/2] [RFC] time: Fix problem with large timespecs & ktime_get_update_offsets
+Date: Tue, 31 Jul 2012 02:35:47 -0400
+Lines: 81
+Approved: news@gmane.org
+Message-ID: <1343716548-38742-2-git-send-email-john.stultz@linaro.org>
+References: <1343716548-38742-1-git-send-email-john.stultz@linaro.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343716594 30363 80.91.229.3 (31 Jul 2012 06:36:34 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 06:36:34 +0000 (UTC)
+Cc: John Stultz <john.stultz@linaro.org>,
+	Ingo Molnar <mingo@kernel.org>,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Prarit Bhargava <prarit@redhat.com>,
+	Thomas Gleixner <tglx@linutronix.de>,
+	Zhouping Liu <zliu@redhat.com>, CAI Qian <caiqian@redhat.com>
+To: linux-kernel <linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 08:36:32 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sw64G-0000rP-F8
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 08:36:32 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753740Ab2GaGgN (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 02:36:13 -0400
+Original-Received: from e9.ny.us.ibm.com ([32.97.182.139]:41711 "EHLO e9.ny.us.ibm.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752827Ab2GaGgL (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 02:36:11 -0400
+Original-Received: from /spool/local
+	by e9.ny.us.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <john.stultz@linaro.org>;
+	Tue, 31 Jul 2012 02:36:10 -0400
+Original-Received: from d01dlp03.pok.ibm.com (9.56.250.168)
+	by e9.ny.us.ibm.com (192.168.1.109) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Tue, 31 Jul 2012 02:36:08 -0400
+Original-Received: from d01relay04.pok.ibm.com (d01relay04.pok.ibm.com [9.56.227.236])
+	by d01dlp03.pok.ibm.com (Postfix) with ESMTP id 9EC3AC90042
+	for <linux-kernel@vger.kernel.org>; Tue, 31 Jul 2012 02:36:05 -0400 (EDT)
+Original-Received: from d03av01.boulder.ibm.com (d03av01.boulder.ibm.com [9.17.195.167])
+	by d01relay04.pok.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6V6a4De209424
+	for <linux-kernel@vger.kernel.org>; Tue, 31 Jul 2012 02:36:05 -0400
+Original-Received: from d03av01.boulder.ibm.com (loopback [127.0.0.1])
+	by d03av01.boulder.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6V6a3fE011093
+	for <linux-kernel@vger.kernel.org>; Tue, 31 Jul 2012 00:36:04 -0600
+Original-Received: from kernel-pok.stglabs.ibm.com (kernel.stglabs.ibm.com [9.114.214.19])
+	by d03av01.boulder.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6V6Zw2x010780;
+	Tue, 31 Jul 2012 00:36:03 -0600
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1343716548-38742-1-git-send-email-john.stultz@linaro.org>
+X-Content-Scanned: Fidelis XPS MAILER
+x-cbid: 12073106-7182-0000-0000-0000021C2447
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335506
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335506>
+
+There's currently a slight difference in ktime_get_update_offsets()
+vs ktime_get() which can result in boot time crashes when booting
+with insane CMOS clock values larger then ~2264.
+
+ktime_get() does basically the following:
+        return timespec_to_ktime(timespec_add(xtime, wall_to_monotonic))
+
+Where as ktime_get_update_offsets does approximately:
+        return ktime_sub(timespec_to_ktime(xtime), realtime_offset);
+
+The problem is, at boot we set xtime = year 8200 and
+wall_to_monotonic = year -8200,  ktime_get adds both values, mostly
+nulling the difference out (leaving only how long the system has been
+up), then converts that relatively small value to a ktime_t properly
+without losing any information.
+
+ktime_get_update_offsets however, since it converts xtime (again set
+to some value greater then year 8200), to a ktime, it gets clamped at
+KTIME_MAX, then we subtract realtime_offset, which is _also_ clamped
+at KTIME_MAX, resulting in us always returning almost[1] zero. This
+causes us to stop expiring timers.
+
+Now, one of the reasons Thomas and I changed the logic was that using
+the precalculated realtime_offset was slightly more efficient then
+re-adding xtime and wall_to_monotonic's components separately. But
+how valuable this unmeasured slight efficiency is vs extra
+robustness for crazy time values is questionable.
+
+So switch back to the ktime_get implementation for
+ktime_get_update_offsets
+
+Cc: Ingo Molnar <mingo@kernel.org>
+Cc: Peter Zijlstra <a.p.zijlstra@chello.nl>
+Cc: Prarit Bhargava <prarit@redhat.com>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Cc: Zhouping Liu <zliu@redhat.com>
+Cc: CAI Qian <caiqian@redhat.com>
+Reported-by: CAI Qian <caiqian@redhat.com>
+Signed-off-by: John Stultz <john.stultz@linaro.org>
+---
+ kernel/time/timekeeping.c |   12 +++++-------
+ 1 file changed, 5 insertions(+), 7 deletions(-)
+
+diff --git a/kernel/time/timekeeping.c b/kernel/time/timekeeping.c
+index 3447cfa..96179ab 100644
+--- a/kernel/time/timekeeping.c
++++ b/kernel/time/timekeeping.c
+@@ -1283,15 +1283,15 @@ void get_xtime_and_monotonic_and_sleep_offset(struct timespec *xtim,
+  */
+ ktime_t ktime_get_update_offsets(ktime_t *offs_real, ktime_t *offs_boot)
+ {
+-	ktime_t now;
+ 	unsigned int seq;
+ 	u64 secs, nsecs;
+ 
+ 	do {
+ 		seq = read_seqbegin(&timekeeper.lock);
+-
+-		secs = timekeeper.xtime.tv_sec;
+-		nsecs = timekeeper.xtime.tv_nsec;
++		secs = timekeeper.xtime.tv_sec +
++				timekeeper.wall_to_monotonic.tv_sec;
++		nsecs = timekeeper.xtime.tv_nsec +
++				timekeeper.wall_to_monotonic.tv_nsec;
+ 		nsecs += timekeeping_get_ns();
+ 		/* If arch requires, add in gettimeoffset() */
+ 		nsecs += arch_gettimeoffset();
+@@ -1300,9 +1300,7 @@ ktime_t ktime_get_update_offsets(ktime_t *offs_real, ktime_t *offs_boot)
+ 		*offs_boot = timekeeper.offs_boot;
+ 	} while (read_seqretry(&timekeeper.lock, seq));
+ 
+-	now = ktime_add_ns(ktime_set(secs, 0), nsecs);
+-	now = ktime_sub(now, *offs_real);
+-	return now;
++	return ktime_add_ns(ktime_set(secs, 0), nsecs);
+ }
+ #endif
+ 
+-- 
+1.7.9.5
+

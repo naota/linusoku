@@ -1,0 +1,290 @@
+Path: news.gmane.org!not-for-mail
+From: "Rafael J. Wysocki" <rjw@sisk.pl>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.sh.devel
+Subject: [PATCH 9/12] ARM: shmobile: Move sh7372's PM domain objects to a table
+Date: Tue, 7 Aug 2012 01:12:56 +0200
+Lines: 233
+Approved: news@gmane.org
+Message-ID: <201208070112.56980.rjw@sisk.pl>
+References: <201208070105.23262.rjw@sisk.pl>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain;
+  charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344294779 9426 80.91.229.3 (6 Aug 2012 23:12:59 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 23:12:59 +0000 (UTC)
+Cc: LKML <linux-kernel@vger.kernel.org>,
+	Linux PM list <linux-pm@vger.kernel.org>,
+	Magnus Damm <magnus.damm@gmail.com>
+To: "Linux-sh list" <linux-sh@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 01:12:59 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SyWTq-0007OZ-Rd
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 01:12:59 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757051Ab2HFXMm (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 6 Aug 2012 19:12:42 -0400
+Original-Received: from ogre.sisk.pl ([193.178.161.156]:44981 "EHLO ogre.sisk.pl"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S932255Ab2HFXLy (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 6 Aug 2012 19:11:54 -0400
+Original-Received: from localhost (localhost.localdomain [127.0.0.1])
+	by ogre.sisk.pl (Postfix) with ESMTP id E00D31DB9FB;
+	Tue,  7 Aug 2012 01:01:56 +0200 (CEST)
+Original-Received: from ogre.sisk.pl ([127.0.0.1])
+ by localhost (ogre.sisk.pl [127.0.0.1]) (amavisd-new, port 10024) with ESMTP
+ id 04015-07; Tue,  7 Aug 2012 01:01:16 +0200 (CEST)
+Original-Received: from ferrari.rjw.lan (62-121-64-87.home.aster.pl [62.121.64.87])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by ogre.sisk.pl (Postfix) with ESMTP id 1C3F61DB9AF;
+	Tue,  7 Aug 2012 01:00:56 +0200 (CEST)
+User-Agent: KMail/1.13.6 (Linux/3.5.0+; KDE/4.6.0; x86_64; ; )
+In-Reply-To: <201208070105.23262.rjw@sisk.pl>
+X-Virus-Scanned: amavisd-new at ogre.sisk.pl using MkS_Vir for Linux
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338621 gmane.linux.ports.sh.devel:16157
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338621>
+
+
+Instead of giving a name to every sh7372's PM domain object, put them
+all into a table and use rmobile_init_domains(), introduced by a
+previous patch, for initializing them all altogether.  Also, use
+pm_genpd_add_subdomain_names() for adding subdomains to the PM
+domains and pm_genpd_poweron_name() for turning on the A4S domain
+when preparing for system suspend.
+
+Signed-off-by: Rafael J. Wysocki <rjw@sisk.pl>
+---
+ arch/arm/mach-shmobile/include/mach/sh7372.h |   18 +---
+ arch/arm/mach-shmobile/pm-sh7372.c           |  111 +++++++++++++--------------
+ arch/arm/mach-shmobile/setup-sh7372.c        |   16 ---
+ 3 files changed, 64 insertions(+), 81 deletions(-)
+
+Index: linux/arch/arm/mach-shmobile/pm-sh7372.c
+===================================================================
+--- linux.orig/arch/arm/mach-shmobile/pm-sh7372.c
++++ linux/arch/arm/mach-shmobile/pm-sh7372.c
+@@ -71,21 +71,6 @@
+ 
+ #ifdef CONFIG_PM
+ 
+-struct rmobile_pm_domain sh7372_pd_a4lc = {
+-	.genpd.name = "A4LC",
+-	.bit_shift = 1,
+-};
+-
+-struct rmobile_pm_domain sh7372_pd_a4mp = {
+-	.genpd.name = "A4MP",
+-	.bit_shift = 2,
+-};
+-
+-struct rmobile_pm_domain sh7372_pd_d4 = {
+-	.genpd.name = "D4",
+-	.bit_shift = 3,
+-};
+-
+ static int sh7372_a4r_pd_suspend(void)
+ {
+ 	sh7372_intcs_suspend();
+@@ -93,26 +78,9 @@ static int sh7372_a4r_pd_suspend(void)
+ 	return 0;
+ }
+ 
+-struct rmobile_pm_domain sh7372_pd_a4r = {
+-	.genpd.name = "A4R",
+-	.bit_shift = 5,
+-	.suspend = sh7372_a4r_pd_suspend,
+-	.resume = sh7372_intcs_resume,
+-};
+-
+-struct rmobile_pm_domain sh7372_pd_a3rv = {
+-	.genpd.name = "A3RV",
+-	.bit_shift = 6,
+-};
+-
+-struct rmobile_pm_domain sh7372_pd_a3ri = {
+-	.genpd.name = "A3RI",
+-	.bit_shift = 8,
+-};
+-
+ static bool a4s_suspend_ready;
+ 
+-static int sh7372_pd_a4s_suspend(void)
++static int sh7372_a4s_pd_suspend(void)
+ {
+ 	/*
+ 	 * The A4S domain contains the CPU core and therefore it should
+@@ -125,20 +93,11 @@ static int sh7372_pd_a4s_suspend(void)
+ 	return -EBUSY;
+ }
+ 
+-static void sh7372_pd_a4s_resume(void)
++static void sh7372_a4s_pd_resume(void)
+ {
+ 	a4s_suspend_ready = false;
+ }
+ 
+-struct rmobile_pm_domain sh7372_pd_a4s = {
+-	.genpd.name = "A4S",
+-	.bit_shift = 10,
+-	.gov = &pm_domain_always_on_gov,
+-	.no_debug = true,
+-	.suspend = sh7372_pd_a4s_suspend,
+-	.resume = sh7372_pd_a4s_resume,
+-};
+-
+ static int sh7372_a3sp_pd_suspend(void)
+ {
+ 	/*
+@@ -148,18 +107,62 @@ static int sh7372_a3sp_pd_suspend(void)
+ 	return console_suspend_enabled ? 0 : -EBUSY;
+ }
+ 
+-struct rmobile_pm_domain sh7372_pd_a3sp = {
+-	.genpd.name = "A3SP",
+-	.bit_shift = 11,
+-	.gov = &pm_domain_always_on_gov,
+-	.no_debug = true,
+-	.suspend = sh7372_a3sp_pd_suspend,
++static struct rmobile_pm_domain sh7372_pm_domains[] = {
++	{
++		.genpd.name = "A4LC",
++		.bit_shift = 1,
++	},
++	{
++		.genpd.name = "A4MP",
++		.bit_shift = 2,
++	},
++	{
++		.genpd.name = "D4",
++		.bit_shift = 3,
++	},
++	{
++		.genpd.name = "A4R",
++		.bit_shift = 5,
++		.suspend = sh7372_a4r_pd_suspend,
++		.resume = sh7372_intcs_resume,
++	},
++	{
++		.genpd.name = "A3RV",
++		.bit_shift = 6,
++	},
++	{
++		.genpd.name = "A3RI",
++		.bit_shift = 8,
++	},
++	{
++		.genpd.name = "A4S",
++		.bit_shift = 10,
++		.gov = &pm_domain_always_on_gov,
++		.no_debug = true,
++		.suspend = sh7372_a4s_pd_suspend,
++		.resume = sh7372_a4s_pd_resume,
++	},
++	{
++		.genpd.name = "A3SP",
++		.bit_shift = 11,
++		.gov = &pm_domain_always_on_gov,
++		.no_debug = true,
++		.suspend = sh7372_a3sp_pd_suspend,
++	},
++	{
++		.genpd.name = "A3SG",
++		.bit_shift = 13,
++	},
+ };
+ 
+-struct rmobile_pm_domain sh7372_pd_a3sg = {
+-	.genpd.name = "A3SG",
+-	.bit_shift = 13,
+-};
++void __init sh7372_init_pm_domains(void)
++{
++	rmobile_init_domains(sh7372_pm_domains, ARRAY_SIZE(sh7372_pm_domains));
++	pm_genpd_add_subdomain_names("A4LC", "A3RV");
++	pm_genpd_add_subdomain_names("A4R", "A4LC");
++	pm_genpd_add_subdomain_names("A4S", "A3SG");
++	pm_genpd_add_subdomain_names("A4S", "A3SP");
++}
+ 
+ #endif /* CONFIG_PM */
+ 
+@@ -436,7 +439,7 @@ static int sh7372_pm_notifier_fn(struct
+ 		 * executed during system suspend and resume, respectively, so
+ 		 * that those functions don't crash while accessing the INTCS.
+ 		 */
+-		pm_genpd_poweron(&sh7372_pd_a4r.genpd);
++		pm_genpd_name_poweron("A4R");
+ 		break;
+ 	case PM_POST_SUSPEND:
+ 		pm_genpd_poweroff_unused();
+Index: linux/arch/arm/mach-shmobile/setup-sh7372.c
+===================================================================
+--- linux.orig/arch/arm/mach-shmobile/setup-sh7372.c
++++ linux/arch/arm/mach-shmobile/setup-sh7372.c
+@@ -1001,21 +1001,7 @@ static struct platform_device *sh7372_la
+ 
+ void __init sh7372_add_standard_devices(void)
+ {
+-	rmobile_init_pm_domain(&sh7372_pd_a4lc);
+-	rmobile_init_pm_domain(&sh7372_pd_a4mp);
+-	rmobile_init_pm_domain(&sh7372_pd_d4);
+-	rmobile_init_pm_domain(&sh7372_pd_a4r);
+-	rmobile_init_pm_domain(&sh7372_pd_a3rv);
+-	rmobile_init_pm_domain(&sh7372_pd_a3ri);
+-	rmobile_init_pm_domain(&sh7372_pd_a4s);
+-	rmobile_init_pm_domain(&sh7372_pd_a3sp);
+-	rmobile_init_pm_domain(&sh7372_pd_a3sg);
+-
+-	pm_genpd_add_subdomain_names("A4LC", "A3RV");
+-	pm_genpd_add_subdomain_names("A4R", "A4LC");
+-
+-	pm_genpd_add_subdomain_names("A4S", "A3SG");
+-	pm_genpd_add_subdomain_names("A4S", "A3SP");
++	sh7372_init_pm_domains();
+ 
+ 	platform_add_devices(sh7372_early_devices,
+ 			    ARRAY_SIZE(sh7372_early_devices));
+Index: linux/arch/arm/mach-shmobile/include/mach/sh7372.h
+===================================================================
+--- linux.orig/arch/arm/mach-shmobile/include/mach/sh7372.h
++++ linux/arch/arm/mach-shmobile/include/mach/sh7372.h
+@@ -478,21 +478,15 @@ extern struct clk sh7372_fsibck_clk;
+ extern struct clk sh7372_fsidiva_clk;
+ extern struct clk sh7372_fsidivb_clk;
+ 
+-#ifdef CONFIG_PM
+-extern struct rmobile_pm_domain sh7372_pd_a4lc;
+-extern struct rmobile_pm_domain sh7372_pd_a4mp;
+-extern struct rmobile_pm_domain sh7372_pd_d4;
+-extern struct rmobile_pm_domain sh7372_pd_a4r;
+-extern struct rmobile_pm_domain sh7372_pd_a3rv;
+-extern struct rmobile_pm_domain sh7372_pd_a3ri;
+-extern struct rmobile_pm_domain sh7372_pd_a4s;
+-extern struct rmobile_pm_domain sh7372_pd_a3sp;
+-extern struct rmobile_pm_domain sh7372_pd_a3sg;
+-#endif /* CONFIG_PM */
+-
+ extern void sh7372_intcs_suspend(void);
+ extern void sh7372_intcs_resume(void);
+ extern void sh7372_intca_suspend(void);
+ extern void sh7372_intca_resume(void);
+ 
++#ifdef CONFIG_PM
++extern void __init sh7372_init_pm_domains(void);
++#else
++static inline void sh7372_init_pm_domains(void) {}
++#endif
++
+ #endif /* __ASM_SH7372_H__ */
+

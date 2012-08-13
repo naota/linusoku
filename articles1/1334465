@@ -1,0 +1,109 @@
+Path: news.gmane.org!not-for-mail
+From: Greg KH <greg@kroah.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] NVMe: Add a character device for each nvme device
+Date: Fri, 27 Jul 2012 12:21:00 -0700
+Lines: 45
+Approved: news@gmane.org
+Message-ID: <20120727192100.GA2247@kroah.com>
+References: <1343407458-29909-1-git-send-email-keith.busch@intel.com>
+ <20120727181212.GM22985@linux.intel.com>
+ <20120727182546.GA23874@kroah.com>
+ <20120727190821.GO22985@linux.intel.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1343416880 1711 80.91.229.3 (27 Jul 2012 19:21:20 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 19:21:20 +0000 (UTC)
+Cc: Keith Busch <keith.busch@intel.com>,
+	linux-nvme@lists.infradead.org, linux-kernel@vger.kernel.org,
+	Alan Cox <alan@lxorguk.ukuu.org.uk>
+To: Matthew Wilcox <willy@linux.intel.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 21:21:19 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Suq67-0007w9-Dg
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 21:21:15 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752627Ab2G0TVE (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 15:21:04 -0400
+Original-Received: from out3-smtp.messagingengine.com ([66.111.4.27]:34835 "EHLO
+	out3-smtp.messagingengine.com" rhost-flags-OK-OK-OK-OK)
+	by vger.kernel.org with ESMTP id S1751369Ab2G0TVB (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 15:21:01 -0400
+Original-Received: from compute1.internal (compute1.nyi.mail.srv.osa [10.202.2.41])
+	by gateway1.nyi.mail.srv.osa (Postfix) with ESMTP id 87943208AF;
+	Fri, 27 Jul 2012 15:21:01 -0400 (EDT)
+Original-Received: from frontend1.nyi.mail.srv.osa ([10.202.2.160])
+  by compute1.internal (MEProxy); Fri, 27 Jul 2012 15:21:01 -0400
+DKIM-Signature: v=1; a=rsa-sha1; c=relaxed/relaxed; d=
+	messagingengine.com; h=date:from:to:cc:subject:message-id
+	:references:mime-version:content-type:in-reply-to; s=smtpout;
+	 bh=V3594HUn72sOPRrDvayUgj7td0g=; b=HIroKrvzx7kGfDPLNzcR+gKzgQ7u
+	YIuwa59fZ314+rMvvEvhvkpgBDHOOmfOtbadsCDRgnkaf2TMFUJnPZbaGlS3JcVd
+	NPtzMRUSBOaueAO/JxQBQK2N3TJP3y8ouS94YHrwMd5Il/IAA3DZWgBT75zVVhtx
+	o81coIZnxMClIA8=
+X-Sasl-enc: SCZ6D5x7/GZ4CFX7eSgS9v3T2jaOdLjUoRXcmhmdKZom 1343416861
+Original-Received: from localhost (unknown [67.168.183.230])
+	by mail.messagingengine.com (Postfix) with ESMTPA id 235158E0176;
+	Fri, 27 Jul 2012 15:21:01 -0400 (EDT)
+Content-Disposition: inline
+In-Reply-To: <20120727190821.GO22985@linux.intel.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334465
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334465>
+
+On Fri, Jul 27, 2012 at 03:08:21PM -0400, Matthew Wilcox wrote:
+> On Fri, Jul 27, 2012 at 11:25:46AM -0700, Greg KH wrote:
+> > On Fri, Jul 27, 2012 at 02:12:12PM -0400, Matthew Wilcox wrote:
+> > > I don't see a problem here, but I'm no expert at sysfs / character devices.
+> > > Alan, Greg, anyone else see any problems with how this character device is
+> > > created / destroyed?
+> > 
+> > Yes, see below:
+> 
+> Thanks!
+> 
+> > > > +	device_create(nvme_char_cl, NULL, MKDEV(nvme_char_major, dev->instance),
+> > > > +						NULL, "nvme%d", dev->instance);
+> > 
+> > You just created a device at the "root" of sysfs, which is wrong,
+> > especially when you do have a parent device here.  Please use it.
+> 
+> OK, that makes sense; this device should be the child of the pci_dev that
+> it belongs to.
+> 
+> > Also, why are you creating your own class?  Can't this just be a misc
+> > device?  And if you want to create your own class, please don't, use a
+> > bus, as that is what is really happening here, right?  We are trying to
+> > move away from using 'struct class' wherever possible (one of these days
+> > we'll just remove it...)
+> 
+> What we're trying to achieve here is to create one character device
+> per NVMe controller that gets plugged in.  Each NVMe controller is-a
+> PCI function.  The reason we're trying to do this is so that we can send
+> commands to the NVMe controller, even when there is no storage present
+> (eg a drive is shipped from the factory with no configured storage).
+> 
+> So we have no particular desire to create a new struct class, or struct
+> bus.  If we can create a misc device per PCIe function that's bound to our
+> driver, that's great!  Can you recommend a driver that does this already?
+
+I don't think there is one, but it shouldn't be that hard to just create
+a 'struct misdevice' for each one of the devices you want to create,
+would it?
+
+But, as you really are a "specific type", a bus_type might be overkill,
+so the original use of device_create() should be fine.  Just be sure to
+fix the parent pointer issue, and you should be fine, right?
+
+greg k-h

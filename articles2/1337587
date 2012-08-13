@@ -1,0 +1,110 @@
+Path: news.gmane.org!not-for-mail
+From: Ming Lei <ming.lei@canonical.com>
+Newsgroups: gmane.linux.kernel
+Subject: [RFC PATCH v1 08/15] firmware loader: fix device lifetime
+Date: Sat,  4 Aug 2012 12:01:23 +0800
+Lines: 59
+Approved: news@gmane.org
+Message-ID: <1344052890-31935-9-git-send-email-ming.lei@canonical.com>
+References: <1344052890-31935-1-git-send-email-ming.lei@canonical.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344052993 10124 80.91.229.3 (4 Aug 2012 04:03:13 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 4 Aug 2012 04:03:13 +0000 (UTC)
+Cc: "Rafael J. Wysocki" <rjw@sisk.pl>,
+	Borislav Petkov <borislav.petkov@amd.com>,
+	linux-kernel@vger.kernel.org, Ming Lei <ming.lei@canonical.com>
+To: Linus Torvalds <torvalds@linux-foundation.org>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Aug 04 06:03:13 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxVa4-0000nW-B6
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 04 Aug 2012 06:03:12 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754062Ab2HDECp (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 4 Aug 2012 00:02:45 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:45263 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751005Ab2HDECj (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 4 Aug 2012 00:02:39 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rp8so2344343pbb.19
+        for <linux-kernel@vger.kernel.org>; Fri, 03 Aug 2012 21:02:39 -0700 (PDT)
+Original-Received: by 10.68.201.228 with SMTP id kd4mr2236017pbc.21.1344052959430;
+        Fri, 03 Aug 2012 21:02:39 -0700 (PDT)
+Original-Received: from localhost ([183.37.208.115])
+        by mx.google.com with ESMTPS id hf4sm4201504pbc.4.2012.08.03.21.02.35
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 03 Aug 2012 21:02:38 -0700 (PDT)
+X-Mailer: git-send-email 1.7.9.5
+In-Reply-To: <1344052890-31935-1-git-send-email-ming.lei@canonical.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337587
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337587>
+
+Callers of request_firmware* must hold the reference count of
+@device, otherwise it is easy to trigger oops since the firmware
+loader device is the child of @device.
+
+This patch adds comments about the usage. In fact, most of drivers
+call request_firmware* in its probe() or open(), so the constraint
+should be reasonable and can be satisfied.
+
+Also this patch holds the reference count of @device before
+schedule_work() in request_firmware_nowait() to avoid that
+the @device is released after request_firmware_nowait returns
+and before the worker function is scheduled.
+
+Signed-off-by: Ming Lei <ming.lei@canonical.com>
+---
+ drivers/base/firmware_class.c |    6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/base/firmware_class.c b/drivers/base/firmware_class.c
+index fc119ce..7d3a83b 100644
+--- a/drivers/base/firmware_class.c
++++ b/drivers/base/firmware_class.c
+@@ -742,6 +742,8 @@ err_put_dev:
+  *      @name will be used as $FIRMWARE in the uevent environment and
+  *      should be distinctive enough not to be confused with any other
+  *      firmware image for this or any other device.
++ *
++ *	Caller must hold the reference count of @device.
+  **/
+ int
+ request_firmware(const struct firmware **firmware_p, const char *name,
+@@ -823,6 +825,7 @@ static void request_firmware_work_func(struct work_struct *work)
+ 
+  out:
+ 	fw_work->cont(fw, fw_work->context);
++	put_device(fw_work->device);
+ 
+ 	module_put(fw_work->module);
+ 	kfree(fw_work);
+@@ -841,6 +844,8 @@ static void request_firmware_work_func(struct work_struct *work)
+  * @cont: function will be called asynchronously when the firmware
+  *	request is over.
+  *
++ *	Caller must hold the reference count of @device.
++ *
+  *	Asynchronous variant of request_firmware() for user contexts where
+  *	it is not possible to sleep for long time. It can't be called
+  *	in atomic contexts.
+@@ -869,6 +874,7 @@ request_firmware_nowait(
+ 		return -EFAULT;
+ 	}
+ 
++	get_device(fw_work->device);
+ 	INIT_WORK(&fw_work->work, request_firmware_work_func);
+ 	schedule_work(&fw_work->work);
+ 	return 0;
+-- 
+1.7.9.5
+

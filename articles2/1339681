@@ -1,0 +1,176 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 041/122] ftrace: Disable function tracing during suspend/resume and hibernation, again
+Date: Tue,  7 Aug 2012 15:25:29 -0700
+Lines: 111
+Approved: news@gmane.org
+Message-ID: <20120807221951.913722024@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344382525 9189 80.91.229.3 (7 Aug 2012 23:35:25 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 23:35:25 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	"Srivatsa S. Bhat" <srivatsa.bhat@linux.vnet.ibm.com>,
+	"Rafael J. Wysocki" <rjw@sisk.pl>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 01:35:24 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SytJ6-0002vx-7A
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 01:35:24 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1757134Ab2HGXfQ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 19:35:16 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:54583 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S932600Ab2HGW3c (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:29:32 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so346924pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:29:31 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=GC723t9kgBFF8DqwX7kpD++OYCbr9q8C8U8rO9YZUi0=;
+        b=p3H9W8zz2tyaXm8RU6rXzfNz8Vr3EfjY81k58xZOo42qbSNLrPjoiEDFVUtctDVDVU
+         78VCNSSj4Fo2eR2LXPE+kojtQ+lqQtlpAUWlD9hip/b6ZMGYmyoAK418cVGUAkxAsb6/
+         UztI/IDm1g2m4E+6EymKROHNCj95mdpB099ZjjUzFK5cvTiZUCyYSxit3ApNRKKKSXWR
+         XSGcXsalxPzDbGkJHwfos8nTjGP9Q0wsXmwXszm9uz+PoL6Fo5pKXSePa13eV22XIobw
+         nkh+k8tBOGEBzfzpIa9bKNrwr0Lx0QBXzhjLKJ8BDT8C2IDoIAOnMz4kH0tow1tZUeeI
+         wqxw==
+Original-Received: by 10.68.222.170 with SMTP id qn10mr20498267pbc.114.1344378571630;
+        Tue, 07 Aug 2012 15:29:31 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id rm9sm4107876pbc.72.2012.08.07.15.29.29
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:29:30 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQnv/5EKhMwm1EWm7VrDV+jT/v7k+XbkZYTxz8K9ejddmLA6xKN3kawDrectD293Ef6FpG8d
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339681 gmane.linux.kernel.stable:29506
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339681>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: "Srivatsa S. Bhat" <srivatsa.bhat@linux.vnet.ibm.com>
+
+commit 443772d408a25af62498793f6f805ce3c559309a upstream.
+
+If function tracing is enabled for some of the low-level suspend/resume
+functions, it leads to triple fault during resume from suspend, ultimately
+ending up in a reboot instead of a resume (or a total refusal to come out
+of suspended state, on some machines).
+
+This issue was explained in more detail in commit f42ac38c59e0a03d (ftrace:
+disable tracing for suspend to ram). However, the changes made by that commit
+got reverted by commit cbe2f5a6e84eebb (tracing: allow tracing of
+suspend/resume & hibernation code again). So, unfortunately since things are
+not yet robust enough to allow tracing of low-level suspend/resume functions,
+suspend/resume is still broken when ftrace is enabled.
+
+So fix this by disabling function tracing during suspend/resume & hibernation.
+
+Signed-off-by: Srivatsa S. Bhat <srivatsa.bhat@linux.vnet.ibm.com>
+Signed-off-by: Rafael J. Wysocki <rjw@sisk.pl>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ kernel/power/hibernate.c |    6 ++++++
+ kernel/power/suspend.c   |    3 +++
+ 2 files changed, 9 insertions(+)
+
+--- a/kernel/power/hibernate.c
++++ b/kernel/power/hibernate.c
+@@ -353,6 +353,7 @@ int hibernation_snapshot(int platform_mo
+ 	}
+ 
+ 	suspend_console();
++	ftrace_stop();
+ 	pm_restrict_gfp_mask();
+ 
+ 	error = dpm_suspend(PMSG_FREEZE);
+@@ -378,6 +379,7 @@ int hibernation_snapshot(int platform_mo
+ 	if (error || !in_suspend)
+ 		pm_restore_gfp_mask();
+ 
++	ftrace_start();
+ 	resume_console();
+ 	dpm_complete(msg);
+ 
+@@ -480,6 +482,7 @@ int hibernation_restore(int platform_mod
+ 
+ 	pm_prepare_console();
+ 	suspend_console();
++	ftrace_stop();
+ 	pm_restrict_gfp_mask();
+ 	error = dpm_suspend_start(PMSG_QUIESCE);
+ 	if (!error) {
+@@ -487,6 +490,7 @@ int hibernation_restore(int platform_mod
+ 		dpm_resume_end(PMSG_RECOVER);
+ 	}
+ 	pm_restore_gfp_mask();
++	ftrace_start();
+ 	resume_console();
+ 	pm_restore_console();
+ 	return error;
+@@ -513,6 +517,7 @@ int hibernation_platform_enter(void)
+ 
+ 	entering_platform_hibernation = true;
+ 	suspend_console();
++	ftrace_stop();
+ 	error = dpm_suspend_start(PMSG_HIBERNATE);
+ 	if (error) {
+ 		if (hibernation_ops->recover)
+@@ -556,6 +561,7 @@ int hibernation_platform_enter(void)
+  Resume_devices:
+ 	entering_platform_hibernation = false;
+ 	dpm_resume_end(PMSG_RESTORE);
++	ftrace_start();
+ 	resume_console();
+ 
+  Close:
+--- a/kernel/power/suspend.c
++++ b/kernel/power/suspend.c
+@@ -24,6 +24,7 @@
+ #include <linux/export.h>
+ #include <linux/suspend.h>
+ #include <linux/syscore_ops.h>
++#include <linux/ftrace.h>
+ #include <trace/events/power.h>
+ 
+ #include "power.h"
+@@ -212,6 +213,7 @@ int suspend_devices_and_enter(suspend_st
+ 			goto Close;
+ 	}
+ 	suspend_console();
++	ftrace_stop();
+ 	suspend_test_start();
+ 	error = dpm_suspend_start(PMSG_SUSPEND);
+ 	if (error) {
+@@ -231,6 +233,7 @@ int suspend_devices_and_enter(suspend_st
+ 	suspend_test_start();
+ 	dpm_resume_end(PMSG_RESUME);
+ 	suspend_test_finish("resume devices");
++	ftrace_start();
+ 	resume_console();
+  Close:
+ 	if (suspend_ops->end)
+
+

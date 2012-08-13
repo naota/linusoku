@@ -1,0 +1,100 @@
+Path: news.gmane.org!not-for-mail
+From: Huang Ying <ying.huang@intel.com>
+Newsgroups: gmane.linux.kernel.pci,gmane.linux.kernel
+Subject: [BUGFIX -v2 1/4] PCI/PM: enable D3/D3cold by default for most devices
+Date: Mon,  6 Aug 2012 09:34:27 +0800
+Lines: 51
+Approved: news@gmane.org
+Message-ID: <1344216870-21105-2-git-send-email-ying.huang@intel.com>
+References: <1344216870-21105-1-git-send-email-ying.huang@intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344216945 744 80.91.229.3 (6 Aug 2012 01:35:45 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 6 Aug 2012 01:35:45 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, linux-pci@vger.kernel.org,
+	linux-pm@vger.kernel.org, "Rafael J. Wysocki" <rjw@sisk.pl>,
+	Huang Ying <ying.huang@intel.com>,
+	Alan Stern <stern@rowland.harvard.edu>
+To: Bjorn Helgaas <bhelgaas@google.com>
+Original-X-From: linux-pci-owner@vger.kernel.org Mon Aug 06 03:35:45 2012
+Return-path: <linux-pci-owner@vger.kernel.org>
+Envelope-to: glp-linux-pci@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-pci-owner@vger.kernel.org>)
+	id 1SyCES-0005vO-9m
+	for glp-linux-pci@plane.gmane.org; Mon, 06 Aug 2012 03:35:44 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755434Ab2HFBfn (ORCPT <rfc822;glp-linux-pci@m.gmane.org>);
+	Sun, 5 Aug 2012 21:35:43 -0400
+Original-Received: from mga11.intel.com ([192.55.52.93]:16530 "EHLO mga11.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755364Ab2HFBef (ORCPT <rfc822;linux-pci@vger.kernel.org>);
+	Sun, 5 Aug 2012 21:34:35 -0400
+Original-Received: from fmsmga001.fm.intel.com ([10.253.24.23])
+  by fmsmga102.fm.intel.com with ESMTP; 05 Aug 2012 18:34:35 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="193560350"
+Original-Received: from yhuang-dev.sh.intel.com ([10.239.13.28])
+  by fmsmga001.fm.intel.com with ESMTP; 05 Aug 2012 18:34:33 -0700
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1344216870-21105-1-git-send-email-ying.huang@intel.com>
+Original-Sender: linux-pci-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-pci.vger.kernel.org>
+X-Mailing-List: linux-pci@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel.pci:16911 gmane.linux.kernel:1337976
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337976>
+
+This patch fixes the following bug:
+
+http://marc.info/?l=linux-usb&m=134318961120825&w=2
+
+Originally, device lower power states include D1, D2, D3.  After that,
+D3 is further divided into D3hot and D3cold.  To support both scenario
+safely, original D3 is mapped to D3cold.
+
+When adding D3cold support, because worry about some device may have
+broken D3cold support, D3cold is disabled by default.  This disable D3
+on original platform too.  But some original platform may only have
+working D3, but no working D1, D2.  The root cause of the above bug is
+it too.
+
+To deal with this, this patch enables D3/D3cold by default for most
+devices.  This restores the original behavior.  For some devices that
+suspected to have broken D3cold support, such as PCIe port, D3cold is
+disabled by default.
+
+Reported-by: Bjorn Mork <bjorn@mork.no>
+Signed-off-by: Huang Ying <ying.huang@intel.com>
+Reviewed-by: Rafael J. Wysocki <rjw@sisk.pl>
+---
+ drivers/pci/pci.c              |    1 +
+ drivers/pci/pcie/portdrv_pci.c |    5 +++++
+ 2 files changed, 6 insertions(+)
+
+--- a/drivers/pci/pci.c
++++ b/drivers/pci/pci.c
+@@ -1941,6 +1941,7 @@ void pci_pm_init(struct pci_dev *dev)
+ 	dev->pm_cap = pm;
+ 	dev->d3_delay = PCI_PM_D3_WAIT;
+ 	dev->d3cold_delay = PCI_PM_D3COLD_WAIT;
++	dev->d3cold_allowed = true;
+ 
+ 	dev->d1_support = false;
+ 	dev->d2_support = false;
+--- a/drivers/pci/pcie/portdrv_pci.c
++++ b/drivers/pci/pcie/portdrv_pci.c
+@@ -200,6 +200,11 @@ static int __devinit pcie_portdrv_probe(
+ 		return status;
+ 
+ 	pci_save_state(dev);
++	/*
++	 * D3cold may not work properly on some PCIe port, so disable
++	 * it by default.
++	 */
++	dev->d3cold_allowed = false;
+ 	if (!pci_match_id(port_runtime_pm_black_list, dev))
+ 		pm_runtime_put_noidle(&dev->dev);
+ 

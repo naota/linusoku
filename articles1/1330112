@@ -1,0 +1,106 @@
+Path: news.gmane.org!not-for-mail
+From: H Hartley Sweeten <hartleys@visionengravers.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 75/90] staging: comedi: dyna_pci10xx: store the pci_dev in the comedi_device
+Date: Wed, 18 Jul 2012 19:01:13 -0700
+Lines: 52
+Approved: news@gmane.org
+Message-ID: <201207181901.13380.hartleys@visionengravers.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1342663301 29963 80.91.229.3 (19 Jul 2012 02:01:41 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 19 Jul 2012 02:01:41 +0000 (UTC)
+Cc: <devel@driverdev.osuosl.org>, <abbotti@mev.co.uk>,
+	<gregkh@linuxfoundation.org>
+To: Linux Kernel <linux-kernel@vger.kernel.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 19 04:01:40 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Srg3X-0002jQ-GM
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 19 Jul 2012 04:01:31 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755497Ab2GSCBW (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 18 Jul 2012 22:01:22 -0400
+Original-Received: from mail127.messagelabs.com ([216.82.250.115]:63646 "EHLO
+	mail127.messagelabs.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754089Ab2GSCBT (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 18 Jul 2012 22:01:19 -0400
+X-Env-Sender: hartleys@visionengravers.com
+X-Msg-Ref: server-2.tower-127.messagelabs.com!1342663279!9008321!1
+X-Originating-IP: [216.166.12.99]
+X-StarScan-Version: 6.5.10; banners=-,-,-
+X-VirusChecked: Checked
+Original-Received: (qmail 18581 invoked from network); 19 Jul 2012 02:01:19 -0000
+Original-Received: from out001.collaborationhost.net (HELO out001.collaborationhost.net) (216.166.12.99)
+  by server-2.tower-127.messagelabs.com with RC4-SHA encrypted SMTP; 19 Jul 2012 02:01:19 -0000
+Original-Received: from etch.local (10.2.3.210) by smtp.collaborationhost.net
+ (10.2.0.100) with Microsoft SMTP Server (TLS) id 8.3.213.0; Wed, 18 Jul 2012
+ 21:01:18 -0500
+User-Agent: KMail/1.9.9
+Content-Disposition: inline
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330112
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330112>
+
+Use the hw_dev pointer in the comedi_device struct to hold the
+pci_dev instead of carrying it in the private data.
+
+Signed-off-by: H Hartley Sweeten <hsweeten@visionengravers.com>
+Cc: Ian Abbott <abbotti@mev.co.uk>
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/staging/comedi/drivers/dyna_pci10xx.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/staging/comedi/drivers/dyna_pci10xx.c b/drivers/staging/comedi/drivers/dyna_pci10xx.c
+index e7086b1..6821f87 100644
+--- a/drivers/staging/comedi/drivers/dyna_pci10xx.c
++++ b/drivers/staging/comedi/drivers/dyna_pci10xx.c
+@@ -100,10 +100,7 @@ static const struct boardtype boardtypes[] = {
+ };
+ 
+ struct dyna_pci10xx_private {
+-	struct pci_dev *pci_dev;	/*  ptr to PCI device */
+ 	struct mutex mutex;
+-
+-	/* device base address registers */
+ 	unsigned long BADR3;
+ };
+ 
+@@ -273,7 +270,7 @@ static int dyna_pci10xx_attach(struct comedi_device *dev,
+ 	pcidev = dyna_pci10xx_find_pci_dev(dev, it);
+ 	if (!pcidev)
+ 		return -EIO;
+-	devpriv->pci_dev = pcidev;
++	comedi_set_hw_dev(dev, &pcidev->dev);
+ 
+ 	dev->board_name = thisboard->name;
+ 	dev->irq = 0;
+@@ -344,9 +341,12 @@ static int dyna_pci10xx_attach(struct comedi_device *dev,
+ 
+ static void dyna_pci10xx_detach(struct comedi_device *dev)
+ {
+-	if (devpriv && devpriv->pci_dev) {
+-		comedi_pci_disable(devpriv->pci_dev);
++	struct pci_dev *pcidev = comedi_to_pci_dev(dev);
++
++	if (devpriv)
+ 		mutex_destroy(&devpriv->mutex);
++	if (pcidev) {
++		comedi_pci_disable(pcidev);
+ 	}
+ }
+ 
+-- 
+1.7.11
+

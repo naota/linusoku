@@ -1,0 +1,110 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 048/109] ACPI, APEI: Fixup common access width firmware bug
+Date: Tue,  7 Aug 2012 15:35:07 -0700
+Lines: 44
+Approved: news@gmane.org
+Message-ID: <20120807222047.297200063@linuxfoundation.org>
+References: <20120807222043.089735600@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344381078 31921 80.91.229.3 (7 Aug 2012 23:11:18 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 23:11:18 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Jean Delvare <jdelvare@suse.de>,
+	Huang Ying <ying.huang@intel.com>,
+	Gary Hade <garyhade@us.ibm.com>,
+	Len Brown <len.brown@intel.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 01:11:16 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sysvg-00089u-Hg
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 01:11:12 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1030556Ab2HGXLB (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 19:11:01 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:41610 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1030521Ab2HGWim (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:38:42 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so358014pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:38:41 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=NYx0EVz7S6/pxy07JHwxmH4tEeBo8KMUYXTOin4xgas=;
+        b=h1CXpLK/1ZueVZ7c7khZJKMnXvReDlCVLnTAmkry8WBYenKh1/+OEstXPcFwM2SH2M
+         cfYealMaSrDmvAhQ53oXVimi2917bLGTJN+DQZx64V17yRlA114YTVXt7/5z3zKz+6hS
+         HlvQkR/zwhDqYQs8d7bHKsOnS3WDuXYxm2kt/FsObYkrYyiaHB2Tzhtxt5RybNGiYwQV
+         iKS7niKwKvuuoAnQUaM64vXF40lIXzyIq1AsA2jW/7nBCGYz9c5x9XEJJAxYbxfPPm0g
+         y6mXK9pDZwgXDWLhDFEgdm/kXL/bJ8xoFil8L6b0jdIwVBMRU/Y+/n4eUrE0Adgmk4/o
+         Gipw==
+Original-Received: by 10.68.190.102 with SMTP id gp6mr31216542pbc.5.1344379121617;
+        Tue, 07 Aug 2012 15:38:41 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id qp6sm11966883pbc.55.2012.08.07.15.38.39
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:38:40 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807222043.089735600@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQlP7c1PriV+k/ThN62yaxiXITUe76Ji1gCPucq80MBSs9w4YPhxHUTdhEEmujyowbkdI4kZ
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339617 gmane.linux.kernel.stable:29449
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339617>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.4-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Jean Delvare <jdelvare@suse.de>
+
+commit f712c71f7b2b43b894d1e92e1b77385fcad8815f upstream.
+
+Many firmwares have a common register definition bug where 8-bit
+access width is specified for a 32-bit register. Ideally this should
+be fixed in the BIOS, but earlier versions of the kernel did not
+complain, so fix that up silently.
+
+This closes kernel bug #43282:
+https://bugzilla.kernel.org/show_bug.cgi?id=43282
+
+Signed-off-by: Jean Delvare <jdelvare@suse.de>
+Acked-by: Huang Ying <ying.huang@intel.com>
+Acked-by: Gary Hade <garyhade@us.ibm.com>
+Signed-off-by: Len Brown <len.brown@intel.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ drivers/acpi/apei/apei-base.c |    5 +++++
+ 1 file changed, 5 insertions(+)
+
+--- a/drivers/acpi/apei/apei-base.c
++++ b/drivers/acpi/apei/apei-base.c
+@@ -586,6 +586,11 @@ static int apei_check_gar(struct acpi_ge
+ 	}
+ 	*access_bit_width = 1UL << (access_size_code + 2);
+ 
++	/* Fixup common BIOS bug */
++	if (bit_width == 32 && bit_offset == 0 && (*paddr & 0x03) == 0 &&
++	    *access_bit_width < 32)
++		*access_bit_width = 32;
++
+ 	if ((bit_width + bit_offset) > *access_bit_width) {
+ 		pr_warning(FW_BUG APEI_PFX
+ 			   "Invalid bit width + offset in GAR [0x%llx/%u/%u/%u/%u]\n",
+
+

@@ -1,0 +1,310 @@
+Path: news.gmane.org!not-for-mail
+From: =?ISO-8859-15?Q?Ren=E9_B=FCrgel?= <rene.buergel@sohard.de>
+Newsgroups: gmane.linux.kernel,gmane.linux.usb.general
+Subject: Re: [PATCH 1/3]: ezusb: remove dependency to usb_serial interface
+Date: Fri, 03 Aug 2012 17:16:41 +0200
+Lines: 256
+Approved: news@gmane.org
+Message-ID: <501BEB59.20702@sohard.de>
+References: <501BE8F3.6020608@sohard.de>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-15;
+	format=flowed
+Content-Transfer-Encoding: QUOTED-PRINTABLE
+X-Trace: dough.gmane.org 1344006913 7911 80.91.229.3 (3 Aug 2012 15:15:13 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 15:15:13 +0000 (UTC)
+To: linux-usb@vger.kernel.org, linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 17:15:13 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxJah-0000x8-1E
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 17:15:12 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754231Ab2HCPOv convert rfc822-to-quoted-printable (ORCPT
+	<rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 11:14:51 -0400
+Original-Received: from shmail0.sohard.de ([212.114.139.117]:56123 "EHLO
+	shmail0.sohard.de" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753315Ab2HCPOt (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 11:14:49 -0400
+Original-Received: from localhost (localhost [127.0.0.1])
+	by shmail0.sohard.de (Postfix) with ESMTP id 47F3461E17D4;
+	Fri,  3 Aug 2012 17:14:47 +0200 (CEST)
+X-Virus-Scanned: amavisd-new at shmail0.sohard.de
+Original-Received: from shmail0.sohard.de ([127.0.0.1])
+	by localhost (shmail0.sohard.de [127.0.0.1]) (amavisd-new, port 10024)
+	with ESMTP id S3W672g-LeGB; Fri,  3 Aug 2012 17:14:46 +0200 (CEST)
+Original-Received: from [192.168.144.245] (FUE-RBUERGEL.fue.sohard.de [192.168.144.245])
+	by shmail0.sohard.de (Postfix) with ESMTPSA id 4A93461E17B4;
+	Fri,  3 Aug 2012 17:14:46 +0200 (CEST)
+User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:14.0) Gecko/20120713 Thunderbird/14.0
+In-Reply-To: <501BE8F3.6020608@sohard.de>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337363 gmane.linux.usb.general:68847
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337363>
+
+This patch removes the dependency on the usb_serial interface and names=
+=20
+some magic constants
+
+Signed-off-by: Ren=E9 B=FCrgel <rene.buergel@sohard.de>
+--
+diff --git a/drivers/usb/serial/ezusb.c b/drivers/usb/serial/ezusb.c
+index 800e8eb..3048b52d 100644
+--- a/drivers/usb/serial/ezusb.c
++++ b/drivers/usb/serial/ezusb.c
+@@ -9,24 +9,24 @@
+   */
+
+  #include <linux/kernel.h>
+-#include <linux/errno.h>
+  #include <linux/init.h>
+  #include <linux/slab.h>
+-#include <linux/tty.h>
+  #include <linux/module.h>
+  #include <linux/usb.h>
+-#include <linux/usb/serial.h>
+
+  /* EZ-USB Control and Status Register.  Bit 0 controls 8051 reset */
+  #define CPUCS_REG    0x7F92
+
+-int ezusb_writememory(struct usb_serial *serial, int address,
++/* Command for writing to internal memory */
++#define WRITE_INT_RAM 0xA0
++
++int ezusb_writememory(struct usb_device *dev, int address,
+                  unsigned char *data, int length, __u8 request)
+  {
+      int result;
+      unsigned char *transfer_buffer;
+
+-    if (!serial->dev) {
++    if (!dev) {
+          printk(KERN_ERR "ezusb: %s - no physical device present, "
+                 "failing.\n", __func__);
+          return -ENODEV;
+@@ -34,25 +34,25 @@ int ezusb_writememory(struct usb_serial *serial, in=
+t=20
+address,
+
+      transfer_buffer =3D kmemdup(data, length, GFP_KERNEL);
+      if (!transfer_buffer) {
+-        dev_err(&serial->dev->dev, "%s - kmalloc(%d) failed.\n",
++        dev_err(&dev->dev, "%s - kmalloc(%d) failed.\n",
+                              __func__, length);
+          return -ENOMEM;
+      }
+-    result =3D usb_control_msg(serial->dev, usb_sndctrlpipe(serial->de=
+v, 0),
+-             request, 0x40, address, 0, transfer_buffer, length, 3000)=
+;
++    result =3D usb_control_msg(dev, usb_sndctrlpipe(dev, 0), request,
++                 USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
++                 address, 0, transfer_buffer, length, 3000);
++
+      kfree(transfer_buffer);
+      return result;
+  }
+  EXPORT_SYMBOL_GPL(ezusb_writememory);
+
+-int ezusb_set_reset(struct usb_serial *serial, unsigned char reset_bit=
+)
++int ezusb_set_reset(struct usb_device *dev, unsigned char reset_bit)
+  {
+-    int response;
+-
+-    response =3D ezusb_writememory(serial, CPUCS_REG, &reset_bit, 1, 0=
+xa0);
++    int response =3D ezusb_writememory(dev, CPUCS_REG, &reset_bit, 1,=20
+WRITE_INT_RAM);
+      if (response < 0)
+-        dev_err(&serial->dev->dev, "%s- %d failed\n",
+-                        __func__, reset_bit);
++        dev_err(&dev->dev, "%s-%d failed: %d\n",
++                        __func__, reset_bit, response);
+      return response;
+  }
+  EXPORT_SYMBOL_GPL(ezusb_set_reset);
+diff --git a/drivers/usb/serial/keyspan.c b/drivers/usb/serial/keyspan.=
+c
+index af0b70e..f0d4f3f 100644
+--- a/drivers/usb/serial/keyspan.c
++++ b/drivers/usb/serial/keyspan.c
+@@ -1241,12 +1241,12 @@ static int keyspan_fake_startup(struct=20
+usb_serial *serial)
+      dbg("Uploading Keyspan %s firmware.", fw_name);
+
+          /* download the firmware image */
+-    response =3D ezusb_set_reset(serial, 1);
++    response =3D ezusb_set_reset(serial->dev, 1);
+
+      record =3D (const struct ihex_binrec *)fw->data;
+
+      while (record) {
+-        response =3D ezusb_writememory(serial, be32_to_cpu(record->add=
+r),
++        response =3D ezusb_writememory(serial->dev,=20
+be32_to_cpu(record->addr),
+                           (unsigned char *)record->data,
+                           be16_to_cpu(record->len), 0xa0);
+          if (response < 0) {
+@@ -1260,7 +1260,7 @@ static int keyspan_fake_startup(struct usb_serial=
+=20
+*serial)
+      release_firmware(fw);
+          /* bring device out of reset. Renumeration will occur in a
+             moment and the new device will bind to the real driver */
+-    response =3D ezusb_set_reset(serial, 0);
++    response =3D ezusb_set_reset(serial->dev, 0);
+
+      /* we don't want this device to have a driver assigned to it. */
+      return 1;
+diff --git a/drivers/usb/serial/keyspan_pda.c=20
+b/drivers/usb/serial/keyspan_pda.c
+index a4ac3cf..1290b6f 100644
+--- a/drivers/usb/serial/keyspan_pda.c
++++ b/drivers/usb/serial/keyspan_pda.c
+@@ -682,7 +682,7 @@ static int keyspan_pda_fake_startup(struct=20
+usb_serial *serial)
+      const struct firmware *fw;
+
+      /* download the firmware here ... */
+-    response =3D ezusb_set_reset(serial, 1);
++    response =3D ezusb_set_reset(serial->dev, 1);
+
+      if (0) { ; }
+  #ifdef KEYSPAN
+@@ -707,7 +707,7 @@ static int keyspan_pda_fake_startup(struct=20
+usb_serial *serial)
+      record =3D (const struct ihex_binrec *)fw->data;
+
+      while (record) {
+-        response =3D ezusb_writememory(serial, be32_to_cpu(record->add=
+r),
++        response =3D ezusb_writememory(serial->dev,=20
+be32_to_cpu(record->addr),
+                           (unsigned char *)record->data,
+                           be16_to_cpu(record->len), 0xa0);
+          if (response < 0) {
+@@ -722,7 +722,7 @@ static int keyspan_pda_fake_startup(struct=20
+usb_serial *serial)
+      release_firmware(fw);
+      /* bring device out of reset. Renumeration will occur in a moment
+         and the new device will bind to the real driver */
+-    response =3D ezusb_set_reset(serial, 0);
++    response =3D ezusb_set_reset(serial->dev, 0);
+
+      /* we want this device to fail to have a driver assigned to it. *=
+/
+      return 1;
+diff --git a/drivers/usb/serial/whiteheat.c b/drivers/usb/serial/whiteh=
+eat.c
+index 473635e..fc72591 100644
+--- a/drivers/usb/serial/whiteheat.c
++++ b/drivers/usb/serial/whiteheat.c
+@@ -213,13 +213,13 @@ static int whiteheat_firmware_download(struct=20
+usb_serial *serial,
+          goto out;
+      }
+      ret =3D 0;
+-    response =3D ezusb_set_reset (serial, 1);
++    response =3D ezusb_set_reset(serial->dev, 1);
+
+      record =3D (const struct ihex_binrec *)loader_fw->data;
+      while (record) {
+-        response =3D ezusb_writememory (serial, be32_to_cpu(record->ad=
+dr),
+-                          (unsigned char *)record->data,
+-                          be16_to_cpu(record->len), 0xa0);
++        response =3D ezusb_writememory(serial->dev,=20
+be32_to_cpu(record->addr),
++                         (unsigned char *)record->data,
++                         be16_to_cpu(record->len), 0xa0);
+          if (response < 0) {
+              dev_err(&serial->dev->dev, "%s - ezusb_writememory "
+                  "failed for loader (%d %04X %p %d)\n",
+@@ -230,15 +230,15 @@ static int whiteheat_firmware_download(struct=20
+usb_serial *serial,
+          record =3D ihex_next_binrec(record);
+      }
+
+-    response =3D ezusb_set_reset(serial, 0);
++    response =3D ezusb_set_reset(serial->dev, 0);
+
+      record =3D (const struct ihex_binrec *)firmware_fw->data;
+      while (record && be32_to_cpu(record->addr) < 0x1b40)
+          record =3D ihex_next_binrec(record);
+      while (record) {
+-        response =3D ezusb_writememory (serial, be32_to_cpu(record->ad=
+dr),
+-                          (unsigned char *)record->data,
+-                          be16_to_cpu(record->len), 0xa3);
++        response =3D ezusb_writememory(serial->dev,=20
+be32_to_cpu(record->addr),
++                         (unsigned char *)record->data,
++                         be16_to_cpu(record->len), 0xa3);
+          if (response < 0) {
+              dev_err(&serial->dev->dev, "%s - ezusb_writememory "
+                  "failed for first firmware step "
+@@ -250,13 +250,13 @@ static int whiteheat_firmware_download(struct=20
+usb_serial *serial,
+          ++record;
+      }
+
+-    response =3D ezusb_set_reset(serial, 1);
++    response =3D ezusb_set_reset(serial->dev, 1);
+
+      record =3D (const struct ihex_binrec *)firmware_fw->data;
+      while (record && be32_to_cpu(record->addr) < 0x1b40) {
+-        response =3D ezusb_writememory (serial, be32_to_cpu(record->ad=
+dr),
+-                          (unsigned char *)record->data,
+-                          be16_to_cpu(record->len), 0xa0);
++        response =3D ezusb_writememory(serial->dev,=20
+be32_to_cpu(record->addr),
++                         (unsigned char *)record->data,
++                         be16_to_cpu(record->len), 0xa0);
+          if (response < 0) {
+              dev_err(&serial->dev->dev, "%s - ezusb_writememory "
+                  "failed for second firmware step "
+@@ -268,7 +268,7 @@ static int whiteheat_firmware_download(struct=20
+usb_serial *serial,
+          ++record;
+      }
+      ret =3D 0;
+-    response =3D ezusb_set_reset (serial, 0);
++    response =3D ezusb_set_reset(serial->dev, 0);
+   out:
+      release_firmware(loader_fw);
+      release_firmware(firmware_fw);
+diff --git a/include/linux/usb/serial.h b/include/linux/usb/serial.h
+index 86c0b45..a101507 100644
+--- a/include/linux/usb/serial.h
++++ b/include/linux/usb/serial.h
+@@ -301,9 +301,9 @@ extern void usb_serial_port_softint(struct=20
+usb_serial_port *port);
+  extern int usb_serial_suspend(struct usb_interface *intf, pm_message_=
+t=20
+message);
+  extern int usb_serial_resume(struct usb_interface *intf);
+
+-extern int ezusb_writememory(struct usb_serial *serial, int address,
++extern int ezusb_writememory(struct usb_device *dev, int address,
+                   unsigned char *data, int length, __u8 bRequest);
+-extern int ezusb_set_reset(struct usb_serial *serial, unsigned char=20
+reset_bit);
++extern int ezusb_set_reset(struct usb_device *dev, unsigned char=20
+reset_bit);
+
+  /* USB Serial console functions */
+  #ifdef CONFIG_USB_SERIAL_CONSOLE
+

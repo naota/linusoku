@@ -1,0 +1,114 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 01/40] cifs: always update the inode cache with the results from a FIND_*
+Date: Thu, 26 Jul 2012 14:29:19 -0700
+Lines: 47
+Approved: news@gmane.org
+Message-ID: <20120726211411.164006056@linuxfoundation.org>
+References: <20120726211424.GA7709@kroah.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343338227 9582 80.91.229.3 (26 Jul 2012 21:30:27 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 26 Jul 2012 21:30:27 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk,
+	Bill Robertson <bill_robertson@debortoli.com.au>,
+	Dion Edwards <dion_edwards@debortoli.com.au>,
+	Jeff Layton <jlayton@redhat.com>,
+	Steve French <smfrench@gmail.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Jul 26 23:30:25 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuVdQ-00055h-93
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 26 Jul 2012 23:30:16 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753013Ab2GZVaG (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 26 Jul 2012 17:30:06 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:48389 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752032Ab2GZVaD (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 26 Jul 2012 17:30:03 -0400
+Original-Received: by ghrr11 with SMTP id r11so2531302ghr.19
+        for <linux-kernel@vger.kernel.org>; Thu, 26 Jul 2012 14:30:02 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=zgh2E+ZQEOr9BBs1OzcCnVUIFwkn943bv15IDoAdHdk=;
+        b=azVpqQrfxHm+DzZygetUkpAinfKS2yM8Mg2rL2xA3oFM4aktVOlipIWcCiLswnAfo/
+         A781ClmsSXe6mb+gwgLWQXL56sYqt2/EsR/UcGSYg+ij0GXLwH7BmPhqTurGf0XYbTis
+         5CXcJsOx2MjTtf04C6nRUX62j2ihN6VFUXFqjV2wSowX17g+lAeSdYBGBR7ls1ARHP7H
+         Ddb96/NZ3niJZ5hWS3kE2YxmLFq+oU4LKuFqhQWs1NHZ9yePYpVgSm8R5aYKBcUueee/
+         rEyKGvBN2LVaq8dGujAIeQ5bF2GkYsnoP2iskT9gVMX1Re9rRuJ0DpxImZ+eGIgkMcWe
+         CPdA==
+Original-Received: by 10.66.79.8 with SMTP id f8mr320372pax.81.1343338202419;
+        Thu, 26 Jul 2012 14:30:02 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id gh9sm436781pbc.20.2012.07.26.14.30.00
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Thu, 26 Jul 2012 14:30:01 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120726211424.GA7709@kroah.com>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQnTdcEYPZQ0kLeA18TtpDbMF3ZSojoGO+wkiI8ZZ6rKIz3X5wrPaZle75E/t0edj0f7g2mF
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1333923 gmane.linux.kernel.stable:28861
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1333923>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.0-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Jeff Layton <jlayton@redhat.com>
+
+commit cd60042cc1392e79410dc8de9e9c1abb38a29e57 upstream.
+
+When we get back a FIND_FIRST/NEXT result, we have some info about the
+dentry that we use to instantiate a new inode. We were ignoring and
+discarding that info when we had an existing dentry in the cache.
+
+Fix this by updating the inode in place when we find an existing dentry
+and the uniqueid is the same.
+
+Reported-and-Tested-by: Andrew Bartlett <abartlet@samba.org>
+Reported-by: Bill Robertson <bill_robertson@debortoli.com.au>
+Reported-by: Dion Edwards <dion_edwards@debortoli.com.au>
+Signed-off-by: Jeff Layton <jlayton@redhat.com>
+Signed-off-by: Steve French <smfrench@gmail.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ fs/cifs/readdir.c |    7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+--- a/fs/cifs/readdir.c
++++ b/fs/cifs/readdir.c
+@@ -85,9 +85,12 @@ cifs_readdir_lookup(struct dentry *paren
+ 
+ 	dentry = d_lookup(parent, name);
+ 	if (dentry) {
+-		/* FIXME: check for inode number changes? */
+-		if (dentry->d_inode != NULL)
++		inode = dentry->d_inode;
++		/* update inode in place if i_ino didn't change */
++		if (inode && CIFS_I(inode)->uniqueid == fattr->cf_uniqueid) {
++			cifs_fattr_to_inode(inode, fattr);
+ 			return dentry;
++		}
+ 		d_drop(dentry);
+ 		dput(dentry);
+ 	}
+
+

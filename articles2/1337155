@@ -1,0 +1,252 @@
+Path: news.gmane.org!not-for-mail
+From: wency@cn.fujitsu.com
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel,gmane.linux.ports.ppc64.devel,gmane.linux.acpi.devel,gmane.linux.ports.sh.devel,gmane.linux.ports.ia64
+Subject: [RFC PATCH V6 02/19] memory-hotplug: implement offline_memory()
+Date: Fri, 3 Aug 2012 15:49:04 +0800
+Lines: 174
+Approved: news@gmane.org
+Message-ID: <1343980161-14254-3-git-send-email-wency@cn.fujitsu.com>
+References: <1343980161-14254-1-git-send-email-wency@cn.fujitsu.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343979925 15842 80.91.229.3 (3 Aug 2012 07:45:25 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 07:45:25 +0000 (UTC)
+Cc: rientjes@google.com, liuj97@gmail.com, len.brown@intel.com,
+        benh@kernel.crashing.org, paulus@samba.org, cl@linux.com,
+        minchan.kim@gmail.com, akpm@linux-foundation.org,
+        kosaki.motohiro@jp.fujitsu.com, isimatu.yasuaki@jp.fujitsu.com,
+        Wen Congyang <wency@cn.fujitsu.com>,
+        Vasilis Liaskovitis <vasilis.liaskovitis@profitbricks.com>
+To: linux-mm@kvack.org, linux-kernel@vger.kernel.org,
+        linuxppc-dev@lists.ozlabs.org, linux-acpi@vger.kernel.org,
+        linux-s390@vger.kernel.org, linux-sh@vger.kernel.org,
+        linux-ia64@vger.kernel.org, cmetcalf@tilera.com
+Original-X-From: owner-linux-mm@kvack.org Fri Aug 03 09:45:17 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SxCZO-0005Cr-Ll
+	for glkm-linux-mm-2@m.gmane.org; Fri, 03 Aug 2012 09:45:14 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id BDFEB6B0073; Fri,  3 Aug 2012 03:45:05 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 74CCA6B005D; Fri,  3 Aug 2012 03:45:04 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 739106B005D; Fri,  3 Aug 2012 03:45:03 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx145.postini.com [74.125.245.145])
+	by kanga.kvack.org (Postfix) with SMTP id 3308C6B0072
+	for <linux-mm@kvack.org>; Fri,  3 Aug 2012 03:45:01 -0400 (EDT)
+Original-Received: from song.cn.fujitsu.com ([222.73.24.84]) by na3sys010amx145.postini.com ([74.125.244.10]) with SMTP;
+	Fri, 03 Aug 2012 07:45:01 GMT
+X-IronPort-AV: E=Sophos;i="4.77,705,1336320000"; 
+   d="scan'208";a="5544426"
+Original-Received: from unknown (HELO tang.cn.fujitsu.com) ([10.167.250.3])
+  by song.cn.fujitsu.com with ESMTP; 03 Aug 2012 15:43:57 +0800
+Original-Received: from fnstmail02.fnst.cn.fujitsu.com (tang.cn.fujitsu.com [127.0.0.1])
+	by tang.cn.fujitsu.com (8.14.3/8.13.1) with ESMTP id q737itQB014269;
+	Fri, 3 Aug 2012 15:44:55 +0800
+Original-Received: from ghost.fnst.cn.fujitsu.com ([10.167.225.226])
+          by fnstmail02.fnst.cn.fujitsu.com (Lotus Domino Release 8.5.3)
+          with ESMTP id 2012080315452442-109294 ;
+          Fri, 3 Aug 2012 15:45:24 +0800 
+X-Mailer: git-send-email 1.7.1
+In-Reply-To: <1343980161-14254-1-git-send-email-wency@cn.fujitsu.com>
+X-MIMETrack: Itemize by SMTP Server on mailserver/fnst(Release 8.5.3|September 15, 2011) at
+ 2012/08/03 15:45:24,
+	Serialize by Router on mailserver/fnst(Release 8.5.3|September 15, 2011) at
+ 2012/08/03 15:45:25,
+	Serialize complete at 2012/08/03 15:45:25
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:99.90000/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <wency@cn.fujitsu.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83520 gmane.linux.kernel:1337155 gmane.linux.ports.ppc64.devel:84210 gmane.linux.acpi.devel:54741 gmane.linux.ports.sh.devel:16106 gmane.linux.ports.ia64:22399
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337155>
+
+From: Wen Congyang <wency@cn.fujitsu.com>
+
+The function offline_memory() will be called when hot removing a
+memory device. The memory device may contain more than one memory
+block. If the memory block has been offlined, __offline_pages()
+will fail. So we should try to offline one memory block at a
+time.
+
+If the memory block is offlined in offline_memory(), we also
+update it's state, and notify the userspace that its state is
+changed.
+
+The function offline_memory() also check each memory block's
+state. So there is no need to check the memory block's state
+before calling offline_memory().
+
+CC: David Rientjes <rientjes@google.com>
+CC: Jiang Liu <liuj97@gmail.com>
+CC: Len Brown <len.brown@intel.com>
+CC: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+CC: Paul Mackerras <paulus@samba.org>
+CC: Christoph Lameter <cl@linux.com>
+Cc: Minchan Kim <minchan.kim@gmail.com>
+CC: Andrew Morton <akpm@linux-foundation.org>
+CC: KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>
+CC: Yasuaki Ishimatsu <isimatu.yasuaki@jp.fujitsu.com>
+CC: Vasilis Liaskovitis <vasilis.liaskovitis@profitbricks.com>
+Signed-off-by: Wen Congyang <wency@cn.fujitsu.com>
+---
+ drivers/base/memory.c          |   31 +++++++++++++++++++++++++++----
+ include/linux/memory_hotplug.h |    2 ++
+ mm/memory_hotplug.c            |   37 ++++++++++++++++++++++++++++++++++++-
+ 3 files changed, 65 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/base/memory.c b/drivers/base/memory.c
+index 44e7de6..86c8821 100644
+--- a/drivers/base/memory.c
++++ b/drivers/base/memory.c
+@@ -275,13 +275,11 @@ memory_block_action(unsigned long phys_index, unsigned long action)
+ 	return ret;
+ }
+ 
+-static int memory_block_change_state(struct memory_block *mem,
++static int __memory_block_change_state(struct memory_block *mem,
+ 		unsigned long to_state, unsigned long from_state_req)
+ {
+ 	int ret = 0;
+ 
+-	mutex_lock(&mem->state_mutex);
+-
+ 	if (mem->state != from_state_req) {
+ 		ret = -EINVAL;
+ 		goto out;
+@@ -309,10 +307,20 @@ static int memory_block_change_state(struct memory_block *mem,
+ 		break;
+ 	}
+ out:
+-	mutex_unlock(&mem->state_mutex);
+ 	return ret;
+ }
+ 
++static int memory_block_change_state(struct memory_block *mem,
++		unsigned long to_state, unsigned long from_state_req)
++{
++	int ret;
++
++	mutex_lock(&mem->state_mutex);
++	ret = __memory_block_change_state(mem, to_state, from_state_req);
++	mutex_unlock(&mem->state_mutex);
++
++	return ret;
++}
+ static ssize_t
+ store_mem_state(struct device *dev,
+ 		struct device_attribute *attr, const char *buf, size_t count)
+@@ -653,6 +661,21 @@ int unregister_memory_section(struct mem_section *section)
+ }
+ 
+ /*
++ * offline one memory block. If the memory block has been offlined, do nothing.
++ */
++int offline_memory_block(struct memory_block *mem)
++{
++	int ret = 0;
++
++	mutex_lock(&mem->state_mutex);
++	if (mem->state != MEM_OFFLINE)
++		ret = __memory_block_change_state(mem, MEM_OFFLINE, MEM_ONLINE);
++	mutex_unlock(&mem->state_mutex);
++
++	return ret;
++}
++
++/*
+  * Initialize the sysfs support for memory devices...
+  */
+ int __init memory_dev_init(void)
+diff --git a/include/linux/memory_hotplug.h b/include/linux/memory_hotplug.h
+index c183f39..0b040bb 100644
+--- a/include/linux/memory_hotplug.h
++++ b/include/linux/memory_hotplug.h
+@@ -10,6 +10,7 @@ struct page;
+ struct zone;
+ struct pglist_data;
+ struct mem_section;
++struct memory_block;
+ 
+ #ifdef CONFIG_MEMORY_HOTPLUG
+ 
+@@ -234,6 +235,7 @@ extern int mem_online_node(int nid);
+ extern int add_memory(int nid, u64 start, u64 size);
+ extern int arch_add_memory(int nid, u64 start, u64 size);
+ extern int offline_pages(unsigned long start_pfn, unsigned long nr_pages);
++extern int offline_memory_block(struct memory_block *mem);
+ extern int offline_memory(u64 start, u64 size);
+ extern int sparse_add_one_section(struct zone *zone, unsigned long start_pfn,
+ 								int nr_pages);
+diff --git a/mm/memory_hotplug.c b/mm/memory_hotplug.c
+index c182c76..3113cd4 100644
+--- a/mm/memory_hotplug.c
++++ b/mm/memory_hotplug.c
+@@ -1001,7 +1001,42 @@ int offline_pages(unsigned long start_pfn, unsigned long nr_pages)
+ 
+ int offline_memory(u64 start, u64 size)
+ {
+-	return -EINVAL;
++	struct memory_block *mem = NULL;
++	struct mem_section *section;
++	unsigned long start_pfn, end_pfn;
++	unsigned long pfn, section_nr;
++	int ret;
++
++	start_pfn = PFN_DOWN(start);
++	end_pfn = start_pfn + PFN_DOWN(size);
++
++	for (pfn = start_pfn; pfn < end_pfn; pfn += PAGES_PER_SECTION) {
++		section_nr = pfn_to_section_nr(pfn);
++		if (!present_section_nr(section_nr))
++			continue;
++
++		section = __nr_to_section(section_nr);
++		/* same memblock? */
++		if (mem)
++			if ((section_nr >= mem->start_section_nr) &&
++			    (section_nr <= mem->end_section_nr))
++				continue;
++
++		mem = find_memory_block_hinted(section, mem);
++		if (!mem)
++			continue;
++
++		ret = offline_memory_block(mem);
++		if (ret) {
++			kobject_put(&mem->dev.kobj);
++			return ret;
++		}
++	}
++
++	if (mem)
++		kobject_put(&mem->dev.kobj);
++
++	return 0;
+ }
+ #else
+ int offline_pages(u64 start, u64 size)
+-- 
+1.7.1
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

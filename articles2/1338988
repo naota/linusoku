@@ -1,0 +1,125 @@
+Path: news.gmane.org!not-for-mail
+From: Mel Gorman <mgorman@suse.de>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH 3/6] mm: kswapd: Continue reclaiming for reclaim/compaction if the minimum number of pages have not been reclaimed
+Date: Tue,  7 Aug 2012 13:31:14 +0100
+Lines: 64
+Approved: news@gmane.org
+Message-ID: <1344342677-5845-4-git-send-email-mgorman@suse.de>
+References: <1344342677-5845-1-git-send-email-mgorman@suse.de>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344342701 22467 80.91.229.3 (7 Aug 2012 12:31:41 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 12:31:41 +0000 (UTC)
+Cc: Rik van Riel <riel@redhat.com>, Minchan Kim <minchan@kernel.org>,
+	Jim Schutt <jaschut@sandia.gov>, LKML <linux-kernel@vger.kernel.org>,
+	Mel Gorman <mgorman@suse.de>
+To: Linux-MM <linux-mm@kvack.org>
+Original-X-From: owner-linux-mm@kvack.org Tue Aug 07 14:31:40 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1Syiwh-0001Ok-4G
+	for glkm-linux-mm-2@m.gmane.org; Tue, 07 Aug 2012 14:31:35 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id 0A7646B006E; Tue,  7 Aug 2012 08:31:30 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id EAFF76B004D; Tue,  7 Aug 2012 08:31:26 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id C37AB6B004D; Tue,  7 Aug 2012 08:31:25 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx121.postini.com [74.125.245.121])
+	by kanga.kvack.org (Postfix) with SMTP id 57C1C6B0068
+	for <linux-mm@kvack.org>; Tue,  7 Aug 2012 08:31:23 -0400 (EDT)
+Original-Received: from mx2.suse.de ([195.135.220.15]) (using TLSv1) by na3sys010amx121.postini.com ([74.125.244.10]) with SMTP;
+	Tue, 07 Aug 2012 12:31:24 GMT
+Original-Received: from relay1.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 30E42A3EBF;
+	Tue,  7 Aug 2012 14:31:22 +0200 (CEST)
+X-Mailer: git-send-email 1.7.9.2
+In-Reply-To: <1344342677-5845-1-git-send-email-mgorman@suse.de>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:83.79497/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <mgorman@suse.de> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83766 gmane.linux.kernel:1338988
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338988>
+
+When direct reclaim is running reclaim/compaction, there is a minimum
+number of pages it reclaims. As it must be under the low watermark to be
+in direct reclaim it has also woken kswapd to do some work. This patch
+has kswapd use the same logic as direct reclaim to reclaim a minimum
+number of pages so compaction can run later.
+
+Signed-off-by: Mel Gorman <mgorman@suse.de>
+---
+ mm/vmscan.c |   19 ++++++++++++++++---
+ 1 file changed, 16 insertions(+), 3 deletions(-)
+
+diff --git a/mm/vmscan.c b/mm/vmscan.c
+index 0cb2593..afdec93 100644
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -1701,7 +1701,7 @@ static bool in_reclaim_compaction(struct scan_control *sc)
+  * calls try_to_compact_zone() that it will have enough free pages to succeed.
+  * It will give up earlier than that if there is difficulty reclaiming pages.
+  */
+-static inline bool should_continue_reclaim(struct lruvec *lruvec,
++static bool should_continue_reclaim(struct lruvec *lruvec,
+ 					unsigned long nr_reclaimed,
+ 					unsigned long nr_scanned,
+ 					struct scan_control *sc)
+@@ -1768,6 +1768,17 @@ static inline bool should_continue_reclaim(struct lruvec *lruvec,
+ 	}
+ }
+ 
++static inline bool should_continue_reclaim_zone(struct zone *zone,
++					unsigned long nr_reclaimed,
++					unsigned long nr_scanned,
++					struct scan_control *sc)
++{
++	struct mem_cgroup *memcg = mem_cgroup_iter(NULL, NULL, NULL);
++	struct lruvec *lruvec = mem_cgroup_zone_lruvec(zone, memcg);
++
++	return should_continue_reclaim(lruvec, nr_reclaimed, nr_scanned, sc);
++}
++
+ /*
+  * This is a basic per-zone page freer.  Used by both kswapd and direct reclaim.
+  */
+@@ -2496,8 +2507,10 @@ loop_again:
+ 			 */
+ 			testorder = order;
+ 			if (COMPACTION_BUILD && order &&
+-					compaction_suitable(zone, order) !=
+-						COMPACT_SKIPPED)
++					!should_continue_reclaim_zone(zone,
++						nr_soft_reclaimed,
++						sc.nr_scanned - nr_soft_scanned,
++						&sc))
+ 				testorder = 0;
+ 
+ 			if ((buffer_heads_over_limit && is_highmem_idx(i)) ||
+-- 
+1.7.9.2
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

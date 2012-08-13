@@ -1,0 +1,101 @@
+Path: news.gmane.org!not-for-mail
+From: "Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+Newsgroups: gmane.linux.kernel.mm,gmane.linux.kernel
+Subject: [PATCH, RFC 5/9] thp: change_huge_pmd(): keep huge zero page write-protected
+Date: Thu,  9 Aug 2012 12:08:16 +0300
+Lines: 32
+Approved: news@gmane.org
+Message-ID: <1344503300-9507-6-git-send-email-kirill.shutemov@linux.intel.com>
+References: <1344503300-9507-1-git-send-email-kirill.shutemov@linux.intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344503338 13639 80.91.229.3 (9 Aug 2012 09:08:58 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 09:08:58 +0000 (UTC)
+Cc: Andi Kleen <ak@linux.intel.com>,
+	"H. Peter Anvin" <hpa@linux.intel.com>,
+	linux-kernel@vger.kernel.org,
+	"Kirill A. Shutemov" <kirill@shutemov.name>,
+	"Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+To: Andrew Morton <akpm@linux-foundation.org>,
+	Andrea Arcangeli <aarcange@redhat.com>,
+	linux-mm@kvack.org
+Original-X-From: owner-linux-mm@kvack.org Thu Aug 09 11:08:56 2012
+Return-path: <owner-linux-mm@kvack.org>
+Envelope-to: glkm-linux-mm-2@m.gmane.org
+Original-Received: from kanga.kvack.org ([205.233.56.17])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <owner-linux-mm@kvack.org>)
+	id 1SzOjd-0000sK-PC
+	for glkm-linux-mm-2@m.gmane.org; Thu, 09 Aug 2012 11:08:53 +0200
+Original-Received: by kanga.kvack.org (Postfix)
+	id A27466B006E; Thu,  9 Aug 2012 05:08:45 -0400 (EDT)
+Delivered-To: linux-mm-outgoing@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 40)
+	id 2A5666B0062; Thu,  9 Aug 2012 05:08:44 -0400 (EDT)
+X-Original-To: int-list-linux-mm@kvack.org
+Delivered-To: int-list-linux-mm@kvack.org
+Original-Received: by kanga.kvack.org (Postfix, from userid 63042)
+	id 3D9DE6B005A; Thu,  9 Aug 2012 05:08:43 -0400 (EDT)
+X-Original-To: linux-mm@kvack.org
+Delivered-To: linux-mm@kvack.org
+Original-Received: from psmtp.com (na3sys010amx146.postini.com [74.125.245.146])
+	by kanga.kvack.org (Postfix) with SMTP id 9A3116B0074
+	for <linux-mm@kvack.org>; Thu,  9 Aug 2012 05:08:41 -0400 (EDT)
+Original-Received: from mga03.intel.com ([143.182.124.21]) by na3sys010amx146.postini.com ([74.125.244.10]) with SMTP;
+	Thu, 09 Aug 2012 09:08:41 GMT
+Original-Received: from azsmga002.ch.intel.com ([10.2.17.35])
+  by azsmga101.ch.intel.com with ESMTP; 09 Aug 2012 02:08:40 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.77,739,1336374000"; 
+   d="scan'208";a="131891542"
+Original-Received: from blue.fi.intel.com ([10.237.72.50])
+  by AZSMGA002.ch.intel.com with ESMTP; 09 Aug 2012 02:08:38 -0700
+Original-Received: by blue.fi.intel.com (Postfix, from userid 1000)
+	id D55C4E0085; Thu,  9 Aug 2012 12:08:38 +0300 (EEST)
+X-Mailer: git-send-email 1.7.10.4
+In-Reply-To: <1344503300-9507-1-git-send-email-kirill.shutemov@linux.intel.com>
+X-pstn-neptune: 0/0/0.00/0
+X-pstn-levels: (S:15.51169/99.90000 CV:99.9000 FC:95.5390 LC:95.5390 R:95.9108 P:95.9108 M:97.0282 C:98.6951 )
+X-pstn-dkim: 0 skipped:not-enabled
+X-pstn-settings: 3 (1.0000:1.0000) s cv gt3 gt2 gt1 r p m c 
+X-pstn-addresses: from <kirill.shutemov@linux.intel.com> [db-null] 
+X-Bogosity: Ham, tests=bogofilter, spamicity=0.000000, version=1.2.2
+Original-Sender: owner-linux-mm@kvack.org
+Precedence: bulk
+X-Loop: owner-majordomo@kvack.org
+List-ID: <linux-mm.kvack.org>
+Xref: news.gmane.org gmane.linux.kernel.mm:83889 gmane.linux.kernel:1340572
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340572>
+
+From: "Kirill A. Shutemov" <kirill.shutemov@linux.intel.com>
+
+We want to get page fault on write attempt to huge zero page, so let's
+keep it write-protected.
+
+Signed-off-by: Kirill A. Shutemov <kirill.shutemov@linux.intel.com>
+---
+ mm/huge_memory.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/mm/huge_memory.c b/mm/huge_memory.c
+index f5029d4..4001f1a 100644
+--- a/mm/huge_memory.c
++++ b/mm/huge_memory.c
+@@ -1248,6 +1248,8 @@ int change_huge_pmd(struct vm_area_struct *vma, pmd_t *pmd,
+ 		pmd_t entry;
+ 		entry = pmdp_get_and_clear(mm, addr, pmd);
+ 		entry = pmd_modify(entry, newprot);
++		if (is_huge_zero_pmd(entry))
++			entry = pmd_wrprotect(entry);
+ 		set_pmd_at(mm, addr, pmd, entry);
+ 		spin_unlock(&vma->vm_mm->page_table_lock);
+ 		ret = 1;
+-- 
+1.7.7.6
+
+--
+To unsubscribe, send a message with 'unsubscribe linux-mm' in
+the body to majordomo@kvack.org.  For more info on Linux MM,
+see: http://www.linux-mm.org/ .
+Don't email: <a href=mailto:"dont@kvack.org"> email@kvack.org </a>
+

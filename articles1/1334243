@@ -1,0 +1,104 @@
+Path: news.gmane.org!not-for-mail
+From: Stefano Stabellini <stefano.stabellini@eu.citrix.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.xen.devel
+Subject: Re: [Xen-devel] [PATCH 3/7] xen/mmu: Release the Xen provided L4
+ (PGD) back.
+Date: Fri, 27 Jul 2012 12:37:24 +0100
+Lines: 52
+Approved: news@gmane.org
+Message-ID: <alpine.DEB.2.02.1207271231560.26163@kaball.uk.xensource.com>
+References: <1343335652-5659-1-git-send-email-konrad.wilk@oracle.com> <1343335652-5659-4-git-send-email-konrad.wilk@oracle.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="US-ASCII"
+X-Trace: dough.gmane.org 1343389108 22389 80.91.229.3 (27 Jul 2012 11:38:28 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 11:38:28 +0000 (UTC)
+Cc: "linux-kernel@vger.kernel.org" <linux-kernel@vger.kernel.org>,
+	"xen-devel@lists.xensource.com" <xen-devel@lists.xensource.com>
+To: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 13:38:27 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuisE-0001oq-PM
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 13:38:27 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752131Ab2G0LiT (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 07:38:19 -0400
+Original-Received: from smtp.eu.citrix.com ([62.200.22.115]:43931 "EHLO
+	SMTP.EU.CITRIX.COM" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751030Ab2G0LiS (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 07:38:18 -0400
+X-IronPort-AV: E=Sophos;i="4.77,666,1336348800"; 
+   d="scan'208";a="13733491"
+Original-Received: from lonpmailmx01.citrite.net ([10.30.203.162])
+  by LONPIPO01.EU.CITRIX.COM with ESMTP/TLS/RC4-MD5; 27 Jul 2012 11:38:17 +0000
+Original-Received: from kaball.uk.xensource.com (10.80.2.59) by
+ LONPMAILMX01.citrite.net (10.30.203.162) with Microsoft SMTP Server id
+ 8.3.213.0; Fri, 27 Jul 2012 12:38:17 +0100
+X-X-Sender: sstabellini@kaball.uk.xensource.com
+In-Reply-To: <1343335652-5659-4-git-send-email-konrad.wilk@oracle.com>
+User-Agent: Alpine 2.02 (DEB 1266 2009-07-14)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334243 gmane.comp.emulators.xen.devel:135744
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334243>
+
+On Thu, 26 Jul 2012, Konrad Rzeszutek Wilk wrote:
+> Since we are not using it and somebody else could use it.
+
+make sense except it is almost entirely rewritten by the following
+patch...
+
+> Signed-off-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+> ---
+>  arch/x86/xen/mmu.c |   13 +++++++------
+>  1 files changed, 7 insertions(+), 6 deletions(-)
+> 
+> diff --git a/arch/x86/xen/mmu.c b/arch/x86/xen/mmu.c
+> index a59070b..48bdc9f 100644
+> --- a/arch/x86/xen/mmu.c
+> +++ b/arch/x86/xen/mmu.c
+> @@ -1782,20 +1782,21 @@ void __init xen_setup_kernel_pagetable(pgd_t *pgd, unsigned long max_pfn)
+>  	/* Unpin Xen-provided one */
+>  	pin_pagetable_pfn(MMUEXT_UNPIN_TABLE, PFN_DOWN(__pa(pgd)));
+>  
+> -	/* Switch over */
+> -	pgd = init_level4_pgt;
+> -
+>  	/*
+>  	 * At this stage there can be no user pgd, and no page
+>  	 * structure to attach it to, so make sure we just set kernel
+>  	 * pgd.
+>  	 */
+>  	xen_mc_batch();
+> -	__xen_write_cr3(true, __pa(pgd));
+> +	__xen_write_cr3(true, __pa(init_level4_pgt));
+>  	xen_mc_issue(PARAVIRT_LAZY_CPU);
+>  
+> -	memblock_reserve(__pa(xen_start_info->pt_base),
+> -			 xen_start_info->nr_pt_frames * PAGE_SIZE);
+> +	/* Offset by one page since the original pgd is going bye bye */
+> +	memblock_reserve(__pa(xen_start_info->pt_base + PAGE_SIZE),
+> +			 (xen_start_info->nr_pt_frames * PAGE_SIZE) - PAGE_SIZE);
+> +	/* and also RW it so it can actually be used. */
+> +	set_page_prot(pgd, PAGE_KERNEL);
+> +	clear_page(pgd);
+>  }
+>  #else	/* !CONFIG_X86_64 */
+>  static RESERVE_BRK_ARRAY(pmd_t, initial_kernel_pmd, PTRS_PER_PMD);
+> -- 
+> 1.7.7.6
+> 
+> 
+> _______________________________________________
+> Xen-devel mailing list
+> Xen-devel@lists.xen.org
+> http://lists.xen.org/xen-devel
+> 

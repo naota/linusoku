@@ -1,0 +1,175 @@
+Path: news.gmane.org!not-for-mail
+From: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] dw_dmac: use devm_* functions to simplify code
+Date: Tue, 24 Jul 2012 11:00:55 +0300
+Lines: 126
+Approved: news@gmane.org
+Message-ID: <1343116855-6804-1-git-send-email-andriy.shevchenko@linux.intel.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343116892 30569 80.91.229.3 (24 Jul 2012 08:01:32 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 08:01:32 +0000 (UTC)
+Cc: Andy Shevchenko <andriy.shevchenko@linux.intel.com>,
+	Viresh Kumar <viresh.linux@gmail.com>
+To: Vinod Koul <vinod.koul@intel.com>, linux-kernel@vger.kernel.org,
+	spear-devel@list.st.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 10:01:29 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sta3c-0002IY-V7
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 10:01:29 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755571Ab2GXIBW (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 04:01:22 -0400
+Original-Received: from mga11.intel.com ([192.55.52.93]:5463 "EHLO mga11.intel.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1755084Ab2GXIBU (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 04:01:20 -0400
+Original-Received: from fmsmga001.fm.intel.com ([10.253.24.23])
+  by fmsmga102.fm.intel.com with ESMTP; 24 Jul 2012 01:01:20 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="4.71,315,1320652800"; 
+   d="scan'208";a="184770186"
+Original-Received: from smile.fi.intel.com (HELO smile) ([10.237.72.164])
+  by fmsmga001.fm.intel.com with ESMTP; 24 Jul 2012 01:01:17 -0700
+Original-Received: from andy by smile with local (Exim 4.80)
+	(envelope-from <andriy.shevchenko@linux.intel.com>)
+	id 1Sta37-0001oz-23; Tue, 24 Jul 2012 11:00:57 +0300
+X-Mailer: git-send-email 1.7.10.4
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332177
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332177>
+
+Use devm_kzalloc, devm_clk_get, devm_request_irq, and devm_request_and_ioremap
+to reduce the code and to simplify the error path.
+
+Signed-off-by: Andy Shevchenko <andriy.shevchenko@linux.intel.com>
+Cc: Viresh Kumar <viresh.linux@gmail.com>
+---
+ drivers/dma/dw_dmac.c      |   53 +++++++++-----------------------------------
+ drivers/dma/dw_dmac_regs.h |    2 --
+ 2 files changed, 10 insertions(+), 45 deletions(-)
+
+diff --git a/drivers/dma/dw_dmac.c b/drivers/dma/dw_dmac.c
+index 3d061c6..832538c 100644
+--- a/drivers/dma/dw_dmac.c
++++ b/drivers/dma/dw_dmac.c
+@@ -1394,26 +1394,17 @@ static int __devinit dw_probe(struct platform_device *pdev)
+ 
+ 	size = sizeof(struct dw_dma);
+ 	size += pdata->nr_channels * sizeof(struct dw_dma_chan);
+-	dw = kzalloc(size, GFP_KERNEL);
++	dw = devm_kzalloc(&pdev->dev, size, GFP_KERNEL);
+ 	if (!dw)
+ 		return -ENOMEM;
+ 
+-	if (!request_mem_region(io->start, DW_REGLEN, pdev->dev.driver->name)) {
+-		err = -EBUSY;
+-		goto err_kfree;
+-	}
+-
+-	dw->regs = ioremap(io->start, DW_REGLEN);
+-	if (!dw->regs) {
+-		err = -ENOMEM;
+-		goto err_release_r;
+-	}
++	dw->regs = devm_request_and_ioremap(&pdev->dev, io);
++	if (!dw->regs)
++		return -EBUSY;
+ 
+-	dw->clk = clk_get(&pdev->dev, "hclk");
+-	if (IS_ERR(dw->clk)) {
+-		err = PTR_ERR(dw->clk);
+-		goto err_clk;
+-	}
++	dw->clk = devm_clk_get(&pdev->dev, "hclk");
++	if (IS_ERR(dw->clk))
++		return PTR_ERR(dw->clk);
+ 	clk_prepare_enable(dw->clk);
+ 
+ 	/* Calculate all channel mask before DMA setup */
+@@ -1425,9 +1416,10 @@ static int __devinit dw_probe(struct platform_device *pdev)
+ 	/* disable BLOCK interrupts as well */
+ 	channel_clear_bit(dw, MASK.BLOCK, dw->all_chan_mask);
+ 
+-	err = request_irq(irq, dw_dma_interrupt, 0, "dw_dmac", dw);
++	err = devm_request_irq(&pdev->dev, irq, dw_dma_interrupt, 0,
++			       "dw_dmac", dw);
+ 	if (err)
+-		goto err_irq;
++		return err;
+ 
+ 	platform_set_drvdata(pdev, dw);
+ 
+@@ -1493,30 +1485,16 @@ static int __devinit dw_probe(struct platform_device *pdev)
+ 	dma_async_device_register(&dw->dma);
+ 
+ 	return 0;
+-
+-err_irq:
+-	clk_disable_unprepare(dw->clk);
+-	clk_put(dw->clk);
+-err_clk:
+-	iounmap(dw->regs);
+-	dw->regs = NULL;
+-err_release_r:
+-	release_resource(io);
+-err_kfree:
+-	kfree(dw);
+-	return err;
+ }
+ 
+ static int __devexit dw_remove(struct platform_device *pdev)
+ {
+ 	struct dw_dma		*dw = platform_get_drvdata(pdev);
+ 	struct dw_dma_chan	*dwc, *_dwc;
+-	struct resource		*io;
+ 
+ 	dw_dma_off(dw);
+ 	dma_async_device_unregister(&dw->dma);
+ 
+-	free_irq(platform_get_irq(pdev, 0), dw);
+ 	tasklet_kill(&dw->tasklet);
+ 
+ 	list_for_each_entry_safe(dwc, _dwc, &dw->dma.channels,
+@@ -1525,17 +1503,6 @@ static int __devexit dw_remove(struct platform_device *pdev)
+ 		channel_clear_bit(dw, CH_EN, dwc->mask);
+ 	}
+ 
+-	clk_disable_unprepare(dw->clk);
+-	clk_put(dw->clk);
+-
+-	iounmap(dw->regs);
+-	dw->regs = NULL;
+-
+-	io = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+-	release_mem_region(io->start, DW_REGLEN);
+-
+-	kfree(dw);
+-
+ 	return 0;
+ }
+ 
+diff --git a/drivers/dma/dw_dmac_regs.h b/drivers/dma/dw_dmac_regs.h
+index 50830be..f6d92d7 100644
+--- a/drivers/dma/dw_dmac_regs.h
++++ b/drivers/dma/dw_dmac_regs.h
+@@ -140,8 +140,6 @@ struct dw_dma_regs {
+ /* Bitfields in CFG */
+ #define DW_CFG_DMA_EN		(1 << 0)
+ 
+-#define DW_REGLEN		0x400
+-
+ enum dw_dmac_flags {
+ 	DW_DMA_IS_CYCLIC = 0,
+ };
+-- 
+1.7.10.4
+

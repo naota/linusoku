@@ -1,0 +1,102 @@
+Path: news.gmane.org!not-for-mail
+From: Denis Efremov <yefremov.denis@gmail.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.scsi
+Subject: [PATCH] tmscsim: spin_unlock_irq in interrupt handler fix
+Date: Sat, 21 Jul 2012 10:48:03 +0400
+Lines: 43
+Approved: news@gmane.org
+Message-ID: <1342853283-32549-1-git-send-email-yefremov.denis@gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1342853162 17925 80.91.229.3 (21 Jul 2012 06:46:02 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sat, 21 Jul 2012 06:46:02 +0000 (UTC)
+Cc: Denis Efremov <yefremov.denis@gmail.com>,
+	Guennadi Liakhovetski <g.liakhovetski@gmx.de>,
+	"James E.J. Bottomley" <JBottomley@parallels.com>,
+	linux-scsi@vger.kernel.org, linux-kernel@vger.kernel.org
+To: Kurt Garloff <garloff@suse.de>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Jul 21 08:46:01 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsTRw-0003bV-V9
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 21 Jul 2012 08:46:01 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751415Ab2GUGpx (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sat, 21 Jul 2012 02:45:53 -0400
+Original-Received: from mail-lb0-f174.google.com ([209.85.217.174]:59566 "EHLO
+	mail-lb0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750804Ab2GUGpv (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sat, 21 Jul 2012 02:45:51 -0400
+Original-Received: by lbbgm6 with SMTP id gm6so5952031lbb.19
+        for <multiple recipients>; Fri, 20 Jul 2012 23:45:50 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer;
+        bh=JkcX8/XcSbLDVO0qNQ/a5ohnzAyA6WwdPDubEyXK35c=;
+        b=zacFOpBVH5C8sZ9D2PTE7tdXZlLUIKDXQAVMZ5vsTL18/01UwaaHY/AESOOAXJgDKR
+         1VJYTVay7aGQVXqI3qyX5ccWeUdABhX2mqj8IgnuSieOWpne9pIl27LPHnRaS7GzfngL
+         EsfOThFTyzWHuo4KBssVW43idQOdM4VGaBNt0OMp2iqTWhwNC7gvURZ1yPgd00EtEY/L
+         pq5yjsSGuxzDUlcC8fxYnXjQAsA0KrlXTfI68Pi2JdWEaSoo7uCx2MXyLgh78KOF8Ae/
+         anUvV72oYBscLLKoZyLhG6eXZQ0R1N7OnAM4IQIQyTR3mXeViZSD651SFX+7euRs0dGI
+         TVJA==
+Original-Received: by 10.152.148.195 with SMTP id tu3mr8993239lab.16.1342853149910;
+        Fri, 20 Jul 2012 23:45:49 -0700 (PDT)
+Original-Received: from localhost.localdomain ([176.14.3.137])
+        by mx.google.com with ESMTPS id gv8sm6915258lab.14.2012.07.20.23.45.48
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Fri, 20 Jul 2012 23:45:49 -0700 (PDT)
+X-Mailer: git-send-email 1.7.7
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331151 gmane.linux.scsi:76469
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331151>
+
+The replacement of spin_lock_irq/spin_unlock_irq pair in interrupt
+handler by spin_lock_irqsave/spin_lock_irqrestore pair.
+
+Found by Linux Driver Verification project (linuxtesting.org).
+
+Signed-off-by: Denis Efremov <yefremov.denis@gmail.com>
+---
+ drivers/scsi/tmscsim.c |    5 +++--
+ 1 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/scsi/tmscsim.c b/drivers/scsi/tmscsim.c
+index a1baccc..0b9d68a 100644
+--- a/drivers/scsi/tmscsim.c
++++ b/drivers/scsi/tmscsim.c
+@@ -654,6 +654,7 @@ DC390_Interrupt(void *dev_id)
+     u8  phase;
+     void   (*stateV)( struct dc390_acb*, struct dc390_srb*, u8 *);
+     u8  istate, istatus;
++    unsigned long flags;
+ 
+     sstatus = DC390_read8 (Scsi_Status);
+     if( !(sstatus & INTERRUPT) )
+@@ -665,7 +666,7 @@ DC390_Interrupt(void *dev_id)
+     //dstatus = DC390_read8 (DMA_Status);
+     //DC390_write32 (DMA_ScsiBusCtrl, EN_INT_ON_PCI_ABORT);
+ 
+-    spin_lock_irq(pACB->pScsiHost->host_lock);
++    spin_lock_irqsave(pACB->pScsiHost->host_lock, flags);
+ 
+     istate = DC390_read8 (Intern_State);
+     istatus = DC390_read8 (INT_Status); /* This clears Scsi_Status, Intern_State and INT_Status ! */
+@@ -736,7 +737,7 @@ DC390_Interrupt(void *dev_id)
+     }
+ 
+  unlock:
+-    spin_unlock_irq(pACB->pScsiHost->host_lock);
++    spin_unlock_irqrestore(pACB->pScsiHost->host_lock, flags);
+     return IRQ_HANDLED;
+ }
+ 
+-- 
+1.7.7
+

@@ -1,0 +1,229 @@
+Path: news.gmane.org!not-for-mail
+From: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.xen.devel
+Subject: [PATCH 1/3] xen/mmu/p2m: Check extend_brk for NULL
+Date: Tue, 31 Jul 2012 06:42:54 -0400
+Lines: 171
+Approved: news@gmane.org
+Message-ID: <1343731376-20658-2-git-send-email-konrad.wilk@oracle.com>
+References: <1343731376-20658-1-git-send-email-konrad.wilk@oracle.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343731966 17430 80.91.229.3 (31 Jul 2012 10:52:46 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 10:52:46 +0000 (UTC)
+Cc: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+To: linux-kernel@vger.kernel.org, xen-devel@lists.xensource.com,
+	Ian.Campbell@citrix.com, hpa@zytor.com, x86@kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 12:52:43 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwA4A-0000TE-L1
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 12:52:43 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755924Ab2GaKwI (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 06:52:08 -0400
+Original-Received: from rcsinet15.oracle.com ([148.87.113.117]:34077 "EHLO
+	rcsinet15.oracle.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755475Ab2GaKwF (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 06:52:05 -0400
+Original-Received: from acsinet22.oracle.com (acsinet22.oracle.com [141.146.126.238])
+	by rcsinet15.oracle.com (Sentrion-MTA-4.2.2/Sentrion-MTA-4.2.2) with ESMTP id q6VApwGQ016594
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Tue, 31 Jul 2012 10:51:59 GMT
+Original-Received: from acsmt356.oracle.com (acsmt356.oracle.com [141.146.40.156])
+	by acsinet22.oracle.com (8.14.4+Sun/8.14.4) with ESMTP id q6VApw0T018755
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=NO);
+	Tue, 31 Jul 2012 10:51:58 GMT
+Original-Received: from abhmt102.oracle.com (abhmt102.oracle.com [141.146.116.54])
+	by acsmt356.oracle.com (8.12.11.20060308/8.12.11) with ESMTP id q6VApwOT005195;
+	Tue, 31 Jul 2012 05:51:58 -0500
+Original-Received: from phenom.dumpdata.com (/209.6.85.33)
+	by default (Oracle Beehive Gateway v4.0)
+	with ESMTP ; Tue, 31 Jul 2012 03:51:57 -0700
+Original-Received: by phenom.dumpdata.com (Postfix, from userid 1000)
+	id 7C3C1401A5; Tue, 31 Jul 2012 06:42:57 -0400 (EDT)
+X-Mailer: git-send-email 1.7.7.6
+In-Reply-To: <1343731376-20658-1-git-send-email-konrad.wilk@oracle.com>
+X-Source-IP: acsinet22.oracle.com [141.146.126.238]
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335632 gmane.comp.emulators.xen.devel:135938
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335632>
+
+Which allows us to be a bit smarter in case we exhaust the reserved
+virtual space.
+
+[v1: Suggested by Ian Campbell]
+Signed-off-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+---
+ arch/x86/xen/enlighten.c |    2 ++
+ arch/x86/xen/mmu.c       |    5 ++++-
+ arch/x86/xen/p2m.c       |   35 ++++++++++++++++++++++++-----------
+ 3 files changed, 30 insertions(+), 12 deletions(-)
+
+diff --git a/arch/x86/xen/enlighten.c b/arch/x86/xen/enlighten.c
+index 993e2a5..923d98e 100644
+--- a/arch/x86/xen/enlighten.c
++++ b/arch/x86/xen/enlighten.c
+@@ -1519,6 +1519,8 @@ void __ref xen_hvm_init_shared_info(void)
+ 	if (!shared_info_page)
+ 		shared_info_page = (struct shared_info *)
+ 			extend_brk(PAGE_SIZE, PAGE_SIZE);
++	if (!shared_info_page)
++		return;
+ 	xatp.domid = DOMID_SELF;
+ 	xatp.idx = 0;
+ 	xatp.space = XENMAPSPACE_shared_info;
+diff --git a/arch/x86/xen/mmu.c b/arch/x86/xen/mmu.c
+index 993ba07..d7a2044 100644
+--- a/arch/x86/xen/mmu.c
++++ b/arch/x86/xen/mmu.c
+@@ -1711,6 +1711,8 @@ static void __init xen_map_identity_early(pmd_t *pmd, unsigned long max_pfn)
+ 
+ 	level1_ident_pgt = extend_brk(sizeof(pte_t) * LEVEL1_IDENT_ENTRIES,
+ 				      PAGE_SIZE);
++	if (!level_ident_pgt)
++		goto out;
+ 
+ 	ident_pte = 0;
+ 	pfn = 0;
+@@ -1750,7 +1752,7 @@ static void __init xen_map_identity_early(pmd_t *pmd, unsigned long max_pfn)
+ 
+ 	for (pteidx = 0; pteidx < ident_pte; pteidx += PTRS_PER_PTE)
+ 		set_page_prot(&level1_ident_pgt[pteidx], PAGE_KERNEL_RO);
+-
++out:
+ 	set_page_prot(pmd, PAGE_KERNEL_RO);
+ }
+ #endif
+@@ -1948,6 +1950,7 @@ void __init xen_setup_kernel_pagetable(pgd_t *pgd, unsigned long max_pfn)
+ 
+ 	initial_kernel_pmd =
+ 		extend_brk(sizeof(pmd_t) * PTRS_PER_PMD, PAGE_SIZE);
++	BUG_ON(!initial_kernel_pmd);
+ 
+ 	max_pfn_mapped = PFN_DOWN(__pa(xen_start_info->pt_base) +
+ 				  xen_start_info->nr_pt_frames * PAGE_SIZE +
+diff --git a/arch/x86/xen/p2m.c b/arch/x86/xen/p2m.c
+index bbfd085..1658af0 100644
+--- a/arch/x86/xen/p2m.c
++++ b/arch/x86/xen/p2m.c
+@@ -258,6 +258,13 @@ static void p2m_init(unsigned long *p2m)
+ 		p2m[i] = INVALID_P2M_ENTRY;
+ }
+ 
++static __always_inline __init void *brk_alloc_page(void)
++{
++	void *p = extend_brk(PAGE_SIZE, PAGE_SIZE);
++	/* So early that printk does not function. */
++	BUG_ON(p == NULL);
++	return p;
++}
+ /*
+  * Build the parallel p2m_top_mfn and p2m_mid_mfn structures
+  *
+@@ -274,13 +281,13 @@ void __ref xen_build_mfn_list_list(void)
+ 
+ 	/* Pre-initialize p2m_top_mfn to be completely missing */
+ 	if (p2m_top_mfn == NULL) {
+-		p2m_mid_missing_mfn = extend_brk(PAGE_SIZE, PAGE_SIZE);
++		p2m_mid_missing_mfn = brk_alloc_page();
+ 		p2m_mid_mfn_init(p2m_mid_missing_mfn);
+ 
+-		p2m_top_mfn_p = extend_brk(PAGE_SIZE, PAGE_SIZE);
++		p2m_top_mfn_p = brk_alloc_page();
+ 		p2m_top_mfn_p_init(p2m_top_mfn_p);
+ 
+-		p2m_top_mfn = extend_brk(PAGE_SIZE, PAGE_SIZE);
++		p2m_top_mfn = brk_alloc_page();
+ 		p2m_top_mfn_init(p2m_top_mfn);
+ 	} else {
+ 		/* Reinitialise, mfn's all change after migration */
+@@ -312,10 +319,10 @@ void __ref xen_build_mfn_list_list(void)
+ 			/*
+ 			 * XXX boot-time only!  We should never find
+ 			 * missing parts of the mfn tree after
+-			 * runtime.  extend_brk() will BUG if we call
++			 * runtime.  brk_alloc_page() will BUG if we call
+ 			 * it too late.
+ 			 */
+-			mid_mfn_p = extend_brk(PAGE_SIZE, PAGE_SIZE);
++			mid_mfn_p = brk_alloc_page();
+ 			p2m_mid_mfn_init(mid_mfn_p);
+ 
+ 			p2m_top_mfn_p[topidx] = mid_mfn_p;
+@@ -344,16 +351,16 @@ void __init xen_build_dynamic_phys_to_machine(void)
+ 
+ 	xen_max_p2m_pfn = max_pfn;
+ 
+-	p2m_missing = extend_brk(PAGE_SIZE, PAGE_SIZE);
++	p2m_missing = brk_alloc_page();
+ 	p2m_init(p2m_missing);
+ 
+-	p2m_mid_missing = extend_brk(PAGE_SIZE, PAGE_SIZE);
++	p2m_mid_missing = brk_alloc_page();
+ 	p2m_mid_init(p2m_mid_missing);
+ 
+-	p2m_top = extend_brk(PAGE_SIZE, PAGE_SIZE);
++	p2m_top = brk_alloc_page();
+ 	p2m_top_init(p2m_top);
+ 
+-	p2m_identity = extend_brk(PAGE_SIZE, PAGE_SIZE);
++	p2m_identity = brk_alloc_page();
+ 	p2m_init(p2m_identity);
+ 
+ 	/*
+@@ -366,7 +373,7 @@ void __init xen_build_dynamic_phys_to_machine(void)
+ 		unsigned mididx = p2m_mid_index(pfn);
+ 
+ 		if (p2m_top[topidx] == p2m_mid_missing) {
+-			unsigned long **mid = extend_brk(PAGE_SIZE, PAGE_SIZE);
++			unsigned long **mid = brk_alloc_page();
+ 			p2m_mid_init(mid);
+ 
+ 			p2m_top[topidx] = mid;
+@@ -600,6 +607,8 @@ static bool __init early_alloc_p2m_middle(unsigned long pfn, bool check_boundary
+ 
+ 	/* Boundary cross-over for the edges: */
+ 	p2m = extend_brk(PAGE_SIZE, PAGE_SIZE);
++	if (!p2m)
++		return false;
+ 
+ 	p2m_init(p2m);
+ 
+@@ -626,7 +635,8 @@ static bool __init early_alloc_p2m(unsigned long pfn)
+ 	mid_mfn_p = p2m_top_mfn_p[topidx];
+ 	if (mid == p2m_mid_missing) {
+ 		mid = extend_brk(PAGE_SIZE, PAGE_SIZE);
+-
++		if (!mid)
++			return false;
+ 		p2m_mid_init(mid);
+ 
+ 		p2m_top[topidx] = mid;
+@@ -636,6 +646,8 @@ static bool __init early_alloc_p2m(unsigned long pfn)
+ 	/* And the save/restore P2M tables.. */
+ 	if (mid_mfn_p == p2m_mid_missing_mfn) {
+ 		mid_mfn_p = extend_brk(PAGE_SIZE, PAGE_SIZE);
++		if (!mid_mfn_p)
++			return false;
+ 		p2m_mid_mfn_init(mid_mfn_p);
+ 
+ 		p2m_top_mfn_p[topidx] = mid_mfn_p;
+@@ -762,6 +774,7 @@ static void __init m2p_override_init(void)
+ 
+ 	m2p_overrides = extend_brk(sizeof(*m2p_overrides) * M2P_OVERRIDE_HASH,
+ 				   sizeof(unsigned long));
++	BUG_ON(!m2p_overrides);
+ 
+ 	for (i = 0; i < M2P_OVERRIDE_HASH; i++)
+ 		INIT_LIST_HEAD(&m2p_overrides[i]);
+-- 
+1.7.7.6
+

@@ -1,0 +1,112 @@
+Path: news.gmane.org!not-for-mail
+From: Manfred Spraul <manfred@colorfullife.com>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH] ipc/sem.c: prevent ENOMEM in semop() w/ SEM_UNDO flag
+Date: Tue, 7 Aug 2012 13:10:07 +0200
+Lines: 52
+Approved: news@gmane.org
+Message-ID: <CALgW_8V=E0kuArcFCUXTOuNiay794Nd8tge=T65q0Fxp2Wnaow@mail.gmail.com>
+References: <501BC8BE.6000405@jp.fujitsu.com>
+	<501C0CB6.7070409@colorfullife.com>
+	<501EFED2.1070901@jp.fujitsu.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+X-Trace: dough.gmane.org 1344337824 14917 80.91.229.3 (7 Aug 2012 11:10:24 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 11:10:24 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org
+To: Seiichi Ikarashi <s.ikarashi@jp.fujitsu.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 13:10:22 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Syhg5-000707-1U
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 13:10:21 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754160Ab2HGLKJ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 07:10:09 -0400
+Original-Received: from mail-vb0-f46.google.com ([209.85.212.46]:60639 "EHLO
+	mail-vb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753704Ab2HGLKI (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 07:10:08 -0400
+Original-Received: by vbbff1 with SMTP id ff1so3259430vbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 04:10:07 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=mime-version:in-reply-to:references:date:message-id:subject:from:to
+         :cc:content-type:x-gm-message-state;
+        bh=YPXHkI8qPIev4kJf+vkrRqkPMjI/6wnuMFBH6eD9BVc=;
+        b=IuX+U0a5j4G+pcnqtS4fgsV75IPYUrIJkJRWOkMF0YR1yCRTO/TWZC8wx+Vr0gk4Bk
+         v8I1/yGiff6AjHvAPPeQdRtMkGoh+L9C2/+F7C0hBoXikug2Pdt/p0dr78GBgjXD37C7
+         FPvXVrpouBW5V3Q6+wA0VbJAyZ/3A6wllul4saz8a6P5iRZ3fv/w0Uu2eU2leStRCFPQ
+         RHSsNgRhc3Z4qE4aN/26946X0DS16xLlcA5ePXG6itaftlV7qUhloYIx8mMcZ2kG0YK7
+         NWq6It51cIpz4ozfnFkwXxEzmh+RHFNQsrV2fqSw3f1Kx0ZjFFEuYT519SFTjUfbu9uJ
+         LgsQ==
+Original-Received: by 10.58.31.228 with SMTP id d4mr12043028vei.40.1344337807165; Tue,
+ 07 Aug 2012 04:10:07 -0700 (PDT)
+Original-Received: by 10.52.110.103 with HTTP; Tue, 7 Aug 2012 04:10:07 -0700 (PDT)
+In-Reply-To: <501EFED2.1070901@jp.fujitsu.com>
+X-Gm-Message-State: ALoCoQl5VTH0CG+j8fsNN4WIRaIE4iHFRI/Q2Igcf+SkkytAXGYYjXT8RM9C8Lf8IXeASxbJXEYb
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338941
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338941>
+
+Hi Seiichi,
+
+2012/8/6 Seiichi Ikarashi <s.ikarashi@jp.fujitsu.com>
+>
+>
+>  A real case was as follows.
+>      semget(IPC_PRIVATE, 70000, IPC_CREAT | IPC_EXCL);
+>      sops[0].sem_num = 0;
+>      sops[0].sem_op  = 1;
+>      sops[0].sem_flg = SEM_UNDO;
+>      semop(semid, sops, 1);
+>
+
+I think this can't work: sops[].sem_num is defined as "unsigned short".
+Thus more than 65500 semaphores in one semaphore set do not make
+any sense.
+"unsigned short" is also specified in the opengroup standard:
+
+http://pubs.opengroup.org/onlinepubs/7908799/xsh/syssem.h.html
+
+Thus: The hard limit is 65535. Perhaps slightly less, I haven't checked
+if (-1) is used somewhere to indicate an error.
+
+Is it possible to split the semaphores into multiple semphore ids?
+e.g. 70 ids, each with 1000 semaphores?
+
+The atomicity would be lost (e.g. all SEM_UNDO operations within
+one id are performed at once. With 70 ids, the SEM_UNDOs are not
+atomic anymore)
+
+>
+>    #define SEMMSL  250             /* <= 8 000 max num of semaphores per id */
+>
+
+As far as I can see your patch removes the last part of the code that
+caused the restriction to 8.000 semaphores per id.
+
+Thus I'd propose that your patch changes this line to
+
++ #define SEMMSL  250             /* <= 65 500 max num of semaphores per id */
+
+And:
+I would add a comment into the patch description all semaphores
+from one id share a single kernel spinlock. This could be changed, but
+it would
+a) add complexity for all users and
+b) change user space visible behavior
+Thus I would prefer to avoid to implement it unless there are real
+applications that need this implementation.
+
+--
+  Manfred

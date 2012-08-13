@@ -1,0 +1,167 @@
+Path: news.gmane.org!not-for-mail
+From: Marcelo Tosatti <mtosatti@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.kvm.devel
+Subject: Re: [PATCH RFC V5 0/3] kvm: Improving directed yield in PLE handler
+Date: Fri, 20 Jul 2012 14:36:40 -0300
+Lines: 98
+Approved: news@gmane.org
+Message-ID: <20120720173640.GA22659@amt.cnet>
+References: <20120718133717.5321.71347.sendpatchset@codeblue.in.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1342805861 7308 80.91.229.3 (20 Jul 2012 17:37:41 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 17:37:41 +0000 (UTC)
+Cc: "H. Peter Anvin" <hpa@zytor.com>,
+	Thomas Gleixner <tglx@linutronix.de>,
+	Ingo Molnar <mingo@redhat.com>, Avi Kivity <avi@redhat.com>,
+	Rik van Riel <riel@redhat.com>,
+	Srikar <srikar@linux.vnet.ibm.com>,
+	S390 <linux-s390@vger.kernel.org>,
+	Carsten Otte <cotte@de.ibm.com>,
+	Christian Borntraeger <borntraeger@de.ibm.com>,
+	KVM <kvm@vger.kernel.org>, chegu vinod <chegu_vinod@hp.com>,
+	"Andrew M. Theurer" <habanero@linux.vnet.ibm.com>,
+	LKML <linux-kernel@vger.kernel.org>, X86 <x86@kernel.org>,
+	Gleb Natapov <gleb@redhat.com>, linux390@de.ibm.com,
+	Srivatsa Vaddagiri <srivatsa.vaddagiri@gmail.com>,
+	Joerg Roedel <joerg.roedel@amd.com>
+To: Raghavendra K T <raghavendra.kt@linux.vnet.ibm.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 19:37:36 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsH8v-00010h-9t
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 19:37:33 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753398Ab2GTRhZ (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 13:37:25 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:61051 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753039Ab2GTRhX (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 13:37:23 -0400
+Original-Received: from int-mx11.intmail.prod.int.phx2.redhat.com (int-mx11.intmail.prod.int.phx2.redhat.com [10.5.11.24])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6KHb4Hd030068
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Fri, 20 Jul 2012 13:37:04 -0400
+Original-Received: from amt.cnet (vpn1-7-169.ams2.redhat.com [10.36.7.169])
+	by int-mx11.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q6KHb2xS031120;
+	Fri, 20 Jul 2012 13:37:03 -0400
+Original-Received: from amt.cnet (amt.cnet [127.0.0.1])
+	by amt.cnet (Postfix) with ESMTP id 254D6652097;
+	Fri, 20 Jul 2012 14:36:49 -0300 (BRT)
+Original-Received: (from marcelo@localhost)
+	by amt.cnet (8.14.5/8.14.5/Submit) id q6KHaeYu022688;
+	Fri, 20 Jul 2012 14:36:40 -0300
+Content-Disposition: inline
+In-Reply-To: <20120718133717.5321.71347.sendpatchset@codeblue.in.ibm.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.24
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330974 gmane.comp.emulators.kvm.devel:94788
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330974>
+
+On Wed, Jul 18, 2012 at 07:07:17PM +0530, Raghavendra K T wrote:
+> 
+> Currently Pause Loop Exit (PLE) handler is doing directed yield to a
+> random vcpu on pl-exit. We already have filtering while choosing
+> the candidate to yield_to. This change adds more checks while choosing
+> a candidate to yield_to.
+> 
+> On a large vcpu guests, there is a high probability of
+> yielding to the same vcpu who had recently done a pause-loop exit. 
+> Such a yield can lead to the vcpu spinning again.
+> 
+> The patchset keeps track of the pause loop exit and gives chance to a
+> vcpu which has:
+> 
+>  (a) Not done pause loop exit at all (probably he is preempted lock-holder)
+> 
+>  (b) vcpu skipped in last iteration because it did pause loop exit, and
+>  probably has become eligible now (next eligible lock holder)
+> 
+> This concept also helps in cpu relax interception cases which use same handler.
+> 
+> Changes since V4:
+>  - Naming Change (Avi):
+>   struct ple ==> struct spin_loop
+>   cpu_relax_intercepted ==> in_spin_loop
+>   vcpu_check_and_update_eligible ==> vcpu_eligible_for_directed_yield
+>  - mark vcpu in spinloop as not eligible to avoid influence of previous exit
+> 
+> Changes since V3:
+>  - arch specific fix/changes (Christian)
+> 
+> Changes since v2:
+>  - Move ple structure to common code (Avi)
+>  - rename pause_loop_exited to cpu_relax_intercepted (Avi)
+>  - add config HAVE_KVM_CPU_RELAX_INTERCEPT (Avi)
+>  - Drop superfluous curly braces (Ingo)
+> 
+> Changes since v1:
+>  - Add more documentation for structure and algorithm and Rename
+>    plo ==> ple (Rik).
+>  - change dy_eligible initial value to false. (otherwise very first directed
+>     yield will not be skipped. (Nikunj)
+>  - fixup signoff/from issue
+> 
+> Future enhancements:
+>   (1) Currently we have a boolean to decide on eligibility of vcpu. It
+>     would be nice if I get feedback on guest (>32 vcpu) whether we can
+>     improve better with integer counter. (with counter = say f(log n )).
+>   
+>   (2) We have not considered system load during iteration of vcpu. With
+>    that information we can limit the scan and also decide whether schedule()
+>    is better. [ I am able to use #kicked vcpus to decide on this But may
+>    be there are better ideas like information from global loadavg.]
+> 
+>   (3) We can exploit this further with PV patches since it also knows about
+>    next eligible lock-holder.
+> 
+> Summary: There is a very good improvement for kvm based guest on PLE machine.
+> The V5 has huge improvement for kbench.
+> 
+> +-----------+-----------+-----------+------------+-----------+
+>    base_rik    stdev       patched      stdev       %improve
+> +-----------+-----------+-----------+------------+-----------+
+>               kernbench (time in sec lesser is better)
+> +-----------+-----------+-----------+------------+-----------+
+>  1x    49.2300     1.0171    22.6842     0.3073    117.0233 %
+>  2x    91.9358     1.7768    53.9608     1.0154    70.37516 %
+> +-----------+-----------+-----------+------------+-----------+
+> 
+> +-----------+-----------+-----------+------------+-----------+
+>               ebizzy (records/sec more is better)
+> +-----------+-----------+-----------+------------+-----------+
+>  1x  1129.2500    28.6793    2125.6250    32.8239    88.23334 %
+>  2x  1892.3750    75.1112    2377.1250   181.6822    25.61596 %
+> +-----------+-----------+-----------+------------+-----------+
+> 
+> Note: The patches are tested on x86.
+> 
+>  Links
+>   V4: https://lkml.org/lkml/2012/7/16/80
+>   V3: https://lkml.org/lkml/2012/7/12/437
+>   V2: https://lkml.org/lkml/2012/7/10/392
+>   V1: https://lkml.org/lkml/2012/7/9/32
+> 
+>  Raghavendra K T (3):
+>    config: Add config to support ple or cpu relax optimzation 
+>    kvm : Note down when cpu relax intercepted or pause loop exited 
+>    kvm : Choose a better candidate for directed yield 
+> ---
+>  arch/s390/kvm/Kconfig    |    1 +
+>  arch/x86/kvm/Kconfig     |    1 +
+>  include/linux/kvm_host.h |   39 +++++++++++++++++++++++++++++++++++++++
+>  virt/kvm/Kconfig         |    3 +++
+>  virt/kvm/kvm_main.c      |   41 +++++++++++++++++++++++++++++++++++++++++
+>  5 files changed, 85 insertions(+), 0 deletions(-)
+
+Reviewed-by: Marcelo Tosatti <mtosatti@redhat.com>
+

@@ -1,0 +1,434 @@
+Path: news.gmane.org!not-for-mail
+From: Steven Whitehouse <swhiteho@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.cluster.redhat.cluster.devel
+Subject: [PATCH 01/16] GFS2: Extend the life of the reservations
+Date: Mon, 23 Jul 2012 09:00:51 +0100
+Lines: 387
+Approved: news@gmane.org
+Message-ID: <1343030466-3053-2-git-send-email-swhiteho@redhat.com>
+References: <1343030466-3053-1-git-send-email-swhiteho@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343031993 908 80.91.229.3 (23 Jul 2012 08:26:33 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jul 2012 08:26:33 +0000 (UTC)
+Cc: Bob Peterson <rpeterso@redhat.com>,
+	Steven Whitehouse <swhiteho@redhat.com>
+To: linux-kernel@vger.kernel.org, cluster-devel@redhat.com
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jul 23 10:26:33 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StDyK-00065c-IS
+	for glk-linux-kernel-3@plane.gmane.org; Mon, 23 Jul 2012 10:26:33 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754073Ab2GWI0U (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jul 2012 04:26:20 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:15863 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751063Ab2GWI0L (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jul 2012 04:26:11 -0400
+Original-Received: from int-mx01.intmail.prod.int.phx2.redhat.com (int-mx01.intmail.prod.int.phx2.redhat.com [10.5.11.11])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q6N8QAKn023264
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK)
+	for <linux-kernel@vger.kernel.org>; Mon, 23 Jul 2012 04:26:11 -0400
+Original-Received: from chywoon.redhat.com (vpn1-5-152.ams2.redhat.com [10.36.5.152])
+	by int-mx01.intmail.prod.int.phx2.redhat.com (8.13.8/8.13.8) with ESMTP id q6N8Px9Y016610;
+	Mon, 23 Jul 2012 04:26:04 -0400
+In-Reply-To: <1343030466-3053-1-git-send-email-swhiteho@redhat.com>
+X-Scanned-By: MIMEDefang 2.67 on 10.5.11.11
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331657 gmane.linux.cluster.redhat.cluster.devel:7187
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331657>
+
+From: Bob Peterson <rpeterso@redhat.com>
+
+This patch lengthens the lifespan of the reservations structure for
+inodes. Before, they were allocated and deallocated for every write
+operation. With this patch, they are allocated when the first write
+occurs, and deallocated when the last process closes the file.
+It's more efficient to do it this way because it saves GFS2 a lot of
+unnecessary allocates and frees. It also gives us more flexibility
+for the future: (1) we can now fold the qadata structure back into
+the structure and save those alloc/frees, (2) we can use this for
+multi-block reservations.
+
+Signed-off-by: Bob Peterson <rpeterso@redhat.com>
+Signed-off-by: Steven Whitehouse <swhiteho@redhat.com>
+
+diff --git a/fs/gfs2/aops.c b/fs/gfs2/aops.c
+index e80a464..aba77b5 100644
+--- a/fs/gfs2/aops.c
++++ b/fs/gfs2/aops.c
+@@ -878,7 +878,7 @@ static int gfs2_write_end(struct file *file, struct address_space *mapping,
+ 	brelse(dibh);
+ failed:
+ 	gfs2_trans_end(sdp);
+-	if (ip->i_res)
++	if (gfs2_mb_reserved(ip))
+ 		gfs2_inplace_release(ip);
+ 	if (qa) {
+ 		gfs2_quota_unlock(ip);
+diff --git a/fs/gfs2/file.c b/fs/gfs2/file.c
+index 31b199f..3790617 100644
+--- a/fs/gfs2/file.c
++++ b/fs/gfs2/file.c
+@@ -376,6 +376,10 @@ static int gfs2_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
+ 	 */
+ 	vfs_check_frozen(inode->i_sb, SB_FREEZE_WRITE);
+ 
++	ret = gfs2_rs_alloc(ip);
++	if (ret)
++		return ret;
++
+ 	gfs2_holder_init(ip->i_gl, LM_ST_EXCLUSIVE, 0, &gh);
+ 	ret = gfs2_glock_nq(&gh);
+ 	if (ret)
+@@ -569,10 +573,15 @@ static int gfs2_release(struct inode *inode, struct file *file)
+ {
+ 	struct gfs2_sbd *sdp = inode->i_sb->s_fs_info;
+ 	struct gfs2_file *fp;
++	struct gfs2_inode *ip = GFS2_I(inode);
+ 
+ 	fp = file->private_data;
+ 	file->private_data = NULL;
+ 
++	if ((file->f_mode & FMODE_WRITE) && ip->i_res &&
++	    (atomic_read(&inode->i_writecount) == 1))
++		gfs2_rs_delete(ip);
++
+ 	if (gfs2_assert_warn(sdp, fp))
+ 		return -EIO;
+ 
+@@ -653,12 +662,16 @@ static ssize_t gfs2_file_aio_write(struct kiocb *iocb, const struct iovec *iov,
+ 				   unsigned long nr_segs, loff_t pos)
+ {
+ 	struct file *file = iocb->ki_filp;
++	struct dentry *dentry = file->f_dentry;
++	struct gfs2_inode *ip = GFS2_I(dentry->d_inode);
++	int ret;
++
++	ret = gfs2_rs_alloc(ip);
++	if (ret)
++		return ret;
+ 
+ 	if (file->f_flags & O_APPEND) {
+-		struct dentry *dentry = file->f_dentry;
+-		struct gfs2_inode *ip = GFS2_I(dentry->d_inode);
+ 		struct gfs2_holder gh;
+-		int ret;
+ 
+ 		ret = gfs2_glock_nq_init(ip->i_gl, LM_ST_SHARED, 0, &gh);
+ 		if (ret)
+@@ -774,6 +787,10 @@ static long gfs2_fallocate(struct file *file, int mode, loff_t offset,
+ 	if (bytes == 0)
+ 		bytes = sdp->sd_sb.sb_bsize;
+ 
++	error = gfs2_rs_alloc(ip);
++	if (error)
++		return error;
++
+ 	gfs2_holder_init(ip->i_gl, LM_ST_EXCLUSIVE, 0, &ip->i_gh);
+ 	error = gfs2_glock_nq(&ip->i_gh);
+ 	if (unlikely(error))
+diff --git a/fs/gfs2/inode.c b/fs/gfs2/inode.c
+index a9ba244..2a1b4b5 100644
+--- a/fs/gfs2/inode.c
++++ b/fs/gfs2/inode.c
+@@ -667,6 +667,10 @@ static int gfs2_create_inode(struct inode *dir, struct dentry *dentry,
+ 	if (!name->len || name->len > GFS2_FNAMESIZE)
+ 		return -ENAMETOOLONG;
+ 
++	error = gfs2_rs_alloc(dip);
++	if (error)
++		return error;
++
+ 	error = gfs2_glock_nq_init(dip->i_gl, LM_ST_EXCLUSIVE, 0, ghs);
+ 	if (error)
+ 		goto fail;
+@@ -704,6 +708,11 @@ static int gfs2_create_inode(struct inode *dir, struct dentry *dentry,
+ 	if (error)
+ 		goto fail_gunlock2;
+ 
++	/* the new inode needs a reservation so it can allocate xattrs. */
++	error = gfs2_rs_alloc(GFS2_I(inode));
++	if (error)
++		goto fail_gunlock2;
++
+ 	error = gfs2_acl_create(dip, inode);
+ 	if (error)
+ 		goto fail_gunlock2;
+@@ -722,7 +731,7 @@ static int gfs2_create_inode(struct inode *dir, struct dentry *dentry,
+ 	gfs2_trans_end(sdp);
+ 	/* Check if we reserved space in the rgrp. Function link_dinode may
+ 	   not, depending on whether alloc is required. */
+-	if (dip->i_res)
++	if (gfs2_mb_reserved(dip))
+ 		gfs2_inplace_release(dip);
+ 	gfs2_quota_unlock(dip);
+ 	gfs2_qadata_put(dip);
+@@ -819,6 +828,10 @@ static int gfs2_link(struct dentry *old_dentry, struct inode *dir,
+ 	if (S_ISDIR(inode->i_mode))
+ 		return -EPERM;
+ 
++	error = gfs2_rs_alloc(dip);
++	if (error)
++		return error;
++
+ 	gfs2_holder_init(dip->i_gl, LM_ST_EXCLUSIVE, 0, ghs);
+ 	gfs2_holder_init(ip->i_gl, LM_ST_EXCLUSIVE, 0, ghs + 1);
+ 
+@@ -1234,6 +1247,10 @@ static int gfs2_rename(struct inode *odir, struct dentry *odentry,
+ 	if (error)
+ 		return error;
+ 
++	error = gfs2_rs_alloc(ndip);
++	if (error)
++		return error;
++
+ 	if (odip != ndip) {
+ 		error = gfs2_glock_nq_init(sdp->sd_rename_gl, LM_ST_EXCLUSIVE,
+ 					   0, &r_gh);
+@@ -1644,6 +1661,10 @@ static int gfs2_setattr(struct dentry *dentry, struct iattr *attr)
+ 	struct gfs2_holder i_gh;
+ 	int error;
+ 
++	error = gfs2_rs_alloc(ip);
++	if (error)
++		return error;
++
+ 	error = gfs2_glock_nq_init(ip->i_gl, LM_ST_EXCLUSIVE, 0, &i_gh);
+ 	if (error)
+ 		return error;
+diff --git a/fs/gfs2/quota.c b/fs/gfs2/quota.c
+index b97178e..197cc2d 100644
+--- a/fs/gfs2/quota.c
++++ b/fs/gfs2/quota.c
+@@ -764,6 +764,10 @@ static int do_sync(unsigned int num_qd, struct gfs2_quota_data **qda)
+ 	unsigned int nalloc = 0, blocks;
+ 	int error;
+ 
++	error = gfs2_rs_alloc(ip);
++	if (error)
++		return error;
++
+ 	gfs2_write_calc_reserv(ip, sizeof(struct gfs2_quota),
+ 			      &data_blocks, &ind_blocks);
+ 
+@@ -1549,10 +1553,14 @@ static int gfs2_set_dqblk(struct super_block *sb, int type, qid_t id,
+ 	if (error)
+ 		return error;
+ 
++	error = gfs2_rs_alloc(ip);
++	if (error)
++		goto out_put;
++
+ 	mutex_lock(&ip->i_inode.i_mutex);
+ 	error = gfs2_glock_nq_init(qd->qd_gl, LM_ST_EXCLUSIVE, 0, &q_gh);
+ 	if (error)
+-		goto out_put;
++		goto out_unlockput;
+ 	error = gfs2_glock_nq_init(ip->i_gl, LM_ST_EXCLUSIVE, 0, &i_gh);
+ 	if (error)
+ 		goto out_q;
+@@ -1609,8 +1617,9 @@ out_i:
+ 	gfs2_glock_dq_uninit(&i_gh);
+ out_q:
+ 	gfs2_glock_dq_uninit(&q_gh);
+-out_put:
++out_unlockput:
+ 	mutex_unlock(&ip->i_inode.i_mutex);
++out_put:
+ 	qd_put(qd);
+ 	return error;
+ }
+diff --git a/fs/gfs2/rgrp.c b/fs/gfs2/rgrp.c
+index f74fb9b..e944fef 100644
+--- a/fs/gfs2/rgrp.c
++++ b/fs/gfs2/rgrp.c
+@@ -417,6 +417,39 @@ void gfs2_free_clones(struct gfs2_rgrpd *rgd)
+ 	}
+ }
+ 
++/**
++ * gfs2_rs_alloc - make sure we have a reservation assigned to the inode
++ * @ip: the inode for this reservation
++ */
++int gfs2_rs_alloc(struct gfs2_inode *ip)
++{
++	int error = 0;
++
++	down_write(&ip->i_rw_mutex);
++	if (!ip->i_res) {
++		ip->i_res = kmem_cache_zalloc(gfs2_rsrv_cachep, GFP_NOFS);
++		if (!ip->i_res)
++			error = -ENOMEM;
++	}
++	up_write(&ip->i_rw_mutex);
++	return error;
++}
++
++/**
++ * gfs2_rs_delete - delete a reservation
++ * @ip: The inode for this reservation
++ *
++ */
++void gfs2_rs_delete(struct gfs2_inode *ip)
++{
++	down_write(&ip->i_rw_mutex);
++	if (ip->i_res) {
++		kmem_cache_free(gfs2_rsrv_cachep, ip->i_res);
++		ip->i_res = NULL;
++	}
++	up_write(&ip->i_rw_mutex);
++}
++
+ void gfs2_clear_rgrpd(struct gfs2_sbd *sdp)
+ {
+ 	struct rb_node *n;
+@@ -993,22 +1026,6 @@ struct gfs2_qadata *gfs2_qadata_get(struct gfs2_inode *ip)
+ }
+ 
+ /**
+- * gfs2_blkrsv_get - get the struct gfs2_blkreserv structure for an inode
+- * @ip: the incore GFS2 inode structure
+- *
+- * Returns: the struct gfs2_qadata
+- */
+-
+-static int gfs2_blkrsv_get(struct gfs2_inode *ip)
+-{
+-	BUG_ON(ip->i_res != NULL);
+-	ip->i_res = kmem_cache_zalloc(gfs2_rsrv_cachep, GFP_NOFS);
+-	if (!ip->i_res)
+-		return -ENOMEM;
+-	return 0;
+-}
+-
+-/**
+  * try_rgrp_fit - See if a given reservation will fit in a given RG
+  * @rgd: the RG data
+  * @ip: the inode
+@@ -1162,13 +1179,6 @@ static int get_local_rgrp(struct gfs2_inode *ip, u64 *last_unlinked)
+ 	return -ENOSPC;
+ }
+ 
+-static void gfs2_blkrsv_put(struct gfs2_inode *ip)
+-{
+-	BUG_ON(ip->i_res == NULL);
+-	kmem_cache_free(gfs2_rsrv_cachep, ip->i_res);
+-	ip->i_res = NULL;
+-}
+-
+ /**
+  * gfs2_inplace_reserve - Reserve space in the filesystem
+  * @ip: the inode to reserve space for
+@@ -1181,14 +1191,10 @@ int gfs2_inplace_reserve(struct gfs2_inode *ip, u32 requested)
+ {
+ 	struct gfs2_sbd *sdp = GFS2_SB(&ip->i_inode);
+ 	struct gfs2_blkreserv *rs;
+-	int error;
++	int error = 0;
+ 	u64 last_unlinked = NO_BLOCK;
+ 	int tries = 0;
+ 
+-	error = gfs2_blkrsv_get(ip);
+-	if (error)
+-		return error;
+-
+ 	rs = ip->i_res;
+ 	rs->rs_requested = requested;
+ 	if (gfs2_assert_warn(sdp, requested)) {
+@@ -1213,7 +1219,7 @@ int gfs2_inplace_reserve(struct gfs2_inode *ip, u32 requested)
+ 
+ out:
+ 	if (error)
+-		gfs2_blkrsv_put(ip);
++		rs->rs_requested = 0;
+ 	return error;
+ }
+ 
+@@ -1230,7 +1236,7 @@ void gfs2_inplace_release(struct gfs2_inode *ip)
+ 
+ 	if (rs->rs_rgd_gh.gh_gl)
+ 		gfs2_glock_dq_uninit(&rs->rs_rgd_gh);
+-	gfs2_blkrsv_put(ip);
++	rs->rs_requested = 0;
+ }
+ 
+ /**
+@@ -1496,7 +1502,7 @@ int gfs2_alloc_blocks(struct gfs2_inode *ip, u64 *bn, unsigned int *nblocks,
+ 	/* Only happens if there is a bug in gfs2, return something distinctive
+ 	 * to ensure that it is noticed.
+ 	 */
+-	if (ip->i_res == NULL)
++	if (ip->i_res->rs_requested == 0)
+ 		return -ECANCELED;
+ 
+ 	rgd = ip->i_rgd;
+diff --git a/fs/gfs2/rgrp.h b/fs/gfs2/rgrp.h
+index b4b10f4..d9eda5f 100644
+--- a/fs/gfs2/rgrp.h
++++ b/fs/gfs2/rgrp.h
+@@ -43,6 +43,8 @@ extern void gfs2_inplace_release(struct gfs2_inode *ip);
+ extern int gfs2_alloc_blocks(struct gfs2_inode *ip, u64 *bn, unsigned int *n,
+ 			     bool dinode, u64 *generation);
+ 
++extern int gfs2_rs_alloc(struct gfs2_inode *ip);
++extern void gfs2_rs_delete(struct gfs2_inode *ip);
+ extern void __gfs2_free_blocks(struct gfs2_inode *ip, u64 bstart, u32 blen, int meta);
+ extern void gfs2_free_meta(struct gfs2_inode *ip, u64 bstart, u32 blen);
+ extern void gfs2_free_di(struct gfs2_rgrpd *rgd, struct gfs2_inode *ip);
+@@ -68,4 +70,12 @@ extern int gfs2_rgrp_send_discards(struct gfs2_sbd *sdp, u64 offset,
+ 				   const struct gfs2_bitmap *bi, unsigned minlen, u64 *ptrimmed);
+ extern int gfs2_fitrim(struct file *filp, void __user *argp);
+ 
++/* This is how to tell if a reservation is "inplace" reserved: */
++static inline int gfs2_mb_reserved(struct gfs2_inode *ip)
++{
++	if (ip->i_res && ip->i_res->rs_requested)
++		return 1;
++	return 0;
++}
++
+ #endif /* __RGRP_DOT_H__ */
+diff --git a/fs/gfs2/super.c b/fs/gfs2/super.c
+index 713e621..65578df 100644
+--- a/fs/gfs2/super.c
++++ b/fs/gfs2/super.c
+@@ -1554,6 +1554,7 @@ out_unlock:
+ out:
+ 	/* Case 3 starts here */
+ 	truncate_inode_pages(&inode->i_data, 0);
++	gfs2_rs_delete(ip);
+ 	clear_inode(inode);
+ 	gfs2_dir_hash_inval(ip);
+ 	ip->i_gl->gl_object = NULL;
+@@ -1576,6 +1577,7 @@ static struct inode *gfs2_alloc_inode(struct super_block *sb)
+ 		ip->i_flags = 0;
+ 		ip->i_gl = NULL;
+ 		ip->i_rgd = NULL;
++		ip->i_res = NULL;
+ 	}
+ 	return &ip->i_inode;
+ }
+diff --git a/fs/gfs2/trans.h b/fs/gfs2/trans.h
+index 125d457..41f42cd 100644
+--- a/fs/gfs2/trans.h
++++ b/fs/gfs2/trans.h
+@@ -31,7 +31,7 @@ struct gfs2_glock;
+ static inline unsigned int gfs2_rg_blocks(const struct gfs2_inode *ip)
+ {
+ 	const struct gfs2_blkreserv *rs = ip->i_res;
+-	if (rs->rs_requested < ip->i_rgd->rd_length)
++	if (rs && rs->rs_requested < ip->i_rgd->rd_length)
+ 		return rs->rs_requested + 1;
+ 	return ip->i_rgd->rd_length;
+ }
+-- 
+1.7.4
+

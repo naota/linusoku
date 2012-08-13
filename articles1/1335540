@@ -1,0 +1,449 @@
+Path: news.gmane.org!not-for-mail
+From: <wei_wang@realsil.com.cn>
+Newsgroups: gmane.linux.kernel,gmane.linux.drivers.driver-project.devel,gmane.linux.kernel.mmc
+Subject: [PATCH 3/3] drivers/mmc/host: Add realtek sdmmc interface driver
+Date: Tue, 31 Jul 2012 15:42:56 +0800
+Lines: 400
+Approved: news@gmane.org
+Message-ID: <1343720576-22181-1-git-send-email-wei_wang@realsil.com.cn>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain
+X-Trace: dough.gmane.org 1343720658 27926 80.91.229.3 (31 Jul 2012 07:44:18 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 31 Jul 2012 07:44:18 +0000 (UTC)
+Cc: <bp@alien8.de>, <aaron.lu@amd.come>,
+	Wei WANG <wei_wang@realsil.com.cn>
+To: <gregkh@linuxfoundation.org>, <devel@linuxdriverproject.org>,
+	<linux-kernel@vger.kernel.org>, <linux-mmc@vger.kernel.org>,
+	<cjb@laptop.org>, <arnd@arndb.de>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 31 09:44:17 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sw77o-0003AK-6j
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 31 Jul 2012 09:44:16 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755775Ab2GaHnz (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 31 Jul 2012 03:43:55 -0400
+Original-Received: from rtits2.realtek.com ([60.250.210.242]:43888 "EHLO
+	rtits2.realtek.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755748Ab2GaHnv (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 31 Jul 2012 03:43:51 -0400
+X-SpamFilter-By: BOX Solutions SpamTrap 5.19 with qID q6V7gvwc007549, This message is released by code: ctaloc0852
+Original-Received: from RSEX1.realsil.com.cn (rsl1.realsil.com.cn [172.29.17.2] (may be forged))
+	by rtits2.realtek.com (8.14.5/2.19/5.24) with ESMTP id q6V7gvwc007549;
+	Tue, 31 Jul 2012 15:42:57 +0800
+Original-Received: from localhost (172.29.41.8) by RSEX1.realsil.com.cn (172.29.17.2)
+ with Microsoft SMTP Server id 8.3.213.0; Tue, 31 Jul 2012 15:42:57 +0800
+X-Mailer: git-send-email 1.7.9.5
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1335540 gmane.linux.drivers.driver-project.devel:29094 gmane.linux.kernel.mmc:15803
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335540>
+
+From: Wei WANG <wei_wang@realsil.com.cn>
+
+Realtek SD/MMC card interface driver is used to access
+SD/MMC card, with the help of Realtek card reader adapter driver.
+
+Signed-off-by: Wei WANG <wei_wang@realsil.com.cn>
+---
+ drivers/mmc/host/Kconfig      |    7 +
+ drivers/mmc/host/Makefile     |    2 +
+ drivers/mmc/host/rtsx_sdmmc.c |  350 +++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 359 insertions(+)
+ create mode 100644 drivers/mmc/host/rtsx_sdmmc.c
+
+diff --git a/drivers/mmc/host/Kconfig b/drivers/mmc/host/Kconfig
+index aa131b3..d9942e6 100644
+--- a/drivers/mmc/host/Kconfig
++++ b/drivers/mmc/host/Kconfig
+@@ -612,3 +612,10 @@ config MMC_USHC
+ 
+ 	  Note: These controllers only support SDIO cards and do not
+ 	  support MMC or SD memory cards.
++
++config MMC_REALTEK
++	tristate "Realtek SD/MMC Card Interface Driver"
++	depends on REALTEK_CR_CORE
++	help
++	  Say Y here to include driver code to support the Realtek
++	  SD/MMC card interface.
+diff --git a/drivers/mmc/host/Makefile b/drivers/mmc/host/Makefile
+index 8922b06..a4cd15a 100644
+--- a/drivers/mmc/host/Makefile
++++ b/drivers/mmc/host/Makefile
+@@ -45,6 +45,8 @@ obj-$(CONFIG_MMC_JZ4740)	+= jz4740_mmc.o
+ obj-$(CONFIG_MMC_VUB300)	+= vub300.o
+ obj-$(CONFIG_MMC_USHC)		+= ushc.o
+ 
++obj-$(CONFIG_MMC_REALTEK)	+= rtsx_sdmmc.o
++
+ obj-$(CONFIG_MMC_SDHCI_PLTFM)		+= sdhci-pltfm.o
+ obj-$(CONFIG_MMC_SDHCI_CNS3XXX)		+= sdhci-cns3xxx.o
+ obj-$(CONFIG_MMC_SDHCI_ESDHC_IMX)	+= sdhci-esdhc-imx.o
+diff --git a/drivers/mmc/host/rtsx_sdmmc.c b/drivers/mmc/host/rtsx_sdmmc.c
+new file mode 100644
+index 0000000..a90dd79a
+--- /dev/null
++++ b/drivers/mmc/host/rtsx_sdmmc.c
+@@ -0,0 +1,350 @@
++/* Realtek SD/MMC Card Interface driver
++ *
++ * Copyright(c) 2009 Realtek Semiconductor Corp. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License as published by the
++ * Free Software Foundation; either version 2, or (at your option) any
++ * later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, see <http://www.gnu.org/licenses/>.
++ *
++ * Author:
++ *   Wei WANG <wei_wang@realsil.com.cn>
++ *   No. 450, Shenhu Road, Suzhou Industry Park, Suzhou, China
++ */
++
++#include <linux/module.h>
++#include <linux/highmem.h>
++#include <linux/delay.h>
++#include <linux/mmc/host.h>
++#include <linux/mmc/mmc.h>
++#include <linux/mmc/sd.h>
++#include <linux/mmc/card.h>
++#include <linux/rtsx_core.h>
++
++#include <asm/unaligned.h>
++
++#define DRV_NAME	"rtsx_sdmmc"
++
++#define MAX_RW_REG_CNT			1024
++
++#define RTSX_MAX_BLOCK_COUNT		65536
++#define RTSX_MAX_BLOCK_LENGTH		2048
++
++struct realtek_sdmmc {
++	struct rtsx_dev		*dev;
++	struct mmc_host		*mmc;
++	struct mmc_request	*mrq;
++
++	struct mutex		host_mutex;
++
++	int			eject;
++};
++
++static struct rtsx_device_id realtek_sdmmc_ids[] = {
++	{RTSX_TYPE_SD},
++	{}
++};
++
++MODULE_DEVICE_TABLE(rtsx, realtek_sdmmc_ids);
++
++static void sd_send_cmd_get_rsp(struct realtek_sdmmc *host,
++		struct mmc_command *cmd)
++{
++	cmd->error = rtsx_sdmmc_send_cmd_get_rsp(host->dev, (u8)cmd->opcode,
++			cmd->arg, mmc_resp_type(cmd), cmd->resp);
++}
++
++static int sd_rw_multi(struct realtek_sdmmc *host, struct mmc_request *mrq)
++{
++	struct mmc_host *mmc = host->mmc;
++	struct mmc_card *card = mmc->card;
++	struct mmc_data *data = mrq->data;
++	int uhs = mmc_sd_card_uhs(card);
++	int read = (data->flags & MMC_DATA_READ) ? 1 : 0;
++
++	return rtsx_sdmmc_rw_multi(host->dev, data->sg, data->blksz,
++			data->blocks, data->sg_len, read, uhs);
++}
++
++static void sd_normal_rw(struct realtek_sdmmc *host, struct mmc_request *mrq)
++{
++	struct mmc_command *cmd = mrq->cmd;
++	struct mmc_data *data = mrq->data;
++	u8 _cmd[5], *buf;
++
++	_cmd[0] = 0x40 | (u8)cmd->opcode;
++	put_unaligned_be32(cmd->arg, (u32 *)(&_cmd[1]));
++
++	buf = kzalloc(data->blksz, GFP_NOIO);
++	if (!buf) {
++		cmd->error = -ENOMEM;
++		return;
++	}
++
++	if (data->flags & MMC_DATA_READ) {
++		cmd->error = rtsx_sdmmc_read_data(host->dev, _cmd,
++				(u16)data->blksz, buf, data->blksz, 200);
++		sg_copy_from_buffer(data->sg, data->sg_len, buf, data->blksz);
++	} else {
++		sg_copy_to_buffer(data->sg, data->sg_len, buf, data->blksz);
++		cmd->error = rtsx_sdmmc_write_data(host->dev, _cmd,
++				(u16)data->blksz, buf, data->blksz, 200);
++	}
++
++	kfree(buf);
++}
++
++static void sdmmc_request(struct mmc_host *mmc, struct mmc_request *mrq)
++{
++	struct realtek_sdmmc *host = mmc_priv(mmc);
++	struct mmc_command *cmd = mrq->cmd;
++	struct mmc_data *data = mrq->data;
++	unsigned int data_size = 0;
++
++	if (host->eject) {
++		cmd->error = -ENOMEDIUM;
++		goto finish;
++	}
++
++	mutex_lock(&host->host_mutex);
++	host->mrq = mrq;
++	mutex_unlock(&host->host_mutex);
++
++	if (mrq->data)
++		data_size = data->blocks * data->blksz;
++
++	if (!data_size || mmc_op_multi(cmd->opcode) ||
++			(cmd->opcode == MMC_READ_SINGLE_BLOCK) ||
++			(cmd->opcode == MMC_WRITE_BLOCK)) {
++		sd_send_cmd_get_rsp(host, cmd);
++
++		if (!cmd->error && data_size) {
++			sd_rw_multi(host, mrq);
++
++			if (mmc_op_multi(cmd->opcode) && mrq->stop)
++				sd_send_cmd_get_rsp(host, mrq->stop);
++		}
++	} else {
++		sd_normal_rw(host, mrq);
++	}
++
++	if (mrq->data) {
++		if (cmd->error || data->error)
++			data->bytes_xfered = 0;
++		else
++			data->bytes_xfered = data->blocks * data->blksz;
++	}
++
++finish:
++	if (cmd->error)
++		dev_dbg(&(host->dev->dev), "cmd->error = %d\n", cmd->error);
++
++	mutex_lock(&host->host_mutex);
++	host->mrq = NULL;
++	mutex_unlock(&host->host_mutex);
++
++	mmc_request_done(mmc, mrq);
++}
++
++static void sdmmc_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
++{
++	struct realtek_sdmmc *host = mmc_priv(mmc);
++	int vpclk = 0, double_clk = 1;
++	u8 ssc_depth;
++
++	rtsx_sdmmc_set_bus_width(host->dev, ios->bus_width);
++	rtsx_sdmmc_set_power_mode(host->dev, ios->power_mode);
++	rtsx_sdmmc_set_timing(host->dev, ios->timing);
++
++	switch (ios->timing) {
++	case MMC_TIMING_UHS_SDR104:
++	case MMC_TIMING_UHS_SDR50:
++		ssc_depth = RTSX_SSC_DEPTH_2M;
++		vpclk = 1;
++		double_clk = 0;
++		break;
++
++	case MMC_TIMING_UHS_DDR50:
++	case MMC_TIMING_UHS_SDR25:
++		ssc_depth = RTSX_SSC_DEPTH_1M;
++		break;
++
++	default:
++		ssc_depth = RTSX_SSC_DEPTH_500K;
++		break;
++	}
++
++	rtsx_switch_clock(host->dev,
++			ios->clock, ssc_depth, double_clk, vpclk);
++}
++
++static int sdmmc_get_ro(struct mmc_host *mmc)
++{
++	struct realtek_sdmmc *host = mmc_priv(mmc);
++
++	return rtsx_sdmmc_get_ro(host->dev);
++}
++
++static int sdmmc_get_cd(struct mmc_host *mmc)
++{
++	struct realtek_sdmmc *host = mmc_priv(mmc);
++
++	return rtsx_sdmmc_get_cd(host->dev);
++}
++
++static int sdmmc_switch_voltage(struct mmc_host *mmc, struct mmc_ios *ios)
++{
++	struct realtek_sdmmc *host = mmc_priv(mmc);
++
++	return rtsx_sdmmc_switch_voltage(host->dev, ios->signal_voltage);
++}
++
++static int sdmmc_execute_tuning(struct mmc_host *mmc, u32 opcode)
++{
++	struct realtek_sdmmc *host = mmc_priv(mmc);
++
++	return rtsx_sdmmc_execute_tuning(host->dev);
++}
++
++static const struct mmc_host_ops realtek_sdmmc_ops = {
++	.request = sdmmc_request,
++	.set_ios = sdmmc_set_ios,
++	.get_ro = sdmmc_get_ro,
++	.get_cd = sdmmc_get_cd,
++	.start_signal_voltage_switch = sdmmc_switch_voltage,
++	.execute_tuning = sdmmc_execute_tuning,
++};
++
++static void init_extra_caps(struct realtek_sdmmc *host)
++{
++	struct mmc_host *mmc = host->mmc;
++	struct rtsx_dev *sock = host->dev;
++	struct rtsx_adapter *adapter = sock_to_adapter(sock);
++
++	dev_dbg(&(sock->dev), "adapter->extra_caps = 0x%x\n",
++			adapter->extra_caps);
++
++	if (adapter->extra_caps & EXTRA_CAPS_SD_SDR50)
++		mmc->caps |= MMC_CAP_UHS_SDR50;
++	if (adapter->extra_caps & EXTRA_CAPS_SD_SDR104)
++		mmc->caps |= MMC_CAP_UHS_SDR104;
++	if (adapter->extra_caps & EXTRA_CAPS_SD_DDR50)
++		mmc->caps |= MMC_CAP_UHS_DDR50;
++	if (adapter->extra_caps & EXTRA_CAPS_MMC_HSDDR)
++		mmc->caps |= MMC_CAP_1_8V_DDR;
++	if (adapter->extra_caps & EXTRA_CAPS_MMC_8BIT)
++		mmc->caps |= MMC_CAP_8_BIT_DATA;
++}
++
++static void realtek_init_host(struct realtek_sdmmc *host)
++{
++	struct mmc_host *mmc = host->mmc;
++
++	mmc->f_min = 250000;
++	mmc->f_max = 208000000;
++	mmc->ocr_avail = MMC_VDD_32_33 | MMC_VDD_33_34 | MMC_VDD_165_195;
++	mmc->caps = MMC_CAP_4_BIT_DATA | MMC_CAP_SD_HIGHSPEED |
++		MMC_CAP_MMC_HIGHSPEED | MMC_CAP_BUS_WIDTH_TEST |
++		MMC_CAP_UHS_SDR12 | MMC_CAP_UHS_SDR25;
++	mmc->max_current_330 = 400;
++	mmc->max_current_180 = 800;
++	mmc->ops = &realtek_sdmmc_ops;
++
++	init_extra_caps(host);
++
++	mmc->max_segs = 256;
++	mmc->max_blk_size = RTSX_MAX_BLOCK_LENGTH;
++	mmc->max_blk_count = RTSX_MAX_BLOCK_COUNT;
++	mmc->max_seg_size = mmc->max_blk_size * mmc->max_blk_count;
++	mmc->max_req_size = mmc->max_seg_size;
++}
++
++static int realtek_sdmmc_probe(struct rtsx_dev *sock)
++{
++	struct mmc_host *mmc;
++	struct realtek_sdmmc *host;
++
++	pr_info(DRV_NAME ": Realtek SDMMC controller found\n");
++
++	mmc = mmc_alloc_host(sizeof(struct realtek_sdmmc), &sock->dev);
++	if (!mmc)
++		return -ENOMEM;
++
++	host = mmc_priv(mmc);
++	rtsx_set_drvdata(sock, mmc);
++	host->dev = sock;
++	host->mmc = mmc;
++
++	mutex_init(&host->host_mutex);
++
++	realtek_init_host(host);
++
++	mmc_add_host(mmc);
++
++	return 0;
++}
++
++static void __devexit realtek_sdmmc_remove(struct rtsx_dev *sock)
++{
++	struct mmc_host *mmc = rtsx_get_drvdata(sock);
++	struct realtek_sdmmc *host;
++
++	host = mmc_priv(mmc);
++	host->eject = 1;
++
++	mutex_lock(&host->host_mutex);
++	if (host->mrq) {
++		dev_dbg(&(sock->dev),
++			"%s: Controller removed during transfer\n",
++			mmc_hostname(mmc));
++
++		rtsx_complete_unfinished_transfer(sock);
++
++		host->mrq->cmd->error = -ENOMEDIUM;
++		if (host->mrq->stop)
++			host->mrq->stop->error = -ENOMEDIUM;
++		mmc_request_done(mmc, host->mrq);
++	}
++	mutex_unlock(&host->host_mutex);
++
++	mmc_remove_host(mmc);
++	mmc_free_host(mmc);
++
++	pr_info(DRV_NAME
++		": Realtek SDMMC controller has been removed\n");
++}
++
++static struct rtsx_driver realtek_sdmmc_driver = {
++	.driver = {
++		.name = DRV_NAME,
++		.owner = THIS_MODULE,
++	},
++	.id_table = realtek_sdmmc_ids,
++	.probe = realtek_sdmmc_probe,
++	.remove = realtek_sdmmc_remove,
++};
++
++static int __init realtek_sdmmc_drv_init(void)
++{
++	return rtsx_register_driver(&realtek_sdmmc_driver);
++}
++
++static void __exit realtek_sdmmc_drv_exit(void)
++{
++	rtsx_unregister_driver(&realtek_sdmmc_driver);
++}
++
++module_init(realtek_sdmmc_drv_init);
++module_exit(realtek_sdmmc_drv_exit);
++
++MODULE_LICENSE("GPL");
++MODULE_AUTHOR("Realtek Corp.");
++MODULE_DESCRIPTION("Realtek SD/MMC Card Interface Driver");
+-- 
+1.7.9.5
+

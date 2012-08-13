@@ -1,0 +1,64 @@
+Path: news.gmane.org!not-for-mail
+From: Al Viro <viro@ZenIV.linux.org.uk>
+Newsgroups: gmane.linux.kernel
+Subject: kcmp() races?
+Date: Sun, 22 Jul 2012 16:47:05 +0100
+Lines: 21
+Approved: news@gmane.org
+Message-ID: <20120722154705.GA31729@ZenIV.linux.org.uk>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1342972039 6215 80.91.229.3 (22 Jul 2012 15:47:19 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 22 Jul 2012 15:47:19 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org
+To: Cyrill Gorcunov <gorcunov@openvz.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 22 17:47:17 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsyNJ-0003qH-Dw
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 22 Jul 2012 17:47:17 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751949Ab2GVPrI (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 22 Jul 2012 11:47:08 -0400
+Original-Received: from zeniv.linux.org.uk ([195.92.253.2]:42538 "EHLO
+	ZenIV.linux.org.uk" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751233Ab2GVPrH (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 22 Jul 2012 11:47:07 -0400
+Original-Received: from viro by ZenIV.linux.org.uk with local (Exim 4.76 #1 (Red Hat Linux))
+	id 1SsyN7-00009I-AP; Sun, 22 Jul 2012 15:47:05 +0000
+Content-Disposition: inline
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1331364
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1331364>
+
+	I don't know how much of that is by design, but at the very least
+it needs to be clearly documented in manpage: kcmp() can give false
+positives.  Very easily.  There is nothing to prevent the objects
+being compared from getting freed and reused; consider unshare(2), for
+example.  Or close(2), for that matter.  Suppose we look at the descriptor
+table for task1 just as it (or somebody sharing that table) closes the
+descriptor we are after.  We got struct file *; it'll stay allocated
+until we do rcu_read_unlock().  Which we promptly do and turn to
+examining the descriptor table of task2.  Which is doing e.g. pipe(2)
+at the moment (or somebody sharing its descriptor table is).  It
+allocates struct file, getting the one that just had been freed by
+task1.  And puts a reference to it into its descriptor table, which
+is where we find it.  And we see the same pointer...
+
+	Sure, if the processes are stopped, we are fine (except that
+we need to stop everybody sharing the descriptor table with either
+of our processes as well).  *IF* that is the intended behaviour
+(and it could be argued that way - after all, if we want the values
+we get to stay valid long enough for us to do sorting, we'd better
+make sure that these guys won't get changed between the calls of
+kcmp(2)), then we'd better document that in the manpage...

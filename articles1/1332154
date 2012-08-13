@@ -1,0 +1,144 @@
+Path: news.gmane.org!not-for-mail
+From: Barry Song <21cnbao@gmail.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.ports.arm.kernel
+Subject: Re: [RFC] ARM: sched_clock: update epoch_cyc on resume
+Date: Tue, 24 Jul 2012 14:43:28 +0800
+Lines: 82
+Approved: news@gmane.org
+Message-ID: <CAGsJ_4z_tF3LKy-vygr=kwah7q7U03Y2K2XKAkZTB1QC2pSYmw@mail.gmail.com>
+References: <1342567672-29071-1-git-send-email-ccross@android.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+X-Trace: dough.gmane.org 1343112241 29749 80.91.229.3 (24 Jul 2012 06:44:01 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 06:44:01 +0000 (UTC)
+Cc: linux-arm-kernel@lists.infradead.org,
+	Russell King <linux@arm.linux.org.uk>,
+	Nicolas Pitre <nico@linaro.org>,
+	Marc Zyngier <marc.zyngier@arm.com>,
+	Linus Walleij <linus.walleij@linaro.org>,
+	linux-kernel@vger.kernel.org, Krzysztof Halasa <khc@pm.waw.pl>
+To: Colin Cross <ccross@android.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Jul 24 08:43:58 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1StYqb-0007ss-Jx
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 24 Jul 2012 08:43:57 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754609Ab2GXGnu (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 24 Jul 2012 02:43:50 -0400
+Original-Received: from mail-vc0-f174.google.com ([209.85.220.174]:59312 "EHLO
+	mail-vc0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1754467Ab2GXGnt (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 24 Jul 2012 02:43:49 -0400
+Original-Received: by vcbfk26 with SMTP id fk26so5533160vcb.19
+        for <linux-kernel@vger.kernel.org>; Mon, 23 Jul 2012 23:43:48 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20120113;
+        h=mime-version:in-reply-to:references:from:date:message-id:subject:to
+         :cc:content-type;
+        bh=OxzhCQXtJpkO4xiKPdca8UFeT2amwOt3KsjqLggJfn0=;
+        b=HilbOPr2VL1UHNpilmJ5CoezVpTkkS+A+E61HhNOB/b2FLa5Ro2WbcemWhy0d1674v
+         tyH5ueIU1cWX0zP6I1D8Iq+WNmIX7weWSwsJOEuXMdPyZmzAfbBXlPcsYRQ12A/OfT6B
+         1iWs55rgAKZCWRdmCh4lWp41jstwbgJp+evouoV/d7roqZlpbrOFvRbfa/C6817hOQ3v
+         26joPuvRRNwTfwkQ7L0JvBLxHtW96Ax3ZPhQsAXv1D6IGgg7ao4Akzpkm/2Lbc1LQWr7
+         IUUWl16wkgYZIr/e5orZLsYuwXryNCtAGPZ3tb4wvhe+RfAmZcd116UKE8cgtAgUeoYn
+         AZVg==
+Original-Received: by 10.220.119.134 with SMTP id z6mr14644825vcq.62.1343112228701;
+ Mon, 23 Jul 2012 23:43:48 -0700 (PDT)
+Original-Received: by 10.220.149.211 with HTTP; Mon, 23 Jul 2012 23:43:28 -0700 (PDT)
+In-Reply-To: <1342567672-29071-1-git-send-email-ccross@android.com>
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1332154 gmane.linux.ports.arm.kernel:178534
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332154>
+
+2012/7/18 Colin Cross <ccross@android.com>:
+> Many clocks that are used to provide sched_clock will reset during
+> suspend.  If read_sched_clock returns 0 after suspend, sched_clock will
+> appear to jump forward.  This patch resets cd.epoch_cyc to the current
+> value of read_sched_clock during resume, which causes sched_clock() just
+> after suspend to return the same value as sched_clock() just before
+> suspend.
+>
+> In addition, during the window where epoch_ns has been updated before
+> suspend, but epoch_cyc has not been updated after suspend, it is unknown
+> whether the clock has reset or not, and sched_clock() could return a
+> bogus value.  Add a suspended flag, and return the pre-suspend epoch_ns
+> value during this period.
+
+Acked-by: Barry Song <21cnbao@gmail.com>
+
+this patch should also fix the issue that:
+1. launch some rt threads, rt threads sleep before suspend
+2. repeat to suspend/resume
+3. after resuming, waking up rt threads
+
+repeat 1-3 again and again, sometimes all rt threads will hang after
+resuming due to wrong sched_clock will make sched_rt think rt_time is
+much more than rt_runtime (default 950ms in 1s). then rt threads will
+lost cpu timeslot to run since the 95% threshold is there.
+
+>
+> This will have a side effect of causing SoCs that have clocks that
+> continue to count in suspend to appear to stop counting, reporting the
+> same sched_clock() value before and after suspend.
+>
+> Signed-off-by: Colin Cross <ccross@android.com>
+> ---
+>  arch/arm/kernel/sched_clock.c |   13 +++++++++++++
+>  1 files changed, 13 insertions(+), 0 deletions(-)
+>
+> diff --git a/arch/arm/kernel/sched_clock.c b/arch/arm/kernel/sched_clock.c
+> index 27d186a..46c7d32 100644
+> --- a/arch/arm/kernel/sched_clock.c
+> +++ b/arch/arm/kernel/sched_clock.c
+> @@ -21,6 +21,7 @@ struct clock_data {
+>         u32 epoch_cyc_copy;
+>         u32 mult;
+>         u32 shift;
+> +       bool suspended;
+>  };
+>
+>  static void sched_clock_poll(unsigned long wrap_ticks);
+> @@ -49,6 +50,9 @@ static unsigned long long cyc_to_sched_clock(u32 cyc, u32 mask)
+>         u64 epoch_ns;
+>         u32 epoch_cyc;
+>
+> +       if (cd.suspended)
+> +               return cd.epoch_ns;
+> +
+>         /*
+>          * Load the epoch_cyc and epoch_ns atomically.  We do this by
+>          * ensuring that we always write epoch_cyc, epoch_ns and
+> @@ -169,11 +173,20 @@ void __init sched_clock_postinit(void)
+>  static int sched_clock_suspend(void)
+>  {
+>         sched_clock_poll(sched_clock_timer.data);
+> +       cd.suspended = true;
+>         return 0;
+>  }
+>
+> +static void sched_clock_resume(void)
+> +{
+> +       cd.epoch_cyc = read_sched_clock();
+> +       cd.epoch_cyc_copy = cd.epoch_cyc;
+> +       cd.suspended = false;
+> +}
+> +
+>  static struct syscore_ops sched_clock_ops = {
+>         .suspend = sched_clock_suspend,
+> +       .resume = sched_clock_resume,
+>  };
+>
+>  static int __init sched_clock_syscore_init(void)
+
+
+-barry

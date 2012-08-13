@@ -1,0 +1,96 @@
+Path: news.gmane.org!not-for-mail
+From: "Rafael J. Wysocki" <rjw@sisk.pl>
+Newsgroups: gmane.linux.kernel.pci,gmane.linux.acpi.devel,gmane.linux.kernel
+Subject: [PATCH] ACPI / PCI: Do not try to acquire _OSC control if that is hopeless
+Date: Mon, 30 Jul 2012 22:40:32 +0200
+Lines: 40
+Approved: news@gmane.org
+Message-ID: <201207302240.32480.rjw@sisk.pl>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: Text/Plain;
+  charset="utf-8"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343680499 19065 80.91.229.3 (30 Jul 2012 20:34:59 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 30 Jul 2012 20:34:59 +0000 (UTC)
+Cc: Matthew Garrett <mjg@redhat.com>,
+	Bjorn Helgaas <bhelgaas@google.com>,
+	ACPI Devel Mailing List <linux-acpi@vger.kernel.org>,
+	linux-pci@vger.kernel.org, LKML <linux-kernel@vger.kernel.org>
+To: Len Brown <lenb@kernel.org>
+Original-X-From: linux-pci-owner@vger.kernel.org Mon Jul 30 22:34:57 2012
+Return-path: <linux-pci-owner@vger.kernel.org>
+Envelope-to: glp-linux-pci@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-pci-owner@vger.kernel.org>)
+	id 1Svwg4-0003jP-Aq
+	for glp-linux-pci@plane.gmane.org; Mon, 30 Jul 2012 22:34:56 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754923Ab2G3Uey (ORCPT <rfc822;glp-linux-pci@m.gmane.org>);
+	Mon, 30 Jul 2012 16:34:54 -0400
+Original-Received: from ogre.sisk.pl ([193.178.161.156]:35260 "EHLO ogre.sisk.pl"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1754726Ab2G3Uex (ORCPT <rfc822;linux-pci@vger.kernel.org>);
+	Mon, 30 Jul 2012 16:34:53 -0400
+Original-Received: from localhost (localhost.localdomain [127.0.0.1])
+	by ogre.sisk.pl (Postfix) with ESMTP id 735CA1DB3BF;
+	Mon, 30 Jul 2012 22:27:15 +0200 (CEST)
+Original-Received: from ogre.sisk.pl ([127.0.0.1])
+ by localhost (ogre.sisk.pl [127.0.0.1]) (amavisd-new, port 10024) with ESMTP
+ id 26149-01; Mon, 30 Jul 2012 22:26:58 +0200 (CEST)
+Original-Received: from ferrari.rjw.lan (62-121-64-87.home.aster.pl [62.121.64.87])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by ogre.sisk.pl (Postfix) with ESMTP id 090C31DB2BC;
+	Mon, 30 Jul 2012 22:26:56 +0200 (CEST)
+User-Agent: KMail/1.13.6 (Linux/3.5.0+; KDE/4.6.0; x86_64; ; )
+X-Virus-Scanned: amavisd-new at ogre.sisk.pl using MkS_Vir for Linux
+Original-Sender: linux-pci-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-pci.vger.kernel.org>
+X-Mailing-List: linux-pci@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel.pci:16712 gmane.linux.acpi.devel:54686 gmane.linux.kernel:1335314
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1335314>
+
+
+If acpi_pci_osc_support() fails for the given flags, it doesn't make
+sense to call acpi_pci_osc_control_set() down the road for the same
+flags, because it will certainly fail too.  Moreover, problem
+diagnostics is then harder, because it is not too easy to identify
+the reason of the _OSC failure in those cases.
+
+For this reason, check the status returned by acpi_pci_osc_support()
+for PCIe support flags and do not attempt to execute
+acpi_pci_osc_control_set() for those flags and print a message if
+it's "failure".  For compatibility with the existing code, disable
+ASPM in that case too.
+
+Signed-off-by: Rafael J. Wysocki <rjw@sisk.pl>
+---
+ drivers/acpi/pci_root.c |   11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+Index: linux/drivers/acpi/pci_root.c
+===================================================================
+--- linux.orig/drivers/acpi/pci_root.c
++++ linux/drivers/acpi/pci_root.c
+@@ -573,8 +573,15 @@ static int __devinit acpi_pci_root_add(s
+ 			OSC_CLOCK_PWR_CAPABILITY_SUPPORT;
+ 	if (pci_msi_enabled())
+ 		flags |= OSC_MSI_SUPPORT;
+-	if (flags != base_flags)
+-		acpi_pci_osc_support(root, flags);
++	if (flags != base_flags) {
++		status = acpi_pci_osc_support(root, flags);
++		if (ACPI_FAILURE(status)) {
++			dev_info(root->bus->bridge, "ACPI _OSC support "
++				"notification failed, disabling PCIe ASPM\n");
++			pcie_no_aspm();
++			flags = base_flags;
++		}
++	}
+ 
+ 	if (!pcie_ports_disabled
+ 	    && (flags & ACPI_PCIE_REQ_SUPPORT) == ACPI_PCIE_REQ_SUPPORT) {

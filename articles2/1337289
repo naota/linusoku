@@ -1,0 +1,121 @@
+Path: news.gmane.org!not-for-mail
+From: Jean Delvare <khali@linux-fr.org>
+Newsgroups: gmane.linux.kernel
+Subject: Re: [PATCH 3/3] Use get_online_cpus to avoid races involving 
+ for_each_online_cpu
+Date: Fri, 3 Aug 2012 15:56:40 +0200
+Lines: 68
+Approved: news@gmane.org
+Message-ID: <20120803155640.7e2356fb@endymion.delvare>
+References: <20120803000708.GD3443@mit.edu>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=US-ASCII
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1344002227 32023 80.91.229.3 (3 Aug 2012 13:57:07 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 3 Aug 2012 13:57:07 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org,
+	"Paul E. McKenney" <paulmck@linux.vnet.ibm.com>,
+	Guenter Roeck <linux@roeck-us.net>,
+	Thomas Gleixner <tglx@linutronix.de>,
+	Harald Welte <laforge@openezx.org>, x86@kernel.org
+To: Silas Boyd-Wickizer <sbw@mit.edu>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 03 15:57:07 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SxINE-0003PF-R8
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 03 Aug 2012 15:57:05 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752658Ab2HCN45 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 3 Aug 2012 09:56:57 -0400
+Original-Received: from zoneX.GCU-Squad.org ([194.213.125.0]:5268 "EHLO
+	services.gcu-squad.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1751069Ab2HCN44 (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 3 Aug 2012 09:56:56 -0400
+Original-Received: from jdelvare.pck.nerim.net ([62.212.121.182] helo=endymion.delvare)
+	by services.gcu-squad.org (GCU Mailer Daemon) with esmtpsa id 1SxIMv-0004Wd-Vu
+	(TLSv1:AES128-SHA:128)
+	(envelope-from <khali@linux-fr.org>)
+	; Fri, 03 Aug 2012 15:56:46 +0200
+In-Reply-To: <20120803000708.GD3443@mit.edu>
+X-Mailer: Claws Mail 3.7.10 (GTK+ 2.24.7; x86_64-suse-linux-gnu)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1337289
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1337289>
+
+Hi Silas,
+
+On Thu, 2 Aug 2012 17:07:08 -0700, Silas Boyd-Wickizer wrote:
+> via_cputemp_init in drivers/hwmon/via-cputemp.c loops with
+> for_each_online_cpu, adding platform_devices, then calls
+> register_hotcpu_notifier.  If a CPU is offlined between the loop and
+> register_hotcpu_notifier, then later onlined, via_cputemp_device_add
+> will attempt to platform devices with the same ID.
+
+Missing word in this last sentence.
+
+> 
+> This fix surrounds for_each_online_cpu and register_hotcpu_notifier
+> with get_online_cpus+put_online_cpus.
+> 
+> Build tested.
+
+Thanks for reporting and for the fix. Two questions:
+
+What about via_cputemp_exit()? While less obvious, I suspect it is racy
+too. The notifier is unregistered first. If a CPU gets offline before
+the devices are removed, we will have a device pointing to a
+non-existent CPU for a short time. I think we should play it safe and
+use get/put_online_cpus() there too, as I seem to understand it
+guarantees CPUs can't go offline when we wouldn't handle that event
+properly. Alternatively, unregistering the platform driver first might
+close the race.
+
+Secondly, drivers/hwmon/coretemp.c is very similar to via-cputemp.c, so
+I think it needs the exact same fix(es).
+
+> 
+> Signed-off-by: Silas Boyd-Wickizer <sbw@mit.edu>
+> ---
+>  drivers/hwmon/via-cputemp.c |    3 +++
+>  1 file changed, 3 insertions(+)
+> 
+> diff --git a/drivers/hwmon/via-cputemp.c b/drivers/hwmon/via-cputemp.c
+> index 8689664..9ad07c3 100644
+> --- a/drivers/hwmon/via-cputemp.c
+> +++ b/drivers/hwmon/via-cputemp.c
+> @@ -328,6 +328,7 @@ static int __init via_cputemp_init(void)
+>  	if (err)
+>  		goto exit;
+>  
+> +	get_online_cpus();
+>  	for_each_online_cpu(i) {
+>  		struct cpuinfo_x86 *c = &cpu_data(i);
+>  
+> @@ -347,12 +348,14 @@ static int __init via_cputemp_init(void)
+>  
+>  #ifndef CONFIG_HOTPLUG_CPU
+>  	if (list_empty(&pdev_list)) {
+> +		put_online_cpus();
+>  		err = -ENODEV;
+>  		goto exit_driver_unreg;
+>  	}
+>  #endif
+>  
+>  	register_hotcpu_notifier(&via_cputemp_cpu_notifier);
+> +	put_online_cpus();
+>  	return 0;
+>  
+>  #ifndef CONFIG_HOTPLUG_CPU
+
+
+-- 
+Jean Delvare

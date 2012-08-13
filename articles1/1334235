@@ -1,0 +1,144 @@
+Path: news.gmane.org!not-for-mail
+From: Stefano Stabellini <stefano.stabellini@eu.citrix.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.xen.devel
+Subject: Re: [PATCH 1/2] xen/swiotlb: If iommu=soft was not passed in on >
+ 4GB, don't turn it on.
+Date: Fri, 27 Jul 2012 12:06:27 +0100
+Lines: 92
+Approved: news@gmane.org
+Message-ID: <alpine.DEB.2.02.1207271204500.26163@kaball.uk.xensource.com>
+References: <1343335407-5465-1-git-send-email-konrad.wilk@oracle.com> <1343335407-5465-2-git-send-email-konrad.wilk@oracle.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="US-ASCII"
+X-Trace: dough.gmane.org 1343387263 7743 80.91.229.3 (27 Jul 2012 11:07:43 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 27 Jul 2012 11:07:43 +0000 (UTC)
+Cc: "linux-kernel@vger.kernel.org" <linux-kernel@vger.kernel.org>,
+	"xen-devel@lists.xensource.com" <xen-devel@lists.xensource.com>
+To: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 27 13:07:43 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SuiOT-0003wy-85
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 27 Jul 2012 13:07:41 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1751961Ab2G0LHX (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 27 Jul 2012 07:07:23 -0400
+Original-Received: from smtp.ctxuk.citrix.com ([62.200.22.115]:62663 "EHLO
+	SMTP.EU.CITRIX.COM" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1750968Ab2G0LHV (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 27 Jul 2012 07:07:21 -0400
+X-IronPort-AV: E=Sophos;i="4.77,666,1336348800"; 
+   d="scan'208";a="13732979"
+Original-Received: from lonpmailmx01.citrite.net ([10.30.203.162])
+  by LONPIPO01.EU.CITRIX.COM with ESMTP/TLS/RC4-MD5; 27 Jul 2012 11:07:20 +0000
+Original-Received: from kaball.uk.xensource.com (10.80.2.59) by
+ LONPMAILMX01.citrite.net (10.30.203.162) with Microsoft SMTP Server id
+ 8.3.213.0; Fri, 27 Jul 2012 12:07:20 +0100
+X-X-Sender: sstabellini@kaball.uk.xensource.com
+In-Reply-To: <1343335407-5465-2-git-send-email-konrad.wilk@oracle.com>
+User-Agent: Alpine 2.02 (DEB 1266 2009-07-14)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334235 gmane.comp.emulators.xen.devel:135740
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334235>
+
+On Thu, 26 Jul 2012, Konrad Rzeszutek Wilk wrote:
+> If we boot a 64-bit guest with more than 4GB memory, the SWIOTLB
+> gets turned on:
+> PCI-DMA: Using software bounce buffering for IO (SWIOTLB)
+> software IO TLB [mem 0xfb43d000-0xff43cfff] (64MB) mapped at [ffff8800fb43d000-ffff8800ff43cfff]
+> 
+> which is OK if we had PCI devices, but not if we did not. In a PV
+> guest the SWIOTLB ends up asking the hypervisor for precious lowmem
+> memory - and 64MB of it per guest. On a 32GB machine, this limits the
+> amount of guests that are 4GB to start due to lowmem exhaustion.
+> 
+> What we do is detect whether the user supplied e820_hole=1
+> parameter, which is used to construct an E820 that is similar to
+> the machine  - so that the PCI regions do not overlap with RAM regions.
+> We check for that by looking at the E820 and seeing if it diverges
+> from the standard - and if so (and if iommu=soft was not turned on),
+> we disable the check pci_swiotlb_detect_4gb code.
+
+What kind of paramter is it?
+Is it a Linux cmdline paramter? Or maybe a Xen toolstack parameter?
+
+Surely there must be a better way to let Linux know if this paramter has
+been turned on than looking for ACPI entries in the E820.
+
+
+> Signed-off-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+> ---
+>  arch/x86/xen/pci-swiotlb-xen.c |   26 ++++++++++++++++++++++++++
+>  1 files changed, 26 insertions(+), 0 deletions(-)
+> 
+> diff --git a/arch/x86/xen/pci-swiotlb-xen.c b/arch/x86/xen/pci-swiotlb-xen.c
+> index 967633a..56f373e 100644
+> --- a/arch/x86/xen/pci-swiotlb-xen.c
+> +++ b/arch/x86/xen/pci-swiotlb-xen.c
+> @@ -8,6 +8,10 @@
+>  #include <xen/xen.h>
+>  #include <asm/iommu_table.h>
+>  
+> +#include <asm/e820.h>
+> +#include <asm/dma.h>
+> +#include <asm/iommu.h>
+> +
+>  int xen_swiotlb __read_mostly;
+>  
+>  static struct dma_map_ops xen_swiotlb_dma_ops = {
+> @@ -24,7 +28,19 @@ static struct dma_map_ops xen_swiotlb_dma_ops = {
+>  	.unmap_page = xen_swiotlb_unmap_page,
+>  	.dma_supported = xen_swiotlb_dma_supported,
+>  };
+> +bool __init e820_has_acpi(void)
+> +{
+> +	int i;
+>  
+> +	/* Check if the user supplied the e820_hole parameter
+> +	 * which would create a machine looking E820 region. */
+> +	for (i = 0; i < e820.nr_map; i++) {
+> +		if ((e820.map[i].type == E820_ACPI) ||
+> +		    (e820.map[i].type == E820_NVS))
+> +			return true;
+> +	}
+> +	return false;
+> +}
+>  /*
+>   * pci_xen_swiotlb_detect - set xen_swiotlb to 1 if necessary
+>   *
+> @@ -33,7 +49,17 @@ static struct dma_map_ops xen_swiotlb_dma_ops = {
+>   */
+>  int __init pci_xen_swiotlb_detect(void)
+>  {
+> +#ifdef CONFIG_X86_64
+>  
+> +	/* Having more than 4GB triggers the native SWIOTLB to activate.
+> +	 * The way to turn it off is to set no_iommu. */
+> +	printk(KERN_INFO "swiotlb: %d\n", swiotlb);
+> +	if (xen_pv_domain() && !swiotlb && max_pfn > MAX_DMA32_PFN) {
+> +		/* Normal PV guests only have E820_RSV and E820_RAM regions */
+> +		if (!e820_has_acpi())
+> +			no_iommu = 1;
+> +	}
+> +#endif
+>  	/* If running as PV guest, either iommu=soft, or swiotlb=force will
+>  	 * activate this IOMMU. If running as PV privileged, activate it
+>  	 * irregardless.
+> -- 
+> 1.7.7.6
+> 
+> --
+> To unsubscribe from this list: send the line "unsubscribe linux-kernel" in
+> the body of a message to majordomo@vger.kernel.org
+> More majordomo info at  http://vger.kernel.org/majordomo-info.html
+> Please read the FAQ at  http://www.tux.org/lkml/
+> 

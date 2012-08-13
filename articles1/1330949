@@ -1,0 +1,126 @@
+Path: news.gmane.org!not-for-mail
+From: Peter Zijlstra <peterz@infradead.org>
+Newsgroups: gmane.linux.kernel
+Subject: Re: CFS vs. cpufreq/cstates vs. latency
+Date: Fri, 20 Jul 2012 18:57:05 +0200
+Lines: 71
+Approved: news@gmane.org
+Message-ID: <1342803425.2583.25.camel@twins>
+References: <50057565.7030405@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=US-ASCII
+Content-Transfer-Encoding: 7BIT
+X-Trace: dough.gmane.org 1342803451 20386 80.91.229.3 (20 Jul 2012 16:57:31 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 20 Jul 2012 16:57:31 +0000 (UTC)
+Cc: Linux kernel Mailing List <linux-kernel@vger.kernel.org>,
+	Ingo Molnar <mingo@kernel.org>, Avi Kivity <avi@redhat.com>,
+	Gleb Natapov <gleb@redhat.com>,
+	"Michael S. Tsirkin" <mst@redhat.com>,
+	Andi Kleen <ak@linux.intel.com>
+To: Rik van Riel <riel@redhat.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Jul 20 18:57:30 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SsGW7-0005Nu-Uo
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 20 Jul 2012 18:57:28 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753101Ab2GTQ5U (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 20 Jul 2012 12:57:20 -0400
+Original-Received: from merlin.infradead.org ([205.233.59.134]:50156 "EHLO
+	merlin.infradead.org" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752591Ab2GTQ5T convert rfc822-to-8bit (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 20 Jul 2012 12:57:19 -0400
+Original-Received: from canuck.infradead.org ([134.117.69.58])
+	by merlin.infradead.org with esmtps (Exim 4.76 #1 (Red Hat Linux))
+	id 1SsGVv-0002RV-SV; Fri, 20 Jul 2012 16:57:16 +0000
+Original-Received: from dhcp-089-099-019-018.chello.nl ([89.99.19.18] helo=twins)
+	by canuck.infradead.org with esmtpsa (Exim 4.76 #1 (Red Hat Linux))
+	id 1SsGVn-0006Y5-Jd; Fri, 20 Jul 2012 16:57:07 +0000
+Original-Received: by twins (Postfix, from userid 1000)
+	id A2FF98005148; Fri, 20 Jul 2012 18:57:05 +0200 (CEST)
+In-Reply-To: <50057565.7030405@redhat.com>
+X-Mailer: Evolution 3.2.2- 
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1330949
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1330949>
+
+On Tue, 2012-07-17 at 10:23 -0400, Rik van Riel wrote:
+> While tracking down a latency issue with communication between
+> KVM guests, we ran into a very interesting issue, an interplay
+> of CFS and power saving code.
+> 
+> About 3/4 of the 230us latency came from CPUs waking up out of
+> C-states. Disabling C states reduced the latency to 60us...
+> 
+> The issue? The communication is between various threads and
+> processes, each of which last ran on a CPU that is now in a
+> deeper C state. The total latency from that is "CPU wakeup
+> latency * NR CPUs woken".
+> 
+> This problem could be common to many different multi-threaded
+> or multi-process applications. It looks like something that
+> would be fixable at the scheduler + cpufreq level.
+
+There's tons to be fixed there... we should pull most if not all cpufreq
+load accounting into the scheduler, it already does most of it anyway.
+
+Also, you want to do per-task policy tracking, something which isn't
+possible with the current per-cpu cpufreq setup.
+
+Sadly some hardware makes this very difficult indeed because it needs a
+schedulable context to change the cpu freq/volt etc..
+
+> Specifically, waking up some process requires that the CPU
+> which is running the wakeup is already in C0 state. If the
+> CPU on which the to-be-woken task ran last is in a deep C
+> state, it may make sense to simply run the woken up task
+> on the local CPU, not the CPU where it was originally.
+
+That's cpuidle, not cpufreq :-) Yay for more players, but yes, I know
+I've talked about this very issue to a number of people.
+
+Same as for cpufreq, the accounting crap should move into the scheduler,
+we want to use the idle-time guestimator for different things as well.
+
+> I seem to remember some scheduling code that (for power
+> saving reasons) tried running all the tasks on one CPU,
+> until that CPU got busy, and then spilled over onto other
+> CPUs.
+> 
+> I do not seem to be able to find that code in recent kernels,
+> but I have the feeling that a policy like that (related to
+> WAKE_AFFINE scheduling?) could improve this issue.
+> 
+> As an additional benefit, it has the possibility of further
+> improving power saving.
+
+What power saving? I recently ripped all that stuff out because it was
+terminally broken and the fixes I got were beyond ugly.
+
+There were some people interested in writing a new power aware balancer
+infrastructure, but nothing has been forthcoming as yet. Although it
+could be they're waiting for PJT's load tracking patches to hit
+mainline.
+
+Anyway, you're conflating issues.. you don't want a power aware
+balancer, you just don't want it to be unaware of C-states irrespective
+of whatever balance policy we're using.
+
+> What do the scheduler and cpufreq people think about this
+> problem?
+> 
+> Any preferred ways to solve the "N * cpu wakeup latency"
+> problem that is plaguing multi-process and multi-threaded
+> workloads?
+
+Yeah, unify all the various load tracking and guestimator logic in the
+scheduler and go from there ;-)

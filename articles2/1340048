@@ -1,0 +1,131 @@
+Path: news.gmane.org!not-for-mail
+From: Jeff Layton <jlayton@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.file-systems,gmane.linux.nfs
+Subject: [PATCH v5 14/19] vfs: fix renameat to retry on ESTALE errors
+Date: Wed,  8 Aug 2012 09:21:37 -0400
+Lines: 69
+Approved: news@gmane.org
+Message-ID: <1344432102-22312-15-git-send-email-jlayton@redhat.com>
+References: <1344432102-22312-1-git-send-email-jlayton@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344432300 32300 80.91.229.3 (8 Aug 2012 13:25:00 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 8 Aug 2012 13:25:00 +0000 (UTC)
+Cc: linux-fsdevel@vger.kernel.org, linux-nfs@vger.kernel.org,
+	linux-kernel@vger.kernel.org, michael.brantley@deshaw.com,
+	hch@infradead.org, miklos@szeredi.hu, pstaubach@exagrid.com
+To: viro@ZenIV.linux.org.uk
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 15:24:59 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Sz6Fo-0001Ll-5g
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 15:24:52 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S964962Ab2HHNYp (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 09:24:45 -0400
+Original-Received: from mail-gh0-f174.google.com ([209.85.160.174]:53416 "EHLO
+	mail-gh0-f174.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1758482Ab2HHNWH (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 09:22:07 -0400
+Original-Received: by mail-gh0-f174.google.com with SMTP id r11so730335ghr.19
+        for <linux-kernel@vger.kernel.org>; Wed, 08 Aug 2012 06:22:07 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=sender:from:to:cc:subject:date:message-id:x-mailer:in-reply-to
+         :references:x-gm-message-state;
+        bh=H7GT3XiTjNF09CvhoTysXxuqu9GTVgW3zp+8XsvC1pg=;
+        b=lF1Q8d9RNP34KC8r/ICIPRcww1y+0s79R6oc8HzFlyDnlexDUtmIww17/0fDUqASax
+         cR5In+4ZCYts9YeCnSstPO8S14MknW9gz2h7NfCBOj3taVEW4V0dzE4pYIdpVm8NifuC
+         isnzzUG4uO51hCyOl0U3R3zcsaZfaVJ1n0xwF60KZpwkbszNE0ihyeJJ6kG25aJJyuDl
+         szr8frBoTDmZSkyoC9ov6FNLxt8ueAG4O7WjyGHF/q8hGKsU248C/yxIiJI7QT2UpYkz
+         HexQUko7JdrtxkzrMi8LFlQeDLPGfA2/fl2iBgG/b/Ke1P0EknYqDUQVYQn72W8IhRsG
+         YIQQ==
+Original-Received: by 10.236.76.3 with SMTP id a3mr16471527yhe.86.1344432127221;
+        Wed, 08 Aug 2012 06:22:07 -0700 (PDT)
+Original-Received: from salusa.poochiereds.net (cpe-069-134-145-027.nc.res.rr.com. [69.134.145.27])
+        by mx.google.com with ESMTPS id l1sm24418002yhm.19.2012.08.08.06.22.05
+        (version=SSLv3 cipher=OTHER);
+        Wed, 08 Aug 2012 06:22:06 -0700 (PDT)
+X-Mailer: git-send-email 1.7.11.2
+In-Reply-To: <1344432102-22312-1-git-send-email-jlayton@redhat.com>
+X-Gm-Message-State: ALoCoQn2ldKE5mkCLipj+aJCOUxuAEpQoqWq+fiDdxefFtNUQ1k3S7KTvL3CvXO0P9VpL46aNz0y
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340048 gmane.linux.file-systems:66467 gmane.linux.nfs:51371
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340048>
+
+...as always, rename is the messiest of the bunch. We have to track
+whether to retry or not via a separate flag since the error handling
+is already quite complex.
+
+Signed-off-by: Jeff Layton <jlayton@redhat.com>
+---
+ fs/namei.c | 31 ++++++++++++++++++++++++++-----
+ 1 file changed, 26 insertions(+), 5 deletions(-)
+
+diff --git a/fs/namei.c b/fs/namei.c
+index 0c112c3..936591f 100644
+--- a/fs/namei.c
++++ b/fs/namei.c
+@@ -3817,12 +3817,25 @@ SYSCALL_DEFINE4(renameat, int, olddfd, const char __user *, oldname,
+ 	char *from;
+ 	char *to;
+ 	int error;
++	unsigned int try = 0;
++	bool should_retry = false;
++	unsigned int lookup_flags = LOOKUP_PARENT;
+ 
+-	error = user_path_parent(olddfd, oldname, &oldnd, &from);
+-	if (error)
++	from = getname(oldname);
++	if (IS_ERR(from))
++		return PTR_ERR(from);
++
++	to = getname(newname);
++	if (IS_ERR(to)) {
++		error = PTR_ERR(to);
+ 		goto exit;
++	}
++retry:
++	error = do_path_lookup(olddfd, from, lookup_flags, &oldnd);
++	if (error)
++		goto exit0;
+ 
+-	error = user_path_parent(newdfd, newname, &newnd, &to);
++	error = do_path_lookup(newdfd, to, lookup_flags, &newnd);
+ 	if (error)
+ 		goto exit1;
+ 
+@@ -3891,13 +3904,21 @@ exit4:
+ exit3:
+ 	unlock_rename(new_dir, old_dir);
+ 	mnt_drop_write(oldnd.path.mnt);
++	if (retry_estale(error, try++))
++		should_retry = true;
+ exit2:
+ 	path_put(&newnd.path);
+-	putname(to);
+ exit1:
+ 	path_put(&oldnd.path);
+-	putname(from);
++	if (should_retry) {
++		should_retry = false;
++		lookup_flags |= LOOKUP_REVAL;
++		goto retry;
++	}
++exit0:
++	putname(to);
+ exit:
++	putname(from);
+ 	return error;
+ }
+ 
+-- 
+1.7.11.2
+

@@ -1,0 +1,136 @@
+Path: news.gmane.org!not-for-mail
+From: Andrea Righi <andrea@betterlinux.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] audit: fix wrong timeout value in audit_log_start
+Date: Tue,  7 Aug 2012 11:51:42 +0200
+Lines: 84
+Approved: news@gmane.org
+Message-ID: <1344333102-8419-1-git-send-email-andrea@betterlinux.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344333592 15151 80.91.229.3 (7 Aug 2012 09:59:52 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 09:59:52 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org
+To: Al Viro <viro@zeniv.linux.org.uk>, Eric Paris <eparis@redhat.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Tue Aug 07 11:59:52 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SygZm-0002Bh-2B
+	for glk-linux-kernel-3@plane.gmane.org; Tue, 07 Aug 2012 11:59:46 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754108Ab2HGJ7j (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 05:59:39 -0400
+Original-Received: from mail.betterlinux.com ([199.58.199.50]:57102 "EHLO
+	mail.betterlinux.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753617Ab2HGJ7h (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 05:59:37 -0400
+X-Greylist: delayed 464 seconds by postgrey-1.27 at vger.kernel.org; Tue, 07 Aug 2012 05:59:37 EDT
+Original-Received: from localhost.localdomain (unknown [10.150.0.6])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mail.betterlinux.com (Postfix) with ESMTPSA id 42CB082073;
+	Tue,  7 Aug 2012 03:51:50 -0600 (MDT)
+X-DKIM: OpenDKIM Filter v2.4.1 mail.betterlinux.com 42CB082073
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=betterlinux.com;
+	s=default; t=1344333113;
+	bh=bXcu9fr46PUkoCDqd39KWqtWtpzwZFdHSSvOy6/8rzM=;
+	h=From:To:Cc:Subject:Date:Message-Id;
+	b=yyj5sIWiM3O2BiT6ncAudYIX2fDeHwJU4cS+to0GUw94qdzAusF5edEEMEEOcpDcK
+	 pznsI9hBOwqbyjGj691ELROXy2SDFySmIGys5MqmEsKGLUGBCwM3n12wVMzqVybIAq
+	 5Ma/vz6vJYvGcSfsPbZaLB6JafMs8kbiLAZHnfG4=
+X-Mailer: git-send-email 1.7.9.5
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1338922
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1338922>
+
+audit_log_start() does not properly check timeout values when
+audit_backlog_limit is exceeded, for example it is possible to use
+negative timeout values with schedule_timeout() triggering error
+messages like this:
+
+  schedule_timeout: wrong timeout value ffffffffffff54e4
+
+Be sure to never set negative values for the timeout.
+
+Also, do a small refactoring to improve code readability.
+
+Reported-by: Sean Jenkins <sean@bluehost.com>
+Signed-off-by: Andrea Righi <andrea@betterlinux.com>
+---
+ kernel/audit.c |   46 ++++++++++++++++++++++++++++++----------------
+ 1 file changed, 30 insertions(+), 16 deletions(-)
+
+diff --git a/kernel/audit.c b/kernel/audit.c
+index ea3b7b6..362d9b4 100644
+--- a/kernel/audit.c
++++ b/kernel/audit.c
+@@ -1123,6 +1123,28 @@ static inline void audit_get_stamp(struct audit_context *ctx,
+ 	}
+ }
+ 
++/* Wait for auditd to drain the queue a little */
++static void audit_log_congestion_wait(unsigned long timeout_start)
++{
++	DECLARE_WAITQUEUE(wait, current);
++
++	set_current_state(TASK_INTERRUPTIBLE);
++	add_wait_queue(&audit_backlog_wait, &wait);
++
++	if (audit_backlog_limit &&
++	    skb_queue_len(&audit_skb_queue) > audit_backlog_limit) {
++		unsigned long deadline, now = ACCESS_ONCE(jiffies);
++
++		WARN_ON(time_after(timeout_start, now));
++		deadline = timeout_start + audit_backlog_wait_time;
++		if (time_before(now, deadline))
++			schedule_timeout(deadline - now);
++	}
++
++	__set_current_state(TASK_RUNNING);
++	remove_wait_queue(&audit_backlog_wait, &wait);
++}
++
+ /* Obtain an audit buffer.  This routine does locking to obtain the
+  * audit buffer, but then no locking is required for calls to
+  * audit_log_*format.  If the tsk is a task that is currently in a
+@@ -1166,22 +1188,14 @@ struct audit_buffer *audit_log_start(struct audit_context *ctx, gfp_t gfp_mask,
+ 		reserve = 5; /* Allow atomic callers to go up to five
+ 				entries over the normal backlog limit */
+ 
+-	while (audit_backlog_limit
+-	       && skb_queue_len(&audit_skb_queue) > audit_backlog_limit + reserve) {
+-		if (gfp_mask & __GFP_WAIT && audit_backlog_wait_time
+-		    && time_before(jiffies, timeout_start + audit_backlog_wait_time)) {
+-
+-			/* Wait for auditd to drain the queue a little */
+-			DECLARE_WAITQUEUE(wait, current);
+-			set_current_state(TASK_INTERRUPTIBLE);
+-			add_wait_queue(&audit_backlog_wait, &wait);
+-
+-			if (audit_backlog_limit &&
+-			    skb_queue_len(&audit_skb_queue) > audit_backlog_limit)
+-				schedule_timeout(timeout_start + audit_backlog_wait_time - jiffies);
+-
+-			__set_current_state(TASK_RUNNING);
+-			remove_wait_queue(&audit_backlog_wait, &wait);
++	while (audit_backlog_limit &&
++	       skb_queue_len(&audit_skb_queue) >
++				audit_backlog_limit + reserve) {
++		if ((gfp_mask & __GFP_WAIT) &&
++		    audit_backlog_wait_time &&
++		    time_is_after_jiffies(timeout_start +
++					audit_backlog_wait_time)) {
++			audit_log_congestion_wait(timeout_start);
+ 			continue;
+ 		}
+ 		if (audit_rate_check() && printk_ratelimit())
+-- 
+1.7.9.5
+

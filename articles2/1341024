@@ -1,0 +1,135 @@
+Path: news.gmane.org!not-for-mail
+From: Cody P Schafer <cody@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH 10/16] perf symbol: track symtab_type of vmlinux
+Date: Thu,  9 Aug 2012 15:18:35 -0700
+Lines: 69
+Approved: news@gmane.org
+Message-ID: <1344550721-21024-11-git-send-email-cody@linux.vnet.ibm.com>
+References: <1344550721-21024-1-git-send-email-cody@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344550970 24631 80.91.229.3 (9 Aug 2012 22:22:50 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 22:22:50 +0000 (UTC)
+Cc: LKML <linux-kernel@vger.kernel.org>,
+	Ingo Molnar <mingo@redhat.com>,
+	Paul Mackerras <paulus@samba.org>,
+	Peter Zijlstra <a.p.zijlstra@chello.nl>,
+	Sukadev Bhattiprolu <sukadev@linux.vnet.ibm.com>,
+	Matt Hellsley <matthltc@us.ibm.com>,
+	David Hansen <dave@linux.vnet.ibm.com>
+To: Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 10 00:22:48 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1Szb7u-00084W-Ru
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 10 Aug 2012 00:22:47 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1759940Ab2HIWWk (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 18:22:40 -0400
+Original-Received: from e7.ny.us.ibm.com ([32.97.182.137]:42422 "EHLO e7.ny.us.ibm.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1759926Ab2HIWWh (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 18:22:37 -0400
+Original-Received: from /spool/local
+	by e7.ny.us.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <cody@linux.vnet.ibm.com>;
+	Thu, 9 Aug 2012 18:22:36 -0400
+Original-Received: from d01dlp03.pok.ibm.com (9.56.250.168)
+	by e7.ny.us.ibm.com (192.168.1.107) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Thu, 9 Aug 2012 18:22:09 -0400
+Original-Received: from d01relay03.pok.ibm.com (d01relay03.pok.ibm.com [9.56.227.235])
+	by d01dlp03.pok.ibm.com (Postfix) with ESMTP id 08B6FC90026
+	for <linux-kernel@vger.kernel.org>; Thu,  9 Aug 2012 18:22:09 -0400 (EDT)
+Original-Received: from d01av02.pok.ibm.com (d01av02.pok.ibm.com [9.56.224.216])
+	by d01relay03.pok.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q79MM8lt103250
+	for <linux-kernel@vger.kernel.org>; Thu, 9 Aug 2012 18:22:08 -0400
+Original-Received: from d01av02.pok.ibm.com (loopback [127.0.0.1])
+	by d01av02.pok.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q79MM5a4001325
+	for <linux-kernel@vger.kernel.org>; Thu, 9 Aug 2012 19:22:08 -0300
+Original-Received: from localhost ([9.47.24.219])
+	by d01av02.pok.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q79MM5wd001284;
+	Thu, 9 Aug 2012 19:22:05 -0300
+X-Mailer: git-send-email 1.7.11.3
+In-Reply-To: <1344550721-21024-1-git-send-email-cody@linux.vnet.ibm.com>
+X-Content-Scanned: Fidelis XPS MAILER
+x-cbid: 12080922-5806-0000-0000-00001837C016
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341024
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341024>
+
+Previously, symtab_type would have been left at 0, or KALLSYMS, which is not
+quite accurate.
+
+Introduce DSO_SYMTAB_TYPE__VMLINUX[_GUEST].
+
+Signed-off-by: Cody P Schafer <cody@linux.vnet.ibm.com>
+---
+ tools/perf/util/symbol.c | 9 +++++++++
+ tools/perf/util/symbol.h | 2 ++
+ 2 files changed, 11 insertions(+)
+
+diff --git a/tools/perf/util/symbol.c b/tools/perf/util/symbol.c
+index 6afc92d..662d1a2 100644
+--- a/tools/perf/util/symbol.c
++++ b/tools/perf/util/symbol.c
+@@ -1708,6 +1708,7 @@ char dso__symtab_origin(const struct dso *dso)
+ {
+ 	static const char origin[] = {
+ 		[DSO_BINARY_TYPE__KALLSYMS]		= 'k',
++		[DSO_BINARY_TYPE__VMLINUX]		= 'v',
+ 		[DSO_BINARY_TYPE__JAVA_JIT]		= 'j',
+ 		[DSO_BINARY_TYPE__DEBUGLINK]		= 'l',
+ 		[DSO_BINARY_TYPE__BUILD_ID_CACHE]	= 'B',
+@@ -1718,6 +1719,7 @@ char dso__symtab_origin(const struct dso *dso)
+ 		[DSO_BINARY_TYPE__SYSTEM_PATH_KMODULE]	= 'K',
+ 		[DSO_BINARY_TYPE__GUEST_KALLSYMS]	= 'g',
+ 		[DSO_BINARY_TYPE__GUEST_KMODULE]	= 'G',
++		[DSO_BINARY_TYPE__GUEST_VMLINUX]	= 'V',
+ 	};
+ 
+ 	if (dso == NULL || dso->symtab_type == DSO_BINARY_TYPE__NOT_FOUND)
+@@ -1793,7 +1795,9 @@ int dso__binary_type_file(struct dso *dso, enum dso_binary_type type,
+ 
+ 	default:
+ 	case DSO_BINARY_TYPE__KALLSYMS:
++	case DSO_BINARY_TYPE__VMLINUX:
+ 	case DSO_BINARY_TYPE__GUEST_KALLSYMS:
++	case DSO_BINARY_TYPE__GUEST_VMLINUX:
+ 	case DSO_BINARY_TYPE__JAVA_JIT:
+ 	case DSO_BINARY_TYPE__NOT_FOUND:
+ 		ret = -1;
+@@ -2168,6 +2172,11 @@ int dso__load_vmlinux(struct dso *dso, struct map *map,
+ 	if (fd < 0)
+ 		return -1;
+ 
++	if (dso->kernel == DSO_TYPE_GUEST_KERNEL)
++		dso->symtab_type = DSO_BINARY_TYPE__GUEST_VMLINUX;
++	else
++		dso->symtab_type = DSO_BINARY_TYPE__VMLINUX;
++
+ 	err = dso__load_sym(dso, map, symfs_vmlinux, fd, filter, 0, 0);
+ 	close(fd);
+ 
+diff --git a/tools/perf/util/symbol.h b/tools/perf/util/symbol.h
+index c8ec1d7..e92bd07 100644
+--- a/tools/perf/util/symbol.h
++++ b/tools/perf/util/symbol.h
+@@ -158,6 +158,8 @@ struct addr_location {
+ enum dso_binary_type {
+ 	DSO_BINARY_TYPE__KALLSYMS = 0,
+ 	DSO_BINARY_TYPE__GUEST_KALLSYMS,
++	DSO_BINARY_TYPE__VMLINUX,
++	DSO_BINARY_TYPE__GUEST_VMLINUX,
+ 	DSO_BINARY_TYPE__JAVA_JIT,
+ 	DSO_BINARY_TYPE__DEBUGLINK,
+ 	DSO_BINARY_TYPE__BUILD_ID_CACHE,
+-- 
+1.7.11.3
+

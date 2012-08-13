@@ -1,0 +1,179 @@
+Path: news.gmane.org!not-for-mail
+From: Yoshihiro YUNOMAE <yoshihiro.yunomae.ez@hitachi.com>
+Newsgroups: gmane.linux.kernel.virtualization,gmane.linux.kernel,gmane.comp.emulators.qemu
+Subject: [RFC PATCH 3/6] virtio/console: Wait until the port is ready on splice
+Date: Tue, 24 Jul 2012 11:37:28 +0900
+Lines: 78
+Approved: news@gmane.org
+Message-ID: <20120724023728.6600.36390.stgit@ltc189.sdl.hitachi.co.jp>
+References: <20120724023657.6600.52706.stgit@ltc189.sdl.hitachi.co.jp>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343097471 5380 80.91.229.3 (24 Jul 2012 02:37:51 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 24 Jul 2012 02:37:51 +0000 (UTC)
+Cc: Herbert Xu <herbert@gondor.apana.org.au>, Arnd Bergmann <arnd@arndb.de>,
+	Frederic Weisbecker <fweisbec@gmail.com>,
+	yrl.pp-manager.tt@hitachi.com, qemu-devel@nongnu.org,
+	Borislav Petkov <bp@amd64.org>, virtualization@lists.linux-foundation.org,
+	Masami Hiramatsu <masami.hiramatsu.pt@hitachi.com>,
+	"Franch Ch. Eigler" <fche@redhat.com>, Ingo Molnar <mingo@redhat.com>,
+	Mathieu Desnoyers <mathieu.desnoyers@efficios.com>,
+	Steven Rostedt <rostedt@goodmis.org>,
+	Anthony Liguori <anthony@codemonkey.ws>,
+	Greg Kroah-Hartman <gregkh@linuxfoundation.org>,
+	Amit Shah <amit.shah@redhat.com>
+To: linux-kernel@vger.kernel.org
+Original-X-From: virtualization-bounces@lists.linux-foundation.org Tue Jul 24 04:37:48 2012
+Return-path: <virtualization-bounces@lists.linux-foundation.org>
+Envelope-to: glkv-virtualization@gmane.org
+Original-Received: from mail.linuxfoundation.org ([140.211.169.12])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <virtualization-bounces@lists.linux-foundation.org>)
+	id 1StV0K-0001yH-33
+	for glkv-virtualization@gmane.org; Tue, 24 Jul 2012 04:37:44 +0200
+Original-Received: from mail.linux-foundation.org (localhost [IPv6:::1])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id 252D59E2;
+	Tue, 24 Jul 2012 02:37:43 +0000 (UTC)
+X-Original-To: virtualization@lists.linux-foundation.org
+Delivered-To: virtualization@mail.linuxfoundation.org
+Original-Received: from smtp1.linuxfoundation.org (smtp1.linux-foundation.org
+	[172.17.192.35])
+	by mail.linuxfoundation.org (Postfix) with ESMTP id 03814283
+	for <virtualization@lists.linux-foundation.org>;
+	Tue, 24 Jul 2012 02:37:42 +0000 (UTC)
+X-Greylist: domain auto-whitelisted by SQLgrey-1.7.6
+Original-Received: from mail7.hitachi.co.jp (mail7.hitachi.co.jp [133.145.228.42])
+	by smtp1.linuxfoundation.org (Postfix) with ESMTP id 67E051F950
+	for <virtualization@lists.linux-foundation.org>;
+	Tue, 24 Jul 2012 02:37:41 +0000 (UTC)
+Original-Received: from mlsv3.hitachi.co.jp (unknown [133.144.234.166])
+	by mail7.hitachi.co.jp (Postfix) with ESMTP id D997A37ACA;
+	Tue, 24 Jul 2012 11:37:40 +0900 (JST)
+Original-Received: from mfilter04.hitachi.co.jp by mlsv3.hitachi.co.jp (8.13.1/8.13.1)
+	id q6O2beR1023141; Tue, 24 Jul 2012 11:37:40 +0900
+Original-Received: from vshuts4.hitachi.co.jp (vshuts4.hitachi.co.jp [10.201.6.80])
+	by mfilter04.hitachi.co.jp (Switch-3.3.4/Switch-3.3.4) with ESMTP id
+	q6O2bd1H009477; Tue, 24 Jul 2012 11:37:40 +0900
+X-AuditID: b753bd60-91ec3ba0000047ca-85-500e0a73a7d0
+Original-Received: from hsdlmain.sdl.hitachi.co.jp (unknown [133.144.14.194])
+	by vshuts4.hitachi.co.jp (Symantec Mail Security) with ESMTP id
+	173B32043E2; Tue, 24 Jul 2012 11:37:39 +0900 (JST)
+Original-Received: from hsdlvgate2.sdl.hitachi.co.jp by hsdlmain.sdl.hitachi.co.jp
+	(8.13.8/3.7W11021512) id q6O2bcRW027951;
+	Tue, 24 Jul 2012 11:37:38 +0900
+X-AuditID: b753bd60-91ec3ba0000047ca-85-500e0a73a7d0
+Original-Received: from sdl99w.sdl.hitachi.co.jp (sdl99w.sdl.hitachi.co.jp
+	[133.144.14.250])
+	by hsdlvgate2.sdl.hitachi.co.jp (Symantec Mail Security) with ESMTP id
+	ADAF6236561; Tue, 24 Jul 2012 11:37:37 +0900 (JST)
+Original-Received: from maild.sdl.hitachi.co.jp (sdl99d.sdl.hitachi.co.jp
+	[133.144.14.199])
+	by sdl99w.sdl.hitachi.co.jp (Postfix) with ESMTP id BF90C53C1FA;
+	Tue, 24 Jul 2012 11:37:38 +0900 (JST)
+Original-Received: from ltc189.sdl.hitachi.co.jp (unknown [10.232.28.60])
+	by maild.sdl.hitachi.co.jp (Postfix) with ESMTP id 81887495B93;
+	Tue, 24 Jul 2012 11:37:38 +0900 (JST)
+In-Reply-To: <20120724023657.6600.52706.stgit@ltc189.sdl.hitachi.co.jp>
+User-Agent: StGIT/0.14.3
+X-Brightmail-Tracker: AAAAAA==
+X-Spam-Status: No, score=-2.6 required=5.0 tests=BAYES_00,RCVD_IN_DNSWL_LOW
+	autolearn=ham version=3.3.1
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on
+	smtp1.linux-foundation.org
+X-BeenThere: virtualization@lists.linux-foundation.org
+X-Mailman-Version: 2.1.12
+Precedence: list
+List-Id: Linux virtualization <virtualization.lists.linux-foundation.org>
+List-Unsubscribe: <https://lists.linuxfoundation.org/mailman/options/virtualization>,
+	<mailto:virtualization-request@lists.linux-foundation.org?subject=unsubscribe>
+List-Archive: <http://lists.linuxfoundation.org/pipermail/virtualization/>
+List-Post: <mailto:virtualization@lists.linux-foundation.org>
+List-Help: <mailto:virtualization-request@lists.linux-foundation.org?subject=help>
+List-Subscribe: <https://lists.linuxfoundation.org/mailman/listinfo/virtualization>,
+	<mailto:virtualization-request@lists.linux-foundation.org?subject=subscribe>
+Original-Sender: virtualization-bounces@lists.linux-foundation.org
+Errors-To: virtualization-bounces@lists.linux-foundation.org
+Xref: news.gmane.org gmane.linux.kernel.virtualization:16207 gmane.linux.kernel:1332115 gmane.comp.emulators.qemu:161342
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1332115>
+
+From: Masami Hiramatsu <masami.hiramatsu.pt@hitachi.com>
+
+Wait if the port is not connected or full on splice
+like as write is doing.
+
+Signed-off-by: Masami Hiramatsu <masami.hiramatsu.pt@hitachi.com>
+Cc: Amit Shah <amit.shah@redhat.com>
+Cc: Arnd Bergmann <arnd@arndb.de>
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+
+ drivers/char/virtio_console.c |   39 +++++++++++++++++++++++++++------------
+ 1 files changed, 27 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/char/virtio_console.c b/drivers/char/virtio_console.c
+index 911cb3e..e49d435 100644
+--- a/drivers/char/virtio_console.c
++++ b/drivers/char/virtio_console.c
+@@ -724,6 +724,26 @@ static ssize_t port_fops_read(struct file *filp, char __user *ubuf,
+ 	return fill_readbuf(port, ubuf, count, true);
+ }
+ 
++static int wait_port_writable(struct port *port, bool nonblock)
++{
++	int ret;
++
++	if (will_write_block(port)) {
++		if (nonblock)
++			return -EAGAIN;
++
++		ret = wait_event_freezable(port->waitqueue,
++					   !will_write_block(port));
++		if (ret < 0)
++			return ret;
++	}
++	/* Port got hot-unplugged. */
++	if (!port->guest_connected)
++		return -ENODEV;
++
++	return 0;
++}
++
+ static ssize_t port_fops_write(struct file *filp, const char __user *ubuf,
+ 			       size_t count, loff_t *offp)
+ {
+@@ -740,18 +760,9 @@ static ssize_t port_fops_write(struct file *filp, const char __user *ubuf,
+ 
+ 	nonblock = filp->f_flags & O_NONBLOCK;
+ 
+-	if (will_write_block(port)) {
+-		if (nonblock)
+-			return -EAGAIN;
+-
+-		ret = wait_event_freezable(port->waitqueue,
+-					   !will_write_block(port));
+-		if (ret < 0)
+-			return ret;
+-	}
+-	/* Port got hot-unplugged. */
+-	if (!port->guest_connected)
+-		return -ENODEV;
++	ret = wait_port_writable(port, nonblock);
++	if (ret < 0)
++		return ret;
+ 
+ 	count = min((size_t)(32 * 1024), count);
+ 
+@@ -851,6 +862,10 @@ static ssize_t port_fops_splice_write(struct pipe_inode_info *pipe,
+ 		.u.data = &sgl,
+ 	};
+ 
++	ret = wait_port_writable(port, filp->f_flags & O_NONBLOCK);
++	if (ret < 0)
++		return ret;
++
+ 	sgl.n = 0;
+ 	sgl.len = 0;
+ 	sgl.sg = kmalloc(sizeof(struct scatterlist) * MAX_SPLICE_PAGES,

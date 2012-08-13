@@ -1,0 +1,108 @@
+Path: news.gmane.org!not-for-mail
+From: NeilBrown <neilb@suse.de>
+Newsgroups: gmane.linux.kernel,gmane.linux.nfs
+Subject: [PATCH] VFS: d_obtain_alias needs to use "/" as default name.
+Date: Thu, 9 Aug 2012 11:57:06 +1000
+Lines: 61
+Approved: news@gmane.org
+Message-ID: <20120809115706.260a1e4b@notabene.brown>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: multipart/signed; micalg=PGP-SHA1;
+ boundary="Sig_/aUhv.Dbm7uu3iPFz_s_lI_v"; protocol="application/pgp-signature"
+X-Trace: dough.gmane.org 1344477466 32535 80.91.229.3 (9 Aug 2012 01:57:46 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 01:57:46 +0000 (UTC)
+Cc: NFS <linux-nfs@vger.kernel.org>,
+	lkml <linux-kernel@vger.kernel.org>
+To: Al Viro <viro@zeniv.linux.org.uk>,
+	"Myklebust, Trond" <Trond.Myklebust@netapp.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 09 03:57:46 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzI0P-00070r-7I
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 09 Aug 2012 03:57:45 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1754292Ab2HIB52 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 8 Aug 2012 21:57:28 -0400
+Original-Received: from cantor2.suse.de ([195.135.220.15]:57872 "EHLO mx2.suse.de"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1752630Ab2HIB5X (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 8 Aug 2012 21:57:23 -0400
+Original-Received: from relay1.suse.de (unknown [195.135.220.254])
+	(using TLSv1 with cipher DHE-RSA-AES256-SHA (256/256 bits))
+	(No client certificate requested)
+	by mx2.suse.de (Postfix) with ESMTP id 4CD9CA2FB8;
+	Thu,  9 Aug 2012 03:57:22 +0200 (CEST)
+X-Mailer: Claws Mail 3.7.10 (GTK+ 2.24.7; x86_64-suse-linux-gnu)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340423 gmane.linux.nfs:51409
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340423>
+
+--Sig_/aUhv.Dbm7uu3iPFz_s_lI_v
+Content-Type: text/plain; charset=US-ASCII
+Content-Transfer-Encoding: quoted-printable
+
+
+NFS appears to use d_obtain_alias() to create the root dentry rather
+than d_make_root.  This can cause 'prepend_path()' to complain that the
+root has a weird name if an NFS filesystem is lazily unmounted.
+e.g. if "/mnt" is an NFS mount then
+
+ { cd /mnt; umount -l /mnt ; ls -l /proc/self/cwd; }
+
+will cause a WARN message like
+   WARNING: at /home/git/linux/fs/dcache.c:2624 prepend_path+0x1d7/0x1e0()
+   ...
+   Root dentry has weird name <>
+
+to appear in kernel logs.
+
+So change d_obtain_alias() to use "/" rather than "" as the anonymous
+name.
+
+Signed-off-by: NeilBrown <neilb@suse.de>
+
+diff --git a/fs/dcache.c b/fs/dcache.c
+index 8086636..c959e41 100644
+--- a/fs/dcache.c
++++ b/fs/dcache.c
+@@ -1579,7 +1579,7 @@ EXPORT_SYMBOL(d_find_any_alias);
+  */
+ struct dentry *d_obtain_alias(struct inode *inode)
+ {
+-	static const struct qstr anonstring =3D { .name =3D "" };
++	static const struct qstr anonstring =3D QSTR_INIT("/", 1);
+ 	struct dentry *tmp;
+ 	struct dentry *res;
+=20
+
+--Sig_/aUhv.Dbm7uu3iPFz_s_lI_v
+Content-Type: application/pgp-signature; name=signature.asc
+Content-Disposition: attachment; filename=signature.asc
+
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v2.0.18 (GNU/Linux)
+
+iQIVAwUBUCMY8jnsnt1WYoG5AQIJvA/9FgTPiFxUp/e3Jd971qIK2IYynyDGMSKU
+g2R7iyZp1qPEH4A0qDvd7/B9asWlLuhaNOQjXPPyWCKdc6q12UREnw0bluJDfetI
+FeM+oKU+kzytuvAE+pVixtsS+A6vE7DLV4uRW4fYSfdhZoWcQ3UQwvitdAQOQcV9
+fWySE5oBRmp1bmb2MDICM7+BtvJGBW4NyHjdHc/oLmWgCeb1naEilAraralpqCpA
+fnOyvl8VYJ5qIm7lyOUdqEMxCN9wkapmtKnAQGciCXQtbjtUPK3CDVqfNytykWpw
+VWzTTqA7p5vws6i6eQYw22iY1laDhak+4GDfFhzzhpFDnGz/OUyUt7SGopqVO9RL
+TVVkiHeIDaELYCvEhC6+TLfaz8SNJA1Tg2Fp0HpWylYu7RrIG9XWJ4vk+tAZ6VcT
+Grn/WuDknzB0k9ykk8qVeMkK90RBCuaMx+cqFVBsyxb/kndxum8PfB6Lo6UYUd74
+UqAxvCtCCtDK4sE/zunxe1P6tft2C9j6O1GFUM4mzjGJcNku/Y+YvwIyWRCDD+Bo
+bUrP/ZNie7LV+60ckEEAvc+ZaNj7lwn+1A4CWipdBpiW+XDL2eN6Ey+dkNbh9SyA
+KMKd/L+272s4yCcwkQNRppST8bM45e5Gd4vX9s4+kvgBeSzHpimNlPouUoBm9CKh
+JqV9s/VptgA=
+=VhnA
+-----END PGP SIGNATURE-----
+
+--Sig_/aUhv.Dbm7uu3iPFz_s_lI_v--

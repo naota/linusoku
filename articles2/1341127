@@ -1,0 +1,190 @@
+Path: news.gmane.org!not-for-mail
+From: Steven Rostedt <rostedt@goodmis.org>
+Newsgroups: gmane.linux.kernel
+Subject: [RFC][PATCH 3/4] tracing: Use helper functions in event assignment to shrink macro
+ size
+Date: Thu, 09 Aug 2012 23:43:05 -0400
+Lines: 137
+Approved: news@gmane.org
+Message-ID: <20120810034708.370808175@goodmis.org>
+References: <20120810034302.758092203@goodmis.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344570514 20657 80.91.229.3 (10 Aug 2012 03:48:34 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 03:48:34 +0000 (UTC)
+Cc: Ingo Molnar <mingo@kernel.org>,
+	Andrew Morton <akpm@linux-foundation.org>,
+	Frederic Weisbecker <fweisbec@gmail.com>
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Fri Aug 10 05:48:34 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzgDC-0001zH-9e
+	for glk-linux-kernel-3@plane.gmane.org; Fri, 10 Aug 2012 05:48:34 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1760203Ab2HJDrR (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 23:47:17 -0400
+Original-Received: from hrndva-omtalb.mail.rr.com ([71.74.56.122]:18528 "EHLO
+	hrndva-omtalb.mail.rr.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752120Ab2HJDrJ (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 23:47:09 -0400
+X-Authority-Analysis: v=2.0 cv=LIjkseq9 c=1 sm=0 a=s5Htg7xnQOKvHEu9STBOug==:17 a=OpT9cpI26MMA:10 a=Ciwy3NGCPMMA:10 a=j13PpcHcz_sA:10 a=5SG0PmZfjMsA:10 a=bbbx4UPp9XUA:10 a=meVymXHHAAAA:8 a=20KFwNOVAAAA:8 a=1Xd_1-mnmbzoemhrl9gA:9 a=jEp0ucaQiEUA:10 a=jeBq3FmKZ4MA:10 a=s5Htg7xnQOKvHEu9STBOug==:117
+X-Cloudmark-Score: 0
+X-Originating-IP: 72.230.195.127
+Original-Received: from [72.230.195.127] ([72.230.195.127:57637] helo=gandalf.stny.rr.com)
+	by hrndva-oedge01.mail.rr.com (envelope-from <rostedt@goodmis.org>)
+	(ecelerity 2.2.3.46 r()) with ESMTP
+	id 82/22-01685-C3484205; Fri, 10 Aug 2012 03:47:09 +0000
+Original-Received: from rostedt by gandalf.stny.rr.com with local (Exim 4.80)
+	(envelope-from <rostedt@goodmis.org>)
+	id 1SzgBo-00051s-EC; Thu, 09 Aug 2012 23:47:08 -0400
+User-Agent: quilt/0.60-1
+Content-Disposition: inline; filename=0003-tracing-Use-helper-functions-in-event-assignment-to-.patch
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341127
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341127>
+
+From: Steven Rostedt <srostedt@redhat.com>
+
+The functions that assign the contents for the ftrace events are
+defined by the TRACE_EVENT() macros. Each event has its own unique
+way to assign data to its buffer. When you have over 700 events,
+that means there's 700 functions assigning data uniquely for each
+event (not really that many, as DECLARE_EVENT_CLASS() and multiple
+DEFINE_EVENT()s will only need a single function).
+
+By making helper functions in the core kernel to do some of the work
+instead, we can shrink the size of the kernel down a bit.
+
+With a kernel configured with 707 events, the change in size was:
+
+   text    data     bss     dec     hex filename
+19991705        2594648 1945600 24531953        17653f1 vmlinux-before
+19966937        2594648 1945600 24507185        175f331 vmlinux-after
+
+That's a total of 24768 bytes, which comes down to 35 bytes per event.
+
+Signed-off-by: Steven Rostedt <rostedt@goodmis.org>
+---
+ include/linux/ftrace_event.h |   14 ++++++++++++++
+ include/trace/ftrace.h       |   21 ++++++---------------
+ kernel/trace/trace_output.c  |   26 ++++++++++++++++++++++++++
+ 3 files changed, 46 insertions(+), 15 deletions(-)
+
+diff --git a/include/linux/ftrace_event.h b/include/linux/ftrace_event.h
+index 22f5fec..b9f39d3 100644
+--- a/include/linux/ftrace_event.h
++++ b/include/linux/ftrace_event.h
+@@ -148,6 +148,20 @@ int ftrace_event_define_field(struct ftrace_event_call *call,
+ 			      char *type, int len, char *item, int offset,
+ 			      int field_size, int sign, int filter);
+ 
++struct ftrace_event_buffer {
++	struct ring_buffer		*buffer;
++	struct ring_buffer_event	*event;
++	unsigned long			flags;
++	int				pc;
++};
++
++void *ftrace_event_buffer_reserve(struct ftrace_event_buffer *fbuffer,
++				  int type, unsigned long len);
++
++void ftrace_event_buffer_commit(struct ftrace_event_buffer *fbuffer,
++				struct ftrace_event_call *event_call,
++				void *entry);
++
+ struct event_filter;
+ 
+ enum trace_reg {
+diff --git a/include/trace/ftrace.h b/include/trace/ftrace.h
+index 95d6704..8118451 100644
+--- a/include/trace/ftrace.h
++++ b/include/trace/ftrace.h
+@@ -499,33 +499,24 @@ ftrace_raw_event_##call(void *__data, proto)				\
+ {									\
+ 	struct ftrace_event_call *event_call = __data;			\
+ 	struct ftrace_data_offsets_##call __maybe_unused __data_offsets;\
+-	struct ring_buffer_event *event;				\
++	struct ftrace_event_buffer fbuffer;				\
+ 	struct ftrace_raw_##call *entry;				\
+-	struct ring_buffer *buffer;					\
+-	unsigned long irq_flags;					\
+ 	int __data_size;						\
+-	int pc;								\
+-									\
+-	local_save_flags(irq_flags);					\
+-	pc = preempt_count();						\
+ 									\
+ 	__data_size = ftrace_get_offsets_##call(&__data_offsets, args); \
+ 									\
+-	event = trace_current_buffer_lock_reserve(&buffer,		\
++	entry = ftrace_event_buffer_reserve(&fbuffer,			\
+ 				 event_call->event.type,		\
+-				 sizeof(*entry) + __data_size,		\
+-				 irq_flags, pc);			\
+-	if (!event)							\
++				 sizeof(*entry) + __data_size);		\
++									\
++	if (!entry)							\
+ 		return;							\
+-	entry	= ring_buffer_event_data(event);			\
+ 									\
+ 	tstruct								\
+ 									\
+ 	{ assign; }							\
+ 									\
+-	if (!filter_current_check_discard(buffer, event_call, entry, event)) \
+-		trace_nowake_buffer_unlock_commit(buffer,		\
+-						  event, irq_flags, pc); \
++	ftrace_event_buffer_commit(&fbuffer, event_call, entry);	\
+ }
+ /*
+  * The ftrace_test_probe is compiled out, it is only here as a build time check
+diff --git a/kernel/trace/trace_output.c b/kernel/trace/trace_output.c
+index 06f27ab..2babeef 100644
+--- a/kernel/trace/trace_output.c
++++ b/kernel/trace/trace_output.c
+@@ -461,6 +461,32 @@ int ftrace_event_define_field(struct ftrace_event_call *call,
+ 	return ret;
+ }
+ 
++void *ftrace_event_buffer_reserve(struct ftrace_event_buffer *fbuffer,
++				  int type, unsigned long len)
++{
++	local_save_flags(fbuffer->flags);
++	fbuffer->pc = preempt_count();
++
++	fbuffer->event =
++		trace_current_buffer_lock_reserve(&fbuffer->buffer, type, len,
++						  fbuffer->flags, fbuffer->pc);
++	if (!fbuffer->event)
++		return NULL;
++
++	return ring_buffer_event_data(fbuffer->event);
++}
++
++void ftrace_event_buffer_commit(struct ftrace_event_buffer *fbuffer,
++				struct ftrace_event_call *event_call,
++				void *entry)
++{
++	if (!filter_current_check_discard(fbuffer->buffer, event_call,
++					  entry, fbuffer->event))
++		trace_nowake_buffer_unlock_commit(fbuffer->buffer,
++						  fbuffer->event,
++						  fbuffer->flags, fbuffer->pc);
++}
++
+ #ifdef CONFIG_KRETPROBES
+ static inline const char *kretprobed(const char *name)
+ {
+-- 
+1.7.10.4
+
+

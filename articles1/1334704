@@ -1,0 +1,146 @@
+Path: news.gmane.org!not-for-mail
+From: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.kvm.devel
+Subject: [PATCH 5/9] KVM: inline is_*_pfn functions
+Date: Sun, 29 Jul 2012 16:15:07 +0800
+Lines: 85
+Approved: news@gmane.org
+Message-ID: <5014F10B.6020901@linux.vnet.ibm.com>
+References: <5014F053.8020305@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343549735 16414 80.91.229.3 (29 Jul 2012 08:15:35 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 29 Jul 2012 08:15:35 +0000 (UTC)
+Cc: Avi Kivity <avi@redhat.com>, Marcelo Tosatti <mtosatti@redhat.com>,
+	LKML <linux-kernel@vger.kernel.org>, KVM <kvm@vger.kernel.org>
+To: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 29 10:15:35 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvOez-0001Au-Sc
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 29 Jul 2012 10:15:34 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753060Ab2G2IPY (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 29 Jul 2012 04:15:24 -0400
+Original-Received: from e23smtp03.au.ibm.com ([202.81.31.145]:33220 "EHLO
+	e23smtp03.au.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752089Ab2G2IPW (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 29 Jul 2012 04:15:22 -0400
+Original-Received: from /spool/local
+	by e23smtp03.au.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <xiaoguangrong@linux.vnet.ibm.com>;
+	Sun, 29 Jul 2012 18:15:01 +1000
+Original-Received: from d23relay03.au.ibm.com (202.81.31.245)
+	by e23smtp03.au.ibm.com (202.81.31.209) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Sun, 29 Jul 2012 18:14:51 +1000
+Original-Received: from d23av02.au.ibm.com (d23av02.au.ibm.com [9.190.235.138])
+	by d23relay03.au.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6T8F9k019595346;
+	Sun, 29 Jul 2012 18:15:09 +1000
+Original-Received: from d23av02.au.ibm.com (loopback [127.0.0.1])
+	by d23av02.au.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6T8F850013833;
+	Sun, 29 Jul 2012 18:15:09 +1000
+Original-Received: from localhost.localdomain ([9.123.236.99])
+	by d23av02.au.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6T8F7JS013823;
+	Sun, 29 Jul 2012 18:15:07 +1000
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:14.0) Gecko/20120717 Thunderbird/14.0
+In-Reply-To: <5014F053.8020305@linux.vnet.ibm.com>
+x-cbid: 12072908-6102-0000-0000-000001F6A8ED
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334704 gmane.comp.emulators.kvm.devel:95188
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334704>
+
+These functions are exported and can not inline, move them
+to kvm_host.h to eliminate the overload of function call
+
+Signed-off-by: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+---
+ include/linux/kvm_host.h |   19 ++++++++++++++++---
+ virt/kvm/kvm_main.c      |   18 ------------------
+ 2 files changed, 16 insertions(+), 21 deletions(-)
+
+diff --git a/include/linux/kvm_host.h b/include/linux/kvm_host.h
+index b02203f..98255ce 100644
+--- a/include/linux/kvm_host.h
++++ b/include/linux/kvm_host.h
+@@ -21,6 +21,7 @@
+ #include <linux/slab.h>
+ #include <linux/rcupdate.h>
+ #include <linux/ratelimit.h>
++#include <linux/err.h>
+ #include <asm/signal.h>
+
+ #include <linux/kvm.h>
+@@ -52,6 +53,21 @@
+ #define kvm_hwpoison_pfn	(-EHWPOISON)
+ #define kvm_bad_pfn		(-ENOENT)
+
++static inline int is_error_pfn(pfn_t pfn)
++{
++	return IS_ERR_VALUE(pfn);
++}
++
++static inline int is_noslot_pfn(pfn_t pfn)
++{
++	return pfn == -ENOENT;
++}
++
++static inline int is_invalid_pfn(pfn_t pfn)
++{
++	return !is_noslot_pfn(pfn) && is_error_pfn(pfn);
++}
++
+ /*
+  * vcpu->requests bit members
+  */
+@@ -397,9 +413,6 @@ id_to_memslot(struct kvm_memslots *slots, int id)
+ extern struct page *bad_page;
+
+ int is_error_page(struct page *page);
+-int is_error_pfn(pfn_t pfn);
+-int is_noslot_pfn(pfn_t pfn);
+-int is_invalid_pfn(pfn_t pfn);
+ int kvm_is_error_hva(unsigned long addr);
+ int kvm_set_memory_region(struct kvm *kvm,
+ 			  struct kvm_userspace_memory_region *mem,
+diff --git a/virt/kvm/kvm_main.c b/virt/kvm/kvm_main.c
+index da16191..51aaba4 100644
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -937,24 +937,6 @@ int is_error_page(struct page *page)
+ }
+ EXPORT_SYMBOL_GPL(is_error_page);
+
+-int is_error_pfn(pfn_t pfn)
+-{
+-	return IS_ERR_VALUE(pfn);
+-}
+-EXPORT_SYMBOL_GPL(is_error_pfn);
+-
+-int is_noslot_pfn(pfn_t pfn)
+-{
+-	return pfn == -ENOENT;
+-}
+-EXPORT_SYMBOL_GPL(is_noslot_pfn);
+-
+-int is_invalid_pfn(pfn_t pfn)
+-{
+-	return !is_noslot_pfn(pfn) && is_error_pfn(pfn);
+-}
+-EXPORT_SYMBOL_GPL(is_invalid_pfn);
+-
+ struct page *get_bad_page(void)
+ {
+ 	return ERR_PTR(-ENOENT);
+-- 
+1.7.7.6
+

@@ -1,0 +1,81 @@
+Path: news.gmane.org!not-for-mail
+From: Gleb Natapov <gleb@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.kvm.devel
+Subject: [PATCH] perf/x86: disable PEBS on a guest entry.
+Date: Thu, 9 Aug 2012 11:52:34 +0300
+Lines: 31
+Approved: news@gmane.org
+Message-ID: <20120809085234.GI3341@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344502378 6607 80.91.229.3 (9 Aug 2012 08:52:58 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Thu, 9 Aug 2012 08:52:58 +0000 (UTC)
+Cc: kvm@vger.kernel.org, avi@redhat.com, mtosatti@redhat.com,
+	dsahern@gmail.com, peterz@infradead.org, mingo@kernel.org
+To: linux-kernel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Thu Aug 09 10:52:57 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzOUB-0007HF-65
+	for glk-linux-kernel-3@plane.gmane.org; Thu, 09 Aug 2012 10:52:55 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1756891Ab2HIIwo (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Thu, 9 Aug 2012 04:52:44 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:22142 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1753795Ab2HIIwl (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Thu, 9 Aug 2012 04:52:41 -0400
+Original-Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q798qZTg028651
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Thu, 9 Aug 2012 04:52:35 -0400
+Original-Received: from dhcp-1-237.tlv.redhat.com (dhcp-4-26.tlv.redhat.com [10.35.4.26])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q798qYdI006329;
+	Thu, 9 Aug 2012 04:52:35 -0400
+Original-Received: by dhcp-1-237.tlv.redhat.com (Postfix, from userid 13519)
+	id 7CC8018D414; Thu,  9 Aug 2012 11:52:34 +0300 (IDT)
+Content-Disposition: inline
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1340558 gmane.comp.emulators.kvm.devel:95874
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1340558>
+
+If PMU counter has PEBS enabled it is not enough to disable counter
+on a guest entry since PEBS memory write can overshoot guest entry
+and corrupt guest memory. Disabling PEBS during guest entry solves
+the problem.
+
+Tested-by: David Ahern <dsahern@gmail.com>
+Signed-off-by: Gleb Natapov <gleb@redhat.com>
+diff --git a/arch/x86/kernel/cpu/perf_event_intel.c b/arch/x86/kernel/cpu/perf_event_intel.c
+index 7a8b9d0..7268fd8 100644
+--- a/arch/x86/kernel/cpu/perf_event_intel.c
++++ b/arch/x86/kernel/cpu/perf_event_intel.c
+@@ -1444,8 +1444,16 @@ static struct perf_guest_switch_msr *intel_guest_get_msrs(int *nr)
+ 	arr[0].msr = MSR_CORE_PERF_GLOBAL_CTRL;
+ 	arr[0].host = x86_pmu.intel_ctrl & ~cpuc->intel_ctrl_guest_mask;
+ 	arr[0].guest = x86_pmu.intel_ctrl & ~cpuc->intel_ctrl_host_mask;
++	/*
++	 * If PMU counter has PEBS enabled it is not enough to disable counter
++	 * on a guest entry since PEBS memory write can overshoot guest entry
++	 * and corrupt guest memory. Disabling PEBS solves the problem.
++	 */
++	arr[1].msr = MSR_IA32_PEBS_ENABLE;
++	arr[1].host = cpuc->pebs_enabled;
++	arr[1].guest = 0;
+ 
+-	*nr = 1;
++	*nr = 2;
+ 	return arr;
+ }
+ 
+--
+			Gleb.

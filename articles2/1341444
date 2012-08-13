@@ -1,0 +1,320 @@
+Path: news.gmane.org!not-for-mail
+From: Seth Forshee <seth.forshee@canonical.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.video.dri.devel
+Subject: Re: [RFC PATCH 3/5] drm/i915: register LVDS connector even if we
+ can't get a panel mode
+Date: Fri, 10 Aug 2012 17:19:48 -0500
+Lines: 255
+Approved: news@gmane.org
+Message-ID: <20120810221948.GB28366@thinkpad-t410>
+References: <1344009741-14248-1-git-send-email-seth.forshee@canonical.com>
+ <1344009741-14248-4-git-send-email-seth.forshee@canonical.com>
+ <20120803161416.GA22563@srcf.ucam.org>
+ <20120803162451.GF8165@thinkpad-t410>
+ <20120803162702.GA22896@srcf.ucam.org>
+ <20120804165727.GA4980@thinkpad-t410>
+ <20120805211412.GG12232@phenom.ffwll.local>
+ <20120805211838.GA27188@srcf.ucam.org>
+ <20120805214016.GH12232@phenom.ffwll.local>
+ <CAPM=9twHbwzPxFbpeXOP2eANVQssVaOHuztG9FDM4CgcQs-9tA@mail.gmail.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+X-Trace: dough.gmane.org 1344637216 21502 80.91.229.3 (10 Aug 2012 22:20:16 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Fri, 10 Aug 2012 22:20:16 +0000 (UTC)
+Cc: dri-devel@lists.freedesktop.org, David Airlie <airlied@linux.ie>,
+	linux-kernel@vger.kernel.org, Andreas Heider <andreas@meetr.de>
+To: Dave Airlie <airlied@gmail.com>, Daniel Vetter <daniel@ffwll.ch>,
+	Matthew Garrett <mjg59@srcf.ucam.org>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sat Aug 11 00:20:16 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SzxYy-0004qO-NI
+	for glk-linux-kernel-3@plane.gmane.org; Sat, 11 Aug 2012 00:20:13 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1758991Ab2HJWUH (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Fri, 10 Aug 2012 18:20:07 -0400
+Original-Received: from youngberry.canonical.com ([91.189.89.112]:45508 "EHLO
+	youngberry.canonical.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1755174Ab2HJWUD (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Fri, 10 Aug 2012 18:20:03 -0400
+Original-Received: from 64-126-113-183.dyn.everestkc.net ([64.126.113.183] helo=canonical.com)
+	by youngberry.canonical.com with esmtpsa (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.71)
+	(envelope-from <seth.forshee@canonical.com>)
+	id 1SzxYk-00070P-8M; Fri, 10 Aug 2012 22:19:58 +0000
+Mail-Followup-To: Dave Airlie <airlied@gmail.com>,
+	Daniel Vetter <daniel@ffwll.ch>,
+	Matthew Garrett <mjg59@srcf.ucam.org>,
+	dri-devel@lists.freedesktop.org, David Airlie <airlied@linux.ie>,
+	linux-kernel@vger.kernel.org, Andreas Heider <andreas@meetr.de>
+Content-Disposition: inline
+In-Reply-To: <CAPM=9twHbwzPxFbpeXOP2eANVQssVaOHuztG9FDM4CgcQs-9tA@mail.gmail.com>
+User-Agent: Mutt/1.5.21 (2010-09-15)
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1341444 gmane.comp.video.dri.devel:72416
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1341444>
+
+On Mon, Aug 06, 2012 at 07:44:16AM +1000, Dave Airlie wrote:
+> >> The "correct" approach is clearly to just have the drm core change the
+> >> i2c mux before requesting edid, but that's made difficult because of the
+> >> absence of ordering guarantees in initialisation. I don't like quirking
+> >> this, since we're then back to the situation of potentially having to
+> >> add every new piece of related hardware to the quirk list.
+> >
+> > The "correct" approach of switching the mux before we fetch the edid is
+> > actualy the one I fear will result in fragile code: Only run on few
+> > machines, and as you say with tons of funky interactions with the init
+> > sequence ordering. And I guess people will bitch&moan about the flickering
+> > this will cause ;-)
+> >
+> > As long as it's only apple shipping multi-gpu machines with
+> > broken/non-existing vbt, I'll happily stomach the quirk list entries.
+> > They're bad, but imo the lesser evil.
+> 
+> Well in theory you can switch the ddc lines without switching the other lines,
+> so we could do a mutex protected mux switch around edid retrival,
+> 
+> Of course someone would have to code it up first then we could see how
+> ugly it would be.
+
+I coded it up, and it's not really too bad. I've put a dump of my local
+changes below. But there are a couple of problems.
+
+First, I don't have a solution for the ordering of initialization. It
+just happens to work out for me right now.
+
+Even so, the code only works if I delay loading i915. apple-gmux is
+definitely initializing first so the i2c mux should be getting switched,
+but the transactions are failing.
+
+[   19.445658] [drm:gmbus_xfer], GMBUS [i915 gmbus panel] timed out after NAK 
+[   19.445672] [drm:gmbus_xfer], GMBUS [i915 gmbus panel] NAK for addr: 0050 r(1) 
+
+But if I prevent i915 from being auto-loaded and load later on it works
+fine. I haven't been able to figure out what's going on. Any ideas?
+
+Thanks,
+Seth
+
+
+diff --git a/drivers/gpu/drm/drm_edid.c b/drivers/gpu/drm/drm_edid.c
+index a8743c3..3f18e8a 100644
+--- a/drivers/gpu/drm/drm_edid.c
++++ b/drivers/gpu/drm/drm_edid.c
+@@ -31,6 +31,7 @@
+ #include <linux/slab.h>
+ #include <linux/i2c.h>
+ #include <linux/module.h>
++#include <linux/vga_switcheroo.h>
+ #include "drmP.h"
+ #include "drm_edid.h"
+ #include "drm_edid_modes.h"
+@@ -82,6 +83,8 @@ struct detailed_mode_closure {
+ #define LEVEL_GTF2	2
+ #define LEVEL_CVT	3
+ 
++static DEFINE_MUTEX(drm_edid_mutex);
++
+ static struct edid_quirk {
+ 	char vendor[4];
+ 	int product_id;
+@@ -395,12 +398,25 @@ struct edid *drm_get_edid(struct drm_connector *connector,
+ 			  struct i2c_adapter *adapter)
+ {
+ 	struct edid *edid = NULL;
++	struct pci_dev *pdev = connector->dev->pdev;
++	struct pci_dev *active_pdev = NULL;
++
++	mutex_lock(&drm_edid_mutex);
++
++	if (pdev) {
++		active_pdev = vga_switcheroo_get_active_client();
++		vga_switcheroo_switch_ddc(pdev);
++	}
+ 
+ 	if (drm_probe_ddc(adapter))
+ 		edid = (struct edid *)drm_do_get_edid(connector, adapter);
+ 
++	if (active_pdev)
++		vga_switcheroo_switch_ddc(active_pdev);
++
+ 	connector->display_info.raw_edid = (char *)edid;
+ 
++	mutex_unlock(&drm_edid_mutex);
+ 	return edid;
+ 
+ }
+diff --git a/drivers/gpu/vga/vga_switcheroo.c b/drivers/gpu/vga/vga_switcheroo.c
+index e25cf31..e53f67d 100644
+--- a/drivers/gpu/vga/vga_switcheroo.c
++++ b/drivers/gpu/vga/vga_switcheroo.c
+@@ -205,6 +205,20 @@ find_active_client(struct list_head *head)
+ 	return NULL;
+ }
+ 
++struct pci_dev *vga_switcheroo_get_active_client(void)
++{
++	struct vga_switcheroo_client *client;
++	struct pci_dev *pdev = NULL;
++
++	mutex_lock(&vgasr_mutex);
++	client = find_active_client(&vgasr_priv.clients);
++	if (client)
++		pdev = client->pdev;
++	mutex_unlock(&vgasr_mutex);
++	return pdev;
++}
++EXPORT_SYMBOL(vga_switcheroo_get_active_client);
++
+ int vga_switcheroo_get_client_state(struct pci_dev *pdev)
+ {
+ 	struct vga_switcheroo_client *client;
+@@ -252,6 +266,29 @@ void vga_switcheroo_client_fb_set(struct pci_dev *pdev,
+ }
+ EXPORT_SYMBOL(vga_switcheroo_client_fb_set);
+ 
++int vga_switcheroo_switch_ddc(struct pci_dev *pdev)
++{
++	int ret = 0;
++	int id;
++
++	mutex_lock(&vgasr_mutex);
++
++	if (!vgasr_priv.handler) {
++		ret = -ENODEV;
++		goto out;
++	}
++
++	if (vgasr_priv.handler->switch_ddc) {
++		id = vgasr_priv.handler->get_client_id(pdev);
++		ret = vgasr_priv.handler->switch_ddc(id);
++	}
++
++out:
++	mutex_unlock(&vgasr_mutex);
++	return ret;
++}
++EXPORT_SYMBOL(vga_switcheroo_switch_ddc);
++
+ static int vga_switcheroo_show(struct seq_file *m, void *v)
+ {
+ 	struct vga_switcheroo_client *client;
+@@ -342,9 +379,15 @@ static int vga_switchto_stage2(struct vga_switcheroo_client *new_client)
+ 		fb_notifier_call_chain(FB_EVENT_REMAP_ALL_CONSOLE, &event);
+ 	}
+ 
++	if (vgasr_priv.handler->switch_ddc) {
++		ret = vgasr_priv.handler->switch_ddc(new_client->id);
++		if (ret)
++			return ret;
++	}
++
+ 	ret = vgasr_priv.handler->switchto(new_client->id);
+ 	if (ret)
+-		return ret;
++		goto restore_ddc;
+ 
+ 	if (new_client->ops->reprobe)
+ 		new_client->ops->reprobe(new_client->pdev);
+@@ -356,6 +399,14 @@ static int vga_switchto_stage2(struct vga_switcheroo_client *new_client)
+ 
+ 	new_client->active = true;
+ 	return 0;
++
++restore_ddc:
++	if (vgasr_priv.handler->switch_ddc) {
++		int id = (new_client->id == VGA_SWITCHEROO_IGD) ?
++				VGA_SWITCHEROO_DIS : VGA_SWITCHEROO_IGD;
++		ret = vgasr_priv.handler->switch_ddc(id);
++	}
++	return ret;
+ }
+ 
+ static bool check_can_switch(void)
+diff --git a/drivers/platform/x86/apple-gmux.c b/drivers/platform/x86/apple-gmux.c
+index 8ea2640..38f49fb 100644
+--- a/drivers/platform/x86/apple-gmux.c
++++ b/drivers/platform/x86/apple-gmux.c
+@@ -122,14 +122,21 @@ static const struct backlight_ops gmux_bl_ops = {
+ 	.update_status = gmux_update_status,
+ };
+ 
++static int gmux_switchddc(enum vga_switcheroo_client_id id)
++{
++	if (id == VGA_SWITCHEROO_IGD)
++		gmux_write8(apple_gmux_data, GMUX_PORT_SWITCH_DDC, 1);
++	else
++		gmux_write8(apple_gmux_data, GMUX_PORT_SWITCH_DDC, 2);
++	return 0;
++}
++
+ static int gmux_switchto(enum vga_switcheroo_client_id id)
+ {
+ 	if (id == VGA_SWITCHEROO_IGD) {
+-		gmux_write8(apple_gmux_data, GMUX_PORT_SWITCH_DDC, 1);
+ 		gmux_write8(apple_gmux_data, GMUX_PORT_SWITCH_DISPLAY, 2);
+ 		gmux_write8(apple_gmux_data, GMUX_PORT_SWITCH_EXTERNAL, 2);
+ 	} else {
+-		gmux_write8(apple_gmux_data, GMUX_PORT_SWITCH_DDC, 2);
+ 		gmux_write8(apple_gmux_data, GMUX_PORT_SWITCH_DISPLAY, 3);
+ 		gmux_write8(apple_gmux_data, GMUX_PORT_SWITCH_EXTERNAL, 3);
+ 	}
+@@ -196,6 +203,7 @@ gmux_active_client(struct apple_gmux_data *gmux_data)
+ }
+ 
+ static struct vga_switcheroo_handler gmux_handler = {
++	.switch_ddc = gmux_switchddc,
+ 	.switchto = gmux_switchto,
+ 	.power_state = gmux_set_power_state,
+ 	.get_client_id = gmux_get_client_id,
+diff --git a/include/linux/vga_switcheroo.h b/include/linux/vga_switcheroo.h
+index ddb419c..e361858 100644
+--- a/include/linux/vga_switcheroo.h
++++ b/include/linux/vga_switcheroo.h
+@@ -29,6 +29,7 @@ enum vga_switcheroo_client_id {
+ };
+ 
+ struct vga_switcheroo_handler {
++	int (*switch_ddc)(enum vga_switcheroo_client_id id);
+ 	int (*switchto)(enum vga_switcheroo_client_id id);
+ 	int (*power_state)(enum vga_switcheroo_client_id id,
+ 			   enum vga_switcheroo_state state);
+@@ -53,11 +54,14 @@ int vga_switcheroo_register_audio_client(struct pci_dev *pdev,
+ void vga_switcheroo_client_fb_set(struct pci_dev *dev,
+ 				  struct fb_info *info);
+ 
++int vga_switcheroo_switch_ddc(struct pci_dev *pdev);
++
+ int vga_switcheroo_register_handler(struct vga_switcheroo_handler *handler);
+ void vga_switcheroo_unregister_handler(void);
+ 
+ int vga_switcheroo_process_delayed_switch(void);
+ 
++struct pci_dev *vga_switcheroo_get_active_client(void);
+ int vga_switcheroo_get_client_state(struct pci_dev *dev);
+ 
+ #else
+@@ -66,12 +70,14 @@ static inline void vga_switcheroo_unregister_client(struct pci_dev *dev) {}
+ static inline int vga_switcheroo_register_client(struct pci_dev *dev,
+ 		const struct vga_switcheroo_client_ops *ops) { return 0; }
+ static inline void vga_switcheroo_client_fb_set(struct pci_dev *dev, struct fb_info *info) {}
++static inline void vga_switcheroo_switch_ddc(struct pci_dev *pdev) { return NULL; }
+ static inline int vga_switcheroo_register_handler(struct vga_switcheroo_handler *handler) { return 0; }
+ static inline int vga_switcheroo_register_audio_client(struct pci_dev *pdev,
+ 	const struct vga_switcheroo_client_ops *ops,
+ 	int id, bool active) { return 0; }
+ static inline void vga_switcheroo_unregister_handler(void) {}
+ static inline int vga_switcheroo_process_delayed_switch(void) { return 0; }
++static inline struct pci_dev *vga_switcheroo_get_active_client(void) { return NULL; }
+ static inline int vga_switcheroo_get_client_state(struct pci_dev *dev) { return VGA_SWITCHEROO_ON; }
+ 
+ 

@@ -1,0 +1,100 @@
+Path: news.gmane.org!not-for-mail
+From: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+Newsgroups: gmane.linux.kernel,gmane.comp.emulators.kvm.devel
+Subject: [PATCH 1/9] KVM: iommu: fix releasing unmapped page
+Date: Sun, 29 Jul 2012 16:12:03 +0800
+Lines: 41
+Approved: news@gmane.org
+Message-ID: <5014F053.8020305@linux.vnet.ibm.com>
+NNTP-Posting-Host: plane.gmane.org
+Mime-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 7bit
+X-Trace: dough.gmane.org 1343549590 15599 80.91.229.3 (29 Jul 2012 08:13:10 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Sun, 29 Jul 2012 08:13:10 +0000 (UTC)
+Cc: Marcelo Tosatti <mtosatti@redhat.com>,
+	LKML <linux-kernel@vger.kernel.org>, KVM <kvm@vger.kernel.org>
+To: Avi Kivity <avi@redhat.com>
+Original-X-From: linux-kernel-owner@vger.kernel.org Sun Jul 29 10:13:09 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SvOcd-00088u-W9
+	for glk-linux-kernel-3@plane.gmane.org; Sun, 29 Jul 2012 10:13:08 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1752785Ab2G2IM6 (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Sun, 29 Jul 2012 04:12:58 -0400
+Original-Received: from e23smtp06.au.ibm.com ([202.81.31.148]:54683 "EHLO
+	e23smtp06.au.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1752375Ab2G2IML (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Sun, 29 Jul 2012 04:12:11 -0400
+Original-Received: from /spool/local
+	by e23smtp06.au.ibm.com with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted
+	for <linux-kernel@vger.kernel.org> from <xiaoguangrong@linux.vnet.ibm.com>;
+	Sun, 29 Jul 2012 18:11:53 +1000
+Original-Received: from d23relay04.au.ibm.com (202.81.31.246)
+	by e23smtp06.au.ibm.com (202.81.31.212) with IBM ESMTP SMTP Gateway: Authorized Use Only! Violators will be prosecuted;
+	Sun, 29 Jul 2012 18:11:51 +1000
+Original-Received: from d23av02.au.ibm.com (d23av02.au.ibm.com [9.190.235.138])
+	by d23relay04.au.ibm.com (8.13.8/8.13.8/NCO v10.0) with ESMTP id q6T83qsf14352506;
+	Sun, 29 Jul 2012 18:03:52 +1000
+Original-Received: from d23av02.au.ibm.com (loopback [127.0.0.1])
+	by d23av02.au.ibm.com (8.14.4/8.13.1/NCO v10.0 AVout) with ESMTP id q6T8C5SF009957;
+	Sun, 29 Jul 2012 18:12:05 +1000
+Original-Received: from localhost.localdomain ([9.123.236.99])
+	by d23av02.au.ibm.com (8.14.4/8.13.1/NCO v10.0 AVin) with ESMTP id q6T8C3Il009614;
+	Sun, 29 Jul 2012 18:12:04 +1000
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:14.0) Gecko/20120717 Thunderbird/14.0
+x-cbid: 12072908-7014-0000-0000-000001A392ED
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1334699 gmane.comp.emulators.kvm.devel:95184
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1334699>
+
+There are two bugs:
+- the 'error page' is forgot to be released
+  [ it is unneeded after commit a2766325cf9f9, for backport, we
+    still do kvm_release_pfn_clean for the error pfn ]
+
+- guest pages are always released regardless of the unmapped page
+  (e,g, caused by hwpoison)
+
+Signed-off-by: Xiao Guangrong <xiaoguangrong@linux.vnet.ibm.com>
+---
+ virt/kvm/iommu.c |    7 +++++++
+ 1 files changed, 7 insertions(+), 0 deletions(-)
+
+diff --git a/virt/kvm/iommu.c b/virt/kvm/iommu.c
+index c03f1fb..6a67bea 100644
+--- a/virt/kvm/iommu.c
++++ b/virt/kvm/iommu.c
+@@ -107,6 +107,7 @@ int kvm_iommu_map_pages(struct kvm *kvm, struct kvm_memory_slot *slot)
+ 		 */
+ 		pfn = kvm_pin_pages(slot, gfn, page_size);
+ 		if (is_error_pfn(pfn)) {
++			kvm_release_pfn_clean(pfn);
+ 			gfn += 1;
+ 			continue;
+ 		}
+@@ -300,6 +301,12 @@ static void kvm_iommu_put_pages(struct kvm *kvm,
+
+ 		/* Get physical address */
+ 		phys = iommu_iova_to_phys(domain, gfn_to_gpa(gfn));
++
++		if (!phys) {
++			gfn++;
++			continue;
++		}
++
+ 		pfn  = phys >> PAGE_SHIFT;
+
+ 		/* Unmap address from IO address space */
+-- 
+1.7.7.6
+

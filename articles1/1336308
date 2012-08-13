@@ -1,0 +1,109 @@
+Path: news.gmane.org!not-for-mail
+From: Jiri Olsa <jolsa@redhat.com>
+Newsgroups: gmane.linux.kernel
+Subject: [PATCH] perf, test: Fix parse events automated tests
+Date: Wed,  1 Aug 2012 14:48:58 +0200
+Lines: 63
+Approved: news@gmane.org
+Message-ID: <1343825338-10618-1-git-send-email-jolsa@redhat.com>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1343825359 16746 80.91.229.3 (1 Aug 2012 12:49:19 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Wed, 1 Aug 2012 12:49:19 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, Jiri Olsa <jolsa@redhat.com>,
+	Frederic Weisbecker <fweisbec@gmail.com>
+To: acme@ghostprotocols.net, a.p.zijlstra@chello.nl, mingo@redhat.com,
+	paulus@samba.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 01 14:49:18 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SwYMU-0002ym-U2
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 01 Aug 2012 14:49:15 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753071Ab2HAMtH (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Wed, 1 Aug 2012 08:49:07 -0400
+Original-Received: from mx1.redhat.com ([209.132.183.28]:39966 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751169Ab2HAMtF (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Wed, 1 Aug 2012 08:49:05 -0400
+Original-Received: from int-mx12.intmail.prod.int.phx2.redhat.com (int-mx12.intmail.prod.int.phx2.redhat.com [10.5.11.25])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q71Cn1w7018157
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Wed, 1 Aug 2012 08:49:01 -0400
+Original-Received: from krava.brq.redhat.com (dhcp-1-202.brq.redhat.com [10.34.1.202])
+	by int-mx12.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q71CmxtV029098;
+	Wed, 1 Aug 2012 08:48:59 -0400
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.25
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1336308
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1336308>
+
+Parse events tests got broken after following commit:
+
+  perf tools: Fix trace events storms due to weight demux
+  commit 0983cc0dbca45250cbb5984bec7c303ac265b8e5
+  Author: Frederic Weisbecker <fweisbec@gmail.com>
+
+that added PERF_SAMPLE_PERIOD sample type for tracepoints.
+
+Updating related tests.
+
+Signed-off-by: Jiri Olsa <jolsa@redhat.com>
+Cc: Frederic Weisbecker <fweisbec@gmail.com>
+---
+ tools/perf/util/parse-events-test.c |   12 ++++++------
+ 1 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/tools/perf/util/parse-events-test.c b/tools/perf/util/parse-events-test.c
+index 1b997d2..127d648 100644
+--- a/tools/perf/util/parse-events-test.c
++++ b/tools/perf/util/parse-events-test.c
+@@ -13,6 +13,9 @@ do { \
+ 	} \
+ } while (0)
+ 
++#define PERF_TP_SAMPLE_TYPE (PERF_SAMPLE_RAW | PERF_SAMPLE_TIME | \
++			     PERF_SAMPLE_CPU | PERF_SAMPLE_PERIOD)
++
+ static int test__checkevent_tracepoint(struct perf_evlist *evlist)
+ {
+ 	struct perf_evsel *evsel = list_entry(evlist->entries.next,
+@@ -21,8 +24,7 @@ static int test__checkevent_tracepoint(struct perf_evlist *evlist)
+ 	TEST_ASSERT_VAL("wrong number of entries", 1 == evlist->nr_entries);
+ 	TEST_ASSERT_VAL("wrong type", PERF_TYPE_TRACEPOINT == evsel->attr.type);
+ 	TEST_ASSERT_VAL("wrong sample_type",
+-		(PERF_SAMPLE_RAW | PERF_SAMPLE_TIME | PERF_SAMPLE_CPU) ==
+-		evsel->attr.sample_type);
++		PERF_TP_SAMPLE_TYPE == evsel->attr.sample_type);
+ 	TEST_ASSERT_VAL("wrong sample_period", 1 == evsel->attr.sample_period);
+ 	return 0;
+ }
+@@ -37,8 +39,7 @@ static int test__checkevent_tracepoint_multi(struct perf_evlist *evlist)
+ 		TEST_ASSERT_VAL("wrong type",
+ 			PERF_TYPE_TRACEPOINT == evsel->attr.type);
+ 		TEST_ASSERT_VAL("wrong sample_type",
+-			(PERF_SAMPLE_RAW | PERF_SAMPLE_TIME | PERF_SAMPLE_CPU)
+-			== evsel->attr.sample_type);
++			PERF_TP_SAMPLE_TYPE == evsel->attr.sample_type);
+ 		TEST_ASSERT_VAL("wrong sample_period",
+ 			1 == evsel->attr.sample_period);
+ 	}
+@@ -428,8 +429,7 @@ static int test__checkevent_list(struct perf_evlist *evlist)
+ 	evsel = list_entry(evsel->node.next, struct perf_evsel, node);
+ 	TEST_ASSERT_VAL("wrong type", PERF_TYPE_TRACEPOINT == evsel->attr.type);
+ 	TEST_ASSERT_VAL("wrong sample_type",
+-		(PERF_SAMPLE_RAW | PERF_SAMPLE_TIME | PERF_SAMPLE_CPU) ==
+-		evsel->attr.sample_type);
++		PERF_TP_SAMPLE_TYPE == evsel->attr.sample_type);
+ 	TEST_ASSERT_VAL("wrong sample_period", 1 == evsel->attr.sample_period);
+ 	TEST_ASSERT_VAL("wrong exclude_user", evsel->attr.exclude_user);
+ 	TEST_ASSERT_VAL("wrong exclude_kernel", !evsel->attr.exclude_kernel);
+-- 
+1.7.7.6
+

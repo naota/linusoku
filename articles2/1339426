@@ -1,0 +1,109 @@
+Path: news.gmane.org!not-for-mail
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Newsgroups: gmane.linux.kernel,gmane.linux.kernel.stable
+Subject: [ 050/122] iwlwifi: Check BSS ctx active before call mac80211
+Date: Tue,  7 Aug 2012 15:25:38 -0700
+Lines: 43
+Approved: news@gmane.org
+Message-ID: <20120807221952.721102185@linuxfoundation.org>
+References: <20120807221948.220495155@linuxfoundation.org>
+NNTP-Posting-Host: plane.gmane.org
+X-Trace: dough.gmane.org 1344378619 14016 80.91.229.3 (7 Aug 2012 22:30:19 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Tue, 7 Aug 2012 22:30:19 +0000 (UTC)
+Cc: Greg KH <gregkh@linuxfoundation.org>,
+	torvalds@linux-foundation.org, akpm@linux-foundation.org,
+	alan@lxorguk.ukuu.org.uk, Daniel J Blueman <daniel@quora.org>,
+	Emmanuel Grumbach <emmanuel.grumbach@intel.com>,
+	Ilan Peer <ilan.peer@intel.com>,
+	Johannes Berg <johannes.berg@intel.com>
+To: linux-kernel@vger.kernel.org, stable@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Wed Aug 08 00:30:12 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@plane.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by plane.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1SysHz-0000lk-Nr
+	for glk-linux-kernel-3@plane.gmane.org; Wed, 08 Aug 2012 00:30:12 +0200
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S932630Ab2HGW3k (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Tue, 7 Aug 2012 18:29:40 -0400
+Original-Received: from mail-pb0-f46.google.com ([209.85.160.46]:54583 "EHLO
+	mail-pb0-f46.google.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S932459Ab2HGW3f (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Tue, 7 Aug 2012 18:29:35 -0400
+Original-Received: by mail-pb0-f46.google.com with SMTP id rr13so346924pbb.19
+        for <linux-kernel@vger.kernel.org>; Tue, 07 Aug 2012 15:29:35 -0700 (PDT)
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=google.com; s=20120113;
+        h=from:to:cc:subject:date:message-id:x-mailer:in-reply-to:references
+         :user-agent:x-gm-message-state;
+        bh=tHb3LETGwn5LvxZub+1mRqzrJxzhNG69PeZh6fRACtI=;
+        b=IiC9IZurlFL7m86GIde1gWhfD0xzUyW/QTHO55DdZviZYPyae8kWBlGUfDUmD82AOz
+         UvQ2ubFCRMLLXGwdkbTXLIy6ZxSKcRgnXOWqTBqIaL3klou47G/7WThzoG9ebD0o1RmY
+         AiNH/dfo5Z62mUEEihRwtBTmPH9D7JxAfdJpDlJhyul3ddKKKq7p7FVP3pmr18rxTmWy
+         WLISUiKiclaWhK8pMjN4/4NCAz9rZghwwXIgI504pa/m4OZSYlM9/JDaWS9y7W4ziWjn
+         p0X7X2eTyG3PsNy4ZV/sZIvzfgpbFlmTUzjOmYE950Ebid3DjaATG/go018qlPxZXYsP
+         Kd0w==
+Original-Received: by 10.68.219.65 with SMTP id pm1mr6438828pbc.121.1344378574957;
+        Tue, 07 Aug 2012 15:29:34 -0700 (PDT)
+Original-Received: from localhost (c-67-168-183-230.hsd1.wa.comcast.net. [67.168.183.230])
+        by mx.google.com with ESMTPS id sj5sm1472092pbc.30.2012.08.07.15.29.32
+        (version=TLSv1/SSLv3 cipher=OTHER);
+        Tue, 07 Aug 2012 15:29:33 -0700 (PDT)
+X-Mailer: git-send-email 1.7.10.1.362.g242cab3
+In-Reply-To: <20120807221948.220495155@linuxfoundation.org>
+User-Agent: quilt/0.60-20.4
+X-Gm-Message-State: ALoCoQlAOwezfYTMtFWujXihCsJrqOTzNN2k3Wv1BVr2tgXT60SlSXZMvxKBpb04bq52TJUMB0kO
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1339426 gmane.linux.kernel.stable:29265
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1339426>
+
+From: Greg KH <gregkh@linuxfoundation.org>
+
+3.5-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Ilan Peer <ilan.peer@intel.com>
+
+commit e19ebcab01cc130fa832764d453b263460ec3b91 upstream.
+
+It is possible that the BSS context is not active (for example
+when the current mode is set to GO), or that the vif->type is
+different than station. In such a case we cannot
+call mac80211 to report the average rssi for the interface
+(the function assumes that the vif is valid and that the type
+is station).
+
+Reported-by: Daniel J Blueman <daniel@quora.org>
+Reviewed-by: Emmanuel Grumbach <emmanuel.grumbach@intel.com>
+Signed-off-by: Ilan Peer <ilan.peer@intel.com>
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+---
+ drivers/net/wireless/iwlwifi/iwl-agn-lib.c |    5 +++++
+ 1 file changed, 5 insertions(+)
+
+--- a/drivers/net/wireless/iwlwifi/iwl-agn-lib.c
++++ b/drivers/net/wireless/iwlwifi/iwl-agn-lib.c
+@@ -617,6 +617,11 @@ static bool iwlagn_fill_txpower_mode(str
+ 	struct iwl_rxon_context *ctx = &priv->contexts[IWL_RXON_CTX_BSS];
+ 	int ave_rssi;
+ 
++	if (!ctx->vif || (ctx->vif->type != NL80211_IFTYPE_STATION)) {
++		IWL_DEBUG_INFO(priv, "BSS ctx not active or not in sta mode\n");
++		return false;
++	}
++
+ 	ave_rssi = ieee80211_ave_rssi(ctx->vif);
+ 	if (!ave_rssi) {
+ 		/* no rssi data, no changes to reduce tx power */
+
+
